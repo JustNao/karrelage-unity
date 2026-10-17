@@ -1,0 +1,19 @@
+# Third-party tools and runtimes (downloaded; see CLAUDE.md for how to fetch them)
+/tools/
+
+# Generated / copied-from-game data (regenerable; game files are copyrighted) ...
+/work/*
+# ... except hand-confirmed field/message names, which are not regenerable
+!/work/overrides.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# Local state / logs / editor
+*.log
+*.jsonl
+.claude/
+.vscode/
+.idea/

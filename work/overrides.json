@@ -1,0 +1,15 @@
+{
+ "jzs": {
+  "name": "ExchangeTypesItemsExchangerDescriptionForUserEvent",
+  "fields": {
+   "fycg": "item_descriptions"
+  }
+ },
+ "jzs.jzq": {
+  "name": "BidExchangerObject",
+  "fields": {
+   "fybz": "prices",
+   "fycc": "effects"
+  }
+ }
+}
