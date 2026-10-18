@@ -1,16 +1,17 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { SvelteMap, SvelteSet } from "svelte/reactivity";
   import { ago, call, kamas, on } from "../../lib/api";
   import ItemCard from "../../lib/components/ItemCard.svelte";
 
   interface Filter { a: number; min: string | number; max: string | number }
   interface Eff { id: number; label: string; group: string }
 
-  let items = $state(new Map<number, any>());
+  let items = new SvelteMap<number, any>();
   let selGid = $state<number | null>(null);
   let allEffects = $state<Eff[]>([]);
-  let filters = $state(new Map<number, Filter[]>()); // gid -> filters
-  let openSet = $state(new Set<number>());
+  let filters = $state<Record<number, Filter[]>>({}); // gid -> filters
+  let openSet = new SvelteSet<number>();
   let allOpen = $state(false);
   let sortDir = $state(1);
   let freeEff = $state("");
@@ -25,7 +26,7 @@
     return v.length ? Math.min(...v) : Infinity;
   };
   const lotVal = (r: any, a: number) => Math.max(0, ...r.effects.filter((e: any) => e.action === a && e.status !== "removed").map((e: any) => e.hi ?? 0));
-  const flist = (gid: number) => filters.get(gid) ?? [];
+  const flist = (gid: number) => filters[gid] ?? [];
 
   /** All effects of the item: defaults first, then any seen in the lots, then manually added ones. */
   const effectRows = $derived.by(() => {
@@ -52,10 +53,13 @@
   });
 
   function filterOf(gid: number, a: number): Filter {
-    let f = filters.get(gid);
-    if (!f) filters.set(gid, (f = []));
+    filters[gid] ??= [];
+    const f = filters[gid]; // re-read: `??=` yields the raw array, not the reactive proxy
     let x = f.find((y) => y.a === a);
-    if (!x) f.push((x = { a, min: "", max: "" }));
+    if (!x) {
+      f.push({ a, min: "", max: "" });
+      x = f[f.length - 1]; // the reactive proxy, so later edits trigger updates
+    }
     return x;
   }
   const active = (a: number) => {
@@ -65,7 +69,7 @@
 
   function preset(p: string) {
     if (!item) return;
-    if (p === "clear") return void filters.set(item.gid, []);
+    if (p === "clear") return void (filters[item.gid] = []);
     if (p === "add") {
       const m = freeEff.match(/#(\d+)$/);
       const a = m ? +m[1] : allEffects.find((x) => x.label.toLowerCase() === freeEff.trim().toLowerCase())?.id;

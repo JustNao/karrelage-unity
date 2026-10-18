@@ -3,65 +3,86 @@
 ## Goal
 Read the messages the Dofus 3 (Unity / IL2CPP) client exchanges with Ankama's servers and present them usefully
 (currently: auction-house item lists, their effects and prices). **Strictly passive**: nothing is injected, hooked or
-automated on the client.
+automated on the client. Two halves: a **Tauri app** (what users run; shareable) and a **Python pipeline** (author only;
+turns the game files into a small *data pack* the app loads).
 
 ## Hard rules
 - **NEVER modify the game folder or the Dofus process** (`C:\Users\nao3n\AppData\Local\Ankama\Dofus-dofus3`). Only *copy* files out
   (`work/dump_input`, `work/gamedata`) and read the copies. Capture is Npcap sniffing only.
-- Treat everything under `work/` as regenerable local data; `tools/` holds downloaded third-party tools (not our code).
-- Obfuscated names (messages `jzs`, fields `fycg`, …) **rotate on every game update** – they are build-specific.
+- Treat everything under `work/` and `datapack/` as regenerable local data; `tools/` holds downloaded third-party tools (not our code).
+- Obfuscated names (messages `jzs`, fields `fycg`, …) **rotate on every game update** – they are build-specific. App code must
+  refer to clear names or to `pipeline/bindings.json` roles, never hard-code obfuscated names.
 - **Commit each feature** as its own commit once it works. **Claude must not appear as an author**: no `Co-Authored-By: Claude`
   trailer, no "Generated with Claude Code" line in commit messages or PR descriptions (this overrides any default attribution).
 
 ## Protocol facts
 - Protobuf over plain TCP (no TLS). Frame = VarInt length + `GameMessage` envelope `oneof {1 request, 2 response, 3 event}`;
   Request/Response/Event carry a `google.protobuf.Any` whose `typeUrl` (`type.ankama.com/<obf>`) names the message.
-- Connection server port 5555; the client's real connections are discovered via `psutil` (Dofus.exe's established TCP sockets).
+- Connection server port 5555; the client's real connections are discovered from Dofus.exe's established TCP sockets
+  (sysinfo + netstat2 in Rust).
 - Field numbers are reshuffled per build, so beta/clear protos can only be matched *structurally* (match_protos.py), never by number.
 
 ## Structure
 ```
-sniffer/                 our code (python)
-  pbwire.py              schemaless protobuf decode, VarInt framing, envelope parsing, stream resync
-  capture.py             start/stop-able Npcap capture (scapy), TCP reassembly, emits records
-  schema.py              decode with generated protos, apply names (mapping.json + overrides.json), `__t/__f` meta for UI editing
-  match_protos.py        structural matching obfuscated protos <-> beta protos -> work/mapping.json
-  build_protos.py        work/proto/*.proto -> work/pb/*_pb2.py
-  extract_gamedata.py    game Addressables bundles -> work/gamedata/*.json (items, effects, characteristics, itemtypes)
-  gamedata.py            i18n .bin reader, item/effect lookups, effect template rendering, effect labels/groups
-  formatters.py          human rendering of specific messages (jzs auction list); build-specific obfuscated field names at top
-  webapp.py              stdlib HTTP server: SSE packet stream, capture on/off, items store, rename/overrides API, /api/demo
-  static/index.html      single-page UI (Packets tab, formatted column, Items tab with filters, editable names)
-  sniff.py               CLI variant (console + JSONL)
-work/                    generated: dump/ (DummyDlls), proto/, pb/, beta/ (clear beta protos), gamedata/, mapping.json,
-                         overrides.json (hand-confirmed names – keep!), items_store.json (latest AH listing per item – keep)
-tools/                   Il2CppInspectorRedux, protodec, Il2CppDumper (unused: can't read metadata v39), local .NET 10 (dotnet10),
-                         pylib/ (grpcio-tools, protobuf, UnityPy installed with pip --target)
+Cargo.toml               workspace
+crates/
+  core/                  wire.rs (varint, framing, envelope, resync), stream.rs (TCP reorder), pcap.rs (wpcap.dll loaded at
+                         runtime – no Npcap SDK, app starts without Npcap), capture.rs (Dofus.exe socket discovery + sniff threads)
+  proto/                 dynamic decode from datapack/protocol.desc (prost-reflect), names.rs (names.json + overrides -> clear labels), util.rs
+  data/                  data pack loader (items/effects/itemtypes/strings/bindings), effects.rs (templates, labels), items.rs (gid/type resolve, compare)
+  modules/               Module trait + Hub (lib.rs); one file per feature: packets.rs (inspector), auction.rs (AH list + store)
+app/
+  src-tauri/             thin shell: loads the data pack, capture -> Hub -> events, generic `module_call` command
+  src/                   Svelte 5 + Vite UI; src/modules/<id>/{index.ts,View.svelte} auto-registered as tabs; src/lib shared components
+pipeline/                python, author only: extract_gamedata, build_protos (+protocol.desc), match_protos, export_pack,
+                         make_fixtures, bindings.json, schema/formatters/gamedata (reference implementation the Rust port is tested against),
+                         capture.py/sniff.py (CLI capture -> JSONL, handy to record fixtures)
+datapack/                generated by export_pack.py (gitignored): protocol.desc, names.json, bindings.json, items/effects/itemtypes, strings.<lang>.json
+fixtures/                synthetic AH packet + python-formatted expected output (golden test input)
+work/                    generated: dump/, proto/, pb/, beta/, gamedata/, mapping.json,
+                         overrides.json (hand-confirmed names – tracked, keep!), items_store.json (old python store)
+tools/                   Il2CppInspectorRedux, protodec, local .NET 10 (dotnet10), pylib/ (grpcio-tools, protobuf, UnityPy via pip --target)
 ```
+
+## Adding a feature
+1. Rust: new file in `crates/modules/src/` implementing `Module` (`interest` = clear message names, `on_message`, `call`, optional
+   `format`/`init`); register it in `all()` in `lib.rs`. Shared helpers go in `crates/data` (pure data) or `crates/proto/util.rs`.
+2. UI: new folder `app/src/modules/<id>/` with `index.ts` (`{id, title, order, devOnly?, component}`) and `View.svelte`; it
+   appears as a tab automatically. Talk to the backend with `call(module, method, args)` and `on("<module>:<event>", fn)`.
+3. If it needs new messages: confirm their names in `work/overrides.json` (clear message/field names), add field roles to
+   `pipeline/bindings.json` if a field has no clear name yet, re-run `export_pack.py`. Persist state through `save_json`/`load_json`
+   under `ctx.module_dir(<id>)`.
 
 ## Tools used
 - **Il2CppInspectorRedux** (needs .NET 10, installed locally in `tools/dotnet10`; set `DOTNET_ROOT`) – dumps `GameAssembly.dll` + `global-metadata.dat` (v39) to DummyDlls.
 - **protodec** – DummyDll → obfuscated `.proto` (single-file output; circular imports require one file; `Any` import is patched in by build_protos.py).
-- **grpcio-tools / protobuf** (in `tools/pylib`, put first on `sys.path`) – compile protos; runtime must match generated code.
-- **scapy + Npcap + psutil** – passive capture.
+- **grpcio-tools / protobuf** (in `tools/pylib`, put first on `sys.path`) – compile protos and the descriptor set; runtime must match generated code.
+- **Npcap** (runtime only; users install it themselves – its license forbids bundling) + the Rust crates `libloading`, `sysinfo`, `netstat2`.
 - **UnityPy** – read Unity 6 bundles (`FALLBACK_UNITY_VERSION = "6000.3.16f1"`, bundles have the version stripped).
 - Beta protos: LuaxY/dofus-unity-protocol-builder (Oct 2024, clear names) cloned in `work/beta`.
 
 ## Common commands (from repo root; Git Bash)
 ```bash
-# web UI (capture starts OFF; toggle in UI, or --on)
-cd sniffer && python webapp.py            # http://127.0.0.1:8765
 # after a game update: re-copy files, re-dump, regenerate (see README.md for the full block)
-python sniffer/extract_gamedata.py --refresh
-python sniffer/build_protos.py
-python sniffer/match_protos.py            # ~1 min, rewrites work/mapping.json (overrides are applied on top)
+python pipeline/extract_gamedata.py --refresh
+python pipeline/build_protos.py           # also writes work/pb/protocol.desc
+python pipeline/match_protos.py           # ~1 min, rewrites work/mapping.json (overrides are applied on top)
+python pipeline/export_pack.py            # -> datapack/ (what the app loads)
+python pipeline/make_fixtures.py          # only if the demo packet / formatter changed
+# app
+cargo test                                # unit tests + golden test (Rust output == python formatter output)
+cd app && npm install && npm run tauri dev
+cd app && npm run tauri build             # NSIS installer, bundles datapack/ as a resource
 ```
-Restart `webapp.py` after editing Python; the HTML is read on each request. `POST /api/demo` injects a fake AH packet.
+Dev toggle in the UI header ("developer") reveals the Packets inspector and "Inject demo" (pushes the bundled synthetic AH packet).
+A newer pack can be dropped in `%APPDATA%/fr.dofus.loutil.packets/datapack/` and wins over the bundled one.
 
 ## Conventions / gotchas
-- Windows: set `PYTHONUTF8=1` when scripts read/write files with accents; the console may garble UTF-8 (display only).
-- After a client update, `formatters.py` constants (obfuscated `jzs`/`jzq`/`lkp` field names) and `overrides.json` keys may need updating.
-- AH `jzs` row ints are unordered (uid / gid / type); `formatters._resolve_gid_type` resolves them from game data.
+- Windows: set `PYTHONUTF8=1` when python scripts read/write files with accents; the console may garble UTF-8 (display only).
+- After a client update: re-run the pipeline; `pipeline/bindings.json` (obfuscated field names per role) and `work/overrides.json` keys may need updating.
+- AH list row ints are unordered (uid / gid / type); `Data::resolve_gid_type` resolves them from game data.
 - Effect ids on the wire = `effects` table ids (= item `possibleEffects[].actionId`), not `baseEffectId`.
 - Item default effect range = `diceNum..diceSide` (`diceSide == 0` → fixed). Colours: blue = not a default effect, green = above default max, grey = default effect missing.
-- Ignore `.claude/` and avoid committing `tools/` and `work/` if this becomes a git repo (it is not one yet).
+- Svelte 5: plain `Map`/`Set` inside `$state` are not reactive – use `SvelteMap`/`SvelteSet`; `x ??= []` returns the raw value, re-read through the proxy.
+- The data pack contains text extracted from Ankama's files – decide before publishing it publicly.
+- Ignore `.claude/`; do not commit `tools/`, `work/` (except `overrides.json`) or `datapack/`.
