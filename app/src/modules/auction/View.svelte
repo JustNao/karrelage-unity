@@ -311,6 +311,7 @@
     const offs = [
       on("auction:item", showNew),
       on<StoredPrice>("prices:price", (p) => stored.set(p.gid, p)),
+      on<StoredPrice[]>("prices:bulk", (l) => l.forEach((p) => stored.set(p.gid, p))), // weekly averages preloaded by the game
       on("prices:cleared", () => stored.clear()),
       on("auction:cleared", () => {
         items.clear();
