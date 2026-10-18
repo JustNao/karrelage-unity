@@ -37,10 +37,20 @@
     return () => void off.then((f) => f());
   });
 
+  // restore the capture state the user left at the last close (once, as soon as the backend is ready)
+  let restored = false;
+  $effect(() => {
+    if (restored || !s.ready) return;
+    restored = true;
+    if (app.capture && !s.on && !s.npcapError) captureSet(true).catch((e) => (err = String(e)));
+  });
+
   async function toggle() {
     err = "";
+    const want = !s.on; // read before the call: the status event flips s.on
     try {
-      await captureSet(!s.on);
+      await captureSet(want);
+      app.setCapture(want);
     } catch (e) {
       err = String(e);
     }

@@ -21,6 +21,16 @@ class AppState {
     } catch {}
   }
 
+  /** Capture state the user left (restored at the next start, see App.svelte). */
+  capture = $state(persisted("karrelage.capture", false));
+
+  setCapture(v: boolean) {
+    this.capture = v;
+    try {
+      localStorage.setItem("karrelage.capture", v ? "1" : "0");
+    } catch {}
+  }
+
   async init() {
     this.status = await getStatus();
     await on<Status>("app:status", (s) => (this.status = s));
