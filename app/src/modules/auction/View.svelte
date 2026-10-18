@@ -172,8 +172,8 @@
   const focusEffect = $derived(tab === "trans" && !comp && focus ? Number(focus.split(":")[0]) : null);
   const points = $derived(
     rows
-      .filter((r: any) => focusEffect === null || r.effects.some((e: any) => e.action === focusEffect && e.status !== "removed"))
       .map((r: any, i: number) => ({
+        has: focusEffect === null || r.effects.some((e: any) => e.action === focusEffect && e.status !== "removed"),
         id: lotKey(r, i),
         x: unitPrice(r),
         y: comp ? (levelOf(r) != null ? xpOfLevel(levelOf(r)!) : NaN) : r.density, // companions: total xp of the level (price follows it)
@@ -182,7 +182,7 @@
         missing: !comp && r.effects.some((e: any) => e.status === "removed"),
         faded: lacksFade(r),
       }))
-      .filter((p: any) => Number.isFinite(p.x) && Number.isFinite(p.y)),
+      .filter((p: any) => p.has && Number.isFinite(p.x) && Number.isFinite(p.y)),
   );
 
   /** Lots standing out above the price trend per scanned item (all its lots, unfiltered): the green icon in the left list. */
