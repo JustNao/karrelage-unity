@@ -8,9 +8,12 @@ const MOUNTS = new Map((table.mounts as [string, number, number][]).map(([name, 
 /** Generation and neurones obtained by extracting this mount (null = not in the table). */
 export const mountInfo = (name: string | undefined) => (name ? (MOUNTS.get(name) ?? null) : null);
 
-/** Effect carried by senile lots only: a senile mount gives no neurons. */
+/** Effect carried by senile lots only: a senile mount gives a single neurone whatever its generation. */
 export const SENILE_EFFECT = 3836;
 export const isSenile = (lot: any) => lot.effects.some((e: any) => e.action === SENILE_EFFECT && e.status !== "removed");
+
+/** Neurones obtained by extracting this lot (`neurons` = the generation's yield). */
+export const neuronsOf = (lot: any, neurons: number) => (isSenile(lot) ? 1 : neurons);
 
 let gid: Promise<number | null> | null = null;
 /** Item gid of the neurone (cached). */

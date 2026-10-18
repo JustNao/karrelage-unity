@@ -13,7 +13,7 @@
   import { analyse, isGoodDeal } from "../../lib/density";
   import { feeder, foodGids, levelBase } from "../../lib/familiar";
   import CompanionTable from "../../lib/components/CompanionTable.svelte";
-  import { isSenile, mountInfo, neuroneGid } from "../../lib/dragodinde";
+  import { mountInfo, neuroneGid, neuronsOf } from "../../lib/dragodinde";
   import { storedPrice } from "../../lib/craft";
   import { FLAG_EFFECTS, norm, rangeLabel, sections, type EffectMeta } from "../../lib/effects";
   import { benefit, craftCost, type CraftLine, type Recipes } from "../../lib/craft";
@@ -165,7 +165,7 @@
   const neurons = $derived(comp ? (mountInfo(item?.name)?.neurons ?? null) : null);
   const neuroneUnit = $derived(neurGid != null ? storedPrice(stored, neurGid) : null);
   const extractable = $derived(
-    neurons != null && neuroneUnit != null ? rows.filter((r: any) => !isSenile(r) && Number.isFinite(unitPrice(r)) && benefit(neuroneUnit * neurons, unitPrice(r)).profit > 0).length : 0,
+    neurons != null && neuroneUnit != null ? rows.filter((r: any) => Number.isFinite(unitPrice(r)) && benefit(neuroneUnit * neuronsOf(r, neurons), unitPrice(r)).profit > 0).length : 0,
   );
   const lotsOf = (l: any[]) => l.map((r) => ({ row: r, key: lotKey(r, rows.indexOf(r)) }));
   async function pickLot(id: string | number) {

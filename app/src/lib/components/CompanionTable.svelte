@@ -2,7 +2,7 @@
   import { kamas } from "../api";
   import { benefit } from "../craft";
   import { isLegendary, levelOf } from "../companion";
-  import { isSenile } from "../dragodinde";
+  import { isSenile, neuronsOf } from "../dragodinde";
 
   /** Familier / montilier / monture lots as a table (same look as the Crafting tab tables). `neurons` + `neuroneUnit` = mount extraction. */
   let {
@@ -25,16 +25,17 @@
   } = $props();
 
   const mount = $derived(neurons != null);
-  const sale = $derived(neurons != null && neuroneUnit != null ? neuroneUnit * neurons : null);
   const sgn = (n: number) => (n > 0 ? "+" : "") + kamas(n);
 
-  /** Per lot: price, level and, for mounts, the profit of extracting it (senile lots give nothing). */
+  /** Per lot: price, level and, for mounts, the profit of extracting it (senile lots give 1 neurone). */
   const rows = $derived(
     lots.map(({ row, key }) => {
       const price = unitPrice(row);
       const senile = mount && isSenile(row);
-      const b = mount && !senile && sale != null && Number.isFinite(price) ? benefit(sale, price) : null;
-      return { row, key, price, level: levelOf(row), legendary: isLegendary(row), senile, profit: b?.profit ?? null, pct: b?.pct ?? null };
+      const n = neurons != null ? neuronsOf(row, neurons) : null;
+      const sale = n != null && neuroneUnit != null ? neuroneUnit * n : null;
+      const b = sale != null && Number.isFinite(price) ? benefit(sale, price) : null;
+      return { row, key, price, level: levelOf(row), legendary: isLegendary(row), senile, n, sale, profit: b?.profit ?? null, pct: b?.pct ?? null };
     }),
   );
 </script>
@@ -65,8 +66,8 @@
         </td>
         <td class="n">{Number.isFinite(r.price) ? kamas(r.price) : "—"}</td>
         {#if mount}
-          <td class="n">{r.senile ? "—" : neurons}</td>
-          <td class="n">{r.senile || sale == null ? "—" : kamas(sale)}</td>
+          <td class="n">{r.n}</td>
+          <td class="n">{r.sale != null ? kamas(r.sale) : "—"}</td>
           <td class="n" class:good={(r.profit ?? 0) > 0} class:bad={(r.profit ?? 0) < 0}>{r.profit != null ? sgn(r.profit) : "—"}</td>
           <td class="n" class:good={(r.pct ?? 0) > 0} class:bad={(r.pct ?? 0) < 0}><b>{r.pct != null ? (r.pct > 0 ? "+" : "") + r.pct.toFixed(1) + " %" : "—"}</b></td>
         {/if}
