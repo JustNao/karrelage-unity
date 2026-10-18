@@ -317,7 +317,11 @@
           </button>
           {#each dealsOpen ? deals : [] as d (d.key)}
             <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+            {@const alt = trans.alternative(d.row)}
             <div class="deal" class:faded={lacksFade(d.row)} title="Click to jump to the lot in the list" onclick={() => focusLot(d.key)}>
+              {#if alt}
+                <div class="warn altw">⚠ Similar item available through Transcendance: lot {kamas(alt.buy)} + {alt.rune.name} {kamas(alt.runeCost)} = {kamas(alt.cost)} (saves {kamas(alt.saving)})</div>
+              {/if}
               <ItemCard row={d.row} {fade} onfade={toggleFade} pinned={isPin(d.row)} onpin={() => togglePin(d.row)} versus={versusFor(d.row)} />
             </div>
           {/each}
@@ -401,6 +405,7 @@
   .trow { padding: 3px 6px; font-size: 12px; cursor: pointer; border-radius: 6px; border: 1px solid transparent; }
   .trow:hover { background: var(--bg); }
   .trow.foc { border-color: var(--acc); }
+  .altw { font-size: 12px; margin-bottom: 4px; }
   .warn { color: var(--warn, orange); }
   .opp { margin-bottom: 12px; }
   .oh { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; font-size: 12px; margin-bottom: 4px; }

@@ -89,7 +89,26 @@ export function transcendance(rows: any[], unit: (r: any) => number, runes: Rune
     }
     return { row, buy, z: fit?.z[i] ?? 0, best, unpriced };
   });
+  // cheapest way to make each transcended effect yourself: cheapest candidate lot + rune (ignores the focus)
+  const make = new Map<string, { cost: number; buy: number; runeCost: number; rune: Rune }>();
+  for (const t of targets.values()) {
+    if (t.runeCost == null || !t.rune) continue;
+    const cheapest = Math.min(...base.filter((r) => !r.effects.some((e: any) => e.action === t.a && e.status !== "removed")).map(unit));
+    if (Number.isFinite(cheapest)) make.set(targetKey(t), { cost: cheapest + t.runeCost, buy: cheapest, runeCost: t.runeCost, rune: t.rune });
+  }
+  /** For a transcended lot: the cheaper way to get a similar item (an unlocked lot + the rune), if any. */
+  const alternative = (row: any) => {
+    if (!isTranscended(row)) return null;
+    const price = unit(row);
+    let best: { cost: number; buy: number; runeCost: number; rune: Rune } | null = null;
+    for (const e of row.effects.filter((e: any) => e.status === "added" && e.hi != null)) {
+      const m = make.get(`${e.action}:${e.hi}`);
+      if (m && m.cost < price && (!best || m.cost < best.cost)) best = m;
+    }
+    return best && { ...best, saving: Math.round(price - best.cost) };
+  };
   return {
+    alternative,
     targets: [...targets.values()],
     opportunities: list.filter((o) => o.best && o.best.profit > 0).sort((a, b) => b.best!.profit - a.best!.profit),
     unpricedCount: list.filter((o) => !o.best && o.unpriced.length).length,
