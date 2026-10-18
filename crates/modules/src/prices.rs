@@ -163,7 +163,11 @@ impl Module for Prices {
                     .items
                     .iter()
                     .filter(|(g, i)| i.type_id == RUNE_TYPE && ctx.data.recipes.contains_key(g))
-                    .map(|(g, _)| json!({"gid": g, "name": ctx.data.item_name(*g)}))
+                    .map(|(g, i)| {
+                        // the effect the rune grants, rendered like in game ("+10 Force")
+                        let effect = i.effects.iter().find(|e| ![2825, 2826, 2827].contains(&e.a)).map(|e| ctx.data.render_effect(e.a, &[json!(e.max)]).0);
+                        json!({"gid": g, "name": ctx.data.item_name(*g), "effect": effect})
+                    })
                     .collect();
                 v.sort_by_key(|x| x["gid"].as_i64());
                 Ok(Value::Array(v))
