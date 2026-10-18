@@ -87,6 +87,8 @@ A newer pack can be dropped in `%APPDATA%/fr.dofus.loutil.packets/datapack/` and
 - Svelte 5: plain `Map`/`Set` inside `$state` are not reactive – use `SvelteMap`/`SvelteSet`; `x ??= []` returns the raw value, re-read through the proxy.
 - Name precedence: auto beta match < `pipeline/reference/message_names.json` (conf `ref`) < `work/overrides.json` (conf `manual`).
 - Effects carry `group` (stats/main/secondary/damage/resist/other, from the game's characteristic categories), `order` (rank in the in-game panel) and `density` (= effectPowerRate: AP 100, MP 90, vitality 0.2 – kept for later features), all computed in `pipeline/export_pack.py`. The UI orders item effects: new first, then stats/main, damage, resistances, utility (secondary/other); filter list/picker sections: Main stats, Secondary stats, Damage, Resistances, Other.
+- `weapon` group = weapon hit effects ("dommages X", "vole X"); the UI only offers it for items whose default effects contain some. Filter rows = the item's *default* effects that are `filterable` (no negative twins; from "other" only 795 Arme de chasse) plus whatever the user adds.
+- Item **density** (`Data::item_density`, per lot as `density`) = sum of effect value x effect density; negatives already carry half of their twin's rate. The Items tab plots price vs density with a least-squares line (`DensityChart.svelte`); dots beyond 2σ above the line are likely underpriced lots.
 - The effect picker (`Data::filterable_effects`) lists only effects found on equipment (item type category 0) of levels 150-200.
 - The data pack contains text extracted from Ankama's files – decide before publishing it publicly.
 - Ignore `.claude/`; do not commit `tools/`, `work/` (except `overrides.json`) or `datapack/`.

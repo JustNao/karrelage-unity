@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { SvelteMap, SvelteSet } from "svelte/reactivity";
   import { ago, call, kamas, on } from "../../lib/api";
   import { flip } from "svelte/animate";
+  import DensityChart from "../../lib/components/DensityChart.svelte";
   import EffectPicker from "../../lib/components/EffectPicker.svelte";
   import ItemCard from "../../lib/components/ItemCard.svelte";
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
@@ -15,7 +16,8 @@
   let picker = $state<EffectMeta[]>([]); // effects found on level 150-200 equipment (what the picker offers)
   let meta = $state<Record<number, EffectMeta>>({}); // every labelled effect (labels/groups of whatever shows up in a lot)
   let filters = $state<Record<number, Filter[]>>({}); // gid -> filters
-  let openSet = new SvelteSet<number>();
+  let openSet = new SvelteSet<string | number>(); // lot keys
+  let picked = $state<string | number | null>(null); // lot chosen from the graph
   let allOpen = $state(false);
   let sortDir = $state(1);
 
@@ -30,15 +32,22 @@
   const lotVal = (r: any, a: number) => Math.max(0, ...r.effects.filter((e: any) => e.action === a && e.status !== "removed").map((e: any) => e.hi ?? 0));
   const flist = (gid: number) => filters[gid] ?? [];
 
-  /** All effects of the item: defaults first, then any seen in the lots, then manually added ones. */
+  const lotKey = (r: any, i: number) => r.uid ?? `n${i}`;
+  /** [X] for a single possible value, [min–max] for a range. */
+  const rangeLabel = (def: number[] | null) => (def ? (def[0] === def[1] ? `[${def[0]}]` : `[${def[0]}–${def[1]}]`) : "");
+
+  /** Effects the item has by default (filterable ones only), then the ones the user added himself. */
   const effectRows = $derived.by(() => {
     if (!item) return [];
     const seen = new Map<number, { a: number; def: number[] | null }>();
-    for (const d of item.defaults ?? []) seen.set(d.a, { a: d.a, def: [d.min, d.max] });
-    for (const r of item.rows) for (const e of r.effects) if (e.status !== "removed" && !seen.has(e.action)) seen.set(e.action, { a: e.action, def: e.range ?? null });
+    for (const d of item.defaults ?? []) if (meta[d.a]?.filterable) seen.set(d.a, { a: d.a, def: [d.min, d.max] });
     for (const x of flist(item.gid)) if (!seen.has(x.a)) seen.set(x.a, { a: x.a, def: null });
     return [...seen.values()];
   });
+
+  /** Weapon-damage effects are only offered for weapons (items whose default effects include weapon hits). */
+  const isWeapon = $derived(!!item && (item.defaults ?? []).some((d: any) => meta[d.a]?.group === "weapon"));
+  const pickable = $derived(picker.filter((e) => isWeapon || e.group !== "weapon"));
 
   /** Filter rows grouped like the in-game characteristics panel. */
   const groups = $derived(
@@ -93,8 +102,28 @@
     if (v !== null) filterOf(item.gid, a).min = v;
   }
 
-  function toggleOpen(uid: number) {
-    openSet.has(uid) ? openSet.delete(uid) : openSet.add(uid);
+  function clearEffect(a: number) {
+    if (!item) return;
+    const y = filterOf(item.gid, a);
+    y.min = "";
+    y.max = "";
+  }
+
+  function toggleOpen(key: string | number) {
+    openSet.has(key) ? openSet.delete(key) : openSet.add(key);
+  }
+
+  /** Graph dots: price (per unit) against the lot's density. Same lots as the list, so every dot has a card. */
+  const points = $derived(
+    rows.map((r: any, i: number) => ({ id: lotKey(r, i), x: unitPrice(r), y: r.density ?? 0, label: r.name })).filter((p: any) => Number.isFinite(p.x)),
+  );
+
+  /** Clicking a dot: unroll the lot and scroll the list down to it (nothing is filtered out). */
+  async function focusLot(id: string | number) {
+    picked = id;
+    openSet.add(id);
+    await tick();
+    document.getElementById(`lot-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
   }
   async function forget() {
     if (confirm("Forget all stored items?")) await call("auction", "clear");
@@ -145,9 +174,13 @@
         <button onclick={() => ((allOpen = !allOpen), openSet.clear())}>{allOpen ? "Collapse all" : "Expand all"}</button>
         <button onclick={forget}>Forget all items</button>
       </div>
-      {#each rows as r (r.uid ?? JSON.stringify(r.prices) + r.name)}
-        <div animate:flip={{ duration: 320 }}>
-          <ItemCard row={r} collapsible open={allOpen || openSet.has(r.uid)} ontoggle={() => toggleOpen(r.uid)} />
+      {#if points.length >= 3}
+        <div class="graph"><DensityChart {points} selected={picked} onselect={focusLot} /></div>
+      {/if}
+      {#each rows as r, i (lotKey(r, i))}
+        {@const key = lotKey(r, i)}
+        <div id="lot-{key}" class="lot" class:picked={picked === key} animate:flip={{ duration: 320 }}>
+          <ItemCard row={r} collapsible open={allOpen || openSet.has(key)} ontoggle={() => toggleOpen(key)} />
         </div>
       {:else}
         <div class="mut">No lot matches the filter</div>
@@ -164,17 +197,18 @@
         <button onclick={() => preset("resist")} title="perfect (default max) for % resistances">Résistances</button>
         <button onclick={() => preset("clear")}>Clear</button>
       </div>
-      <div class="btns"><EffectPicker effects={picker} onpick={(id) => filterOf(item.gid, id)} /></div>
+      <div class="btns"><EffectPicker effects={pickable} onpick={(id) => filterOf(item.gid, id)} /></div>
       {#each groups as g (g.key)}
         <div class="ghead">{g.label}</div>
         {#each g.items as x (x.a)}
           {@const y = flist(item.gid).find((z) => z.a === x.a)}
           <div class="frow" class:on={active(x.a)}>
             <div class="lb">{x.label}</div>
-            <small class="rg">{x.def ? `[${x.def[0]}–${x.def[1]}]` : ""}</small>
+            <small class="rg">{rangeLabel(x.def)}</small>
             <input type="number" placeholder="min" value={y?.min ?? ""} oninput={(e) => (filterOf(item.gid, x.a).min = e.currentTarget.value)} />
             <input type="number" placeholder="max" value={y?.max ?? ""} oninput={(e) => (filterOf(item.gid, x.a).max = e.currentTarget.value)} />
-            <button class="setmin" onclick={() => setMin(x.a, x.def)} title="Fill min with the low end of the default range">Set min</button>
+            <button class="mini" onclick={() => setMin(x.a, x.def)} title="Fill min with the low end of the default range">Set min</button>
+            <button class="mini" disabled={!active(x.a)} onclick={() => clearEffect(x.a)}>Clear</button>
           </div>
         {/each}
       {:else}
@@ -185,7 +219,7 @@
 </div>
 
 <style>
-  .view { flex: 1; min-height: 0; display: grid; grid-template-columns: 280px 1fr 420px; }
+  .view { flex: 1; min-height: 0; display: grid; grid-template-columns: 280px 1fr 470px; }
   .ilist { overflow: auto; background: var(--panel); border-right: 1px solid var(--line); }
   .ilist div { padding: 6px 10px; border-bottom: 1px solid var(--line); cursor: pointer; font-family: system-ui, sans-serif; }
   .ilist div:hover { background: var(--bg); }
@@ -199,9 +233,13 @@
   .head .fh { margin: 0; flex: 1; }
   .filter { overflow: auto; background: var(--panel); border-left: 1px solid var(--line); padding: 10px; font-family: system-ui, sans-serif; font-size: 12px; }
   .ghead { margin: 12px 0 2px; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--mut); }
-  .setmin { padding: 2px 8px; font-size: 11px; }
+  .mini { padding: 2px 7px; font-size: 11px; }
+  .mini:disabled { opacity: 0.35; cursor: default; border-color: var(--line); }
+  .graph { margin-bottom: 12px; }
+  .lot.picked :global(.card) { border-color: var(--acc); animation: pulse 1.6s ease-out; }
+  @keyframes pulse { from { box-shadow: 0 0 0 0 color-mix(in srgb, var(--acc) 70%, transparent); } to { box-shadow: 0 0 0 14px transparent; } }
   .btns { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
-  .frow { display: grid; grid-template-columns: 1fr auto 54px 54px auto; gap: 4px; align-items: center; margin: 3px 0; }
+  .frow { display: grid; grid-template-columns: 1fr auto 52px 52px auto auto; gap: 4px; align-items: center; margin: 3px 0; }
   .frow input { width: 100%; padding: 2px 4px; }
   .frow .lb { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .frow .rg { color: var(--mut); text-align: right; white-space: nowrap; padding-right: 2px; }
