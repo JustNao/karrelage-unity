@@ -12,7 +12,7 @@
   import { LEVEL_EFFECT, isLegendary, levelOf, xpOfLevel } from "../../lib/companion";
   import { analyse, isGoodDeal } from "../../lib/density";
   import { norm, rangeLabel, sections, type EffectMeta } from "../../lib/effects";
-  import { AH_TAX, targetKey, transcendance, type Rune, type StoredPrice } from "../../lib/transcend";
+  import { targetKey, transcendance, type Rune, type StoredPrice } from "../../lib/transcend";
 
   interface Filter { a: number; min: string | number; max: string | number }
 
@@ -351,10 +351,6 @@
       </div>{/if}
       {#if tab === "trans" && !comp}
         <div class="trans">
-          <div class="mut note">
-            Les lots de cet objet avec le verrou de transcendance et un EXO montrent ce que vaut une rune. Les candidats sont des lots non verrouillés
-            sans effet en sur-max ; profit = prix de vente − {AH_TAX * 100} % de taxe − prix du lot − prix de la rune (onglet Prix enregistrés).
-          </div>
           {#if saved.length}
             <div class="ghead">Candidats enregistrés</div>
             {#each saved as sv (sv.key)}
