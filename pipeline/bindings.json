@@ -10,6 +10,12 @@
   "effects": "fycc",
   "ints": ["fyby", "fyca", "fycb"]
  },
+ "avg_prices": {
+  "_doc": "ObjectAveragePricesEvent: repeated entries of (item gid, average per-unit price over the last week). The third field of an entry is unused.",
+  "items": "fswf",
+  "gid": "fsvx",
+  "price": "fsvy"
+ },
  "object_effect": {
   "action": ["gdmq", "gdmr"],
   "oneof": "gdng"

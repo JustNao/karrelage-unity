@@ -2,7 +2,8 @@
 import { analyse } from "./density";
 
 export interface Rune { gid: number; name: string; a: number; value: number }
-export interface StoredPrice { gid: number; unit: number; override: number | null; updated: number }
+/** unit = price read in the auction house, avg = average of the last week (preload), override = manual. Priority: override, unit, avg. */
+export interface StoredPrice { gid: number; unit: number | null; avg?: number | null; override: number | null; updated?: number | null }
 
 /** A captured rune price older than this is flagged (a manual override never is). */
 export const STALE_SECS = 24 * 3600;
@@ -26,6 +27,8 @@ export interface Target {
   runeCost: number | null;
   /** Captured rune price older than a day. */
   stale: boolean;
+  /** Only the weekly average is known (never read in the auction house). */
+  avgOnly: boolean;
 }
 
 export interface Opportunity {
@@ -46,11 +49,15 @@ export function transcendance(rows: any[], unit: (r: any) => number, runes: Rune
   const runeFor = (a: number, v: number) => runes.find((r) => r.a === a && r.value === v) ?? null;
   const isStale = (gid: number) => {
     const p = prices.get(gid);
-    return !!p && p.override == null && now - p.updated > STALE_SECS;
+    return !!p && p.override == null && p.unit != null && now - (p.updated ?? 0) > STALE_SECS;
+  };
+  const isAvgOnly = (gid: number) => {
+    const p = prices.get(gid);
+    return !!p && p.override == null && p.unit == null && p.avg != null;
   };
   const price = (gid: number) => {
     const p = prices.get(gid);
-    return p ? (p.override ?? p.unit) : null;
+    return p ? (p.override ?? p.unit ?? p.avg ?? null) : null;
   };
 
   const targets = new Map<string, Target>();
@@ -65,7 +72,7 @@ export function transcendance(rows: any[], unit: (r: any) => number, runes: Rune
         t.lots++;
       } else {
         const rune = runeFor(e.action, e.hi);
-        targets.set(k, { a: e.action, value: e.hi, sale: u, lots: 1, rune, runeCost: rune ? price(rune.gid) : null, stale: rune ? isStale(rune.gid) : false });
+        targets.set(k, { a: e.action, value: e.hi, sale: u, lots: 1, rune, runeCost: rune ? price(rune.gid) : null, stale: rune ? isStale(rune.gid) : false, avgOnly: rune ? isAvgOnly(rune.gid) : false });
       }
     }
   }

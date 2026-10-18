@@ -380,7 +380,7 @@
                 {#if !t.rune}<span class="warn">aucune rune correspondante</span>
                 {:else if t.runeCost == null}<span class="warn">{runeName(t.rune.name)} : prix inconnu, ouvrez-la à l'hôtel de vente</span>
                 {:else}<span class="mut">{runeName(t.rune.name)} {kamas(t.runeCost)}</span>
-                  {#if t.stale}<span class="warn" title="Ouvrez la rune à l'hôtel de vente pour actualiser son prix">⚠ prix de la rune vieux de plus d'un jour</span>{/if}{/if}
+                  {#if t.avgOnly}<span class="warn" title="Ouvrez la rune à l'hôtel de vente pour relever son prix">⚠ prix moyen sur 7 jours seulement</span>{:else if t.stale}<span class="warn" title="Ouvrez la rune à l'hôtel de vente pour actualiser son prix">⚠ prix de la rune vieux de plus d'un jour</span>{/if}{/if}
               </div>
             {/each}
             {#if trans.unpricedCount}<div class="mut note">{trans.unpricedCount} lots candidats ne peuvent pas être classés tant que leur rune n'a pas de prix enregistré.</div>{/if}
@@ -394,7 +394,7 @@
                   <b class="ok">+{kamas(o.best!.profit)}</b>
                   <span class="inv" title="Prix du lot + prix de la rune">investissement {kamas(o.buy + (t.runeCost ?? 0))}</span>
                   <span>ajouter {t.rune?.name} (+{t.value} {effLabel(t.a)})</span>
-                  {#if t.stale}<span class="warn" title="Prix de la rune vieux de plus d'un jour">⚠ prix de rune périmé</span>{/if}
+                  {#if t.avgOnly}<span class="warn" title="Prix moyen sur 7 jours, jamais relevé à l'hôtel de vente">⚠ prix de rune moyen</span>{:else if t.stale}<span class="warn" title="Prix de la rune vieux de plus d'un jour">⚠ prix de rune périmé</span>{/if}
                   <button class="mini" class:on={isSaved(o)} title="Garder ce candidat pour y revenir plus tard" onclick={(ev) => (ev.stopPropagation(), toggleSaved(o))}>{isSaved(o) ? "Enregistré ✓" : "Enregistrer"}</button>
                   <span class="mut">achat {kamas(o.buy)} · rune {kamas(t.runeCost ?? 0)} · vente ~{kamas(t.sale)} · densité {o.z >= 0 ? "+" : ""}{o.z.toFixed(1)}σ</span>
                 </div>

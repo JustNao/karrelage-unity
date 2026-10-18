@@ -3,6 +3,7 @@
 use crate::auction::AH_LIST;
 use crate::{load_json, save_json, Ctx, Interest, Message, Module};
 use anyhow::{anyhow, Result};
+use loutil_proto::util::{int, messages};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::sync::Mutex;
@@ -16,6 +17,9 @@ fn category_name(id: Option<i64>) -> &'static str {
         _ => "Autre",
     }
 }
+
+/// Clear name of the message carrying the average prices of the last week.
+pub const AVG_PRICES: &str = "ObjectAveragePricesEvent";
 
 /// itemtypes id of "Rune de transcendance".
 const RUNE_TYPE: i64 = 211;
@@ -52,13 +56,41 @@ impl Prices {
     }
 }
 
+impl Prices {
+    /// Average per-unit prices of the last week: preloads the store. They only fill `avg`; prices read in the auction
+    /// house (`unit`) and manual ones (`override`) always win over it.
+    fn on_average_prices(&self, m: &Message, ctx: &Ctx) {
+        let (Some(msg), Some(b)) = (m.decoded.as_ref(), ctx.data.bindings.get("avg_prices")) else { return };
+        let field = |k: &str| b[k].as_str().unwrap_or_default();
+        let mut changed = vec![];
+        let mut s = self.store.lock().unwrap();
+        for e in messages(msg, field("items")) {
+            let (gid, price) = (int(&e, field("gid")), int(&e, field("price")));
+            if price <= 0 || !ctx.data.items.contains_key(&gid) {
+                continue;
+            }
+            let ent = s.entry(gid).or_insert_with(|| json!({"gid": gid, "override": null, "unit": null}));
+            ent["avg"] = json!(price);
+            ent["avg_updated"] = json!(m.raw.t);
+            Self::describe(ctx, gid, ent);
+            changed.push(ent.clone());
+        }
+        drop(s);
+        if changed.is_empty() {
+            return;
+        }
+        self.save(ctx);
+        ctx.emit("prices", "bulk", Value::Array(changed));
+    }
+}
+
 impl Module for Prices {
     fn id(&self) -> &'static str {
         "prices"
     }
 
     fn interest(&self) -> Interest {
-        Interest::Types(&[AH_LIST])
+        Interest::Types(&[AH_LIST, AVG_PRICES])
     }
 
     fn init(&self, ctx: &Ctx) {
@@ -74,6 +106,9 @@ impl Module for Prices {
     }
 
     fn on_message(&self, m: &Message, ctx: &Ctx) {
+        if m.name == AVG_PRICES {
+            return self.on_average_prices(m, ctx);
+        }
         let Some(f) = m.fmt.as_ref().filter(|f| f["kind"] == "auction_items") else { return };
         if m.raw.srv == "demo" {
             return;
@@ -142,5 +177,53 @@ impl Module for Prices {
             }
             _ => Err(anyhow!("prices: unknown method {method}")),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use loutil_core::RawMessage;
+    use loutil_data::Data;
+    use loutil_proto::Proto;
+    use std::sync::Arc;
+
+    #[test]
+    fn average_prices_preload_but_never_override() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let pack = root.join("datapack");
+        if !pack.join("manifest.json").exists() {
+            return;
+        }
+        let dir = std::env::temp_dir().join("loutil-avgprices");
+        let _ = std::fs::remove_dir_all(&dir);
+        let data = Arc::new(Data::load(&pack, "fr").unwrap());
+        let proto = Arc::new(Proto::load(&pack, dir.join("o.json")).unwrap());
+        let hub = crate::Hub::new(data, proto.clone(), dir, Arc::new(|_, _| {}), Arc::new(|_| {}));
+        // two entries: gid 1711 -> 5000, gid 1728 -> 300 (third field unused)
+        let payload = vec![0x1a, 0x06, 0x08, 0xaf, 0x0d, 0x10, 0x88, 0x27, 0x1a, 0x08, 0x08, 0xc0, 0x0d, 0x10, 0xac, 0x02, 0x18, 0x01];
+        let decoded = proto.decode("isr", &payload);
+        let msg = |t| Message {
+            id: 1,
+            raw: RawMessage { t, srv: "x".into(), dir: "S->C", payload: vec![] },
+            env: None,
+            type_name: Some("isr".into()),
+            name: AVG_PRICES.into(),
+            conf: None,
+            decoded: decoded.clone(),
+            fmt: None,
+        };
+        let p = Prices::new();
+        p.on_message(&msg(1.0), &hub.ctx);
+        let list = p.call("list", Value::Null, &hub.ctx).unwrap();
+        let get = |l: &Value, gid: i64| l.as_array().unwrap().iter().find(|e| e["gid"] == gid).cloned().unwrap();
+        assert_eq!(get(&list, 1711)["avg"], 5000);
+        assert_eq!(get(&list, 1728)["avg"], 300);
+        assert!(get(&list, 1711)["unit"].is_null());
+        // a manual override survives a later average
+        p.call("set_override", json!({"gid": 1711, "value": 42}), &hub.ctx).unwrap();
+        p.on_message(&msg(2.0), &hub.ctx);
+        let list = p.call("list", Value::Null, &hub.ctx).unwrap();
+        assert_eq!(get(&list, 1711)["override"], 42);
     }
 }

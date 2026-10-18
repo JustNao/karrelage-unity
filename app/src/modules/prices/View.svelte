@@ -4,7 +4,7 @@
   import { ago, call, kamas, on } from "../../lib/api";
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
 
-  interface Price { gid: number; name: string; type_id: number | null; type: string; category: string; unit: number; updated: number; override: number | null }
+  interface Price { gid: number; name: string; type_id: number | null; type: string; category: string; unit: number | null; updated?: number | null; avg?: number | null; avg_updated?: number | null; override: number | null }
 
   const CATEGORIES = ["Équipement", "Ressource", "Consommable", "Autre"];
   let prices = new SvelteMap<number, Price>();
@@ -31,7 +31,11 @@
   });
 
   const toggle = (k: string) => (shut.has(k) ? shut.delete(k) : shut.add(k));
-  const latest = (items: Price[]) => Math.max(...items.map((p) => p.updated));
+  const stamp = (p: Price) => p.updated ?? p.avg_updated ?? 0;
+  const latest = (items: Price[]) => Math.max(...items.map(stamp));
+  /** The price used elsewhere: manual, else read in the auction house, else the weekly average. */
+  const used = (p: Price): { v: number; src: string } | null =>
+    p.override != null ? { v: p.override, src: "manuel" } : p.unit != null ? { v: p.unit, src: "relevé" } : p.avg != null ? { v: p.avg, src: "moyenne" } : null;
 
   async function setOverride(p: Price, raw: string) {
     const v = raw.trim() === "" ? null : Number(raw);
@@ -45,7 +49,7 @@
 
   onMount(() => {
     call<Price[]>("prices", "list").then((l) => l.forEach((p) => prices.set(p.gid, p)));
-    const offs = [on<Price>("prices:price", (p) => prices.set(p.gid, p)), on("prices:cleared", () => prices.clear())];
+    const offs = [on<Price>("prices:price", (p) => prices.set(p.gid, p)), on<Price[]>("prices:bulk", (l) => l.forEach((p) => prices.set(p.gid, p))), on("prices:cleared", () => prices.clear())];
     return () => void offs.forEach((o) => o.then((f) => f()));
   });
 </script>
@@ -70,13 +74,16 @@
           </button>
           {#if !shut.has(k)}
             <table>
-              <thead><tr><th>Objet</th><th class="n">Relevé / unité</th><th>Dernière mise à jour</th><th class="n">Prix manuel (kamas)</th></tr></thead>
+              <thead><tr><th>Objet</th><th class="n">Prix utilisé</th><th class="n">Relevé HDV / unité</th><th class="n">Moyenne 7 j</th><th>Dernier relevé</th><th class="n">Prix manuel (kamas)</th></tr></thead>
               <tbody>
                 {#each t.items as p (p.gid)}
+                  {@const u = used(p)}
                   <tr>
                     <td>{p.name}</td>
-                    <td class="n" class:struck={p.override !== null}>{kamas(p.unit)}</td>
-                    <td class="mut">{ago(p.updated)}</td>
+                                        <td class="n"><b>{u ? kamas(u.v) : "—"}</b> {#if u}<small class="src {u.src}">{u.src}</small>{/if}</td>
+                    <td class="n" class:dim={p.override != null}>{p.unit != null ? kamas(p.unit) : "—"}</td>
+                    <td class="n" class:dim={p.override != null || p.unit != null}>{p.avg != null ? kamas(p.avg) : "—"}</td>
+                    <td class="mut">{p.updated != null ? ago(p.updated) : "—"}</td>
                     <td class="n">
                       <input type="number" min="0" placeholder="—" class:set={p.override !== null} value={p.override ?? ""} onchange={(e) => setOverride(p, e.currentTarget.value)} />
                       {#if p.override !== null}<button class="mini" title="Revenir au prix relevé" onclick={() => setOverride(p, "")}>✕</button>{/if}
@@ -109,6 +116,10 @@
   th { text-align: left; font-weight: 400; color: var(--mut); padding: 2px 6px; }
   td { padding: 3px 6px; border-top: 1px solid var(--line); }
   .n { text-align: right; }
+  .dim { opacity: 0.45; }
+  .src { color: var(--mut); margin-left: 4px; }
+  .src.manuel { color: var(--acc); }
+  .src.moyenne { color: var(--warn, orange); }
   .struck { text-decoration: line-through; opacity: 0.5; }
   td input { width: 100px; padding: 2px 4px; text-align: right; }
   td input.set { border-color: var(--acc); color: var(--acc); }
