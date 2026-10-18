@@ -264,8 +264,18 @@
     await tick();
     document.getElementById(`lot-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
   }
+  /** "Effacer" forgets every stored item, after a second click on "Confirmer" (reverts after a few seconds). */
+  let confirmClear = $state(false);
+  let confirmTimer: ReturnType<typeof setTimeout> | undefined;
   async function forget() {
-    if (confirm("Oublier tous les objets enregistrés ?")) await call("auction", "clear");
+    if (!confirmClear) {
+      confirmClear = true;
+      confirmTimer = setTimeout(() => (confirmClear = false), 4000);
+      return;
+    }
+    clearTimeout(confirmTimer);
+    confirmClear = false;
+    await call("auction", "clear");
   }
   function put(i: any) {
     items.set(i.gid, i);
@@ -308,7 +318,7 @@
   <div class="ilist">
     <div class="sbar">
       <input type="search" placeholder="Rechercher un objet…" bind:value={search} />
-      <button class="mini" disabled={!search} onclick={() => (search = "")}>Effacer</button>
+      <button class="mini" class:danger={confirmClear} onclick={forget} onblur={() => (confirmClear = false)} title="Oublier tous les objets enregistrés">{confirmClear ? "Confirmer" : "Effacer"}</button>
     </div>
     {#each typeGroups as g (g.type)}
       {@const shut = collapsed.has(g.type)}
@@ -341,7 +351,6 @@
         </button>
         <button onclick={() => ((allOpen = !allOpen), openSet.clear())}>{allOpen ? "Tout replier" : "Tout déplier"}</button>
         {#if pin}<button class="on" onclick={() => (pin = null)} title="Arrêter de comparer les lots avec le lot épinglé">Désépingler {pin.item.name}</button>{/if}
-        <button onclick={forget}>Oublier tous les objets</button>
       </div>
       {#if points.length >= 3}
         <div class="graph"><DensityChart {points} selected={tab === "trans" && cand ? cand.id : picked} onselect={focusLot} /></div>
@@ -498,6 +507,7 @@
   .ilist { overflow: auto; background: var(--panel); border-right: 1px solid var(--line); }
   .deal-ico { color: var(--ok); font-size: 10px; vertical-align: middle; }
   .ilist .sbar { display: flex; gap: 6px; padding: 6px 10px; cursor: default; position: sticky; top: 0; z-index: 2; background: var(--panel); }
+  .sbar .danger { color: var(--bad); border-color: var(--bad); }
   .sbar input { flex: 1; min-width: 0; padding: 3px 6px; }
   .thead { display: flex; width: 100%; align-items: center; gap: 6px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: var(--bg); color: inherit; padding: 5px 10px; font: 600 11px system-ui; letter-spacing: 0.04em; text-transform: uppercase; text-align: left; position: sticky; top: 36px; z-index: 1; }
   .chev { display: inline-block; transition: transform 0.2s; }
