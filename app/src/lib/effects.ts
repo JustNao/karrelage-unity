@@ -37,8 +37,8 @@ export function sortEffects<T extends { status?: string; group?: string; order?:
   );
 }
 
-/** How close to the default max still counts as "perfect": vitality within 10, force/intelligence/agility/chance within 3. */
-const PERFECT_TOLERANCE: Record<number, number> = { 125: 10, 118: 3, 126: 3, 119: 3, 123: 3 };
+/** How close to the default max still counts as "perfect": vitality within 10; force, intelligence, agility, chance (and wisdom) within 3. */
+const PERFECT_TOLERANCE: Record<number, number> = { 125: 10, 118: 3, 126: 3, 119: 3, 123: 3, 124: 3 };
 
 export interface Perfection {
   damage: boolean;

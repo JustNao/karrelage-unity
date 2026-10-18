@@ -218,8 +218,16 @@ impl Module for Auction {
                 if v.get("defaults").is_none() {
                     v["defaults"] = Value::Array(ctx.data.defaults_for(v["gid"].as_i64()));
                 }
-                // lots stored before densities existed: derive them from the stored effects
+                // Stored lots may predate (or disagree with) the current data pack: re-tag their effects with the pack's
+                // group/order/density, and derive the lot density when it is missing.
                 if let Some(rows) = v.get_mut("rows").and_then(Value::as_array_mut) {
+                    for e in rows.iter_mut().flat_map(|r| r["effects"].as_array_mut()).flatten() {
+                        if let Some(row) = e["action"].as_i64().and_then(|a| ctx.data.effects.get(&a)) {
+                            e["group"] = json!(row.group);
+                            e["order"] = json!(row.order);
+                            e["density"] = json!(row.density);
+                        }
+                    }
                     for r in rows.iter_mut().filter(|r| r.get("density").is_none()) {
                         let sum: f64 = r["effects"]
                             .as_array()
@@ -311,6 +319,9 @@ mod tests {
         let hub = crate::Hub::new(data, proto, dir, Arc::new(|_, _| {}), Arc::new(|_| {}));
         let items = hub.call("auction", "items", Value::Null).unwrap();
         assert_eq!(items[0]["rows"][0]["density"], json!(0.0)); // +5 vitalité (1.0) and -10 vitalité (-1.0)
+        // effects stored without a group get the pack's (the UI's perfect-roll flags depend on it)
+        assert_eq!(items[0]["rows"][0]["effects"][0]["group"], json!("stats"));
+        assert_eq!(items[0]["rows"][0]["effects"][0]["density"], json!(0.2f32 as f64));
     }
 
     /// Golden test: the python formatter's output for the synthetic AH packet must equal ours.

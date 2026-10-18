@@ -23,7 +23,7 @@
     {row.name} <span class="mut">{row.level != null ? "niv. " + row.level : ""}</span>
     <span class="flag" class:on={perfect.damage} title="All default damage effects at their max">★ Perfect damage</span>
     <span class="flag" class:on={perfect.resist} title="All default resistances at their max">★ Perfect resistances</span>
-    <span class="flag" class:on={perfect.main} title="Main stats at max (within 3 for force/intelligence/agility/chance, 10 for vitality)">★ Perfect main stats</span>
+    <span class="flag" class:on={perfect.main} title="Main stats at max (within 3 for force/intelligence/agility/chance/wisdom, 10 for vitality)">★ Perfect main stats</span>
     {#if row.locked}<span class="shield" title="Empêche les futures forgemagies — cannot be modified anymore">🛡 Transcendance</span>{/if}
   </h4>
   <div class="sub">
