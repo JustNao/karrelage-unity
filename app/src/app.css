@@ -1,8 +1,8 @@
-/* Noto Sans Mono (OFL, see fonts/LICENSE-NotoSansMono.txt) is the default font; the system monospace is the fallback. */
-@font-face { font-family: "Noto Sans Mono"; src: url("./fonts/noto-sans-mono-latin-400-normal.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
-@font-face { font-family: "Noto Sans Mono"; src: url("./fonts/noto-sans-mono-latin-700-normal.woff2") format("woff2"); font-weight: 600 800; font-style: normal; font-display: swap; }
+/* Libron (OFL, see fonts/LICENSE-Libron.txt) is the default font; the system serif is the fallback. */
+@font-face { font-family: "Libron"; src: url("./fonts/Libron-Regular.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Libron"; src: url("./fonts/Libron-Bold.woff2") format("woff2"); font-weight: 600 800; font-style: normal; font-display: swap; }
 :root {
-  --font: "Noto Sans Mono", ui-monospace, Consolas, monospace;
+  --font: "Libron", Georgia, serif;
   --bg: #14161a; --panel: #1c1f26; --line: #2a2e38; --fg: #d8dce4; --mut: #8a91a0; --acc: #5aa9ff;
   --ok: #4cc38a; --warn: #e0b04a; --bad: #e5646e; --c2s: #c792ea; --s2c: #7fd1b9;
 }
