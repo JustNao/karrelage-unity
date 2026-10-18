@@ -68,7 +68,7 @@
 
 <div class="rv">
   <div class="head">
-    <div class="fh">Runes <span class="mut">· prix de craft = ingrédients achetés tels quels ; cumulé = ingrédients achetés ou craftés, au moins cher ; bénéfice sur le cumulé, taxe HDV de 2 % déduite</span></div>
+    <div class="fh">Runes</div>
     <input type="search" placeholder="Rechercher une rune…" bind:value={q} />
     <label><input type="checkbox" bind:checked={onlyPriced} /> Prix connus seulement</label>
   </div>
