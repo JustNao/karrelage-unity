@@ -1,0 +1,17 @@
+[package]
+name = "loutil-app"
+version.workspace = true
+edition.workspace = true
+description = "Loutil: passive Dofus 3 packet reader"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+anyhow.workspace = true
+serde_json.workspace = true
+loutil-core = { path = "../../crates/core" }
+loutil-data = { path = "../../crates/data" }
+loutil-proto = { path = "../../crates/proto" }
+loutil-modules = { path = "../../crates/modules" }

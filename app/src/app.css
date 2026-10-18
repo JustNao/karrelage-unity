@@ -1,0 +1,20 @@
+:root {
+  --bg: #14161a; --panel: #1c1f26; --line: #2a2e38; --fg: #d8dce4; --mut: #8a91a0; --acc: #5aa9ff;
+  --ok: #4cc38a; --warn: #e0b04a; --bad: #e5646e; --c2s: #c792ea; --s2c: #7fd1b9;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f5f6f8; --panel: #fff; --line: #dde0e6; --fg: #1d2128; --mut: #6a7280; --acc: #1f6fd1;
+    --ok: #17915a; --warn: #a87414; --bad: #c4343f; --c2s: #8a3fb8; --s2c: #12806a;
+  }
+}
+* { box-sizing: border-box; }
+html, body, #app { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 13px/1.4 ui-monospace, Consolas, monospace; }
+input, select, button { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font: inherit; }
+button { cursor: pointer; }
+button:hover { border-color: var(--acc); }
+.mut { color: var(--mut); }
+pre { margin: 0; white-space: pre-wrap; word-break: break-all; }
+h3 { font: 600 12px system-ui; margin: 12px 0 4px; color: var(--mut); text-transform: uppercase; letter-spacing: 0.05em; }
+.fh { font: 600 14px system-ui; margin-bottom: 8px; }

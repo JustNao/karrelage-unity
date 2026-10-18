@@ -22,4 +22,5 @@ __pycache__/
 /target/
 /datapack/
 node_modules/
-/app/ui/dist/
+/app/dist/
+/app/src-tauri/gen/
