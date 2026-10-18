@@ -47,7 +47,7 @@ tools/                   Il2CppInspectorRedux, protodec, local .NET 10 (dotnet10
 ## Adding a feature
 1. Rust: new file in `crates/modules/src/` implementing `Module` (`interest` = clear message names, `on_message`, `call`, optional
    `format`/`init`); register it in `all()` in `lib.rs`. Shared helpers go in `crates/data` (pure data) or `crates/proto/util.rs`.
-2. UI: new folder `app/src/modules/<id>/` with `index.ts` (`{id, title, order, devOnly?, component}`) and `View.svelte`; it
+2. UI (tabs with side-by-side panels use `Columns` from `lib/columns.svelte.ts` + `.grip` dividers, like Objets / Paquets): new folder `app/src/modules/<id>/` with `index.ts` (`{id, title, order, devOnly?, component}`) and `View.svelte`; it
    appears as a tab automatically. Talk to the backend with `call(module, method, args)` and `on("<module>:<event>", fn)`.
 3. If it needs new messages: confirm their names in `work/overrides.json` (clear message/field names), add field roles to
    `pipeline/bindings.json` if a field has no clear name yet, re-run `export_pack.py`. Persist state through `save_json`/`load_json`

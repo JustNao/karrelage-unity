@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import { SvelteMap, SvelteSet } from "svelte/reactivity";
+  import { Columns } from "../../lib/columns.svelte";
   import { ago, call, kamas, on } from "../../lib/api";
   import { flip } from "svelte/animate";
   import DensityChart from "../../lib/components/DensityChart.svelte";
@@ -14,6 +15,7 @@
 
   interface Filter { a: number; min: string | number; max: string | number }
 
+  const cols = new Columns("loutil.cols.items", { list: 280, filter: 470 }); // resizable: list | listing (flexible) | filter
   let items = new SvelteMap<number, any>();
   let selGid = $state<number | null>(null);
   let picker = $state<EffectMeta[]>([]); // effects found on level 150-200 equipment (what the picker offers)
@@ -300,7 +302,7 @@
   });
 </script>
 
-<div class="view">
+<div class="view" style:grid-template-columns="{cols.w.list}px 5px 1fr 5px {cols.w.filter}px">
   <div class="ilist">
     <div class="sbar">
       <input type="search" placeholder="Rechercher un objet…" bind:value={search} />
@@ -325,6 +327,8 @@
       <div class="mut empty">{search ? "Aucun objet ne correspond à la recherche." : "Ouvrez un objet à l'hôtel de vente : il apparaît ici (dernière liste par objet)."}</div>
     {/each}
   </div>
+
+  <div class="grip" role="separator" aria-orientation="vertical" onpointerdown={(e) => cols.drag("list", 1, e)}></div>
 
   <SmoothScroll toTop>
     {#if item}
@@ -435,6 +439,8 @@
     {/if}
   </SmoothScroll>
 
+  <div class="grip" role="separator" aria-orientation="vertical" onpointerdown={(e) => cols.drag("filter", -1, e)}></div>
+
   <div class="filter">
     {#if item}
       {#if comp}
@@ -479,7 +485,7 @@
 </div>
 
 <style>
-  .view { flex: 1; min-height: 0; display: grid; grid-template-columns: 280px 1fr 470px; }
+  .view { flex: 1; min-height: 0; display: grid; }
   .ilist { overflow: auto; background: var(--panel); border-right: 1px solid var(--line); }
   .deal-ico { color: var(--ok); font-size: 10px; vertical-align: middle; }
   .ilist .sbar { display: flex; gap: 6px; padding: 6px 10px; cursor: default; position: sticky; top: 0; z-index: 2; background: var(--panel); }

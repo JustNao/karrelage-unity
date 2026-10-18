@@ -25,3 +25,7 @@ h3 { font: 600 12px system-ui; margin: 12px 0 4px; color: var(--mut); text-trans
 ::-webkit-scrollbar-thumb { background: #2b2f38; border: 1px solid #454b58; border-radius: 6px; }
 ::-webkit-scrollbar-thumb:hover { background: #3a3f4b; border-color: #5a6272; }
 ::-webkit-scrollbar-corner { background: #000; }
+
+/* draggable divider between resizable columns (see lib/columns.svelte.ts) */
+.grip { cursor: col-resize; background: var(--line); transition: background 0.15s; touch-action: none; }
+.grip:hover { background: var(--acc); }

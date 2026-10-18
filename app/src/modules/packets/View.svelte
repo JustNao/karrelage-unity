@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import { call, kamas, on } from "../../lib/api";
+  import { Columns } from "../../lib/columns.svelte";
   import ItemCard from "../../lib/components/ItemCard.svelte";
   import JsonTree from "../../lib/components/JsonTree.svelte";
 
@@ -17,26 +18,8 @@
   let editingName = $state(false);
   let nameDraft = $state("");
 
-  // Resizable panels (px): types | list | formatted | detail. The list takes what is left. Remembered between sessions.
-  let widths = $state({ types: 170, fmt: 420, detail: 480 });
-  try {
-    Object.assign(widths, JSON.parse(localStorage.getItem("loutil.packetCols") ?? "{}"));
-  } catch {}
-  /** Drag a divider: `dir` = +1 when the panel is on the left of the handle (grows with the pointer), -1 when on the right. */
-  function resize(key: "types" | "fmt" | "detail", dir: 1 | -1, e: PointerEvent) {
-    const x0 = e.clientX, w0 = widths[key];
-    const move = (ev: PointerEvent) => (widths[key] = Math.min(900, Math.max(100, w0 + dir * (ev.clientX - x0))));
-    const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      try {
-        localStorage.setItem("loutil.packetCols", JSON.stringify(widths));
-      } catch {}
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-    e.preventDefault();
-  }
+  // resizable panels: types | list (flexible) | formatted | detail
+  const cols = new Columns("loutil.cols.packets", { types: 170, fmt: 420, detail: 480 });
 
   const nm = (p: any) => p.name || p.type || "?";
   const fmtT = (t: number) => {
@@ -126,7 +109,7 @@
   <button onclick={clear}>Vider</button>
   <span class="mut">{visible.length} affichés / {packets.length} en mémoire</span>
 </div>
-<div class="grid" style:grid-template-columns={`${widths.types}px 5px 1fr 5px ${current?.fmt ? widths.fmt + "px 5px " : ""}${widths.detail}px`}>
+<div class="grid" style:grid-template-columns={`${cols.w.types}px 5px 1fr 5px ${current?.fmt ? cols.w.fmt + "px 5px " : ""}${cols.w.detail}px`}>
   <div class="types">
     {#each typeStats as [k, c] (k)}
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
@@ -135,7 +118,7 @@
       </div>
     {/each}
   </div>
-  <div class="grip" role="separator" aria-orientation="vertical" onpointerdown={(e) => resize("types", 1, e)}></div>
+  <div class="grip" role="separator" aria-orientation="vertical" onpointerdown={(e) => cols.drag("types", 1, e)}></div>
   <div class="list" bind:this={listEl}>
     <table>
       <tbody>
@@ -151,7 +134,7 @@
       </tbody>
     </table>
   </div>
-  <div class="grip" role="separator" aria-orientation="vertical" onpointerdown={(e) => resize(current?.fmt ? "fmt" : "detail", -1, e)}></div>
+  <div class="grip" role="separator" aria-orientation="vertical" onpointerdown={(e) => cols.drag(current?.fmt ? "fmt" : "detail", -1, e)}></div>
   {#if current?.fmt}
     <div class="fmt">
       {#if current.fmt.kind === "auction_items"}
@@ -164,7 +147,7 @@
       {/if}
     </div>
   {/if}
-  {#if current?.fmt}<div class="grip" role="separator" aria-orientation="vertical" onpointerdown={(e) => resize("detail", -1, e)}></div>{/if}
+  {#if current?.fmt}<div class="grip" role="separator" aria-orientation="vertical" onpointerdown={(e) => cols.drag("detail", -1, e)}></div>{/if}
   <div class="detail">
     {#if !current}
       <span class="mut">Sélectionnez un paquet.</span>
@@ -192,8 +175,6 @@
   .bar { display: flex; gap: 10px; align-items: center; padding: 6px 12px; border-bottom: 1px solid var(--line); }
   input[type="search"] { width: 240px; }
   .grid { flex: 1; min-height: 0; display: grid; }
-  .grip { cursor: col-resize; background: var(--line); transition: background 0.15s; }
-  .grip:hover { background: var(--acc); }
   .types, .detail, .fmt { background: var(--panel); overflow: auto; }
   .types { border-right: 1px solid var(--line); }
   .detail { border-left: 1px solid var(--line); padding: 10px; }
