@@ -157,6 +157,11 @@ impl Data {
         serde_json::json!({"recipes": recipes, "names": names})
     }
 
+    /// Equipment category (weapons, rings, hats, pets...): the only items the HDV tab keeps.
+    pub fn is_equipment(&self, gid: i64) -> bool {
+        self.items.get(&gid).and_then(|i| self.itemtypes.get(&i.type_id)).and_then(|t| t.category_id) == Some(EQUIPMENT_CATEGORY)
+    }
+
     pub fn is_companion(&self, gid: Option<i64>) -> bool {
         gid.and_then(|g| self.items.get(&g)).map_or(false, |i| COMPANION_TYPES.contains(&i.type_id))
     }

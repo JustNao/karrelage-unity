@@ -72,6 +72,9 @@ impl Auction {
         }
         let Some(rows) = f["rows"].as_array().filter(|r| !r.is_empty()) else { return };
         let Some(gid) = f["gid"].as_i64().or_else(|| rows[0]["gid"].as_i64()) else { return };
+        if !ctx.data.is_equipment(gid) {
+            return; // resources / consumables only feed the stored prices
+        }
         let mins: Vec<i64> = rows
             .iter()
             .filter_map(|r| r["prices"].get(0).and_then(|p| p["price"].as_i64()))
@@ -216,6 +219,9 @@ impl Module for Auction {
         if let Some(Value::Object(saved)) = load_json(&Self::store_path(ctx)) {
             let mut s = self.store.lock().unwrap();
             for (k, mut v) in saved {
+                if !v["gid"].as_i64().is_some_and(|g| ctx.data.is_equipment(g)) {
+                    continue; // stored before the HDV tab was limited to equipment
+                }
                 v["companion"] = json!(ctx.data.is_companion(v["gid"].as_i64()));
                 if v.get("defaults").is_none() {
                     v["defaults"] = Value::Array(ctx.data.defaults_for(v["gid"].as_i64()));
@@ -313,7 +319,7 @@ mod tests {
         }
         let dir = std::env::temp_dir().join("loutil-backfill");
         let _ = std::fs::remove_dir_all(&dir);
-        let store = json!({"1": {"gid": 1, "updated": 0, "rows": [{"effects": [
+        let store = json!({"25222": {"gid": 25222, "updated": 0, "rows": [{"effects": [
             {"action": 125, "params": [5], "status": "normal"},
             {"action": 118, "params": [10], "status": "removed"}, // default effect missing on the lot: not counted
             {"action": 153, "params": [10], "status": "normal"},

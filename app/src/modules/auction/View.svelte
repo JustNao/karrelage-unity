@@ -361,7 +361,7 @@
         {#if pin}<button class="on" onclick={() => (pin = null)} title="Arrêter de comparer les lots avec le lot épinglé">Désépingler {pin.item.name}</button>{/if}
       </div>
       {#if craft}
-        <div class="craft">
+        <div class="craft" class:good={!!gain && gain.profit >= 0}>
           <div class="crow">
             <span>Craft <b>{craft.cost != null ? kamas(Math.round(craft.cost)) : "—"}</b></span>
             {#if Number.isFinite(sale)}<span class="mut">Vente min {kamas(Math.round(sale))}</span>{/if}
@@ -543,7 +543,8 @@
   .view { flex: 1; min-height: 0; display: grid; }
   .ilist { overflow: auto; background: var(--panel); border-right: 1px solid var(--line); }
   .deal-ico { display: inline-block; width: 8px; height: 8px; margin-left: 4px; border-radius: 50%; background: var(--ok); vertical-align: middle; position: relative; top: -1px; font-size: 0; }
-  .craft { padding: 4px 10px; font-family: system-ui, sans-serif; font-size: 13px; }
+  .craft { margin: 0 0 10px; padding: 6px 10px; border: 1px solid var(--bad); border-radius: 8px; font-family: system-ui, sans-serif; font-size: 13px; }
+  .craft.good { border-color: var(--ok); }
   .craft .crow { display: flex; gap: 14px; flex-wrap: wrap; align-items: baseline; }
   .craft .gain b, .craft .gain { color: var(--ok); }
   .craft .loss b, .craft .loss { color: var(--bad); }
