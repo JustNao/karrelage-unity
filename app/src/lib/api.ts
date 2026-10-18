@@ -37,5 +37,5 @@ export const kamas = (n: number) => {
 };
 export const ago = (t: number) => {
   const d = Math.round(Date.now() / 1000 - t);
-  return d < 60 ? `${d}s` : d < 3600 ? `${Math.round(d / 60)}min` : `${Math.round(d / 3600)}h`;
+  return "il y a " + (d < 60 ? `${d}s` : d < 3600 ? `${Math.round(d / 60)}min` : `${Math.round(d / 3600)}h`);
 };

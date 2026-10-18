@@ -69,9 +69,9 @@
 
 <div class="chart" bind:clientWidth={W}>
   <div class="legend">
-    <span><i class="d good"></i>Good deal</span><span><i class="d added"></i>Added effect</span><span><i class="d missing"></i>Missing effect</span>
+    <span><i class="d good"></i>Bonne affaire</span><span><i class="d added"></i>EXO</span><span><i class="d missing"></i>Effet manquant</span>
   </div>
-  <svg width={W} height={H} role="img" aria-label="Density against price">
+  <svg width={W} height={H} role="img" aria-label="Densité en fonction du prix">
     <path d={band} class="band" />
     <line x1={M.l} x2={W - M.r} y1={H - M.b} y2={H - M.b} class="axis" />
     {#each ticks as t}

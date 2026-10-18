@@ -258,7 +258,7 @@
     document.getElementById(`lot-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
   }
   async function forget() {
-    if (confirm("Forget all stored items?")) await call("auction", "clear");
+    if (confirm("Oublier tous les objets enregistrés ?")) await call("auction", "clear");
   }
   function put(i: any) {
     items.set(i.gid, i);
@@ -309,92 +309,92 @@
           <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
           <div class="irow" class:sel={selGid === i.gid} onclick={() => (selGid = i.gid)}>
             <b>{i.name}</b> <span class="mut">niv. {i.level ?? "?"}</span>
-            {#if dealCounts.get(i.gid)}<span class="deal-ico" title="{dealCounts.get(i.gid)} good {dealCounts.get(i.gid) === 1 ? 'deal' : 'deals'} in this listing">●</span>{/if}<br />
-            <span class="mut">{i.lots} lots · {i.min_price ? "min " + kamas(i.min_price) : "—"} · {ago(i.updated)} ago{i.demo ? " · demo" : ""}</span>
+            {#if dealCounts.get(i.gid)}<span class="deal-ico" title="{dealCounts.get(i.gid)} {dealCounts.get(i.gid) === 1 ? 'bonne affaire' : 'bonnes affaires'} dans cette liste">●</span>{/if}<br />
+            <span class="mut">{i.lots} lots · {i.min_price ? "min " + kamas(i.min_price) : "—"} · {ago(i.updated)}{i.demo ? " · demo" : ""}</span>
           </div>
         {/each}
       {/if}
     {:else}
-      <div class="mut empty">Open an item in the auction house: it appears here (latest listing per item).</div>
+      <div class="mut empty">Ouvrez un objet à l'hôtel de vente : il apparaît ici (dernière liste par objet).</div>
     {/each}
   </div>
 
   <SmoothScroll toTop>
     {#if item}
       <div class="head">
-        <div class="fh">{item.name} <span class="mut">{item.type ?? ""} · gid {item.gid} · updated {ago(item.updated)} ago · {rows.length}/{item.lots} lots</span></div>
-        <button class="sort" onclick={() => (sortDir = -sortDir)} title="Click to flip the price order">
-          Price <span class="arrow" class:desc={sortDir === -1}>↑</span>
+        <div class="fh">{item.name} <span class="mut">{item.type ?? ""} · gid {item.gid} · mis à jour {ago(item.updated)} · {rows.length}/{item.lots} lots</span></div>
+        <button class="sort" onclick={() => (sortDir = -sortDir)} title="Cliquer pour inverser l'ordre des prix">
+          Prix <span class="arrow" class:desc={sortDir === -1}>↑</span>
         </button>
-        <button onclick={() => ((allOpen = !allOpen), openSet.clear())}>{allOpen ? "Collapse all" : "Expand all"}</button>
-        {#if pin}<button class="on" onclick={() => (pin = null)} title="Stop comparing lots with the pinned lot">Unpin {pin.item.name}</button>{/if}
-        <button onclick={forget}>Forget all items</button>
+        <button onclick={() => ((allOpen = !allOpen), openSet.clear())}>{allOpen ? "Tout replier" : "Tout déplier"}</button>
+        {#if pin}<button class="on" onclick={() => (pin = null)} title="Arrêter de comparer les lots avec le lot épinglé">Désépingler {pin.item.name}</button>{/if}
+        <button onclick={forget}>Oublier tous les objets</button>
       </div>
       {#if points.length >= 3}
         <div class="graph"><DensityChart {points} selected={tab === "trans" && cand ? cand.id : picked} onselect={focusLot} /></div>
       {/if}
       {#if !comp}<div class="tabs">
-        <button class:on={tab === "listing"} onclick={() => (tab = "listing")}>Listing</button>
+        <button class:on={tab === "listing"} onclick={() => (tab = "listing")}>Liste</button>
         <button class:on={tab === "trans"} onclick={() => (tab = "trans")}>Transcendance{trans.opportunities.length ? ` · ${trans.opportunities.length}` : ""}</button>
       </div>{/if}
       {#if tab === "trans" && !comp}
         <div class="trans">
           <div class="mut note">
-            Lots of this item with the transcendance lock and an added effect show what a rune is worth. Candidates are unlocked lots
-            without an overmax effect; profit = sale price − {AH_TAX * 100}% tax − lot price − rune price (Stored prices tab).
+            Les lots de cet objet avec le verrou de transcendance et un EXO montrent ce que vaut une rune. Les candidats sont des lots non verrouillés
+            sans effet en sur-max ; profit = prix de vente − {AH_TAX * 100} % de taxe − prix du lot − prix de la rune (onglet Prix enregistrés).
           </div>
           {#if saved.length}
-            <div class="ghead">Saved candidates</div>
+            <div class="ghead">Candidats enregistrés</div>
             {#each saved as sv (sv.key)}
               {@const live = stillListed(sv)}
               <div class="opp">
                 <div class="oh">
                   <b class="ok">+{kamas(sv.profit)}</b>
-                  <span class="inv" title="Lot price + rune price">invest {kamas(sv.buy + sv.runeCost)}</span>
+                  <span class="inv" title="Prix du lot + prix de la rune">investissement {kamas(sv.buy + sv.runeCost)}</span>
                   <button class="link" onclick={() => (selGid = sv.gid)}>{sv.itemName}</button>
-                  <span>add {sv.rune} (+{sv.value} {sv.label})</span>
-                  <span class="mut">buy {kamas(sv.buy)} · rune {kamas(sv.runeCost)} · sell ~{kamas(sv.sale)} · saved {ago(sv.savedAt)} ago</span>
-                  {#if live === true}<span class="ok">still listed</span>{:else if live === false}<span class="warn">no longer in the latest scan</span>{/if}
-                  <button class="mini" onclick={() => persistSaved(saved.filter((x) => x.key !== sv.key))}>Remove ✕</button>
+                  <span>ajouter {sv.rune} (+{sv.value} {sv.label})</span>
+                  <span class="mut">achat {kamas(sv.buy)} · rune {kamas(sv.runeCost)} · vente ~{kamas(sv.sale)} · enregistré {ago(sv.savedAt)}</span>
+                  {#if live === true}<span class="ok">toujours en vente</span>{:else if live === false}<span class="warn">absent du dernier scan</span>{/if}
+                  <button class="mini" onclick={() => persistSaved(saved.filter((x) => x.key !== sv.key))}>Retirer ✕</button>
                 </div>
                 <ItemCard row={sv.row} collapsible open={openSet.has("s" + sv.key)} ontoggle={() => toggleOpen("s" + sv.key)} />
               </div>
             {/each}
           {/if}
           {#if trans.targets.length === 0}
-            <div class="mut">No transcended lot of this item in the listing: nothing to compare with.</div>
+            <div class="mut">Aucun lot transcendé de cet objet dans la liste : rien à comparer.</div>
           {:else}
-            <div class="ghead">Transcended lots seen</div>
+            <div class="ghead">Lots transcendés vus</div>
             {#each trans.targets as t (targetKey(t))}
               <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-              <div class="trow" class:foc={focus === targetKey(t)} title="Click to show only candidates for this rune" onclick={() => (focus = focus === targetKey(t) ? null : targetKey(t))}>
+              <div class="trow" class:foc={focus === targetKey(t)} title="Cliquer pour ne voir que les candidats de cette rune" onclick={() => (focus = focus === targetKey(t) ? null : targetKey(t))}>
                 <b>+{t.value} {effLabel(t.a)}</b>
-                <span class="mut">{t.lots} {t.lots === 1 ? "lot" : "lots"} · from {kamas(t.sale)} ·</span>
-                {#if !t.rune}<span class="warn">no matching rune</span>
-                {:else if t.runeCost == null}<span class="warn">{runeName(t.rune.name)}: price unknown, open it in the auction house</span>
+                <span class="mut">{t.lots} {t.lots === 1 ? "lot" : "lots"} · à partir de {kamas(t.sale)} ·</span>
+                {#if !t.rune}<span class="warn">aucune rune correspondante</span>
+                {:else if t.runeCost == null}<span class="warn">{runeName(t.rune.name)} : prix inconnu, ouvrez-la à l'hôtel de vente</span>
                 {:else}<span class="mut">{runeName(t.rune.name)} {kamas(t.runeCost)}</span>
-                  {#if t.stale}<span class="warn" title="Open the rune in the auction house to refresh its price">⚠ rune price older than a day</span>{/if}{/if}
+                  {#if t.stale}<span class="warn" title="Ouvrez la rune à l'hôtel de vente pour actualiser son prix">⚠ prix de la rune vieux de plus d'un jour</span>{/if}{/if}
               </div>
             {/each}
-            {#if trans.unpricedCount}<div class="mut note">{trans.unpricedCount} candidate lots cannot be ranked until their rune has a stored price.</div>{/if}
-            <div class="ghead">Profitable candidates{#if focus} <button class="mini" onclick={() => (focus = null)}>Show all runes ✕</button>{/if}</div>
+            {#if trans.unpricedCount}<div class="mut note">{trans.unpricedCount} lots candidats ne peuvent pas être classés tant que leur rune n'a pas de prix enregistré.</div>{/if}
+            <div class="ghead">Candidats rentables{#if focus} <button class="mini" onclick={() => (focus = null)}>Toutes les runes ✕</button>{/if}</div>
             {#each trans.opportunities as o (o.row.uid ?? o.buy + "-" + o.row.density)}
               {@const t = o.best!.target}
               {@const cid = lotKey(o.row, rows.indexOf(o.row))}
               <div class="opp">
                 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-                <div class="oh sel" class:picked={cand?.id === cid} title="Click to highlight this lot and the lots with the same rune on the graph" onclick={() => (cand = cand?.id === cid ? null : { id: cid, a: t.a, value: t.value })}>
+                <div class="oh sel" class:picked={cand?.id === cid} title="Cliquer pour mettre en avant ce lot et les lots avec la même rune sur le graphique" onclick={() => (cand = cand?.id === cid ? null : { id: cid, a: t.a, value: t.value })}>
                   <b class="ok">+{kamas(o.best!.profit)}</b>
-                  <span class="inv" title="Lot price + rune price">invest {kamas(o.buy + (t.runeCost ?? 0))}</span>
-                  <span>add {t.rune?.name} (+{t.value} {effLabel(t.a)})</span>
-                  {#if t.stale}<span class="warn" title="Rune price older than a day">⚠ stale rune price</span>{/if}
-                  <button class="mini" class:on={isSaved(o)} title="Keep this candidate to come back to it later" onclick={(ev) => (ev.stopPropagation(), toggleSaved(o))}>{isSaved(o) ? "Saved ✓" : "Save"}</button>
-                  <span class="mut">buy {kamas(o.buy)} · rune {kamas(t.runeCost ?? 0)} · sell ~{kamas(t.sale)} · density {o.z >= 0 ? "+" : ""}{o.z.toFixed(1)}σ</span>
+                  <span class="inv" title="Prix du lot + prix de la rune">investissement {kamas(o.buy + (t.runeCost ?? 0))}</span>
+                  <span>ajouter {t.rune?.name} (+{t.value} {effLabel(t.a)})</span>
+                  {#if t.stale}<span class="warn" title="Prix de la rune vieux de plus d'un jour">⚠ prix de rune périmé</span>{/if}
+                  <button class="mini" class:on={isSaved(o)} title="Garder ce candidat pour y revenir plus tard" onclick={(ev) => (ev.stopPropagation(), toggleSaved(o))}>{isSaved(o) ? "Enregistré ✓" : "Enregistrer"}</button>
+                  <span class="mut">achat {kamas(o.buy)} · rune {kamas(t.runeCost ?? 0)} · vente ~{kamas(t.sale)} · densité {o.z >= 0 ? "+" : ""}{o.z.toFixed(1)}σ</span>
                 </div>
                 <ItemCard row={o.row} collapsible open={openSet.has("t" + (o.row.uid ?? ""))} ontoggle={() => toggleOpen("t" + (o.row.uid ?? ""))} />
               </div>
             {:else}
-              <div class="mut">No profitable candidate right now.</div>
+              <div class="mut">Aucun candidat rentable pour le moment.</div>
             {/each}
           {/if}
         </div>
@@ -402,14 +402,14 @@
       {#if deals.length}
         <div class="deals">
           <button class="dhead" aria-expanded={dealsOpen} onclick={() => (dealsOpen = !dealsOpen)}>
-            <span class="chev" class:shut={!dealsOpen}>▾</span> Good deals <span class="mut">· {deals.length} {deals.length === 1 ? "lot stands" : "lots stand"} out above the price trend</span>
+            <span class="chev" class:shut={!dealsOpen}>▾</span> Bonnes affaires <span class="mut">· {deals.length} {deals.length === 1 ? "lot se démarque" : "lots se démarquent"} au-dessus de la tendance des prix</span>
           </button>
           {#each dealsOpen ? deals : [] as d (d.key)}
             {@const alt = trans.alternative(d.row)}
             <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-            <div class="deal" class:faded={lacksFade(d.row)} title="Click to jump to the lot in the list" onclick={() => focusLot(d.key)}>
+            <div class="deal" class:faded={lacksFade(d.row)} title="Cliquer pour aller au lot dans la liste" onclick={() => focusLot(d.key)}>
               {#if alt}
-                <div class="warn altw">⚠ Similar item available through Transcendance: lot {kamas(alt.buy)} + {alt.rune.name} {kamas(alt.runeCost)} = {kamas(alt.cost)} (saves {kamas(alt.saving)})</div>
+                <div class="warn altw">⚠ Objet similaire réalisable par Transcendance : lot {kamas(alt.buy)} + {alt.rune.name} {kamas(alt.runeCost)} = {kamas(alt.cost)} (économie de {kamas(alt.saving)})</div>
               {/if}
               <ItemCard row={d.row} companion={comp} {fade} onfade={toggleFade} pinned={isPin(d.row)} onpin={comp ? undefined : () => togglePin(d.row)} versus={versusFor(d.row)} />
             </div>
@@ -422,7 +422,7 @@
           <ItemCard row={r} companion={comp} collapsible open={allOpen || openSet.has(key)} ontoggle={() => toggleOpen(key)} {fade} onfade={toggleFade} pinned={isPin(r)} onpin={comp ? undefined : () => togglePin(r)} versus={versusFor(r)} />
         </div>
       {:else}
-        <div class="mut">No lot matches the filter</div>
+        <div class="mut">Aucun lot ne correspond au filtre</div>
       {/each}
       {/if}
     {/if}
@@ -431,22 +431,22 @@
   <div class="filter">
     {#if item}
       {#if comp}
-        <div class="fh">Filter {item.type?.toLowerCase() ?? "companion"}s</div>
+        <div class="fh">Filtrer les {item.type?.toLowerCase() ?? "compagnon"}s</div>
         {@const lv = flist(item.gid).find((z) => z.a === LEVEL_EFFECT)}
         <div class="frow lv" class:on={active(LEVEL_EFFECT)}>
           <div class="lb">Niveau</div>
           <input type="number" placeholder="min" value={lv?.min ?? ""} oninput={(e) => (filterOf(item.gid, LEVEL_EFFECT).min = e.currentTarget.value)} />
           <input type="number" placeholder="max" value={lv?.max ?? ""} oninput={(e) => (filterOf(item.gid, LEVEL_EFFECT).max = e.currentTarget.value)} />
-          <button class="mini" disabled={!active(LEVEL_EFFECT)} onclick={() => clearEffect(LEVEL_EFFECT)}>Clear</button>
+          <button class="mini" disabled={!active(LEVEL_EFFECT)} onclick={() => clearEffect(LEVEL_EFFECT)}>Effacer</button>
         </div>
-        <label class="leg"><input type="checkbox" bind:checked={legendOnly} /> Statut légendaire only</label>
+        <label class="leg"><input type="checkbox" bind:checked={legendOnly} /> Statut légendaire uniquement</label>
       {:else}
-      <div class="fh">Filter effects</div>
+      <div class="fh">Filtrer les effets</div>
       <div class="btns">
-        <button onclick={() => preset("min")} title="min = lowest value of each effect's default range">Min values</button>
-        <button onclick={() => preset("damage")} title="perfect (default max) for damage effects">Damage</button>
-        <button onclick={() => preset("resist")} title="perfect (default max) for % resistances">Résistances</button>
-        <button onclick={() => preset("clear")}>Clear</button>
+        <button onclick={() => preset("min")} title="min = valeur la plus basse de la plage de base de chaque effet">Valeurs min</button>
+        <button onclick={() => preset("damage")} title="parfait (max de base) pour les effets de dommages">Dommages</button>
+        <button onclick={() => preset("resist")} title="parfait (max de base) pour les % de résistance">Résistances</button>
+        <button onclick={() => preset("clear")}>Effacer</button>
       </div>
       <div class="btns"><EffectPicker effects={pickable} onpick={(id) => filterOf(item.gid, id)} /></div>
       {#each groups as g (g.key)}
@@ -458,13 +458,13 @@
             <small class="rg">{rangeLabel(x.def)}</small>
             <input type="number" placeholder="min" value={y?.min ?? ""} oninput={(e) => (filterOf(item.gid, x.a).min = e.currentTarget.value)} />
             <input type="number" placeholder="max" value={y?.max ?? ""} oninput={(e) => (filterOf(item.gid, x.a).max = e.currentTarget.value)} />
-            <button class="mini" onclick={() => setMin(x.a, x.def)} title="Fill min with the low end of the default range">Set min</button>
-            <button class="mini" onclick={() => setPerf(x.a, x.def)} title="Fill min with the max of the default range (perfect roll)">Set perf</button>
-            <button class="mini" disabled={!active(x.a)} onclick={() => clearEffect(x.a)}>Clear</button>
+            <button class="mini" onclick={() => setMin(x.a, x.def)} title="Remplir le min avec le bas de la plage de base">Définir min</button>
+            <button class="mini" onclick={() => setPerf(x.a, x.def)} title="Remplir le min avec le max de la plage de base (jet parfait)">Définir perf</button>
+            <button class="mini" disabled={!active(x.a)} onclick={() => clearEffect(x.a)}>Effacer</button>
           </div>
         {/each}
       {:else}
-        <div class="mut">No effects</div>
+        <div class="mut">Aucun effet</div>
       {/each}
       {/if}
     {/if}

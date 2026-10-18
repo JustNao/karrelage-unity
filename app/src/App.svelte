@@ -30,20 +30,20 @@
         <button class="tab" class:on={active?.id === m.id} onclick={() => (current = m.id)}>{m.title}</button>
       {/each}
     </nav>
-    <button class="sw" class:on={s.on} role="switch" aria-checked={!!s.on} aria-label="Toggle capture" disabled={!s.ready} onclick={toggle}></button>
-    <span class="state" class:on={s.on}>{s.on ? "ON" : "OFF"}</span>
-    <span class="mut">{s.on ? (s.tracking?.length ? "Connected to Dofus" : "Waiting for Dofus.exe…") : ""}</span>
+    <button class="sw" class:on={s.on} role="switch" aria-checked={!!s.on} aria-label="Activer la capture" disabled={!s.ready} onclick={toggle}></button>
+    <span class="state" class:on={s.on}>{s.on ? "ACTIVE" : "INACTIVE"}</span>
+    <span class="mut">{s.on ? (s.tracking?.length ? "Connecté à Dofus" : "En attente de Dofus.exe…") : ""}</span>
     <span class="grow"></span>
-    {#if app.dev}<button onclick={() => devInject()} title="Push the bundled synthetic auction packet through the pipeline">Inject demo</button>{/if}
-    <label class="mut"><input type="checkbox" checked={app.dev} onchange={(e) => app.setDev(e.currentTarget.checked)} /> Developer</label>
+    {#if app.dev}<button onclick={() => devInject()} title="Injecter le paquet d'hôtel de vente synthétique fourni">Injecter la démo</button>{/if}
+    <label class="mut"><input type="checkbox" checked={app.dev} onchange={(e) => app.setDev(e.currentTarget.checked)} /> Développeur</label>
   </header>
 
   {#if !s.ready && s.error}
-    <div class="banner bad">Data pack problem: {s.error}</div>
+    <div class="banner bad">Problème avec le pack de données : {s.error}</div>
   {/if}
   {#if s.npcapError}
     <div class="banner warn">
-      Capture needs <b>Npcap</b> ({s.npcapError}). Install it from <b>npcap.com</b>, then restart Loutil.
+      La capture nécessite <b>Npcap</b> ({s.npcapError}). Installez-le depuis <b>npcap.com</b>, puis relancez Loutil.
     </div>
   {/if}
   {#if err}<div class="banner bad">{err}</div>{/if}

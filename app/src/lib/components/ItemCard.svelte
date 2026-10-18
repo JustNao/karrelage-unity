@@ -46,9 +46,9 @@
   const pinPrice = $derived(versus ? versus.unitPrice(versus.pin) : Infinity);
   const priceDelta = $derived(myPrice - pinPrice);
   const hint = (e: any) =>
-    `effect ${e.action}` +
-    (e.range ? ` · default ${rangeLabel(e.range).slice(1, -1)}` : "") +
-    (e.status === "added" ? " · added (not a default effect)" : e.status === "above" ? " · above default max" : e.status === "removed" ? " · removed (default effect missing)" : "");
+    `effet ${e.action}` +
+    (e.range ? ` · de base ${rangeLabel(e.range).slice(1, -1)}` : "") +
+    (e.status === "added" ? " · EXO (pas un effet de base)" : e.status === "above" ? " · au-dessus du max de base" : e.status === "removed" ? " · retiré (effet de base manquant)" : "");
 </script>
 
 {#snippet line(e: any, mirror: boolean)}
@@ -62,8 +62,8 @@
 {#snippet highlight(e: any)}
   {#if e.status === "added" && onfade}
     <!-- stopPropagation: the card toggles / jumps on click, this button must not -->
-    <button class="fade" class:on={fade === e.action} title="Highlight the lots that have this effect: the others fade out (list, graph, good deals)" onclick={(ev) => (ev.stopPropagation(), onfade(e.action))}>
-      {fade === e.action ? "Show all" : "Highlight"}
+    <button class="fade" class:on={fade === e.action} title="Mettre en avant les lots qui ont cet effet : les autres sont estompés (liste, graphique, bonnes affaires)" onclick={(ev) => (ev.stopPropagation(), onfade(e.action))}>
+      {fade === e.action ? "Tout afficher" : "Mettre en avant"}
     </button>
   {/if}
 {/snippet}
@@ -74,30 +74,30 @@
     {#if collapsible}<span class="chev">{open ? "▾" : "▸"}</span>{/if}
     {row.name} <span class="mut">{row.level != null ? "niv. " + row.level : ""}</span>
     {#if onpin}
-      <button class="pin" class:on={pinned} title="Compare every lot you look at with this one" onclick={(ev) => (ev.stopPropagation(), onpin())}>{pinned ? "Unpin" : "Pin item"}</button>
+      <button class="pin" class:on={pinned} title="Comparer chaque lot consulté avec celui-ci" onclick={(ev) => (ev.stopPropagation(), onpin())}>{pinned ? "Désépingler" : "Épingler"}</button>
     {/if}
     {#if companion}
-      <span class="flag on" title="Niveau (total xp {level != null ? xpOfLevel(level).toLocaleString('fr-FR') : '?'})">{level != null ? "Niveau " + level : "Niveau ?"}</span>
+      <span class="flag on" title="Niveau (xp totale {level != null ? xpOfLevel(level).toLocaleString('fr-FR') : '?'})">{level != null ? "Niveau " + level : "Niveau ?"}</span>
       <span class="flag" class:on={legendary}>★ Statut légendaire</span>
     {:else}
-    <span class="flag" class:on={perfect.damage} title="All default damage effects at their max">★ Perfect damage</span>
-    <span class="flag" class:on={perfect.resist} title="All default resistances at their max">★ Perfect resistances</span>
-    <span class="flag" class:on={perfect.main} title="Main stats at max (within 3 for force/intelligence/agility/chance/wisdom, 10 for vitality)">★ Perfect main stats</span>
-    {#if row.locked}<span class="shield" title="Empêche les futures forgemagies — cannot be modified anymore">🛡 Transcendance</span>{/if}
+    <span class="flag" class:on={perfect.damage} title="Tous les effets de dommages de base à leur maximum">★ Dommages parfaits</span>
+    <span class="flag" class:on={perfect.resist} title="Toutes les résistances de base à leur maximum">★ Résistances parfaites</span>
+    <span class="flag" class:on={perfect.main} title="Caractéristiques principales au maximum (à 3 près pour force/intelligence/agilité/chance/sagesse, 10 pour la vitalité)">★ Caractéristiques parfaites</span>
+    {#if row.locked}<span class="shield" title="Empêche les futures forgemagies — ne peut plus être modifié">🛡 Transcendance</span>{/if}
     {/if}
   </h4>
   <div class="sub">
     {row.type ?? ""} · uid {row.uid ?? "?"}
-    {#if row.gid == null} · unresolved ints {JSON.stringify(row.ints)}{/if}
+    {#if row.gid == null} · entiers non résolus {JSON.stringify(row.ints)}{/if}
     {#if row.meta?.crafted_by} · fabriqué par {row.meta.crafted_by}{/if}
     {#if row.meta?.modified_by} · modifié par {row.meta.modified_by}{/if}
   </div>
 
   {#if versus}
     <div class="cmp">
-      <div class="hd">This lot</div>
+      <div class="hd">Ce lot</div>
       <div class="hd"></div>
-      <div class="hd r">Pinned · {versus.name}</div>
+      <div class="hd r">Épinglé · {versus.name}</div>
 
       <div class="l" class:hot={hov === "price"} {...hover("price")}>{#if Number.isFinite(myPrice)}<span class="pr"><b>{kamas(myPrice)}</b></span>{:else}<span class="pr no">—</span>{/if}</div>
       <div class="d" class:hot={hov === "price"} {...hover("price")} class:up={priceDelta < 0} class:down={priceDelta > 0}>{Number.isFinite(priceDelta) ? (priceDelta === 0 ? "=" : (priceDelta > 0 ? "+" : "−") + kamas(Math.abs(priceDelta))) : ""}</div>
@@ -140,7 +140,7 @@
         {/each}
       </ul>
     {:else if open}
-      <div class="none">no effects</div>
+      <div class="none">aucun effet</div>
     {/if}
   {/if}
 </div>

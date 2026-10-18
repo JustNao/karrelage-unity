@@ -98,18 +98,18 @@
 </script>
 
 <div class="bar">
-  <input type="search" placeholder="Filter (name, field, value)…" bind:value={q} />
-  <select bind:value={fdir}><option value="">Both dirs</option><option>C-&gt;S</option><option>S-&gt;C</option></select>
-  <select bind:value={fkind}><option value="">All kinds</option><option>event</option><option>request</option><option>response</option></select>
-  <label><input type="checkbox" bind:checked={follow} /> Follow</label>
-  <button onclick={clear}>Clear</button>
-  <span class="mut">{visible.length} shown / {packets.length} buffered</span>
+  <input type="search" placeholder="Filtrer (nom, champ, valeur)…" bind:value={q} />
+  <select bind:value={fdir}><option value="">Les deux sens</option><option>C-&gt;S</option><option>S-&gt;C</option></select>
+  <select bind:value={fkind}><option value="">Tous types</option><option value="event">événement</option><option value="request">requête</option><option value="response">réponse</option></select>
+  <label><input type="checkbox" bind:checked={follow} /> Suivre</label>
+  <button onclick={clear}>Vider</button>
+  <span class="mut">{visible.length} affichés / {packets.length} en mémoire</span>
 </div>
 <div class="grid" class:hasfmt={!!current?.fmt}>
   <div class="types">
     {#each typeStats as [k, c] (k)}
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-      <div class:hid={hidden.has(k)} class:sel={onlyType === k} title="click: only this · shift-click: hide" onclick={(e) => clickType(k, e)}>
+      <div class:hid={hidden.has(k)} class:sel={onlyType === k} title="clic : seulement celui-ci · maj+clic : masquer" onclick={(e) => clickType(k, e)}>
         <span>{k}</span><span class="mut">{c}</span>
       </div>
     {/each}
@@ -122,7 +122,7 @@
             <td class="t">{fmtT(p.t)}</td>
             <td class="d {p.dir === 'C->S' ? 'c2s' : 's2c'}">{p.dir === "C->S" ? "→ S" : "← S"}</td>
             <td class="k">{p.kind ?? ""}</td>
-            <td class="n">{nm(p)}{#if p.name && p.type && p.name !== p.type}<span class="badge {p.conf ?? 'none'}" title="obfuscated: {p.type}">{p.type} · {p.conf ?? "none"}</span>{/if}</td>
+            <td class="n">{nm(p)}{#if p.name && p.type && p.name !== p.type}<span class="badge {p.conf ?? 'none'}" title="obfusqué : {p.type}">{p.type} · {p.conf ?? "none"}</span>{/if}</td>
             <td>{summary(p)}</td>
           </tr>
         {/each}
@@ -132,10 +132,10 @@
   {#if current?.fmt}
     <div class="fmt">
       {#if current.fmt.kind === "auction_items"}
-        <div class="fh">{current.fmt.title ?? "(unknown item)"} <span class="mut">{current.fmt.type ?? ""}{current.fmt.gid ? " · gid " + current.fmt.gid : ""}</span></div>
-        {#each current.fmt.rows as r}<ItemCard row={r} />{:else}<div class="mut">no lots</div>{/each}
+        <div class="fh">{current.fmt.title ?? "(objet inconnu)"} <span class="mut">{current.fmt.type ?? ""}{current.fmt.gid ? " · gid " + current.fmt.gid : ""}</span></div>
+        {#each current.fmt.rows as r}<ItemCard row={r} />{:else}<div class="mut">aucun lot</div>{/each}
       {:else if current.fmt.kind === "error"}
-        <div>formatter error: {current.fmt.error}</div>
+        <div>erreur du formateur : {current.fmt.error}</div>
       {:else}
         <pre><JsonTree v={current.fmt} /></pre>
       {/if}
@@ -143,22 +143,22 @@
   {/if}
   <div class="detail">
     {#if !current}
-      <span class="mut">Select a packet.</span>
+      <span class="mut">Sélectionnez un paquet.</span>
     {:else}
       <div>
         {#if editingName}
           <!-- svelte-ignore a11y_autofocus -->
-          <input class="ren" bind:value={nameDraft} placeholder="message name" autofocus onkeydown={(e) => (e.key === "Enter" ? renameMessage() : e.key === "Escape" && (editingName = false))} onblur={() => (editingName = false)} />
+          <input class="ren" bind:value={nameDraft} placeholder="nom du message" autofocus onkeydown={(e) => (e.key === "Enter" ? renameMessage() : e.key === "Escape" && (editingName = false))} onblur={() => (editingName = false)} />
         {:else}
           <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-          <b class:ed={!!current.decoded?.__t} title="click to rename this message" onclick={() => current.decoded?.__t && ((nameDraft = current.name === current.type ? "" : current.name), (editingName = true))}>{nm(current)}</b>
+          <b class:ed={!!current.decoded?.__t} title="cliquer pour renommer ce message" onclick={() => current.decoded?.__t && ((nameDraft = current.name === current.type ? "" : current.name), (editingName = true))}>{nm(current)}</b>
         {/if}
         <span class="mut">{current.type && current.type !== current.name ? `(${current.type})` : ""}</span>
       </div>
-      <div class="mut">{current.dir} · {current.kind ?? "?"} · uid {current.uid ?? "-"} · {current.len} bytes · {current.srv}{current.conf ? " · match: " + current.conf : ""}</div>
-      <h3>{current.decoded ? "Decoded (mapped names; “a (x|y?)” = ambiguous candidates)" : "Schemaless"}</h3>
+      <div class="mut">{current.dir} · {current.kind ?? "?"} · uid {current.uid ?? "-"} · {current.len} octets · {current.srv}{current.conf ? " · correspondance : " + current.conf : ""}</div>
+      <h3>{current.decoded ? "Décodé (noms associés ; « a (x|y?) » = candidats ambigus)" : "Sans schéma"}</h3>
       <pre><JsonTree v={current.decoded ?? current.body ?? current.unparsed} onrename={renameField} /></pre>
-      <h3>Raw hex</h3>
+      <h3>Hexadécimal brut</h3>
       <pre class="mut">{(current.hex ?? "").replace(/(..)/g, "$1 ")}</pre>
     {/if}
   </div>

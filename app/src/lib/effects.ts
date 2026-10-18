@@ -17,12 +17,12 @@ export interface EffectMeta {
 
 /** Sections of the filter list / effect picker, following the in-game characteristics panel. */
 export const FILTER_GROUPS = [
-  { key: "weapon", label: "Weapon damage", members: ["weapon"] },
-  { key: "main", label: "Main stats", members: ["stats", "main"] },
-  { key: "secondary", label: "Secondary stats", members: ["secondary"] },
-  { key: "damage", label: "Damage", members: ["damage"] },
-  { key: "resist", label: "Resistances", members: ["resist"] },
-  { key: "other", label: "Other", members: ["other"] },
+  { key: "weapon", label: "Dommages d'arme", members: ["weapon"] },
+  { key: "main", label: "Caractéristiques principales", members: ["stats", "main"] },
+  { key: "secondary", label: "Caractéristiques secondaires", members: ["secondary"] },
+  { key: "damage", label: "Dommages", members: ["damage"] },
+  { key: "resist", label: "Résistances", members: ["resist"] },
+  { key: "other", label: "Autres", members: ["other"] },
 ];
 
 /** Order of effects on an item: weapon hits, stats / main stats, damage, resistances, then utility (secondary + other). */

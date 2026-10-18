@@ -54,7 +54,7 @@
             <datalist id={dl}>{#each cands(k) as c}<option value={c}></option>{/each}</datalist>
           {:else if msg && meta[k]}
             <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-            <span class="jk ed" class:man={manual(k)} title="click to name this field ({meta[k]})" onclick={() => start(k)}>{k}</span>
+            <span class="jk ed" class:man={manual(k)} title="cliquer pour nommer ce champ ({meta[k]})" onclick={() => start(k)}>{k}</span>
           {:else}
             <span class="jk">{k}</span>
           {/if}: <JsonTree v={v[k]} {onrename} />

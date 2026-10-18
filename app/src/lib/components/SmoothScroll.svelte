@@ -58,7 +58,7 @@
     <div bind:this={inner}>{@render children()}</div>
   </div>
   {#if toTop}
-    <button class="top" class:show={scrolled} aria-label="Back to top" title="Back to top" tabindex={scrolled ? 0 : -1} onclick={() => scroller.scrollTo({ top: 0, behavior: "smooth" })}>
+    <button class="top" class:show={scrolled} aria-label="Haut de page" title="Haut de page" tabindex={scrolled ? 0 : -1} onclick={() => scroller.scrollTo({ top: 0, behavior: "smooth" })}>
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" /></svg>
     </button>
   {/if}

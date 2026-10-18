@@ -8,7 +8,7 @@
    * damage, resistances) that narrows while typing. The best match is auto-filled as a ghost completion (Tab accepts it,
    * Enter picks the highlighted one).
    */
-  let { effects, onpick, placeholder = "Add any effect…" }: { effects: EffectMeta[]; onpick: (id: number) => void; placeholder?: string } = $props();
+  let { effects, onpick, placeholder = "Ajouter un effet…" }: { effects: EffectMeta[]; onpick: (id: number) => void; placeholder?: string } = $props();
 
   let q = $state("");
   let open = $state(false);
@@ -91,7 +91,7 @@
           <div id="ep-{e.id}" class="opt" class:hi={flat[hi]?.id === e.id} onmouseenter={() => (hi = flat.indexOf(e))} onclick={() => pick(e)}>{e.label}</div>
         {/each}
       {:else}
-        <div class="none">No matching effect</div>
+        <div class="none">Aucun effet correspondant</div>
       {/each}
     </SmoothScroll>
   </div>

@@ -40,7 +40,7 @@
     await call("prices", "set_override", { gid: p.gid, value: v });
   }
   async function forget() {
-    if (confirm("Forget all stored prices?")) await call("prices", "forget");
+    if (confirm("Oublier tous les prix enregistrés ?")) await call("prices", "forget");
   }
 
   onMount(() => {
@@ -53,9 +53,9 @@
 <div class="view">
   <SmoothScroll>
     <div class="head">
-      <div class="fh">Stored prices <span class="mut">· per unit, from the highest stack on sale, refreshed each time you open an item</span></div>
-      <input type="search" placeholder="Search item or type…" bind:value={q} />
-      <button onclick={forget}>Forget all prices</button>
+      <div class="fh">Prix enregistrés <span class="mut">· à l'unité, d'après le plus gros lot en vente, mis à jour à chaque ouverture d'un objet</span></div>
+      <input type="search" placeholder="Rechercher un objet ou un type…" bind:value={q} />
+      <button onclick={forget}>Oublier tous les prix</button>
     </div>
     {#each tree as c (c.name)}
       <button class="cat" aria-expanded={!shut.has(c.name)} onclick={() => toggle(c.name)}>
@@ -66,20 +66,20 @@
           {@const k = `${c.name}/${t.type}`}
           <button class="type" aria-expanded={!shut.has(k)} onclick={() => toggle(k)}>
             <span class="chev" class:shut={shut.has(k)}>▾</span> {t.type}
-            <span class="mut">{t.items.length} · updated {ago(latest(t.items))} ago</span>
+            <span class="mut">{t.items.length} · mis à jour {ago(latest(t.items))}</span>
           </button>
           {#if !shut.has(k)}
             <table>
-              <thead><tr><th>Item</th><th class="n">Captured / unit</th><th>Last updated</th><th class="n">Manual override (kamas)</th></tr></thead>
+              <thead><tr><th>Objet</th><th class="n">Relevé / unité</th><th>Dernière mise à jour</th><th class="n">Prix manuel (kamas)</th></tr></thead>
               <tbody>
                 {#each t.items as p (p.gid)}
                   <tr>
                     <td>{p.name}</td>
                     <td class="n" class:struck={p.override !== null}>{kamas(p.unit)}</td>
-                    <td class="mut">{ago(p.updated)} ago</td>
+                    <td class="mut">{ago(p.updated)}</td>
                     <td class="n">
                       <input type="number" min="0" placeholder="—" class:set={p.override !== null} value={p.override ?? ""} onchange={(e) => setOverride(p, e.currentTarget.value)} />
-                      {#if p.override !== null}<button class="mini" title="Back to the captured price" onclick={() => setOverride(p, "")}>✕</button>{/if}
+                      {#if p.override !== null}<button class="mini" title="Revenir au prix relevé" onclick={() => setOverride(p, "")}>✕</button>{/if}
                     </td>
                   </tr>
                 {/each}
@@ -89,7 +89,7 @@
         {/each}
       {/if}
     {:else}
-      <div class="mut">No price yet: open items in the auction house and their unit price is stored here.</div>
+      <div class="mut">Aucun prix pour l'instant : ouvrez des objets à l'hôtel de vente, leur prix unitaire sera enregistré ici.</div>
     {/each}
   </SmoothScroll>
 </div>
