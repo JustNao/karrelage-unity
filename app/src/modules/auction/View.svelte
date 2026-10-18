@@ -12,6 +12,9 @@
   import { LEVEL_EFFECT, isLegendary, levelOf, xpOfLevel } from "../../lib/companion";
   import { analyse, isGoodDeal } from "../../lib/density";
   import { feeder, foodGids, levelBase } from "../../lib/familiar";
+  import CompanionTable from "../../lib/components/CompanionTable.svelte";
+  import { isSenile, mountInfo, neuroneGid } from "../../lib/dragodinde";
+  import { storedPrice } from "../../lib/craft";
   import { FLAG_EFFECTS, norm, rangeLabel, sections, type EffectMeta } from "../../lib/effects";
   import { benefit, craftCost, type CraftLine, type Recipes } from "../../lib/craft";
   import { AH_TAX, targetKey, transcendance, type Rune, type StoredPrice } from "../../lib/transcend";
@@ -156,6 +159,21 @@
         return a === b ? 0 : a === Infinity ? 1 : b === Infinity ? -1 : (a - b) * sortDir;
       });
   });
+
+  // dragodindes: extraction into neurones (heads-up on lots worth extracting)
+  let neurGid = $state<number | null>(null);
+  const neurons = $derived(comp ? (mountInfo(item?.name)?.neurons ?? null) : null);
+  const neuroneUnit = $derived(neurGid != null ? storedPrice(stored, neurGid) : null);
+  const extractable = $derived(
+    neurons != null && neuroneUnit != null ? rows.filter((r: any) => !isSenile(r) && Number.isFinite(unitPrice(r)) && benefit(neuroneUnit * neurons, unitPrice(r)).profit > 0).length : 0,
+  );
+  const lotsOf = (l: any[]) => l.map((r) => ({ row: r, key: lotKey(r, rows.indexOf(r)) }));
+  async function pickLot(id: string | number) {
+    picked = id;
+    await tick();
+    document.getElementById(`lot-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
 
   function filterOf(gid: number, a: number): Filter {
     filters[gid] ??= [];
@@ -330,6 +348,7 @@
     call<EffectMeta[]>("auction", "effects").then((e) => (picker = e));
     call<EffectMeta[]>("auction", "effect_meta").then((l) => (meta = Object.fromEntries(l.map((e) => [e.id, e]))));
     call<Recipes>("auction", "recipes").then((r) => (recipes = r));
+    neuroneGid().then((g) => (neurGid = g));
     foodGids().then((m) => (foodIds = m)).catch(() => {});
     call<Rune[]>("prices", "runes").then((l) => (runes = l));
     call<StoredPrice[]>("prices", "list").then((l) => l.forEach((p) => stored.set(p.gid, p)));
@@ -508,6 +527,9 @@
           <button class="dhead" aria-expanded={dealsOpen} onclick={() => (dealsOpen = !dealsOpen)}>
             <span class="chev" class:shut={!dealsOpen}>▾</span> Bonnes affaires <span class="mut">· {deals.length} {deals.length === 1 ? "lot se démarque" : "lots se démarquent"} au-dessus de la tendance des prix</span>
           </button>
+          {#if comp}
+            {#if dealsOpen}<CompanionTable lots={lotsOf(deals.map((d: any) => d.row)).map((l) => ({ ...l, key: "d-" + l.key }))} {unitPrice} {neurons} {neuroneUnit} faded={lacksFade} onpick={(k) => pickLot(String(k).slice(2))} />{/if}
+          {:else}
           {#each dealsOpen ? deals : [] as d (d.key)}
             {@const alt = trans.alternative(d.row)}
             <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
@@ -515,11 +537,18 @@
               {#if alt}
                 <div class="warn altw">⚠ Objet similaire réalisable par Transcendance : lot {kamas(alt.buy)} + {alt.rune.name} {kamas(alt.runeCost)} = {kamas(alt.cost)} (économie de {kamas(alt.saving)})</div>
               {/if}
-              <ItemCard row={d.row} companion={comp} {fade} onfade={toggleFade} pinned={isPin(d.row)} onpin={comp ? undefined : () => togglePin(d.row)} versus={versusFor(d.row)} />
+              <ItemCard row={d.row} companion={false} {fade} onfade={toggleFade} pinned={isPin(d.row)} onpin={() => togglePin(d.row)} versus={versusFor(d.row)} />
             </div>
           {/each}
+          {/if}
         </div>
       {/if}
+      {#if comp}
+        {#if extractable}
+          <div class="warn altw">⚠ {extractable} lot{extractable > 1 ? "s" : ""} rentable{extractable > 1 ? "s" : ""} à extraire en neurones</div>
+        {/if}
+        <CompanionTable lots={lotsOf(rows)} {unitPrice} {neurons} {neuroneUnit} {picked} faded={lacksFade} onpick={pickLot} />
+      {:else}
       {#each rows as r, i (lotKey(r, i))}
         {@const key = lotKey(r, i)}
         <div id="lot-{key}" class="lot" class:picked={picked === key} class:faded={lacksFade(r)} animate:flip={{ duration: 320 }}>
@@ -528,6 +557,7 @@
       {:else}
         <div class="mut">Aucun lot ne correspond au filtre</div>
       {/each}
+      {/if}
       {/if}
     {/if}
   </SmoothScroll>
