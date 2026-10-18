@@ -117,7 +117,7 @@ CLI alternative to the app for recording fixtures: `python pipeline/sniff.py` (a
 `git tag v0.1.0 && git push origin v0.1.0` (or run the workflow by hand from the Actions tab). The workflow rebuilds `datapack/` from the committed `dist/`.
 
 ## Publishing a data pack
-`python pipeline/package_pack.py` (also run at the end of `update_names.py`) writes `dist/datapack.zip` + `dist/pack.json`. Commit and push them to `master`:
+`python pipeline/package_pack.py` (also run at the end of `update_names.py`) writes `dist/datapack.zip` + `dist/pack.json`. Commit and push them to `main`:
 running apps check `dist/pack.json` at startup and offer a one-click download of newer packs (top bar), then ask for a restart.
 
 ## Run, test, build the app

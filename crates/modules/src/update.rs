@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 /// Where the published pack lives (raw files of the repository). Override with KARRELAGE_PACK_URL (tests, forks).
-const DEFAULT_BASE: &str = "https://raw.githubusercontent.com/JustNao/karrelage-unity/master/dist";
+const DEFAULT_BASE: &str = "https://raw.githubusercontent.com/JustNao/karrelage-unity/main/dist";
 
 fn base_url() -> String {
     std::env::var("KARRELAGE_PACK_URL").unwrap_or_else(|_| DEFAULT_BASE.to_string()).trim_end_matches('/').to_string()
