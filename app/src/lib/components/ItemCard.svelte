@@ -1,5 +1,6 @@
 <script lang="ts">
   import { kamas } from "../api";
+  import { app } from "../app.svelte";
   import { fmtDelta, pairRows } from "../compare";
   import { isLegendary, levelOf, xpOfLevel } from "../companion";
   import { isBelowMin, isNegative, isPerfectLine, perfection, rangeLabel, sortEffects } from "../effects";
@@ -73,6 +74,7 @@
   <h4>
     {#if collapsible}<span class="chev">{open ? "▾" : "▸"}</span>{/if}
     {row.name} <span class="mut">{row.level != null ? "niv. " + row.level : ""}</span>
+    {#if row.type}<span class="mut typ">· {row.type}</span>{/if}
     {#if onpin}
       <button class="pin" class:on={pinned} title="Comparer chaque lot consulté avec celui-ci" onclick={(ev) => (ev.stopPropagation(), onpin())}>{pinned ? "Désépingler" : "Épingler"}</button>
     {/if}
@@ -86,12 +88,12 @@
     {#if row.locked}<span class="shield" title="Empêche les futures forgemagies — ne peut plus être modifié">🛡 Transcendance</span>{/if}
     {/if}
   </h4>
-  <div class="sub">
-    {row.type ?? ""} · uid {row.uid ?? "?"}
-    {#if row.gid == null} · entiers non résolus {JSON.stringify(row.ints)}{/if}
-    {#if row.meta?.crafted_by} · fabriqué par {row.meta.crafted_by}{/if}
-    {#if row.meta?.modified_by} · modifié par {row.meta.modified_by}{/if}
-  </div>
+  {#if app.dev}
+    <div class="sub">
+      uid {row.uid ?? "?"} · gid {row.gid ?? "?"}
+      {#if row.gid == null} · entiers non résolus {JSON.stringify(row.ints)}{/if}
+    </div>
+  {/if}
 
   {#if versus}
     <div class="cmp">

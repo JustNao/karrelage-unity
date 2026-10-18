@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import { SvelteMap, SvelteSet } from "svelte/reactivity";
+  import { app } from "../../lib/app.svelte";
   import { Columns } from "../../lib/columns.svelte";
   import { ago, call, kamas, on } from "../../lib/api";
   import { flip } from "svelte/animate";
@@ -333,7 +334,7 @@
   <SmoothScroll toTop>
     {#if item}
       <div class="head">
-        <div class="fh">{item.name} <span class="mut">{item.type ?? ""} · gid {item.gid} · mis à jour {ago(item.updated)} · {rows.length}/{item.lots} lots</span></div>
+        <div class="fh">{item.name} <span class="mut">{item.type ?? ""}{app.dev ? " · gid " + item.gid : ""} · mis à jour {ago(item.updated)} · {rows.length}/{item.lots} lots</span></div>
         <button class="sort" onclick={() => (sortDir = -sortDir)} title="Cliquer pour inverser l'ordre des prix">
           Prix <span class="arrow" class:desc={sortDir === -1}>↑</span>
         </button>
