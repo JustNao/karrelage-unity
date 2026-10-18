@@ -35,27 +35,52 @@
       const n = neurons != null ? neuronsOf(row, neurons) : null;
       const sale = n != null && neuroneUnit != null ? neuroneUnit * n : null;
       const b = sale != null && Number.isFinite(price) ? benefit(sale, price) : null;
-      return { row, key, price, level: levelOf(row), legendary: isLegendary(row), senile, n, sale, profit: b?.profit ?? null, pct: b?.pct ?? null };
+      const legendary = isLegendary(row);
+      const profit = b?.profit ?? null;
+      // status sort key: profitable first, then legendary, then senile
+      const status = ((profit ?? 0) > 0 ? 4 : 0) + (legendary ? 2 : 0) + (senile ? 1 : 0);
+      return { row, key, price, level: levelOf(row), legendary, senile, n, sale, profit, pct: b?.pct ?? null, status };
     }),
   );
+
+  type SortKey = "level" | "status" | "price" | "n" | "sale" | "profit" | "pct";
+  let sort = $state<SortKey | null>(null); // null = the order of the list
+  let desc = $state(false);
+  const setSort = (k: SortKey) => {
+    if (sort === k) desc = !desc;
+    else { sort = k; desc = k === "status" || k === "profit" || k === "pct"; }
+  };
+  const arrow = (k: SortKey) => (sort === k ? (desc ? " ▾" : " ▴") : "");
+  const sorted = $derived.by(() => {
+    const k = sort;
+    if (!k) return rows;
+    return [...rows].sort((a, b) => {
+      const x = a[k], y = b[k];
+      const bad = (v: number | null) => v == null || !Number.isFinite(v);
+      if (bad(x) && bad(y)) return 0;
+      if (bad(x)) return 1; // unknown values always last
+      if (bad(y)) return -1;
+      return desc ? (y as number) - (x as number) : (x as number) - (y as number);
+    });
+  });
 </script>
 
 <table>
   <thead>
     <tr>
-      <th class="n">Niveau</th>
-      <th>Statut</th>
-      <th class="n">Prix</th>
+      <th class="n"><button onclick={() => setSort("level")}>Niveau{arrow("level")}</button></th>
+      <th><button onclick={() => setSort("status")}>Statut{arrow("status")}</button></th>
+      <th class="n"><button onclick={() => setSort("price")}>Prix{arrow("price")}</button></th>
       {#if mount}
-        <th class="n">Neurones</th>
-        <th class="n">Valeur des neurones</th>
-        <th class="n">Bénéfice</th>
-        <th class="n">Rentabilité</th>
+        <th class="n"><button onclick={() => setSort("n")}>Neurones{arrow("n")}</button></th>
+        <th class="n"><button onclick={() => setSort("sale")}>Valeur des neurones{arrow("sale")}</button></th>
+        <th class="n"><button onclick={() => setSort("profit")}>Bénéfice{arrow("profit")}</button></th>
+        <th class="n"><button onclick={() => setSort("pct")}>Rentabilité{arrow("pct")}</button></th>
       {/if}
     </tr>
   </thead>
   <tbody>
-    {#each rows as r (r.key)}
+    {#each sorted as r (r.key)}
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
       <tr id="lot-{r.key}" class:picked={picked === r.key} class:faded={faded(r.row)} class:hot={(r.profit ?? 0) > 0} onclick={() => onpick?.(r.key)}>
         <td class="n"><b>{r.level ?? "?"}</b></td>
@@ -81,6 +106,7 @@
 <style>
   table { width: 100%; border-collapse: collapse; font-size: 12px; font-family: var(--font); }
   th { text-align: left; font-weight: 400; color: var(--mut); padding: 2px 6px; position: sticky; top: 0; background: var(--bg); }
+  th button { border: 0; background: none; color: inherit; font: inherit; padding: 0; cursor: pointer; }
   td { padding: 4px 6px; border-top: 1px solid var(--line); }
   tbody tr { cursor: pointer; transition: opacity 0.25s; }
   tbody tr:hover { background: var(--panel); }
