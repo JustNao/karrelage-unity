@@ -121,7 +121,7 @@
     border-radius: 8px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
     overflow: hidden;
-    font-family: system-ui, sans-serif;
+    font-family: var(--font);
   }
   .head { padding: 6px 8px 2px; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--mut); }
   .opt { padding: 4px 8px; border-radius: 5px; cursor: pointer; font-size: 12.5px; }

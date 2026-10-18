@@ -1,4 +1,8 @@
+/* Montserrat (OFL, see fonts/LICENSE-Montserrat.txt) is the default font; numbers use its tabular figures so prices stay aligned. */
+@font-face { font-family: "Montserrat"; src: url("./fonts/montserrat-latin-400-normal.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Montserrat"; src: url("./fonts/montserrat-latin-700-normal.woff2") format("woff2"); font-weight: 600 800; font-style: normal; font-display: swap; }
 :root {
+  --font: "Montserrat", system-ui, sans-serif;
   --bg: #14161a; --panel: #1c1f26; --line: #2a2e38; --fg: #d8dce4; --mut: #8a91a0; --acc: #5aa9ff;
   --ok: #4cc38a; --warn: #e0b04a; --bad: #e5646e; --c2s: #c792ea; --s2c: #7fd1b9;
 }
@@ -10,14 +14,14 @@
 }
 * { box-sizing: border-box; }
 html, body, #app { height: 100%; }
-body { margin: 0; background: var(--bg); color: var(--fg); font: 13px/1.4 ui-monospace, Consolas, monospace; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 13px/1.4 var(--font); font-variant-numeric: tabular-nums; }
 input, select, button { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font: inherit; }
 button { cursor: pointer; }
 button:hover { border-color: var(--acc); }
 .mut { color: var(--mut); }
 pre { margin: 0; white-space: pre-wrap; word-break: break-all; }
-h3 { font: 600 12px system-ui; margin: 12px 0 4px; color: var(--mut); text-transform: uppercase; letter-spacing: 0.05em; }
-.fh { font: 600 14px system-ui; margin-bottom: 8px; }
+h3 { font: 600 12px var(--font); margin: 12px 0 4px; color: var(--mut); text-transform: uppercase; letter-spacing: 0.05em; }
+.fh { font: 600 14px var(--font); margin-bottom: 8px; }
 
 /* dark scrollbars: black track with a slightly lighter edge (the lots list uses SmoothScroll instead) */
 ::-webkit-scrollbar { width: 12px; height: 12px; }

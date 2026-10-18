@@ -107,7 +107,7 @@
   .shell { display: flex; flex-direction: column; height: 100%; }
   header { display: flex; gap: 12px; align-items: center; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
   /* same font family and line box as the tabs so the text centres line up (system-ui sat a pixel or two off the monospace tabs) */
-  h1 { font: 600 14px/1.4 ui-monospace, Consolas, monospace; margin: 0 6px 0 0; padding: 4px 0; }
+  h1 { font: 600 14px/1.4 var(--font); margin: 0 6px 0 0; padding: 4px 0; }
   header label { display: flex; align-items: center; gap: 6px; line-height: 1.4; padding: 4px 0; }
   header label input { margin: 0; }
   nav { display: flex; gap: 2px; }
@@ -127,7 +127,7 @@
   .updbtn { border-color: var(--acc); color: var(--acc); }
   .ubar { display: inline-block; width: 140px; height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
   .ufill { display: block; height: 100%; background: var(--acc); transition: width 0.25s; }
-  .banner { padding: 6px 12px; font-family: system-ui, sans-serif; }
+  .banner { padding: 6px 12px; font-family: var(--font); }
   .banner.bad { background: color-mix(in srgb, var(--bad) 20%, transparent); }
   .banner.warn { background: color-mix(in srgb, var(--warn) 20%, transparent); }
   main { flex: 1; min-height: 0; display: flex; flex-direction: column; }

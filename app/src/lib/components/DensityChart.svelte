@@ -92,7 +92,7 @@
 </div>
 
 <style>
-  .chart { width: 100%; font-family: system-ui, sans-serif; }
+  .chart { width: 100%; font-family: var(--font); }
   .legend { display: flex; gap: 14px; min-height: 20px; font-size: 12px; margin-bottom: 4px; color: var(--mut); }
   svg { display: block; background: #0a0b0e; border: 1px solid #2a2e38; border-radius: 8px; }
   .band { fill: color-mix(in srgb, var(--acc) 9%, transparent); }
