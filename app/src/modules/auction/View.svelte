@@ -316,8 +316,8 @@
             <span class="chev" class:shut={!dealsOpen}>▾</span> Good deals <span class="mut">· {deals.length} {deals.length === 1 ? "lot stands" : "lots stand"} out above the price trend</span>
           </button>
           {#each dealsOpen ? deals : [] as d (d.key)}
-            <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
             {@const alt = trans.alternative(d.row)}
+            <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
             <div class="deal" class:faded={lacksFade(d.row)} title="Click to jump to the lot in the list" onclick={() => focusLot(d.key)}>
               {#if alt}
                 <div class="warn altw">⚠ Similar item available through Transcendance: lot {kamas(alt.buy)} + {alt.rune.name} {kamas(alt.runeCost)} = {kamas(alt.cost)} (saves {kamas(alt.saving)})</div>
