@@ -1,0 +1,228 @@
+{
+ "name": "ExchangeTypesItemsExchangerDescriptionForUserEvent",
+ "fmt": {
+  "kind": "auction_items",
+  "defaults": [
+   {
+    "a": 100,
+    "min": 8,
+    "max": 10,
+    "label": "dommages Neutre"
+   },
+   {
+    "a": 118,
+    "min": 7,
+    "max": 10,
+    "label": "Force"
+   },
+   {
+    "a": 422,
+    "min": 1,
+    "max": 1,
+    "label": "Dommage Terre"
+   }
+  ],
+  "title": "Épée de Boisaille",
+  "type": "Épée",
+  "gid": 44,
+  "rows": [
+   {
+    "uid": 111111,
+    "gid": 44,
+    "ints": [
+     111111,
+     6,
+     44
+    ],
+    "name": "Épée de Boisaille",
+    "level": 7,
+    "type": "Épée",
+    "icon": 6007,
+    "prices": [
+     {
+      "qty": 1,
+      "price": 500
+     },
+     {
+      "qty": 10,
+      "price": 4000
+     },
+     {
+      "qty": 100,
+      "price": 0
+     },
+     {
+      "qty": 1000,
+      "price": 0
+     }
+    ],
+    "effects": [
+     {
+      "action": 118,
+      "text": "12 Force",
+      "params": [
+       12
+      ],
+      "raw": 12,
+      "known": true,
+      "hi": 12,
+      "str": null,
+      "status": "above",
+      "range": [
+       7,
+       10
+      ]
+     },
+     {
+      "action": 125,
+      "text": "40 Vitalité",
+      "params": [
+       40
+      ],
+      "raw": 40,
+      "known": true,
+      "hi": 40,
+      "str": null,
+      "status": "added"
+     },
+     {
+      "action": 100,
+      "text": "8 à 10 dommages Neutre",
+      "params": [
+       8,
+       10
+      ],
+      "raw": null,
+      "known": true,
+      "hi": 10,
+      "status": "removed",
+      "range": [
+       8,
+       10
+      ]
+     },
+     {
+      "action": 422,
+      "text": "1 Dommage Terre",
+      "params": [
+       1,
+       1
+      ],
+      "raw": null,
+      "known": true,
+      "hi": 1,
+      "status": "removed",
+      "range": [
+       1,
+       1
+      ]
+     }
+    ],
+    "meta": {
+     "modified_by": "Bob"
+    },
+    "locked": true
+   },
+   {
+    "uid": 222222,
+    "gid": 44,
+    "ints": [
+     222222,
+     6,
+     44
+    ],
+    "name": "Épée de Boisaille",
+    "level": 7,
+    "type": "Épée",
+    "icon": 6007,
+    "prices": [
+     {
+      "qty": 1,
+      "price": 700
+     },
+     {
+      "qty": 10,
+      "price": 0
+     },
+     {
+      "qty": 100,
+      "price": 0
+     },
+     {
+      "qty": 1000,
+      "price": 0
+     }
+    ],
+    "effects": [
+     {
+      "action": 112,
+      "text": "2 à 12 Dommage",
+      "params": [
+       2,
+       12
+      ],
+      "raw": {
+       "gdlz": 2,
+       "gdma": 6,
+       "gdmb": 0
+      },
+      "known": true,
+      "hi": 12,
+      "str": null,
+      "status": "added"
+     },
+     {
+      "action": 100,
+      "text": "8 à 10 dommages Neutre",
+      "params": [
+       8,
+       10
+      ],
+      "raw": null,
+      "known": true,
+      "hi": 10,
+      "status": "removed",
+      "range": [
+       8,
+       10
+      ]
+     },
+     {
+      "action": 118,
+      "text": "7 à 10 Force",
+      "params": [
+       7,
+       10
+      ],
+      "raw": null,
+      "known": true,
+      "hi": 10,
+      "status": "removed",
+      "range": [
+       7,
+       10
+      ]
+     },
+     {
+      "action": 422,
+      "text": "1 Dommage Terre",
+      "params": [
+       1,
+       1
+      ],
+      "raw": null,
+      "known": true,
+      "hi": 1,
+      "status": "removed",
+      "range": [
+       1,
+       1
+      ]
+     }
+    ],
+    "meta": {},
+    "locked": false
+   }
+  ]
+ }
+}

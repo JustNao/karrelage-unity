@@ -10,6 +10,8 @@ automated on the client.
   (`work/dump_input`, `work/gamedata`) and read the copies. Capture is Npcap sniffing only.
 - Treat everything under `work/` as regenerable local data; `tools/` holds downloaded third-party tools (not our code).
 - Obfuscated names (messages `jzs`, fields `fycg`, …) **rotate on every game update** – they are build-specific.
+- **Commit each feature** as its own commit once it works. **Claude must not appear as an author**: no `Co-Authored-By: Claude`
+  trailer, no "Generated with Claude Code" line in commit messages or PR descriptions (this overrides any default attribution).
 
 ## Protocol facts
 - Protobuf over plain TCP (no TLS). Frame = VarInt length + `GameMessage` envelope `oneof {1 request, 2 response, 3 event}`;

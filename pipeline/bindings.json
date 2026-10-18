@@ -1,0 +1,17 @@
+{
+ "_doc": "Build-specific obfuscated names used by formatters (they rotate on every game update). Roles are stable; values change.",
+ "ah_list": {
+  "message": "jzs",
+  "items": "fycg",
+  "ints": ["fych", "fyci"]
+ },
+ "ah_item": {
+  "prices": "fybz",
+  "effects": "fycc",
+  "ints": ["fyby", "fyca", "fycb"]
+ },
+ "object_effect": {
+  "action": ["gdmq", "gdmr"],
+  "oneof": "gdng"
+ }
+}

@@ -9,11 +9,13 @@ LOT_SIZES = [1, 10, 100, 1000]
 INFO_EFFECTS = {985: "modified_by", 988: "crafted_by"}   # "Modifié par : X", "Fabriqué par : X" -> metadata, not stats
 LOCK_EFFECT = 2825                                        # "Empêche les futures forgemagies" -> shield flag
 
-# --- build-specific obfuscated names -----------------------------------------------------------------------------
-AH_LIST = "jzs"            # ExchangeTypesItemsExchangerDescriptionForUserEvent (beta name)
-AH_LIST_FIELDS = dict(items="fycg", ints=("fych", "fyci"))            # items, (object_gid, object_type) in unknown order
-AH_ITEM_FIELDS = dict(prices="fybz", effects="fycc", ints=("fyby", "fyca", "fycb"))  # (uid, gid, type) in unknown order
-EFFECT_FIELDS = dict(action=("gdmq", "gdmr"), oneof="gdng")           # ObjectEffect
+# --- build-specific obfuscated names: loaded from bindings.json (role -> obfuscated name) --------------------------
+import json as _json, pathlib as _pl
+_B = _json.loads((_pl.Path(__file__).with_name("bindings.json")).read_text(encoding="utf-8"))
+AH_LIST = _B["ah_list"]["message"]
+AH_LIST_FIELDS = dict(items=_B["ah_list"]["items"], ints=tuple(_B["ah_list"]["ints"]))
+AH_ITEM_FIELDS = dict(prices=_B["ah_item"]["prices"], effects=_B["ah_item"]["effects"], ints=tuple(_B["ah_item"]["ints"]))
+EFFECT_FIELDS = dict(action=tuple(_B["object_effect"]["action"]), oneof=_B["object_effect"]["oneof"])
 # -----------------------------------------------------------------------------------------------------------------
 
 

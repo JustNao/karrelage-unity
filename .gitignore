@@ -17,3 +17,9 @@ __pycache__/
 .claude/
 .vscode/
 .idea/
+
+# Rust / app build output and generated data pack
+/target/
+/datapack/
+node_modules/
+/app/ui/dist/
