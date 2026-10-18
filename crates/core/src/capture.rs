@@ -45,7 +45,7 @@ impl Capture {
     }
 
     pub fn tracking(&self) -> Vec<String> {
-        let mut v: Vec<String> = self.state.lock().unwrap().conns.values().cloned().collect();
+        let mut v: Vec<String> = self.state.lock().unwrap_or_else(|e| e.into_inner()).conns.values().cloned().collect();
         v.sort();
         v
     }
@@ -65,7 +65,7 @@ impl Capture {
             anyhow::bail!("no usable network adapter found");
         }
         self.stop.store(false, Ordering::SeqCst);
-        *self.state.lock().unwrap() = State::default();
+        *self.state.lock().unwrap_or_else(|e| e.into_inner()) = State::default();
 
         for dev in devices {
             let (api, state, stop, on_msg, on_log) = (api.clone(), self.state.clone(), self.stop.clone(), self.on_message.clone(), self.on_log.clone());
@@ -76,7 +76,11 @@ impl Capture {
                         match h.next() {
                             Next::Packet(p) => {
                                 if let Some(pkt) = parse_packet(p, link) {
-                                    handle(&state, &on_msg, pkt);
+                                    // a bad packet must never kill the sniff thread
+                                    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| handle(&state, &on_msg, pkt)));
+                                    if r.is_err() {
+                                        on_log("internal error while handling a packet (ignored)".into());
+                                    }
                                 }
                             }
                             Next::Timeout => {}
@@ -101,7 +105,7 @@ impl Capture {
             return;
         }
         self.stop.store(true, Ordering::SeqCst);
-        self.state.lock().unwrap().conns.clear();
+        self.state.lock().unwrap_or_else(|e| e.into_inner()).conns.clear();
         self.running = false;
         (self.on_log)("capture stopped".into());
     }
@@ -134,7 +138,7 @@ fn refresh_loop(state: Arc<Mutex<State>>, stop: Arc<AtomicBool>, process: String
             }
         }
         {
-            let mut st = state.lock().unwrap();
+            let mut st = state.lock().unwrap_or_else(|e| e.into_inner());
             for (k, v) in &found {
                 if !st.conns.contains_key(k) {
                     on_log(format!("tracking {v}"));
@@ -212,7 +216,7 @@ fn parse_packet(p: &[u8], datalink: i32) -> Option<Pkt<'_>> {
 
 fn handle(state: &Mutex<State>, on_msg: &Arc<dyn Fn(RawMessage) + Send + Sync>, p: Pkt<'_>) {
     let frames = {
-        let mut st = state.lock().unwrap();
+        let mut st = state.lock().unwrap_or_else(|e| e.into_inner());
         let (k_out, k_in) = ((p.dst, p.dport, p.sport), (p.src, p.sport, p.dport));
         let (key, dir) = if st.conns.contains_key(&k_out) {
             (k_out, "C->S")

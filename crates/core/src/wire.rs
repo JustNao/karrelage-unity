@@ -132,7 +132,7 @@ pub fn unframe(buf: &mut Vec<u8>) -> Result<Vec<Vec<u8>>, ()> {
             buf.clear();
             return Err(());
         }
-        let end = pos + len as usize;
+        let end = pos + len as usize; // len <= MAX_FRAME here
         if end > buf.len() {
             return Ok(out);
         }
@@ -147,7 +147,7 @@ pub fn find_sync(buf: &[u8], need: usize) -> Option<usize> {
         let (mut pos, mut ok) = (start, 0);
         while ok < need {
             let Ok(Some((ln, p))) = read_varint(buf, pos) else { break };
-            let end = p + ln as usize;
+            let Some(end) = usize::try_from(ln).ok().and_then(|l| p.checked_add(l)) else { break };
             if ln == 0 || end > buf.len() || !looks_like_message(&buf[p..end]) {
                 break;
             }
@@ -210,6 +210,13 @@ mod tests {
         assert_eq!(e.kind, "event");
         assert_eq!(e.type_url.as_deref(), Some("type.ankama.com/jzs"));
         assert!(!e.value.is_empty());
+    }
+
+    #[test]
+    fn find_sync_survives_garbage_lengths() {
+        // 0xff.. varints decode to huge lengths; must not overflow
+        let junk = [0xffu8, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x7f];
+        assert_eq!(find_sync(&junk, 3), None);
     }
 
     #[test]
