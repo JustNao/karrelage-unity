@@ -264,7 +264,7 @@
     await tick();
     document.getElementById(`lot-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
   }
-  /** "Effacer" forgets every stored item, after a second click on "Confirmer" (reverts after a few seconds). */
+  /** "Nettoyer" forgets every stored item, after a second click on "Confirmer" (reverts after a few seconds). */
   let confirmClear = $state(false);
   let confirmTimer: ReturnType<typeof setTimeout> | undefined;
   async function forget() {
@@ -318,7 +318,7 @@
   <div class="ilist">
     <div class="sbar">
       <input type="search" placeholder="Rechercher un objet…" bind:value={search} />
-      <button class="mini" class:danger={confirmClear} onclick={forget} onblur={() => (confirmClear = false)} title="Oublier tous les objets enregistrés">{confirmClear ? "Confirmer" : "Effacer"}</button>
+      <button class="mini" class:danger={confirmClear} onclick={forget} onblur={() => (confirmClear = false)} title="Oublier tous les objets enregistrés">{confirmClear ? "Confirmer" : "Nettoyer"}</button>
     </div>
     {#each typeGroups as g (g.type)}
       {@const shut = collapsed.has(g.type)}
