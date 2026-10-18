@@ -486,7 +486,7 @@
       {#if comp && levelling && levelling.deal}
         <div class="deals">
           <!-- svelte-ignore a11y_click_events_have_key_events -->
-          <div class="dhead" role="button" tabindex="0" aria-expanded={levelOpen} onclick={() => (levelOpen = !levelOpen)}>
+          <div class="dhead lvh" role="button" tabindex="0" aria-expanded={levelOpen} onclick={() => (levelOpen = !levelOpen)}>
             <span class="chev" class:shut={!levelOpen}>▾</span> Monter au niveau
             <input class="lvt" type="number" min="1" max="100" bind:value={levelTarget} onclick={(e) => e.stopPropagation()} />
             <span class="mut">· Plus rentable de partir du niveau {levelling.best!.level}</span>
@@ -633,7 +633,8 @@
   .graph { margin-bottom: 12px; }
   .head .on { border-color: var(--acc); color: var(--acc); }
   .lvt { width: 56px; padding: 1px 4px; margin: 0 4px; }
-  .lvl { padding: 2px 0; }
+  .lvl { padding: 0; }
+  .dhead.lvh { margin-bottom: 2px; }
   .deals { margin-bottom: 14px; padding: 8px 10px 2px; border: 1px solid color-mix(in srgb, var(--ok) 45%, var(--line)); border-radius: 10px; background: color-mix(in srgb, var(--ok) 5%, transparent); }
   .dhead { display: flex; gap: 6px; align-items: center; width: 100%; border: 0; background: none; font: 600 13px var(--font); color: var(--ok); margin-bottom: 8px; padding: 0; text-align: left; }
   .dhead .mut { font-weight: 400; }
