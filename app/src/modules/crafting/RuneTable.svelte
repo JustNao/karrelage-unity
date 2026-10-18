@@ -3,7 +3,6 @@
   import { SvelteMap } from "svelte/reactivity";
   import { call, kamas, on } from "../../lib/api";
   import { benefit, craftCost, storedPrice, type Recipes } from "../../lib/craft";
-  import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
   import type { StoredPrice } from "../../lib/transcend";
 
   let { kind, title, tiers: TIERS, parse }: { kind: "forge" | "transcend"; title: string; tiers: string[]; parse: (name: string) => { tier: string; stat: string } | null } = $props();
@@ -73,11 +72,10 @@
 
 <div class="rv">
   <div class="head">
-    <div class="fh">{title} <span class="mut">· coût de fabrication (achat ou craft des ingrédients, au moins cher) contre prix de vente, taxe HDV de 2 % déduite</span></div>
+    <div class="fh cat">{title} <span class="mut">· coût de fabrication (achat ou craft des ingrédients, au moins cher) contre prix de vente, taxe HDV de 2 % déduite</span></div>
     <input type="search" placeholder="Rechercher une rune…" bind:value={q} />
     <label><input type="checkbox" bind:checked={onlyPriced} /> Prix connus seulement</label>
   </div>
-  <SmoothScroll>
     <table>
       <thead>
         <tr>
@@ -113,12 +111,10 @@
         {/each}
       </tbody>
     </table>
-  </SmoothScroll>
 </div>
 
 <style>
-  .rv { flex: 1; min-height: 0; display: flex; flex-direction: column; font-family: var(--font); padding: 8px 10px 0; }
-  .rv > :global(.wrap) { flex: 1; }
+  .rv { font-family: var(--font); padding: 8px 10px 14px; }
   .head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
   .head .fh { margin: 0; flex: 1; min-width: 260px; }
   .head input[type="search"] { width: 180px; padding: 3px 6px; }
