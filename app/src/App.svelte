@@ -32,10 +32,10 @@
     </nav>
     <button class="sw" class:on={s.on} role="switch" aria-checked={!!s.on} aria-label="Toggle capture" disabled={!s.ready} onclick={toggle}></button>
     <span class="state" class:on={s.on}>{s.on ? "ON" : "OFF"}</span>
-    <span class="mut">{s.on ? (s.tracking?.length ? "tracking " + s.tracking.join(", ") : "waiting for Dofus.exe connections…") : ""}</span>
+    <span class="mut">{s.on ? (s.tracking?.length ? "Connected to Dofus" : "Waiting for Dofus.exe…") : ""}</span>
     <span class="grow"></span>
     {#if app.dev}<button onclick={() => devInject()} title="Push the bundled synthetic auction packet through the pipeline">Inject demo</button>{/if}
-    <label class="mut"><input type="checkbox" checked={app.dev} onchange={(e) => app.setDev(e.currentTarget.checked)} /> developer</label>
+    <label class="mut"><input type="checkbox" checked={app.dev} onchange={(e) => app.setDev(e.currentTarget.checked)} /> Developer</label>
   </header>
 
   {#if !s.ready && s.error}

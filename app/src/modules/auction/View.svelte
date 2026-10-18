@@ -2,7 +2,9 @@
   import { onMount } from "svelte";
   import { SvelteMap, SvelteSet } from "svelte/reactivity";
   import { ago, call, kamas, on } from "../../lib/api";
+  import { flip } from "svelte/animate";
   import ItemCard from "../../lib/components/ItemCard.svelte";
+  import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
 
   interface Filter { a: number; min: string | number; max: string | number }
   interface Eff { id: number; label: string; group: string }
@@ -125,21 +127,25 @@
     {/each}
   </div>
 
-  <div class="detail">
+  <SmoothScroll>
     {#if item}
       <div class="head">
         <div class="fh">{item.name} <span class="mut">{item.type ?? ""} · gid {item.gid} · updated {ago(item.updated)} ago · {rows.length}/{item.lots} lots</span></div>
-        <select bind:value={sortDir}><option value={1}>price ↑</option><option value={-1}>price ↓</option></select>
+        <button class="sort" onclick={() => (sortDir = -sortDir)} title="Click to flip the price order">
+          Price <span class="arrow" class:desc={sortDir === -1}>↑</span>
+        </button>
         <button onclick={() => ((allOpen = !allOpen), openSet.clear())}>{allOpen ? "Collapse all" : "Expand all"}</button>
-        <button onclick={forget}>forget all items</button>
+        <button onclick={forget}>Forget all items</button>
       </div>
       {#each rows as r (r.uid ?? JSON.stringify(r.prices) + r.name)}
-        <ItemCard row={r} collapsible open={allOpen || openSet.has(r.uid)} ontoggle={() => toggleOpen(r.uid)} />
+        <div animate:flip={{ duration: 320 }}>
+          <ItemCard row={r} collapsible open={allOpen || openSet.has(r.uid)} ontoggle={() => toggleOpen(r.uid)} />
+        </div>
       {:else}
-        <div class="mut">no lot matches the filter</div>
+        <div class="mut">No lot matches the filter</div>
       {/each}
     {/if}
-  </div>
+  </SmoothScroll>
 
   <div class="filter">
     {#if item}
@@ -151,19 +157,20 @@
         <button onclick={() => preset("clear")}>Clear</button>
       </div>
       <div class="btns">
-        <input list="effList" placeholder="add any effect…" bind:value={freeEff} style="flex:1;min-width:0" />
+        <input list="effList" placeholder="Add any effect…" bind:value={freeEff} style="flex:1;min-width:0" />
         <button onclick={() => preset("add")}>Add</button>
       </div>
       <datalist id="effList">{#each allEffects as e}<option value="{e.label} #{e.id}"></option>{/each}</datalist>
       {#each effectRows as x (x.a)}
         {@const y = flist(item.gid).find((z) => z.a === x.a)}
         <div class="frow" class:on={active(x.a)}>
-          <div class="lb" title="effect {x.a}">{effLabel(x.a)}{#if x.def} <small>[{x.def[0]}–{x.def[1]}]</small>{/if}</div>
+          <div class="lb" title="effect {x.a}">{effLabel(x.a)}</div>
+          <small class="rg">{x.def ? `[${x.def[0]}–${x.def[1]}]` : ""}</small>
           <input type="number" placeholder="min" value={y?.min ?? ""} oninput={(e) => (filterOf(item.gid, x.a).min = e.currentTarget.value)} />
           <input type="number" placeholder="max" value={y?.max ?? ""} oninput={(e) => (filterOf(item.gid, x.a).max = e.currentTarget.value)} />
         </div>
       {:else}
-        <div class="mut">no effects</div>
+        <div class="mut">No effects</div>
       {/each}
     {/if}
   </div>
@@ -176,14 +183,17 @@
   .ilist div:hover { background: var(--bg); }
   .ilist div.sel { outline: 1px solid var(--acc); }
   .ilist .empty { cursor: default; }
-  .detail { overflow: auto; padding: 12px; font-family: system-ui, sans-serif; }
+  .view > :global(.wrap) { font-family: system-ui, sans-serif; }
+  .sort { display: inline-flex; gap: 6px; align-items: center; }
+  .arrow { display: inline-block; transition: transform 0.32s cubic-bezier(0.3, 1.4, 0.5, 1); }
+  .arrow.desc { transform: rotate(180deg); }
   .head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
   .head .fh { margin: 0; flex: 1; }
   .filter { overflow: auto; background: var(--panel); border-left: 1px solid var(--line); padding: 10px; font-family: system-ui, sans-serif; font-size: 12px; }
   .btns { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
-  .frow { display: grid; grid-template-columns: 1fr 54px 54px; gap: 4px; align-items: center; margin: 3px 0; }
+  .frow { display: grid; grid-template-columns: 1fr auto 54px 54px; gap: 4px; align-items: center; margin: 3px 0; }
   .frow input { width: 100%; padding: 2px 4px; }
   .frow .lb { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .frow .lb small { color: var(--mut); }
+  .frow .rg { color: var(--mut); text-align: right; white-space: nowrap; padding-right: 2px; }
   .frow.on .lb { font-weight: 700; color: var(--acc); }
 </style>

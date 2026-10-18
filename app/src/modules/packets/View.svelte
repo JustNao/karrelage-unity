@@ -125,10 +125,10 @@
 </script>
 
 <div class="bar">
-  <input type="search" placeholder="filter (name, field, value)…" bind:value={q} />
-  <select bind:value={fdir}><option value="">both dirs</option><option>C-&gt;S</option><option>S-&gt;C</option></select>
-  <select bind:value={fkind}><option value="">all kinds</option><option>event</option><option>request</option><option>response</option></select>
-  <label><input type="checkbox" bind:checked={follow} /> follow</label>
+  <input type="search" placeholder="Filter (name, field, value)…" bind:value={q} />
+  <select bind:value={fdir}><option value="">Both dirs</option><option>C-&gt;S</option><option>S-&gt;C</option></select>
+  <select bind:value={fkind}><option value="">All kinds</option><option>event</option><option>request</option><option>response</option></select>
+  <label><input type="checkbox" bind:checked={follow} /> Follow</label>
   <button onclick={clear}>Clear</button>
   <span class="mut">{visible.length} shown / {packets.length} buffered</span>
 </div>
@@ -220,7 +220,7 @@
   .badge { font-size: 10px; padding: 0 5px; border-radius: 8px; margin-left: 6px; border: 1px solid; }
   .high { color: var(--ok); }
   .med { color: var(--warn); }
-  .manual { color: var(--acc); }
+  .manual, .ref { color: var(--acc); }
   .none { color: var(--mut); }
   b.ed { cursor: pointer; border-bottom: 1px dotted var(--mut); }
   .ren { width: 240px; }
