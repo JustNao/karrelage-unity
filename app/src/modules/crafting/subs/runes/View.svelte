@@ -83,7 +83,7 @@
       <tbody>
         {#each view as r (r.gid)}
           <tr>
-            <td title={r.recipe}><b>{r.name}</b>{#if r.effect}<div class="sub">{r.effect}</div>{/if}<div class="sub"><small>{r.recipe}</small></div></td>
+            <td title={r.recipe}><b>{r.name}</b>{#if r.effect}<span class="eff">{r.effect}</span>{/if}<div class="sub"><small>{r.recipe}</small></div></td>
             <td class="n">{r.craft != null ? kamas(r.craft) : "—"}</td>
             <td class="n" title={r.missing.length ? "Prix manquant : " + r.missing.join(", ") : ""}>{r.cumul != null ? kamas(r.cumul) : "—"}{#if r.missing.length} <span class="warn">⚠</span>{/if}</td>
             <td class="n">{r.sale != null ? kamas(r.sale) : "—"}</td>
@@ -109,6 +109,7 @@
   th button { border: 0; background: none; color: inherit; font: inherit; padding: 0; cursor: pointer; }
   td { padding: 4px 6px; border-top: 1px solid var(--line); }
   .sub { margin-top: 3px; color: var(--mut); }
+  .eff { margin-left: 8px; color: var(--mut); }
   .n { text-align: right; white-space: nowrap; }
   .good { color: var(--good, #4caf50); }
   .bad { color: var(--bad, #e05555); }
