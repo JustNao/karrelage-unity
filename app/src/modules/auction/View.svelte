@@ -168,8 +168,11 @@
   }
 
   /** Graph dots: price (per unit) against the lot's density. Same lots as the list, so every dot has a card. */
+  /** Rune focus (Transcendance tab): the graph only keeps the lots that have the focused effect. */
+  const focusEffect = $derived(tab === "trans" && !comp && focus ? Number(focus.split(":")[0]) : null);
   const points = $derived(
     rows
+      .filter((r: any) => focusEffect === null || r.effects.some((e: any) => e.action === focusEffect && e.status !== "removed"))
       .map((r: any, i: number) => ({
         id: lotKey(r, i),
         x: unitPrice(r),
