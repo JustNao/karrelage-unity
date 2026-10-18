@@ -4,6 +4,7 @@
 //! Adding a feature = one file here implementing `Module` + registering it in `all()` + a UI folder under app/ui/src/modules.
 pub mod auction;
 pub mod packets;
+pub mod prices;
 
 use anyhow::{anyhow, Result};
 use loutil_core::wire::{self, Envelope};
@@ -87,7 +88,7 @@ pub trait Module: Send + Sync {
 
 /// Every module of the app. Register new ones here.
 pub fn all() -> Vec<Box<dyn Module>> {
-    vec![Box::new(packets::Packets::new()), Box::new(auction::Auction::new())]
+    vec![Box::new(packets::Packets::new()), Box::new(auction::Auction::new()), Box::new(prices::Prices::new())]
 }
 
 pub struct Hub {

@@ -30,7 +30,7 @@ crates/
                          runtime – no Npcap SDK, app starts without Npcap), capture.rs (Dofus.exe socket discovery + sniff threads)
   proto/                 dynamic decode from datapack/protocol.desc (prost-reflect), names.rs (names.json + overrides -> clear labels), util.rs
   data/                  data pack loader (items/effects/itemtypes/strings/bindings), effects.rs (templates, labels), items.rs (gid/type resolve, compare)
-  modules/               Module trait + Hub (lib.rs); one file per feature: packets.rs (inspector), auction.rs (AH list + store)
+  modules/               Module trait + Hub (lib.rs); one file per feature: packets.rs (inspector), auction.rs (AH list + store), prices.rs (stored per-unit prices + manual override)
 app/
   src-tauri/             thin shell: loads the data pack, capture -> Hub -> events, generic `module_call` command
   src/                   Svelte 5 + Vite UI; src/modules/<id>/{index.ts,View.svelte} auto-registered as tabs; src/lib shared components
@@ -94,3 +94,4 @@ A newer pack can be dropped in `%APPDATA%/fr.dofus.loutil.packets/datapack/` and
 - The effect picker (`Data::filterable_effects`) lists only effects found on equipment (item type category 0) of levels 150-200.
 - The data pack contains text extracted from Ankama's files – decide before publishing it publicly.
 - Ignore `.claude/`; do not commit `tools/`, `work/` (except `overrides.json`) or `datapack/`.
+- Stored prices (`prices.rs`, "Stored prices" tab): on every AH listing, per-unit price = cheapest lot at the *highest stack size on sale* (price / qty), stored per gid, grouped category (itemtypes.categoryId 0 equipment, 1 consumable, 2 resource) > type > item; `override` is a manual price. The Items tab's left list groups items by type, collapsible (state in localStorage).

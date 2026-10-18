@@ -37,6 +37,27 @@
   let sortDir = $state(1);
 
   const list = $derived([...items.values()].sort((a, b) => b.updated - a.updated));
+  /** Left panel: items grouped by type, each group collapsible (collapsed groups are remembered). */
+  const COLLAPSE_KEY = "loutil.collapsedTypes";
+  const collapsed = new SvelteSet<string>();
+  try {
+    JSON.parse(localStorage.getItem(COLLAPSE_KEY) ?? "[]").forEach((t: string) => collapsed.add(t));
+  } catch {}
+  function toggleType(t: string) {
+    collapsed.has(t) ? collapsed.delete(t) : collapsed.add(t);
+    try {
+      localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...collapsed]));
+    } catch {}
+  }
+  const typeGroups = $derived.by(() => {
+    const m = new Map<string, any[]>();
+    for (const i of list) {
+      const t = i.type ?? "?";
+      if (!m.has(t)) m.set(t, []);
+      m.get(t)!.push(i);
+    }
+    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], "fr")).map(([type, items]) => ({ type, items }));
+  });
   const item = $derived(selGid != null ? items.get(selGid) : undefined);
 
   const effLabel = (a: number) => meta[a]?.label ?? `effect ${a}`;
@@ -198,12 +219,20 @@
 
 <div class="view">
   <div class="ilist">
-    {#each list as i (i.gid)}
-      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-      <div class:sel={selGid === i.gid} onclick={() => (selGid = i.gid)}>
-        <b>{i.name}</b> <span class="mut">niv. {i.level ?? "?"}</span><br />
-        <span class="mut">{i.type ?? ""} · {i.lots} lots · {i.min_price ? "min " + kamas(i.min_price) + " kamas" : "—"} · {ago(i.updated)} ago{i.demo ? " · demo" : ""}</span>
-      </div>
+    {#each typeGroups as g (g.type)}
+      {@const shut = collapsed.has(g.type)}
+      <button class="thead" aria-expanded={!shut} onclick={() => toggleType(g.type)}>
+        <span class="chev" class:shut>▾</span> {g.type} <span class="mut">{g.items.length}</span>
+      </button>
+      {#if !shut}
+        {#each g.items as i (i.gid)}
+          <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+          <div class="irow" class:sel={selGid === i.gid} onclick={() => (selGid = i.gid)}>
+            <b>{i.name}</b> <span class="mut">niv. {i.level ?? "?"}</span><br />
+            <span class="mut">{i.lots} lots · {i.min_price ? "min " + kamas(i.min_price) + " kamas" : "—"} · {ago(i.updated)} ago{i.demo ? " · demo" : ""}</span>
+          </div>
+        {/each}
+      {/if}
     {:else}
       <div class="mut empty">Open an item in the auction house: it appears here (latest listing per item).</div>
     {/each}
@@ -278,8 +307,11 @@
 <style>
   .view { flex: 1; min-height: 0; display: grid; grid-template-columns: 280px 1fr 470px; }
   .ilist { overflow: auto; background: var(--panel); border-right: 1px solid var(--line); }
+  .thead { display: flex; width: 100%; align-items: center; gap: 6px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: var(--bg); color: inherit; padding: 5px 10px; font: 600 11px system-ui; letter-spacing: 0.04em; text-transform: uppercase; text-align: left; position: sticky; top: 0; z-index: 1; }
+  .chev { display: inline-block; transition: transform 0.2s; }
+  .chev.shut { transform: rotate(-90deg); }
   .ilist div { padding: 6px 10px; border-bottom: 1px solid var(--line); cursor: pointer; font-family: system-ui, sans-serif; }
-  .ilist div:hover { background: var(--bg); }
+  .ilist .irow:hover { background: var(--bg); }
   .ilist div.sel { outline: 1px solid var(--acc); }
   .ilist .empty { cursor: default; }
   .view > :global(.wrap) { font-family: system-ui, sans-serif; }
