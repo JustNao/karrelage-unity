@@ -468,6 +468,7 @@
           <span class="gbtns">
             <button class="mini" onclick={() => g.items.forEach((x) => setMin(x.a, x.def))} title="Remplir le min de tous les effets de cette section avec le bas de leur plage de base">Jet min</button>
             <button class="mini" onclick={() => g.items.forEach((x) => setPerf(x.a, x.def))} title="Remplir le min de tous les effets de cette section avec le max de leur plage de base (jet parfait)">Jet parfait</button>
+            <button class="mini" disabled={!g.items.some((x) => active(x.a))} onclick={() => g.items.forEach((x) => clearEffect(x.a))} title="Effacer les filtres de cette section">Effacer</button>
           </span>
         </div>
         {#each g.items as x (x.a)}
