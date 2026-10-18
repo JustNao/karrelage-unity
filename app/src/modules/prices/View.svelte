@@ -70,7 +70,7 @@
           </button>
           {#if !shut.has(k)}
             <table>
-              <thead><tr><th>Item</th><th class="n">Captured / unit</th><th>Last updated</th><th class="n">Manual override</th></tr></thead>
+              <thead><tr><th>Item</th><th class="n">Captured / unit</th><th>Last updated</th><th class="n">Manual override (kamas)</th></tr></thead>
               <tbody>
                 {#each t.items as p (p.gid)}
                   <tr>

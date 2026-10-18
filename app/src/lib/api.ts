@@ -27,7 +27,8 @@ export const getStatus = () => invoke<Status>("status");
 export const captureSet = (on: boolean) => invoke<Status>("capture_set", { on });
 export const devInject = () => invoke<Status>("dev_inject");
 
-export const kamas = (n: number) => Number(n).toLocaleString("fr-FR");
+/** A price with its unit: "12 345 kamas". */
+export const kamas = (n: number) => `${Number(n).toLocaleString("fr-FR")} kamas`;
 export const ago = (t: number) => {
   const d = Math.round(Date.now() / 1000 - t);
   return d < 60 ? `${d}s` : d < 3600 ? `${Math.round(d / 60)}min` : `${Math.round(d / 3600)}h`;

@@ -243,7 +243,7 @@
           <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
           <div class="irow" class:sel={selGid === i.gid} onclick={() => (selGid = i.gid)}>
             <b>{i.name}</b> <span class="mut">niv. {i.level ?? "?"}</span><br />
-            <span class="mut">{i.lots} lots · {i.min_price ? "min " + kamas(i.min_price) + " kamas" : "—"} · {ago(i.updated)} ago{i.demo ? " · demo" : ""}</span>
+            <span class="mut">{i.lots} lots · {i.min_price ? "min " + kamas(i.min_price) : "—"} · {ago(i.updated)} ago{i.demo ? " · demo" : ""}</span>
           </div>
         {/each}
       {/if}
