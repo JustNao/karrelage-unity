@@ -141,10 +141,12 @@ fn restart_app(app: AppHandle) {
 }
 
 fn main() {
+    // the state is registered before any window exists: the webview can call `status` before `setup` has run (release builds load
+    // the page faster than setup completes), and a command on unmanaged state fails
+    let log = Arc::new(Mutex::new(VecDeque::new()));
     tauri::Builder::default()
-        .setup(|app| {
-            let log = Arc::new(Mutex::new(VecDeque::new()));
-            app.manage(AppState { core: OnceLock::new(), error: OnceLock::new(), log: log.clone() });
+        .manage(AppState { core: OnceLock::new(), error: OnceLock::new(), log: log.clone() })
+        .setup(move |app| {
             // load the data pack off the UI thread: blocking `setup` left the window unpainted (black + white webview) meanwhile
             let handle = app.handle().clone();
             std::thread::spawn(move || {
