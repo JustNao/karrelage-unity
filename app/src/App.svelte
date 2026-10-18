@@ -60,7 +60,10 @@
 <style>
   .shell { display: flex; flex-direction: column; height: 100%; }
   header { display: flex; gap: 12px; align-items: center; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
-  h1 { font: 600 14px system-ui; margin: 0 6px 0 0; }
+  /* same font family and line box as the tabs so the text centres line up (system-ui sat a pixel or two off the monospace tabs) */
+  h1 { font: 600 14px/1.4 ui-monospace, Consolas, monospace; margin: 0 6px 0 0; padding: 4px 0; }
+  header label { display: flex; align-items: center; gap: 6px; line-height: 1.4; padding: 4px 0; }
+  header label input { margin: 0; }
   nav { display: flex; gap: 2px; }
   .tab { border: 0; background: none; color: var(--mut); padding: 4px 12px; }
   .tab.on { background: var(--bg); color: var(--fg); font-weight: 600; outline: 1px solid var(--line); }
