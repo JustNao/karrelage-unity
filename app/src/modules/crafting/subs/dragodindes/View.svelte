@@ -98,6 +98,8 @@
 <div class="rv">
   <div class="head">
     <div class="fh">Dragodindes</div>
+  </div>
+  <div class="head">
     <input type="search" placeholder="Rechercher une dragodinde…" bind:value={q} />
     <label><input type="checkbox" bind:checked={onlyPriced} /> Prix connus seulement</label>
   </div>

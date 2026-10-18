@@ -69,6 +69,8 @@
 <div class="rv">
   <div class="head">
     <div class="fh">Runes</div>
+  </div>
+  <div class="head">
     <input type="search" placeholder="Rechercher une rune…" bind:value={q} />
     <label><input type="checkbox" bind:checked={onlyPriced} /> Prix connus seulement</label>
   </div>
