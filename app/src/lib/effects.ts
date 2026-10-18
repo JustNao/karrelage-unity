@@ -37,6 +37,27 @@ export function sortEffects<T extends { status?: string; group?: string; order?:
   );
 }
 
+/** How close to the default max still counts as "perfect": vitality within 10, force/intelligence/agility/chance within 3. */
+const PERFECT_TOLERANCE: Record<number, number> = { 125: 10, 118: 3, 126: 3, 119: 3, 123: 3 };
+
+export interface Perfection {
+  damage: boolean;
+  resist: boolean;
+  main: boolean;
+}
+
+/**
+ * Perfect rolls of a lot, judged on the item's default effects only (those carry a `range`): a group is perfect when it has
+ * default effects and all of them are present at (or above) their default max, within the tolerance for main stats.
+ */
+export function perfection(effs: any[]): Perfection {
+  const check = (groups: string[], tol: (a: number) => number) => {
+    const rel = effs.filter((e) => groups.includes(e.group) && e.range && !(e.density < 0));
+    return rel.length > 0 && rel.every((e) => e.status !== "removed" && (e.hi ?? -Infinity) >= e.range[1] - tol(e.action));
+  };
+  return { damage: check(["damage"], () => 0), resist: check(["resist"], () => 0), main: check(["stats", "main"], (a) => PERFECT_TOLERANCE[a] ?? 0) };
+}
+
 /** Accent/case-insensitive form for matching what the user types. */
 export const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 

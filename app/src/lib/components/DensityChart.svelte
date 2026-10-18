@@ -6,15 +6,21 @@
     /** Item density (value of its effects). Not displayed: only the position relative to the trend matters. */
     y: number;
     label: string;
+    /** The lot has an effect the item does not have by default. */
+    added?: boolean;
+    /** The lot lacks some default effect. */
+    missing?: boolean;
   }
 </script>
 
 <script lang="ts">
   import { kamas } from "../api";
+  import { analyse, isGoodDeal } from "../density";
 
   /**
    * Price (x) against density (y) of the lots of one item, with a least-squares trend line and a ±2σ band.
-   * Dots well above the line carry more value than their price suggests (bargains); well below = overpriced.
+   * Gold dots sit far above the line: more value than their price suggests (good deals). Blue = has an added effect,
+   * orange = lacks some default effect.
    */
   let { points, selected = null, onselect }: { points: Point[]; selected?: string | number | null; onselect: (id: string | number) => void } = $props();
 
@@ -23,17 +29,7 @@
   let W = $state(600);
   let hover = $state<number | null>(null);
 
-  const fit = $derived.by(() => {
-    const n = points.length;
-    const mx = points.reduce((s, p) => s + p.x, 0) / n;
-    const my = points.reduce((s, p) => s + p.y, 0) / n;
-    const sxx = points.reduce((s, p) => s + (p.x - mx) ** 2, 0);
-    const slope = sxx > 0 ? points.reduce((s, p) => s + (p.x - mx) * (p.y - my), 0) / sxx : 0;
-    const icpt = my - slope * mx;
-    const res = points.map((p) => p.y - (slope * p.x + icpt));
-    const sigma = Math.sqrt(res.reduce((s, r) => s + r * r, 0) / Math.max(1, n - 2));
-    return { slope, icpt, sigma, z: res.map((r) => (sigma > 0 ? r / sigma : 0)) };
-  });
+  const fit = $derived(analyse(points));
 
   const dom = $derived.by(() => {
     const xs = points.map((p) => p.x);
@@ -63,17 +59,23 @@
     return out;
   });
 
-  const tone = (z: number) => (z >= 2 ? "good" : z <= -2 ? "bad" : "mid");
-  const info = $derived(hover === null ? null : { p: points[hover], z: fit.z[hover] });
+  /** gold = good deal, else blue (added effect) / orange (missing effect), both = blue with an orange ring. */
+  type Tone = "gold" | "added" | "missing" | "both" | "mid";
+  const tone = (i: number): Tone => {
+    const p = points[i];
+    return isGoodDeal(fit, i, points.length) ? "gold" : p.added ? (p.missing ? "both" : "added") : p.missing ? "missing" : "mid";
+  };
+  const info = $derived(hover === null ? null : { p: points[hover], tone: tone(hover) });
+  const tag: Record<Tone, string> = { gold: "good deal", added: "extra effect", missing: "missing effect", both: "extra and missing effects", mid: "" };
 </script>
 
 <div class="chart" bind:clientWidth={W}>
   <div class="status">
     {#if info}
-      <b>{info.p.label}</b> · {kamas(info.p.x)} kamas ·
-      <span class={tone(info.z)}>{info.z >= 0 ? "+" : ""}{info.z.toFixed(1)}σ {info.z >= 2 ? "· worth more than its price" : info.z <= -2 ? "· overpriced" : ""}</span>
+      <b>{info.p.label}</b> · {kamas(info.p.x)} kamas{#if tag[info.tone]} · <span class="t-{info.tone}">{tag[info.tone]}</span>{/if}
     {:else}
       <span class="mut">Price → · above the line = more value than its price suggests · click a dot to jump to the lot</span>
+      <span class="legend"><i class="d gold"></i>Good deal <i class="d added"></i>Added effect <i class="d missing"></i>Missing effect</span>
     {/if}
   </div>
   <svg width={W} height={H} role="img" aria-label="Density against price">
@@ -85,11 +87,11 @@
     {/each}
     <path d={line()} class="trend" />
     {#each points as p, i (p.id)}
-      {@const z = fit.z[i]}
+      {@const t = tone(i)}
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-      <g class="dot {tone(z)}" class:sel={selected === p.id} onclick={() => onselect(p.id)} onmouseenter={() => (hover = i)} onmouseleave={() => (hover = null)}>
+      <g class="dot {t}" class:sel={selected === p.id} onclick={() => onselect(p.id)} onmouseenter={() => (hover = i)} onmouseleave={() => (hover = null)}>
         <circle cx={sx(p.x)} cy={sy(p.y)} r="11" class="hit" />
-        <circle cx={sx(p.x)} cy={sy(p.y)} r={Math.abs(z) >= 2 ? 6 : 4.5} class="pt" />
+        <circle cx={sx(p.x)} cy={sy(p.y)} r={t === "gold" ? 6.5 : 4.5} class="pt" />
         {#if selected === p.id}<circle cx={sx(p.x)} cy={sy(p.y)} r="10" class="ring" />{/if}
       </g>
     {/each}
@@ -108,11 +110,19 @@
   .hit { fill: transparent; }
   .pt { transition: r 0.12s; stroke: #0a0b0e; stroke-width: 1; }
   .dot:hover .pt { r: 7; }
-  .good .pt { fill: var(--ok); }
-  .bad .pt { fill: var(--bad); }
+  .gold .pt { fill: #f2c94c; }
+  .added .pt, .both .pt { fill: #4a9eff; }
+  .missing .pt { fill: #f08a3c; }
+  .both .pt { stroke: #f08a3c; stroke-width: 2; }
   .mid .pt { fill: #8a91a0; }
   .ring { fill: none; stroke: #fff; stroke-width: 1.5; }
-  .good { color: var(--ok); }
-  .bad { color: var(--bad); }
+  .t-gold { color: #f2c94c; }
+  .t-added, .t-both { color: #4a9eff; }
+  .t-missing { color: #f08a3c; }
+  .legend { margin-left: 10px; color: var(--mut); white-space: nowrap; }
+  .d { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin: 0 4px 0 8px; background: #8a91a0; }
+  .d.gold { background: #f2c94c; }
+  .d.added { background: #4a9eff; }
+  .d.missing { background: #f08a3c; }
   .mut { color: var(--mut); }
 </style>

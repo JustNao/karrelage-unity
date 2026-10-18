@@ -7,6 +7,7 @@
   import EffectPicker from "../../lib/components/EffectPicker.svelte";
   import ItemCard from "../../lib/components/ItemCard.svelte";
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
+  import { analyse, isGoodDeal } from "../../lib/density";
   import { sections, type EffectMeta } from "../../lib/effects";
 
   interface Filter { a: number; min: string | number; max: string | number }
@@ -116,9 +117,28 @@
   /** Graph dots: price (per unit) against the lot's density. Same lots as the list, so every dot has a card. */
   const points = $derived(
     rows
-      .map((r: any, i: number) => ({ id: lotKey(r, i), x: unitPrice(r), y: r.density, label: r.name }))
+      .map((r: any, i: number) => ({
+        id: lotKey(r, i),
+        x: unitPrice(r),
+        y: r.density,
+        label: r.name,
+        added: r.effects.some((e: any) => e.status === "added"),
+        missing: r.effects.some((e: any) => e.status === "removed"),
+      }))
       .filter((p: any) => Number.isFinite(p.x) && Number.isFinite(p.y)),
   );
+
+  /** Lots far above the price trend (same rule as the gold dots), best first. */
+  const deals = $derived.by(() => {
+    if (points.length === 0) return [];
+    const fit = analyse(points);
+    const byKey = new Map(rows.map((r: any, i: number) => [lotKey(r, i), r]));
+    return points
+      .map((p: any, i: number) => ({ key: p.id, row: byKey.get(p.id), z: fit.z[i], good: isGoodDeal(fit, i, points.length) }))
+      .filter((d: any) => d.good && d.row)
+      .sort((a: any, b: any) => b.z - a.z)
+      .slice(0, 6);
+  });
 
   /** Clicking a dot: unroll the lot and scroll the list down to it (nothing is filtered out). */
   async function focusLot(id: string | number) {
@@ -179,6 +199,15 @@
       {#if points.length >= 3}
         <div class="graph"><DensityChart {points} selected={picked} onselect={focusLot} /></div>
       {/if}
+      {#if deals.length}
+        <div class="deals">
+          <div class="dhead">Good deals <span class="mut">· {deals.length} {deals.length === 1 ? "lot stands" : "lots stand"} out above the price trend</span></div>
+          {#each deals as d (d.key)}
+            <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+            <div class="deal" title="Click to jump to the lot in the list" onclick={() => focusLot(d.key)}><ItemCard row={d.row} /></div>
+          {/each}
+        </div>
+      {/if}
       {#each rows as r, i (lotKey(r, i))}
         {@const key = lotKey(r, i)}
         <div id="lot-{key}" class="lot" class:picked={picked === key} animate:flip={{ duration: 320 }}>
@@ -238,6 +267,10 @@
   .mini { padding: 2px 7px; font-size: 11px; }
   .mini:disabled { opacity: 0.35; cursor: default; border-color: var(--line); }
   .graph { margin-bottom: 12px; }
+  .deals { margin-bottom: 14px; padding: 8px 10px 2px; border: 1px solid color-mix(in srgb, #f2c94c 45%, var(--line)); border-radius: 10px; background: color-mix(in srgb, #f2c94c 5%, transparent); }
+  .dhead { font: 600 13px system-ui; color: #f2c94c; margin-bottom: 8px; }
+  .dhead .mut { font-weight: 400; }
+  .deal { cursor: pointer; }
   .lot.picked :global(.card) { border-color: var(--acc); animation: pulse 1.6s ease-out; }
   @keyframes pulse { from { box-shadow: 0 0 0 0 color-mix(in srgb, var(--acc) 70%, transparent); } to { box-shadow: 0 0 0 14px transparent; } }
   .btns { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }

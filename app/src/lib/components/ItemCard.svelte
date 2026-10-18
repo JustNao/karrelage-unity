@@ -1,11 +1,12 @@
 <script lang="ts">
   import { kamas } from "../api";
-  import { sortEffects } from "../effects";
+  import { perfection, sortEffects } from "../effects";
 
   /** One auction lot (see crates/modules/src/auction.rs for the shape). */
   let { row, collapsible = false, open = true, ontoggle }: { row: any; collapsible?: boolean; open?: boolean; ontoggle?: () => void } = $props();
 
   const effects = $derived(sortEffects<any>(row.effects)); // new first, then stats/main, damage, resistances, utility
+  const perfect = $derived(perfection(row.effects));
   const shown = $derived(open ? effects : effects.filter((e: any) => e.status === "added" || e.status === "above"));
   // equipment is sold per unit: only show the lot sizes (x10, x100, x1000) that actually have a price
   const prices = $derived(row.prices.filter((p: any) => p.price > 0));
@@ -20,6 +21,9 @@
   <h4>
     {#if collapsible}<span class="chev">{open ? "▾" : "▸"}</span>{/if}
     {row.name} <span class="mut">{row.level != null ? "niv. " + row.level : ""}</span>
+    {#if perfect.damage}<span class="flag" title="All default damage effects at their max">★ Perfect damage</span>{/if}
+    {#if perfect.resist}<span class="flag" title="All default resistances at their max">★ Perfect resistances</span>{/if}
+    {#if perfect.main}<span class="flag" title="Main stats at max (within 3 for force/intelligence/agility/chance, 10 for vitality)">★ Perfect main stats</span>{/if}
     {#if row.locked}<span class="shield" title="Empêche les futures forgemagies — cannot be modified anymore">🛡 Transcendance</span>{/if}
   </h4>
   <div class="sub">
@@ -65,5 +69,6 @@
   .eff li.removed { color: var(--mut); opacity: 0.55; }
   .eff li small { font-weight: 400; color: var(--mut); margin-left: 6px; }
   .none { color: var(--mut); font-size: 12px; }
+  .flag { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 8px; background: color-mix(in srgb, #f2c94c 18%, transparent); color: #f2c94c; font-size: 11px; font-weight: 600; white-space: nowrap; }
   .shield { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 8px; background: color-mix(in srgb, var(--warn) 25%, transparent); color: var(--warn); font-size: 12px; }
 </style>
