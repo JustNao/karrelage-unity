@@ -111,6 +111,11 @@ it usually needs updating after a game update, app code never hard-codes obfusca
 
 CLI alternative to the app for recording fixtures: `python pipeline/sniff.py` (add `--raw` for payload hex) writes JSONL.
 
+## CI and releases
+`.github/workflows/ci.yml` runs `cargo test` + `svelte-check` on every push / PR. `.github/workflows/release.yml` builds the Windows installer
+(`Karrelage_x.y.z_x64-setup.exe`) and attaches it to a GitHub release: bump `version` in `app/src-tauri/tauri.conf.json`, then
+`git tag v0.1.0 && git push origin v0.1.0` (or run the workflow by hand from the Actions tab). The workflow rebuilds `datapack/` from the committed `dist/`.
+
 ## Publishing a data pack
 `python pipeline/package_pack.py` (also run at the end of `update_names.py`) writes `dist/datapack.zip` + `dist/pack.json`. Commit and push them to `master`:
 running apps check `dist/pack.json` at startup and offer a one-click download of newer packs (top bar), then ask for a restart.

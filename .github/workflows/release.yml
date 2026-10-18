@@ -1,0 +1,42 @@
+name: Release
+
+# Push a tag like v0.1.0 (it must match "version" in app/src-tauri/tauri.conf.json) or run it by hand:
+# builds the Windows installer + exe and attaches them to a GitHub release.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # create the release and upload the files
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      # the installer bundles datapack/ (gitignored): rebuild it from the committed dist/
+      - name: Unpack the data pack
+        shell: pwsh
+        run: Expand-Archive dist/datapack.zip datapack -Force
+      - name: Install UI dependencies
+        working-directory: app
+        run: npm ci
+      - name: Build and publish the release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: app
+          tagName: ${{ github.ref_name }}
+          releaseName: "Karrelage ${{ github.ref_name }}"
+          releaseBody: "Installeur Windows (NSIS). Installez aussi Npcap (https://npcap.com) pour la capture."
+          releaseDraft: false
+          prerelease: false
