@@ -1,10 +1,14 @@
 <script lang="ts">
   import { kamas } from "../api";
+  import { sortEffects } from "../effects";
 
   /** One auction lot (see crates/modules/src/auction.rs for the shape). */
   let { row, collapsible = false, open = true, ontoggle }: { row: any; collapsible?: boolean; open?: boolean; ontoggle?: () => void } = $props();
 
-  const shown = $derived(open ? row.effects : row.effects.filter((e: any) => e.status === "added" || e.status === "above"));
+  const effects = $derived(sortEffects<any>(row.effects)); // new first, then stats/main, damage, resistances, utility
+  const shown = $derived(open ? effects : effects.filter((e: any) => e.status === "added" || e.status === "above"));
+  // equipment is sold per unit: only show the lot sizes (x10, x100, x1000) that actually have a price
+  const prices = $derived(row.prices.filter((p: any) => p.price > 0));
   const hint = (e: any) =>
     `effect ${e.action}` +
     (e.range ? ` · default ${e.range[0]}–${e.range[1]}` : "") +
@@ -25,8 +29,10 @@
     {#if row.meta?.modified_by} · modifié par {row.meta.modified_by}{/if}
   </div>
   <div class="prices">
-    {#each row.prices as p}
-      <span class="pr" class:no={!(p.price > 0)}>×{p.qty} <b>{p.price > 0 ? kamas(p.price) + " kamas" : "—"}</b></span>
+    {#each prices as p (p.qty)}
+      <span class="pr">×{p.qty} <b>{kamas(p.price)} kamas</b></span>
+    {:else}
+      <span class="pr no">—</span>
     {/each}
   </div>
   {#if shown.length}

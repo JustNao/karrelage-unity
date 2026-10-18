@@ -76,51 +76,20 @@
     packets = [];
   }
 
-  // ---- editable names: persisted by the backend, mirrored in the buffered packets
-  function walk(o: any, fn: (o: any) => void) {
-    if (Array.isArray(o)) o.forEach((x) => walk(x, fn));
-    else if (o && typeof o === "object") {
-      fn(o);
-      Object.values(o).forEach((x) => walk(x, fn));
-    }
-  }
-  const CAND = / \((.*)\?\)$/;
-  function applyRename(t: string, obf: string, name: string) {
-    for (const p of packets) {
-      if (!p.decoded) continue;
-      walk(p.decoded, (o) => {
-        if (o.__t !== t || !o.__f) return;
-        const out: Record<string, any> = {};
-        const meta: Record<string, string> = {};
-        for (const [k, v] of Object.entries(o)) {
-          if (k.startsWith("__")) continue;
-          const ob = o.__f[k];
-          let key = k;
-          if (ob === obf) key = name || ob;
-          else if (name && CAND.test(k)) {
-            const c = k.match(CAND)![1].split("|").filter((x) => x !== name);
-            key = ob + (c.length ? ` (${c.join("|")}?)` : "");
-          }
-          out[key] = v;
-          meta[key] = ob;
-        }
-        for (const k of Object.keys(o)) delete o[k];
-        Object.assign(o, out, { __t: t, __f: meta });
-      });
-    }
-    packets = [...packets];
+  // ---- editable names: the backend re-applies them to its whole buffer, so we just reload it
+  async function reload() {
+    packets = await call<any[]>("packets", "list");
   }
   async function renameField(msg: string, field: string, name: string) {
     await call("packets", "rename", { msg, field, name });
-    applyRename(msg, field, name);
+    await reload();
   }
   async function renameMessage() {
     const t = current?.decoded?.__t;
     editingName = false;
     if (!t) return;
-    const name = nameDraft.trim();
-    await call("packets", "rename", { msg: t, name });
-    packets = packets.map((p) => (p.decoded?.__t === t ? { ...p, name: name || p.type } : p));
+    await call("packets", "rename", { msg: t, name: nameDraft.trim() });
+    await reload();
   }
 </script>
 

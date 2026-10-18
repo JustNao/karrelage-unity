@@ -3,26 +3,26 @@
   import { SvelteMap, SvelteSet } from "svelte/reactivity";
   import { ago, call, kamas, on } from "../../lib/api";
   import { flip } from "svelte/animate";
+  import EffectPicker from "../../lib/components/EffectPicker.svelte";
   import ItemCard from "../../lib/components/ItemCard.svelte";
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
+  import { sections, type EffectMeta } from "../../lib/effects";
 
   interface Filter { a: number; min: string | number; max: string | number }
-  interface Eff { id: number; label: string; group: string }
 
   let items = new SvelteMap<number, any>();
   let selGid = $state<number | null>(null);
-  let allEffects = $state<Eff[]>([]);
+  let picker = $state<EffectMeta[]>([]); // effects found on level 150-200 equipment (what the picker offers)
+  let meta = $state<Record<number, EffectMeta>>({}); // every labelled effect (labels/groups of whatever shows up in a lot)
   let filters = $state<Record<number, Filter[]>>({}); // gid -> filters
   let openSet = new SvelteSet<number>();
   let allOpen = $state(false);
   let sortDir = $state(1);
-  let freeEff = $state("");
 
-  const effById = $derived(new Map(allEffects.map((e) => [e.id, e])));
   const list = $derived([...items.values()].sort((a, b) => b.updated - a.updated));
   const item = $derived(selGid != null ? items.get(selGid) : undefined);
 
-  const effLabel = (a: number) => effById.get(a)?.label ?? `effect ${a}`;
+  const effLabel = (a: number) => meta[a]?.label ?? `effect ${a}`;
   const unitPrice = (r: any) => {
     const v = r.prices.filter((p: any) => p.price > 0).map((p: any) => p.price / p.qty);
     return v.length ? Math.min(...v) : Infinity;
@@ -39,6 +39,11 @@
     for (const x of flist(item.gid)) if (!seen.has(x.a)) seen.set(x.a, { a: x.a, def: null });
     return [...seen.values()];
   });
+
+  /** Filter rows grouped like the in-game characteristics panel. */
+  const groups = $derived(
+    sections(effectRows.map((x) => ({ ...x, group: meta[x.a]?.group ?? "other", order: meta[x.a]?.order ?? 9999, label: effLabel(x.a) }))),
+  );
 
   const rows = $derived.by(() => {
     if (!item) return [];
@@ -72,18 +77,20 @@
   function preset(p: string) {
     if (!item) return;
     if (p === "clear") return void (filters[item.gid] = []);
-    if (p === "add") {
-      const m = freeEff.match(/#(\d+)$/);
-      const a = m ? +m[1] : allEffects.find((x) => x.label.toLowerCase() === freeEff.trim().toLowerCase())?.id;
-      if (a) filterOf(item.gid, a);
-      return void (freeEff = "");
-    }
     for (const x of effectRows) {
       if (!x.def) continue; // presets only touch the item's default effects (perfect = default max)
       const y = filterOf(item.gid, x.a);
       if (p === "min") y.min = x.def[0];
-      else if (p === effById.get(x.a)?.group) y.min = x.def[1];
+      else if (p === meta[x.a]?.group) y.min = x.def[1];
     }
+  }
+
+  /** Fill the min field of one effect: the low end of its default range (or the lowest value seen in the lots). */
+  function setMin(a: number, def: number[] | null) {
+    if (!item) return;
+    const seen = item.rows.map((r: any) => lotVal(r, a)).filter((v: number) => v > 0);
+    const v = def ? def[0] : seen.length ? Math.min(...seen) : null;
+    if (v !== null) filterOf(item.gid, a).min = v;
   }
 
   function toggleOpen(uid: number) {
@@ -98,7 +105,8 @@
   }
 
   onMount(() => {
-    call<Eff[]>("auction", "effects").then((e) => (allEffects = e));
+    call<EffectMeta[]>("auction", "effects").then((e) => (picker = e));
+    call<EffectMeta[]>("auction", "effect_meta").then((l) => (meta = Object.fromEntries(l.map((e) => [e.id, e]))));
     call<any[]>("auction", "items").then((l) => {
       l.forEach(put);
       if (selGid === null && l.length) selGid = l[0].gid;
@@ -156,19 +164,19 @@
         <button onclick={() => preset("resist")} title="perfect (default max) for % resistances">Résistances</button>
         <button onclick={() => preset("clear")}>Clear</button>
       </div>
-      <div class="btns">
-        <input list="effList" placeholder="Add any effect…" bind:value={freeEff} style="flex:1;min-width:0" />
-        <button onclick={() => preset("add")}>Add</button>
-      </div>
-      <datalist id="effList">{#each allEffects as e}<option value="{e.label} #{e.id}"></option>{/each}</datalist>
-      {#each effectRows as x (x.a)}
-        {@const y = flist(item.gid).find((z) => z.a === x.a)}
-        <div class="frow" class:on={active(x.a)}>
-          <div class="lb" title="effect {x.a}">{effLabel(x.a)}</div>
-          <small class="rg">{x.def ? `[${x.def[0]}–${x.def[1]}]` : ""}</small>
-          <input type="number" placeholder="min" value={y?.min ?? ""} oninput={(e) => (filterOf(item.gid, x.a).min = e.currentTarget.value)} />
-          <input type="number" placeholder="max" value={y?.max ?? ""} oninput={(e) => (filterOf(item.gid, x.a).max = e.currentTarget.value)} />
-        </div>
+      <div class="btns"><EffectPicker effects={picker} onpick={(id) => filterOf(item.gid, id)} /></div>
+      {#each groups as g (g.key)}
+        <div class="ghead">{g.label}</div>
+        {#each g.items as x (x.a)}
+          {@const y = flist(item.gid).find((z) => z.a === x.a)}
+          <div class="frow" class:on={active(x.a)}>
+            <div class="lb">{x.label}</div>
+            <small class="rg">{x.def ? `[${x.def[0]}–${x.def[1]}]` : ""}</small>
+            <input type="number" placeholder="min" value={y?.min ?? ""} oninput={(e) => (filterOf(item.gid, x.a).min = e.currentTarget.value)} />
+            <input type="number" placeholder="max" value={y?.max ?? ""} oninput={(e) => (filterOf(item.gid, x.a).max = e.currentTarget.value)} />
+            <button class="setmin" onclick={() => setMin(x.a, x.def)} title="Fill min with the low end of the default range">Set min</button>
+          </div>
+        {/each}
       {:else}
         <div class="mut">No effects</div>
       {/each}
@@ -177,7 +185,7 @@
 </div>
 
 <style>
-  .view { flex: 1; min-height: 0; display: grid; grid-template-columns: 280px 1fr 320px; }
+  .view { flex: 1; min-height: 0; display: grid; grid-template-columns: 280px 1fr 420px; }
   .ilist { overflow: auto; background: var(--panel); border-right: 1px solid var(--line); }
   .ilist div { padding: 6px 10px; border-bottom: 1px solid var(--line); cursor: pointer; font-family: system-ui, sans-serif; }
   .ilist div:hover { background: var(--bg); }
@@ -190,8 +198,10 @@
   .head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
   .head .fh { margin: 0; flex: 1; }
   .filter { overflow: auto; background: var(--panel); border-left: 1px solid var(--line); padding: 10px; font-family: system-ui, sans-serif; font-size: 12px; }
+  .ghead { margin: 12px 0 2px; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--mut); }
+  .setmin { padding: 2px 8px; font-size: 11px; }
   .btns { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
-  .frow { display: grid; grid-template-columns: 1fr auto 54px 54px; gap: 4px; align-items: center; margin: 3px 0; }
+  .frow { display: grid; grid-template-columns: 1fr auto 54px 54px auto; gap: 4px; align-items: center; margin: 3px 0; }
   .frow input { width: 100%; padding: 2px 4px; }
   .frow .lb { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .frow .rg { color: var(--mut); text-align: right; white-space: nowrap; padding-right: 2px; }

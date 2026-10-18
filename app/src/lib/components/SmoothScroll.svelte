@@ -6,7 +6,7 @@
    * slides in from the right edge (i.e. from under the neighbouring panel) while the content padding eases left,
    * instead of the native bar popping in and shifting everything instantly.
    */
-  let { children }: { children: Snippet } = $props();
+  let { children, pad = "12px", maxHeight }: { children: Snippet; pad?: string; maxHeight?: string } = $props();
 
   let scroller: HTMLElement;
   let inner: HTMLElement;
@@ -52,7 +52,7 @@
 </script>
 
 <div class="wrap">
-  <div class="scroller" class:over={overflow} bind:this={scroller} onscroll={measure}>
+  <div class="scroller" class:over={overflow} bind:this={scroller} onscroll={measure} style:--pad={pad} style:height={maxHeight ? "auto" : "100%"} style:max-height={maxHeight}>
     <div bind:this={inner}>{@render children()}</div>
   </div>
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
@@ -75,12 +75,12 @@
   .scroller {
     height: 100%;
     overflow-y: auto;
-    padding: 12px;
+    padding: var(--pad, 12px);
     scrollbar-width: none;
     transition: padding-right 0.28s cubic-bezier(0.3, 0.7, 0.3, 1);
   }
   .scroller::-webkit-scrollbar { display: none; }
-  .scroller.over { padding-right: 26px; }
+  .scroller.over { padding-right: calc(var(--pad, 12px) + 14px); }
   .track {
     position: absolute;
     top: 0;
