@@ -49,6 +49,8 @@ export const kamas = (n: number) => {
   const frac = tenths % 10;
   return `${v < 0 ? "−" : ""}${Math.floor(tenths / 10)}M${frac || ""} kamas`;
 };
+/** Full price, no compaction, "K" as unit: "2 380 000 K". */
+export const kamasFull = (n: number) => `${Number(n).toLocaleString("fr-FR")} K`;
 export const ago = (t: number) => {
   const d = Math.round(Date.now() / 1000 - t);
   return "il y a " + (d < 60 ? `${d}s` : d < 3600 ? `${Math.round(d / 60)}min` : `${Math.round(d / 3600)}h`);

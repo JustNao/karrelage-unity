@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { kamas } from "../api";
+  import { kamas, kamasFull } from "../api";
   import { app } from "../app.svelte";
   import { fmtDelta, pairRows } from "../compare";
   import { isLegendary, levelOf, xpOfLevel } from "../companion";
@@ -76,13 +76,24 @@
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div class="card" class:col={collapsible} onclick={() => collapsible && ontoggle?.()}>
+  {#if !versus || onpin}
+    <div class="prices">
+      {#if !versus}
+        {#each prices as p (p.qty)}
+          <span class="price">{#if p.qty > 1}×{p.qty} {/if}{kamasFull(p.price)}</span>
+        {:else}
+          <span class="price no">—</span>
+        {/each}
+      {/if}
+      {#if onpin}
+        <button class="pin" class:on={pinned} title="Comparer chaque lot consulté avec celui-ci" onclick={(ev) => (ev.stopPropagation(), onpin())}>{pinned ? "Désépingler" : "Épingler"}</button>
+      {/if}
+    </div>
+  {/if}
   <h4>
     {#if collapsible}<span class="chev">{open ? "▾" : "▸"}</span>{/if}
     {row.name} <span class="mut">{row.level != null ? "niv. " + row.level : ""}</span>
     {#if row.type}<span class="mut typ">· {row.type}</span>{/if}
-    {#if onpin}
-      <button class="pin" class:on={pinned} title="Comparer chaque lot consulté avec celui-ci" onclick={(ev) => (ev.stopPropagation(), onpin())}>{pinned ? "Désépingler" : "Épingler"}</button>
-    {/if}
     {#if companion}
       <span class="flag on" title="Niveau (xp totale {level != null ? xpOfLevel(level).toLocaleString('fr-FR') : '?'})">{level != null ? "Niveau " + level : "Niveau ?"}</span>
       <span class="flag" class:on={legendary}>★ Statut légendaire</span>
@@ -129,13 +140,6 @@
       {/each}
     </div>
   {:else}
-    <div class="prices">
-      {#each prices as p (p.qty)}
-        <span class="pr">{#if p.qty > 1}×{p.qty} {/if}<b>{kamas(p.price)}</b></span>
-      {:else}
-        <span class="pr no">—</span>
-      {/each}
-    </div>
     {#if companion}
       <!-- level and legendary status are in the title -->
     {:else if shown.length}
@@ -166,7 +170,9 @@
   h4 { margin: 0 0 2px; font-size: 13px; }
   .sub { color: var(--mut); font-size: 12px; }
   .chev { float: right; color: var(--mut); }
-  .prices { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
+  .prices { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; margin: 0 0 2px; }
+  .price { font-weight: 700; color: var(--fg); font-size: 14px; }
+  .price.no { opacity: 0.4; }
   .pr { border: 1px solid var(--line); border-radius: 6px; padding: 1px 7px; font-variant-numeric: tabular-nums; }
   .pr b { color: var(--ok); }
   .pr.no { opacity: 0.4; }
@@ -197,7 +203,7 @@
   .cmp .d { text-align: center; min-width: 52px; cursor: default; font-size: 12px; font-weight: 600; color: var(--mut); font-variant-numeric: tabular-nums; }
   .cmp .d.up { color: var(--ok); }
   .cmp .d.down { color: var(--bad); }
-  .pin { margin-left: 8px; padding: 0 8px; font-size: 11px; font-weight: 400; border-radius: 8px; }
+  .pin { padding: 1px 11px; font-size: 12.5px; font-weight: 400; border-radius: 9px; }
   .pin.on { background: color-mix(in srgb, var(--acc) 25%, transparent); border-color: var(--acc); color: var(--acc); }
   .fade { margin-left: 10px; padding: 1px 11px; font-size: 12.5px; font-weight: 400; border-radius: 9px; }
   .fade.on { background: color-mix(in srgb, var(--acc) 25%, transparent); border-color: var(--acc); color: var(--acc); }
