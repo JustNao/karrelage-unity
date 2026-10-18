@@ -3,7 +3,7 @@
   import { app } from "../app.svelte";
   import { fmtDelta, pairRows } from "../compare";
   import { isLegendary, levelOf, xpOfLevel } from "../companion";
-  import { isBelowMin, isNegative, isPerfectLine, perfection, rangeLabel, sortEffects } from "../effects";
+  import { isBelowMin, isNegative, isPerfectLine, isWeaponEffect, perfection, rangeLabel, sortEffects } from "../effects";
 
   /** One auction lot (see crates/modules/src/auction.rs for the shape). */
   let {
@@ -37,6 +37,9 @@
   const effects = $derived(sortEffects<any>(row.effects)); // new first, then stats/main, damage, resistances, utility
   const perfect = $derived(perfection(row.effects));
   const shown = $derived(open ? effects : effects.filter((e: any) => e.status === "added" || e.status === "above"));
+  // the weapon's own effects (hits, -PA, pushback...) are not stats: listed apart, plain, without range
+  const weaponEffs = $derived(shown.filter(isWeaponEffect));
+  const statEffs = $derived(shown.filter((e: any) => !isWeaponEffect(e)));
   // equipment is sold per unit: only show the lot sizes (x10, x100, x1000) that actually have a price
   const prices = $derived(row.prices.filter((p: any) => p.price > 0));
   /** Row being hovered in the comparison: its effect on both lots and the difference light up together. */
@@ -53,7 +56,9 @@
 </script>
 
 {#snippet line(e: any, mirror: boolean)}
-  {#if mirror}
+  {#if isWeaponEffect(e)}
+    {e.text}
+  {:else if mirror}
     {#if e.range && e.status !== "removed"}<small class="rg">{rangeLabel(e.range)}</small>{/if}{e.text}
   {:else}
     {e.text}{#if e.range && e.status !== "removed"}<small>{rangeLabel(e.range)}</small>{/if}
@@ -108,7 +113,7 @@
       {#each pairs as p (p.key)}
         <div class="l" class:hot={hov === p.key} {...hover(p.key)}>
           {#if p.left}
-            <span class="ln {p.left.status}" class:unk={!p.left.known} class:perfect={isPerfectLine(p.left)} class:low={isBelowMin(p.left)} class:neg={isNegative(p.left)} title={hint(p.left)}>
+            <span class="ln {isWeaponEffect(p.left) ? '' : p.left.status}" class:unk={!p.left.known} class:perfect={isPerfectLine(p.left)} class:low={isBelowMin(p.left)} class:neg={isNegative(p.left)} title={hint(p.left)}>
               {@render line(p.left, false)}{@render highlight(p.left)}
             </span>
           {/if}
@@ -116,7 +121,7 @@
         <div class="d" class:hot={hov === p.key} {...hover(p.key)} class:up={p.delta > 0} class:down={p.delta < 0}>{fmtDelta(p.delta)}</div>
         <div class="r" class:hot={hov === p.key} {...hover(p.key)}>
           {#if p.right}
-            <span class="ln {p.right.status}" class:unk={!p.right.known} class:perfect={isPerfectLine(p.right)} class:low={isBelowMin(p.right)} class:neg={isNegative(p.right)} title={hint(p.right)}>
+            <span class="ln {isWeaponEffect(p.right) ? '' : p.right.status}" class:unk={!p.right.known} class:perfect={isPerfectLine(p.right)} class:low={isBelowMin(p.right)} class:neg={isNegative(p.right)} title={hint(p.right)}>
               {@render line(p.right, true)}
             </span>
           {/if}
@@ -134,8 +139,15 @@
     {#if companion}
       <!-- level and legendary status are in the title -->
     {:else if shown.length}
+      {#if weaponEffs.length}
+        <ul class="eff wpn">
+          {#each weaponEffs as e}
+            <li class="ln" title={hint(e)}>{e.text}</li>
+          {/each}
+        </ul>
+      {/if}
       <ul class="eff">
-        {#each shown as e}
+        {#each statEffs as e}
           <li class="ln {e.status}" class:unk={!e.known} class:perfect={isPerfectLine(e)} class:low={isBelowMin(e)} class:neg={isNegative(e)} title={hint(e)}>
             {@render line(e, false)}{@render highlight(e)}
           </li>
@@ -158,6 +170,7 @@
   .pr b { color: var(--ok); }
   .pr.no { opacity: 0.4; }
   .eff { margin: 0; padding-left: 16px; }
+  .eff.wpn { margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px dashed var(--line); }
   .ln.unk { color: var(--warn); }
   .ln.added { color: var(--acc); font-weight: 700; }
   .ln.above { color: var(--ok); font-weight: 700; }

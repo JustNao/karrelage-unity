@@ -26,7 +26,7 @@ for k, v in gd.items.items():
     ids.add(v["nameId"])
 # Effect classification, following the in-game characteristics panel:
 #   stats (vitality, force, ...) / main (AP, MP, range, ...) / secondary (tackle, initiative, ...) / damage / resist / other,
-# plus "weapon": the hit effects of weapons (category 2 with dice: "dommages X", "vole X", heals). `density` = effectPowerRate (rune weight
+# plus "weapon": the effects of weapons (category 2: hits "dommages X", "vole X", heals, -PA, pushback...). `density` = effectPowerRate (rune weight
 # per unit: AP 100, MP 90, vitality 0.2, ...), kept for later features.
 STATS = ["vitality", "wisdom", "strength", "intelligence", "chance", "agility"]
 MAIN = ["actionPoints", "movementPoints", "range", "criticalHit", "damagePercent", "maxSummonedCreaturesBoost"]
@@ -34,7 +34,7 @@ MAIN = ["actionPoints", "movementPoints", "range", "criticalHit", "damagePercent
 
 def classify(e):
     ch = gd.characteristics.get(e["characteristic"]) if e["characteristic"] else None
-    if e["category"] == 2 and e["useDice"]:
+    if e["category"] == 2:
         return "weapon", 0
     if not ch:
         return "other", 0

@@ -47,11 +47,13 @@ const PERFECT_TOLERANCE: Record<number, number> = { 125: 10, 118: 3, 126: 3, 119
 
 const tolerance = (action: number) => PERFECT_TOLERANCE[action] ?? 0;
 
-export const isNegative = (e: any) => e.density < 0 || String(e.text ?? "").startsWith("-");
+/** The weapon's own effects (hits, -PA, pushback...): shown plain, without range or colours. */
+export const isWeaponEffect = (e: any) => e.group === "weapon";
+export const isNegative = (e: any) => !isWeaponEffect(e) && e.density < 0 || String(e.text ?? "").startsWith("-");
 /** The line is at (or above) its default max, within the main-stat tolerance. */
-export const isPerfectLine = (e: any) => !!e.range && !isNegative(e) && e.status !== "removed" && (e.hi ?? -Infinity) >= e.range[1] - tolerance(e.action);
+export const isPerfectLine = (e: any) => !isWeaponEffect(e) && !!e.range && !isNegative(e) && e.status !== "removed" && (e.hi ?? -Infinity) >= e.range[1] - tolerance(e.action);
 /** The line is below the default minimum of its range. */
-export const isBelowMin = (e: any) => !!e.range && !isNegative(e) && e.status !== "removed" && (e.hi ?? Infinity) < e.range[0];
+export const isBelowMin = (e: any) => !isWeaponEffect(e) && !!e.range && !isNegative(e) && e.status !== "removed" && (e.hi ?? Infinity) < e.range[0];
 
 export interface Perfection {
   damage: boolean;
