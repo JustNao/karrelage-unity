@@ -9,7 +9,7 @@
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
   import { LEVEL_EFFECT, isLegendary, levelOf, xpOfLevel } from "../../lib/companion";
   import { analyse, isGoodDeal } from "../../lib/density";
-  import { rangeLabel, sections, type EffectMeta } from "../../lib/effects";
+  import { norm, rangeLabel, sections, type EffectMeta } from "../../lib/effects";
   import { AH_TAX, targetKey, transcendance, type Rune, type StoredPrice } from "../../lib/transcend";
 
   interface Filter { a: number; min: string | number; max: string | number }
@@ -60,9 +60,12 @@
       localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...collapsed]));
     } catch {}
   }
+  let search = $state(""); // left list: filter by item or type name
   const typeGroups = $derived.by(() => {
     const m = new Map<string, any[]>();
+    const n = norm(search.trim());
     for (const i of list) {
+      if (n && !norm(i.name).includes(n) && !norm(i.type ?? "").includes(n)) continue;
       const t = i.type ?? "?";
       if (!m.has(t)) m.set(t, []);
       m.get(t)!.push(i);
@@ -299,6 +302,10 @@
 
 <div class="view">
   <div class="ilist">
+    <div class="sbar">
+      <input type="search" placeholder="Rechercher un objet…" bind:value={search} />
+      <button class="mini" disabled={!search} onclick={() => (search = "")}>Effacer</button>
+    </div>
     {#each typeGroups as g (g.type)}
       {@const shut = collapsed.has(g.type)}
       <button class="thead" aria-expanded={!shut} onclick={() => toggleType(g.type)}>
@@ -315,7 +322,7 @@
         {/each}
       {/if}
     {:else}
-      <div class="mut empty">Ouvrez un objet à l'hôtel de vente : il apparaît ici (dernière liste par objet).</div>
+      <div class="mut empty">{search ? "Aucun objet ne correspond à la recherche." : "Ouvrez un objet à l'hôtel de vente : il apparaît ici (dernière liste par objet)."}</div>
     {/each}
   </div>
 
@@ -475,7 +482,9 @@
   .view { flex: 1; min-height: 0; display: grid; grid-template-columns: 280px 1fr 470px; }
   .ilist { overflow: auto; background: var(--panel); border-right: 1px solid var(--line); }
   .deal-ico { color: var(--ok); font-size: 10px; vertical-align: middle; }
-  .thead { display: flex; width: 100%; align-items: center; gap: 6px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: var(--bg); color: inherit; padding: 5px 10px; font: 600 11px system-ui; letter-spacing: 0.04em; text-transform: uppercase; text-align: left; position: sticky; top: 0; z-index: 1; }
+  .ilist .sbar { display: flex; gap: 6px; padding: 6px 10px; cursor: default; position: sticky; top: 0; z-index: 2; background: var(--panel); }
+  .sbar input { flex: 1; min-width: 0; padding: 3px 6px; }
+  .thead { display: flex; width: 100%; align-items: center; gap: 6px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: var(--bg); color: inherit; padding: 5px 10px; font: 600 11px system-ui; letter-spacing: 0.04em; text-transform: uppercase; text-align: left; position: sticky; top: 36px; z-index: 1; }
   .chev { display: inline-block; transition: transform 0.2s; }
   .chev.shut { transform: rotate(-90deg); }
   .ilist div { padding: 6px 10px; border-bottom: 1px solid var(--line); cursor: pointer; font-family: system-ui, sans-serif; }
