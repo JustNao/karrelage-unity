@@ -15,7 +15,15 @@ env = {**os.environ, "PYTHONUTF8": "1", "PYTHONUNBUFFERED": "1"}
 GAME = pathlib.Path(os.environ.get("LOUTIL_GAME") or pathlib.Path(os.environ.get("LOCALAPPDATA", "")) / "Ankama" / "Dofus-dofus3")
 
 
+FULL = "--from-game" in sys.argv
+TOTAL = 7 if FULL else 2   # steps, reported to the app's progress bar as "@@STEP k n title" lines
+_k = 0
+
+
 def step(title):
+    global _k
+    _k += 1
+    print(f"@@STEP {_k} {TOTAL} {title}", flush=True)
     print(f"\n== {title} ==", flush=True)
 
 
@@ -68,4 +76,5 @@ run([py, "pipeline/match_protos.py"])
 step("Export du pack de données")
 run([py, "pipeline/export_pack.py"])
 
+print(f"@@STEP {TOTAL} {TOTAL} fin", flush=True)
 print("\nTERMINE : redémarrez Karrelage pour charger le nouveau pack.", flush=True)

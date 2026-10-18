@@ -20,6 +20,9 @@
   let running = $state(false);
   let finished = $state<null | boolean>(null);
   let logEl: HTMLElement | undefined = $state();
+  /** Step reported by update_names.py ("@@STEP k n title" lines): k-th of n steps, "fin" = everything done. */
+  let progress = $state<{ k: number; n: number; title: string } | null>(null);
+  const pct = $derived(!progress ? 0 : progress.title === "fin" ? 100 : Math.round(((progress.k - 1) / progress.n) * 100));
 
   const VERDICT = {
     compatible: { label: "Compatible", cls: "ok" },
@@ -43,6 +46,7 @@
     if (mode === "full" && !confirm("Régénérer tout depuis les fichiers du jeu (copie, dump IL2CPP, protos, données) ? Cela peut prendre plusieurs minutes.")) return;
     log = [];
     finished = null;
+    progress = { k: 1, n: mode === "full" ? 7 : 2, title: "Démarrage…" };
     try {
       await call("names", "compute", { mode });
       running = true;
@@ -57,6 +61,8 @@
     const timer = setInterval(refresh, 3000);
     const offs = [
       on<string>("names:log", async (l) => {
+        const m = /^@@STEP (\d+) (\d+) (.*)$/.exec(l);
+        if (m) return void (progress = { k: +m[1], n: +m[2], title: m[3] });
         log = [...log.slice(-400), l];
         await tick();
         if (logEl) logEl.scrollTop = logEl.scrollHeight;
@@ -64,6 +70,7 @@
       on<{ ok: boolean }>("names:done", (d) => {
         running = false;
         finished = d.ok;
+        if (d.ok && progress) progress = { ...progress, title: "fin" };
         refresh();
       }),
     ];
@@ -83,6 +90,15 @@
     <button disabled={running || !report?.canCompute} onclick={() => compute("names")} title="Relance la correspondance des noms (match_protos) puis l'export du pack">Calculer les noms</button>
     <button disabled={running || !report?.canCompute} onclick={() => compute("full")} title="Après une mise à jour du jeu : copie des fichiers, dump IL2CPP, protos, données, noms, export">Tout régénérer depuis le jeu</button>
   </div>
+  {#if progress && (running || finished !== null)}
+    <div class="prog" class:fail={finished === false}>
+      <div class="bar"><div class="fill" class:busy={running} style:width="{pct}%"></div></div>
+      <div class="plabel">
+        {#if finished === true}Terminé{:else if finished === false}Échec à l'étape {progress.k}/{progress.n}{:else}Étape {progress.k}/{progress.n} — {progress.title}{/if}
+        <span class="mut">{pct} %</span>
+      </div>
+    </div>
+  {/if}
   {#if error}<div class="banner bad">{error}</div>{/if}
   {#if report && !report.canCompute}<div class="mut note">Le calcul n'est disponible que depuis le dépôt de développement (le dossier pipeline/ est introuvable).</div>{/if}
   {#if finished === true}<div class="banner ok">Terminé : redémarrez Karrelage pour charger le nouveau pack.</div>{/if}
@@ -143,6 +159,13 @@
   .banner { padding: 6px 10px; margin-bottom: 8px; border-radius: 6px; }
   .banner.ok { background: color-mix(in srgb, var(--ok) 20%, transparent); }
   .banner.bad { background: color-mix(in srgb, var(--bad, #e5534b) 20%, transparent); }
+  .prog { margin-bottom: 10px; }
+  .bar { height: 10px; border-radius: 5px; background: var(--line); overflow: hidden; }
+  .fill { height: 100%; background: var(--acc); transition: width 0.4s; }
+  .fill.busy { background-image: linear-gradient(110deg, transparent 30%, #fff4 50%, transparent 70%); background-size: 200% 100%; animation: sweep 1.4s linear infinite; background-color: var(--acc); }
+  .prog.fail .fill { background: var(--bad, #e5534b); }
+  .plabel { margin-top: 4px; display: flex; gap: 10px; font-size: 12px; }
+  @keyframes sweep { from { background-position: 200% 0; } to { background-position: -200% 0; } }
   .note { margin-bottom: 8px; }
   .cols { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(320px, 1.4fr); gap: 20px; }
   h3 { margin: 14px 0 4px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--mut); display: flex; gap: 8px; align-items: center; }
