@@ -168,21 +168,23 @@
   }
 
   /** Graph dots: price (per unit) against the lot's density. Same lots as the list, so every dot has a card. */
-  /** Rune focus (Transcendance tab): the graph only keeps the lots that have the focused effect. */
+  /** Rune focus (Transcendance tab): the graph fades the lots that lack the focused effect (like the highlight). */
   const focusEffect = $derived(tab === "trans" && !comp && focus ? Number(focus.split(":")[0]) : null);
   const points = $derived(
     rows
-      .map((r: any, i: number) => ({
-        has: focusEffect === null || r.effects.some((e: any) => e.action === focusEffect && e.status !== "removed"),
+      .map((r: any, i: number) => {
+        const has = focusEffect === null || r.effects.some((e: any) => e.action === focusEffect && e.status !== "removed");
+        return {
         id: lotKey(r, i),
         x: unitPrice(r),
         y: comp ? (levelOf(r) != null ? xpOfLevel(levelOf(r)!) : NaN) : r.density, // companions: total xp of the level (price follows it)
         label: r.name,
         added: comp ? isLegendary(r) : r.effects.some((e: any) => e.status === "added"), // companions: blue dot = legendary
         missing: !comp && r.effects.some((e: any) => e.status === "removed"),
-        faded: lacksFade(r),
-      }))
-      .filter((p: any) => p.has && Number.isFinite(p.x) && Number.isFinite(p.y)),
+        faded: lacksFade(r) || !has,
+      };
+      })
+      .filter((p: any) => Number.isFinite(p.x) && Number.isFinite(p.y)),
   );
 
   /** Lots standing out above the price trend per scanned item (all its lots, unfiltered): the green icon in the left list. */
