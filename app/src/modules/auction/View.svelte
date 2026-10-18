@@ -463,7 +463,13 @@
       </div>
       <div class="btns"><EffectPicker effects={pickable} onpick={(id) => filterOf(item.gid, id)} /></div>
       {#each groups as g (g.key)}
-        <div class="ghead">{g.label}</div>
+        <div class="ghead">
+          <span>{g.label}</span>
+          <span class="gbtns">
+            <button class="mini" onclick={() => g.items.forEach((x) => setMin(x.a, x.def))} title="Remplir le min de tous les effets de cette section avec le bas de leur plage de base">Jet min</button>
+            <button class="mini" onclick={() => g.items.forEach((x) => setPerf(x.a, x.def))} title="Remplir le min de tous les effets de cette section avec le max de leur plage de base (jet parfait)">Jet parfait</button>
+          </span>
+        </div>
         {#each g.items as x (x.a)}
           {@const y = flist(item.gid).find((z) => z.a === x.a)}
           <div class="frow" class:on={active(x.a)}>
@@ -504,7 +510,8 @@
   .head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
   .head .fh { margin: 0; flex: 1; }
   .filter { overflow: auto; background: var(--panel); border-left: 1px solid var(--line); padding: 10px; font-family: system-ui, sans-serif; font-size: 12px; }
-  .ghead { margin: 12px 0 2px; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--mut); }
+  .ghead { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin: 12px 0 2px; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--mut); }
+  .gbtns { display: flex; gap: 4px; text-transform: none; letter-spacing: 0; }
   .mini { padding: 2px 7px; font-size: 11px; }
   .mini:disabled { opacity: 0.35; cursor: default; border-color: var(--line); }
   .graph { margin-bottom: 12px; }
