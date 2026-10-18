@@ -174,7 +174,26 @@ impl Module for Prices {
             }
             // args: {names: [string]} -> {name: gid} (case / nbsp / apostrophe insensitive; lowest gid wins on duplicates)
             "gids_by_name" => {
-                let norm = |s: &str| s.replace('\u{a0}', " ").replace('\u{2019}', "'").trim().to_lowercase();
+                let norm = |s: &str| -> String {
+                    s.replace('\u{a0}', " ")
+                        .replace('\u{2019}', "'")
+                        .trim()
+                        .to_lowercase()
+                        .chars()
+                        .flat_map(|c| -> Vec<char> {
+                            match c {
+                                'é' | 'è' | 'ê' | 'ë' => vec!['e'],
+                                'à' | 'â' | 'ä' => vec!['a'],
+                                'î' | 'ï' => vec!['i'],
+                                'ô' | 'ö' => vec!['o'],
+                                'ù' | 'û' | 'ü' => vec!['u'],
+                                'ç' => vec!['c'],
+                                'œ' => vec!['o', 'e'],
+                                c => vec![c],
+                            }
+                        })
+                        .collect()
+                };
                 let mut by: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
                 for g in ctx.data.items.keys() {
                     by.entry(norm(&ctx.data.item_name(*g))).and_modify(|x| *x = (*x).min(*g)).or_insert(*g);

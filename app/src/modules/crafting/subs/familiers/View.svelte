@@ -22,7 +22,8 @@
   let xp = $state(0);
   let target = $state(100);
   let q = $state("");
-  let onlyPriced = $state(true);
+  let err = $state("");
+  let onlyPriced = $state(false);
   let sort = $state<SortKey>("total");
   let desc = $state(false);
 
@@ -66,7 +67,7 @@
   const int = (e: Event) => Number((e.currentTarget as HTMLInputElement).value);
 
   onMount(() => {
-    call<Record<string, number>>("prices", "gids_by_name", { names: FOODS.map((f) => f.name) }).then((m) => (gids = m));
+    call<Record<string, number>>("prices", "gids_by_name", { names: FOODS.map((f) => f.name) }).then((m) => (gids = m)).catch((e) => (err = String(e)));
     call<StoredPrice[]>("prices", "list").then((l) => l.forEach((p) => stored.set(p.gid, p)));
     const offs = [on<StoredPrice>("prices:price", (p) => stored.set(p.gid, p)), on<StoredPrice[]>("prices:bulk", (l) => l.forEach((p) => stored.set(p.gid, p))), on("prices:cleared", () => stored.clear())];
     return () => void offs.forEach((o) => o.then((f) => f()));
@@ -91,6 +92,7 @@
     <input type="search" placeholder="Rechercher une ressource…" bind:value={q} />
     <label><input type="checkbox" bind:checked={onlyPriced} /> Prix connus seulement</label>
   </div>
+  {#if err}<div class="bad">Erreur : {err} (relancez l'application pour charger la dernière version)</div>{/if}
   <SmoothScroll>
     <table>
       <thead>
@@ -140,5 +142,6 @@
   th button { border: 0; background: none; color: inherit; font: inherit; padding: 0; cursor: pointer; }
   td { padding: 4px 6px; border-top: 1px solid var(--line); }
   .n { text-align: right; white-space: nowrap; }
+  .bad { color: var(--bad, #e05555); margin-bottom: 6px; }
   .good { color: var(--good, #4caf50); }
 </style>

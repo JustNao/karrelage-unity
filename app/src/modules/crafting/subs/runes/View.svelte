@@ -13,7 +13,8 @@
   let recipes = $state.raw<Recipes>({ recipes: {}, names: {} });
   let stored = new SvelteMap<number, StoredPrice>();
   let q = $state("");
-  let onlyPriced = $state(true);
+  let err = $state("");
+  let onlyPriced = $state(false);
   let sort = $state<SortKey>("pct");
   let desc = $state(true);
 
@@ -54,7 +55,7 @@
   const sgn = (n: number) => (n > 0 ? "+" : "") + kamas(n);
 
   onMount(() => {
-    call<{ gid: number; name: string; effect: string | null }[]>("prices", "craft_runes").then((l) => (list = l));
+    call<{ gid: number; name: string; effect: string | null }[]>("prices", "craft_runes").then((l) => (list = l)).catch((e) => (err = String(e)));
     call<Recipes>("auction", "recipes").then((r) => (recipes = r));
     call<StoredPrice[]>("prices", "list").then((l) => l.forEach((p) => stored.set(p.gid, p)));
     const offs = [on<StoredPrice>("prices:price", (p) => stored.set(p.gid, p)), on<StoredPrice[]>("prices:bulk", (l) => l.forEach((p) => stored.set(p.gid, p))), on("prices:cleared", () => stored.clear())];
@@ -68,6 +69,7 @@
     <input type="search" placeholder="Rechercher une rune…" bind:value={q} />
     <label><input type="checkbox" bind:checked={onlyPriced} /> Prix connus seulement</label>
   </div>
+  {#if err}<div class="bad">Erreur : {err} (relancez l'application pour charger la dernière version)</div>{/if}
   <SmoothScroll>
     <table>
       <thead>
