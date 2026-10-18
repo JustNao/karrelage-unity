@@ -28,7 +28,7 @@ effects = {}
 for k, v in gd.effects.items():
     effects[k] = {"descriptionId": v["descriptionId"], "characteristic": v["characteristic"], "useDice": v["useDice"]}
     ids.add(v["descriptionId"])
-types = {k: {"nameId": v["nameId"]} for k, v in gd.itemtypes.items()}
+types = {k: {"nameId": v["nameId"], "categoryId": v["categoryId"]} for k, v in gd.itemtypes.items()}
 ids.update(v["nameId"] for v in types.values())
 dump("items.json", items); dump("effects.json", effects); dump("itemtypes.json", types)
 

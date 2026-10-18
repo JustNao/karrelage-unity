@@ -26,6 +26,7 @@ _mpath = root / "work" / "mapping.json"
 
 
 _opath = root / "work" / "overrides.json"
+_rpath = pathlib.Path(__file__).with_name("reference") / "message_names.json"   # obf type -> clear name (import_reference_names.py)
 
 
 def overrides():
@@ -33,10 +34,13 @@ def overrides():
 
 
 def mapping():
-    """work/mapping.json (auto beta matches) with work/overrides.json (confirmed by hand) applied on top."""
+    """work/mapping.json (auto beta matches), then the reference name list, then work/overrides.json (confirmed by hand) on top."""
     global _mapping
     if _mapping is None:
         m = json.loads(_mpath.read_text(encoding="utf-8")) if _mpath.exists() else {}
+        for obf, name in (json.loads(_rpath.read_text(encoding="utf-8")) if _rpath.exists() else {}).items():
+            e = m.setdefault(obf, {"fields": {}})
+            e["name"], e["conf"] = name, "ref"
         for k, v in overrides().items():
             e = m.setdefault(k, {"fields": {}})
             e.setdefault("fields", {})
