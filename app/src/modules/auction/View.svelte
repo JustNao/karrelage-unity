@@ -182,6 +182,21 @@
       .filter((p: any) => Number.isFinite(p.x) && Number.isFinite(p.y)),
   );
 
+  /** Lots standing out above the price trend per scanned item (all its lots, unfiltered): the green icon in the left list. */
+  const dealCounts = $derived.by(() => {
+    const m = new Map<number, number>();
+    for (const it of items.values()) {
+      const pts = it.rows
+        .map((r: any) => ({ x: unitPrice(r), y: it.companion ? (levelOf(r) != null ? xpOfLevel(levelOf(r)!) : NaN) : r.density }))
+        .filter((p: any) => Number.isFinite(p.x) && Number.isFinite(p.y));
+      if (pts.length < 5) continue;
+      const fit = analyse(pts);
+      const n = pts.filter((_: any, i: number) => isGoodDeal(fit, i, pts.length)).length;
+      if (n) m.set(it.gid, n);
+    }
+    return m;
+  });
+
   /** Lots far above the price trend (same rule as the green dots), best first. */
   const deals = $derived.by(() => {
     if (points.length === 0) return [];
@@ -284,7 +299,8 @@
         {#each g.items as i (i.gid)}
           <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
           <div class="irow" class:sel={selGid === i.gid} onclick={() => (selGid = i.gid)}>
-            <b>{i.name}</b> <span class="mut">niv. {i.level ?? "?"}</span><br />
+            <b>{i.name}</b> <span class="mut">niv. {i.level ?? "?"}</span>
+            {#if dealCounts.get(i.gid)}<span class="deal-ico" title="{dealCounts.get(i.gid)} good {dealCounts.get(i.gid) === 1 ? 'deal' : 'deals'} in this listing">●</span>{/if}<br />
             <span class="mut">{i.lots} lots · {i.min_price ? "min " + kamas(i.min_price) : "—"} · {ago(i.updated)} ago{i.demo ? " · demo" : ""}</span>
           </div>
         {/each}
@@ -445,6 +461,7 @@
 <style>
   .view { flex: 1; min-height: 0; display: grid; grid-template-columns: 280px 1fr 470px; }
   .ilist { overflow: auto; background: var(--panel); border-right: 1px solid var(--line); }
+  .deal-ico { color: var(--ok); font-size: 10px; vertical-align: middle; }
   .thead { display: flex; width: 100%; align-items: center; gap: 6px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: var(--bg); color: inherit; padding: 5px 10px; font: 600 11px system-ui; letter-spacing: 0.04em; text-transform: uppercase; text-align: left; position: sticky; top: 0; z-index: 1; }
   .chev { display: inline-block; transition: transform 0.2s; }
   .chev.shut { transform: rotate(-90deg); }
