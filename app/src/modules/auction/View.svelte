@@ -148,6 +148,14 @@
     if (v !== null) filterOf(item.gid, a).min = v;
   }
 
+  /** Fill the min field with the top of the default range (or the highest value seen): only perfect rolls remain. */
+  function setPerf(a: number, def: number[] | null) {
+    if (!item) return;
+    const seen = item.rows.map((r: any) => lotVal(r, a)).filter((v: number) => v > 0);
+    const v = def ? def[1] : seen.length ? Math.max(...seen) : null;
+    if (v !== null) filterOf(item.gid, a).min = v;
+  }
+
   function clearEffect(a: number) {
     if (!item) return;
     const y = filterOf(item.gid, a);
@@ -375,6 +383,7 @@
             <input type="number" placeholder="min" value={y?.min ?? ""} oninput={(e) => (filterOf(item.gid, x.a).min = e.currentTarget.value)} />
             <input type="number" placeholder="max" value={y?.max ?? ""} oninput={(e) => (filterOf(item.gid, x.a).max = e.currentTarget.value)} />
             <button class="mini" onclick={() => setMin(x.a, x.def)} title="Fill min with the low end of the default range">Set min</button>
+            <button class="mini" onclick={() => setPerf(x.a, x.def)} title="Fill min with the max of the default range (perfect roll)">Set perf</button>
             <button class="mini" disabled={!active(x.a)} onclick={() => clearEffect(x.a)}>Clear</button>
           </div>
         {/each}
@@ -430,7 +439,7 @@
   .btns { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
   .frow.lv { grid-template-columns: 1fr 52px 52px auto; }
   .leg { display: block; margin: 8px 0; }
-  .frow { display: grid; grid-template-columns: 1fr auto 52px 52px auto auto; gap: 4px; align-items: center; margin: 3px 0; }
+  .frow { display: grid; grid-template-columns: 1fr auto 52px 52px auto auto auto; gap: 4px; align-items: center; margin: 3px 0; }
   .frow input { width: 100%; padding: 2px 4px; }
   .frow .lb { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .frow .rg { color: var(--mut); text-align: right; white-space: nowrap; padding-right: 2px; }
