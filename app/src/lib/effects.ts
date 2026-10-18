@@ -31,6 +31,10 @@ const ITEM_ORDER: Record<string, number> = { weapon: 0, stats: 1, main: 2, damag
 /** Rank of an effect group in the item ordering. */
 export const groupRank = (g: string) => ITEM_ORDER[g] ?? 6;
 
+/** Weapon hits (tier 0 of the weapon group, see export_pack.py) go by decreasing value; everything else keeps its rank. */
+const weaponHitOrder = (a: any, b: any) =>
+  a.group === "weapon" && b.group === "weapon" && Math.floor((a.order ?? 0) / 1000) === 0 && Math.floor((b.order ?? 0) / 1000) === 0 ? (b.hi ?? 0) - (a.hi ?? 0) : 0;
+
 /** New (added) effects first, missing default effects last, the rest by group then rank. */
 export function sortEffects<T extends { status?: string; group?: string; order?: number }>(effs: T[]): T[] {
   const phase = (e: T) => (e.status === "added" ? 0 : e.status === "removed" ? 2 : 1);
@@ -38,6 +42,7 @@ export function sortEffects<T extends { status?: string; group?: string; order?:
     (a, b) =>
       phase(a) - phase(b) ||
       (ITEM_ORDER[a.group ?? "other"] ?? 6) - (ITEM_ORDER[b.group ?? "other"] ?? 6) ||
+      weaponHitOrder(a, b) ||
       (a.order ?? 0) - (b.order ?? 0),
   );
 }

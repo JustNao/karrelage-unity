@@ -59,9 +59,9 @@
   {#if isWeaponEffect(e)}
     {e.text}
   {:else if mirror}
-    {#if e.range && e.status !== "removed"}<small class="rg">{rangeLabel(e.range)}</small>{/if}{e.text}
+    {#if e.range && e.status !== "removed" && e.action !== LEGENDARY_EFFECT}<small class="rg">{rangeLabel(e.range)}</small>{/if}{e.text}
   {:else}
-    {e.text}{#if e.range && e.status !== "removed"}<small>{rangeLabel(e.range)}</small>{/if}
+    {e.text}{#if e.range && e.status !== "removed" && e.action !== LEGENDARY_EFFECT}<small>{rangeLabel(e.range)}</small>{/if}
   {/if}
 {/snippet}
 

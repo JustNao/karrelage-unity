@@ -54,8 +54,9 @@ for k, v in gd.effects.items():
     ranked.setdefault(group, []).append(((rank, v["effectPowerRate"] < 0, k), k))   # positives before their negative twins
     ids.add(v["descriptionId"])
 for items_ in ranked.values():
-    for i, (_, k) in enumerate(sorted(items_)):
-        effects[k]["order"] = i
+    for i, (key, k) in enumerate(sorted(items_)):
+        # weapon effects: tier * 1000 + rank (tier 0 = hits, 1 = -PA..., 2 = flags); the UI sorts the hits by value
+        effects[k]["order"] = key[0] * 1000 + i if effects[k]["group"] == "weapon" else i
 types = {k: {"nameId": v["nameId"], "categoryId": v["categoryId"]} for k, v in gd.itemtypes.items()}
 ids.update(v["nameId"] for v in types.values())
 spells = {k: {"nameId": v["nameId"]} for k, v in gd.spells.items()}
