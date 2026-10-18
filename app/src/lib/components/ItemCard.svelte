@@ -1,6 +1,7 @@
 <script lang="ts">
   import { kamas } from "../api";
   import { fmtDelta, pairRows } from "../compare";
+  import { isLegendary, levelOf, xpOfLevel } from "../companion";
   import { isBelowMin, isNegative, isPerfectLine, perfection, rangeLabel, sortEffects } from "../effects";
 
   /** One auction lot (see crates/modules/src/auction.rs for the shape). */
@@ -14,6 +15,7 @@
     pinned = false,
     onpin,
     versus = null,
+    companion = false,
   }: {
     row: any;
     collapsible?: boolean;
@@ -24,9 +26,13 @@
     pinned?: boolean;
     onpin?: () => void;
     /** The pinned lot to compare with (null = no pin): its stats are mirrored on the right, differences in the middle. */
+    /** Familier / montilier: only the level and the legendary status are shown (no stat flags, no pin, no transcendance). */
+    companion?: boolean;
     versus?: { pin: any; name: string; unitPrice: (r: any) => number } | null;
   } = $props();
 
+  const level = $derived(companion ? levelOf(row) : null);
+  const legendary = $derived(companion && isLegendary(row));
   const effects = $derived(sortEffects<any>(row.effects)); // new first, then stats/main, damage, resistances, utility
   const perfect = $derived(perfection(row.effects));
   const shown = $derived(open ? effects : effects.filter((e: any) => e.status === "added" || e.status === "above"));
@@ -70,10 +76,15 @@
     {#if onpin}
       <button class="pin" class:on={pinned} title="Compare every lot you look at with this one" onclick={(ev) => (ev.stopPropagation(), onpin())}>{pinned ? "Unpin" : "Pin item"}</button>
     {/if}
+    {#if companion}
+      <span class="flag on" title="Niveau (total xp {level != null ? xpOfLevel(level).toLocaleString('fr-FR') : '?'})">{level != null ? "Niveau " + level : "Niveau ?"}</span>
+      <span class="flag" class:on={legendary}>★ Statut légendaire</span>
+    {:else}
     <span class="flag" class:on={perfect.damage} title="All default damage effects at their max">★ Perfect damage</span>
     <span class="flag" class:on={perfect.resist} title="All default resistances at their max">★ Perfect resistances</span>
     <span class="flag" class:on={perfect.main} title="Main stats at max (within 3 for force/intelligence/agility/chance/wisdom, 10 for vitality)">★ Perfect main stats</span>
     {#if row.locked}<span class="shield" title="Empêche les futures forgemagies — cannot be modified anymore">🛡 Transcendance</span>{/if}
+    {/if}
   </h4>
   <div class="sub">
     {row.type ?? ""} · uid {row.uid ?? "?"}
@@ -118,7 +129,9 @@
         <span class="pr no">—</span>
       {/each}
     </div>
-    {#if shown.length}
+    {#if companion}
+      <!-- level and legendary status are in the title -->
+    {:else if shown.length}
       <ul class="eff">
         {#each shown as e}
           <li class="ln {e.status}" class:unk={!e.known} class:perfect={isPerfectLine(e)} class:low={isBelowMin(e)} class:neg={isNegative(e)} title={hint(e)}>

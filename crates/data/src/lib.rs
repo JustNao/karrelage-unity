@@ -64,6 +64,8 @@ pub struct ItemType {
 /// Item levels scanned to decide which effects are "equipment effects" (used by the effect picker).
 pub const EQUIPMENT_LEVELS: std::ops::RangeInclusive<i64> = 150..=200;
 const EQUIPMENT_CATEGORY: i64 = 0;
+/// Item types treated as companions (Familier, Montilier): tracked by level instead of by stats.
+pub const COMPANION_TYPES: [i64; 2] = [18, 121];
 
 pub struct Data {
     pub dir: PathBuf,
@@ -118,6 +120,10 @@ impl Data {
 
     pub fn item_name(&self, gid: i64) -> String {
         self.items.get(&gid).and_then(|i| self.text(i.name_id)).map(str::to_owned).unwrap_or_else(|| format!("item#{gid}"))
+    }
+
+    pub fn is_companion(&self, gid: Option<i64>) -> bool {
+        gid.and_then(|g| self.items.get(&g)).map_or(false, |i| COMPANION_TYPES.contains(&i.type_id))
     }
 
     pub fn type_name(&self, tid: Option<i64>) -> String {

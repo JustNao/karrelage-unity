@@ -81,7 +81,7 @@ impl Auction {
             "gid": gid,
             "name": if f["title"].is_null() { rows[0]["name"].clone() } else { f["title"].clone() },
             "type": if f["type"].is_null() { rows[0]["type"].clone() } else { f["type"].clone() },
-            "level": rows[0]["level"], "icon": rows[0]["icon"], "updated": m.raw.t, "lots": rows.len(),
+            "companion": ctx.data.is_companion(Some(gid)), "level": rows[0]["level"], "icon": rows[0]["icon"], "updated": m.raw.t, "lots": rows.len(),
             "min_price": mins.iter().min(), "rows": rows, "defaults": f["defaults"], "demo": m.raw.srv == "demo",
         });
         self.store.lock().unwrap().insert(gid.to_string(), ent.clone());
@@ -216,6 +216,7 @@ impl Module for Auction {
         if let Some(Value::Object(saved)) = load_json(&Self::store_path(ctx)) {
             let mut s = self.store.lock().unwrap();
             for (k, mut v) in saved {
+                v["companion"] = json!(ctx.data.is_companion(v["gid"].as_i64()));
                 if v.get("defaults").is_none() {
                     v["defaults"] = Value::Array(ctx.data.defaults_for(v["gid"].as_i64()));
                 }

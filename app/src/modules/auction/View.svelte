@@ -7,6 +7,7 @@
   import EffectPicker from "../../lib/components/EffectPicker.svelte";
   import ItemCard from "../../lib/components/ItemCard.svelte";
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
+  import { LEVEL_EFFECT, isLegendary, levelOf, xpOfLevel } from "../../lib/companion";
   import { analyse, isGoodDeal } from "../../lib/density";
   import { rangeLabel, sections, type EffectMeta } from "../../lib/effects";
   import { AH_TAX, targetKey, transcendance, type Rune, type StoredPrice } from "../../lib/transcend";
@@ -32,7 +33,7 @@
   const isPin = (r: any) => !!pin && !!item && pin.item.gid === item.gid && pin.row.uid === r.uid;
   const togglePin = (r: any) => (pin = isPin(r) ? null : { item, row: r });
   /** What a lot is compared with: the pinned lot (never shown against itself). */
-  const versusFor = (r: any) => (pin && !isPin(r) ? { pin: pin.row, name: pin.item.name, unitPrice } : null);
+  const versusFor = (r: any) => (pin && !comp && !isPin(r) ? { pin: pin.row, name: pin.item.name, unitPrice } : null);
   const lacksFade = (r: any) => fade !== null && !r.effects.some((e: any) => e.action === fade && e.status !== "removed");
   const toggleFade = (a: number) => (fade = fade === a ? null : a);
   let tab = $state<"listing" | "trans">("listing");
@@ -43,6 +44,7 @@
   let allOpen = $state(false);
   let sortDir = $state(1);
 
+  let legendOnly = $state(false); // companions: only legendary ones
   const list = $derived([...items.values()].sort((a, b) => b.updated - a.updated));
   /** Left panel: items grouped by type, each group collapsible (collapsed groups are remembered). */
   const COLLAPSE_KEY = "loutil.collapsedTypes";
@@ -67,6 +69,8 @@
   });
   const item = $derived(selGid != null ? items.get(selGid) : undefined);
 
+  /** Familier / montilier listing: tracked by level (price follows the xp curve), no stats / pin / transcendance. */
+  const comp = $derived(!!item?.companion);
   const effLabel = (a: number) => meta[a]?.label ?? `effect ${a}`;
   const unitPrice = (r: any) => {
     const v = r.prices.filter((p: any) => p.price > 0).map((p: any) => p.price / p.qty);
@@ -99,6 +103,7 @@
     if (!item) return [];
     const f = flist(item.gid).filter((x) => x.min !== "" || x.max !== "");
     return item.rows
+      .filter((r: any) => !(comp && legendOnly) || isLegendary(r))
       .filter((r: any) => f.every((x) => {
         const v = lotVal(r, x.a);
         return (x.min === "" || v >= +x.min) && (x.max === "" || v <= +x.max);
@@ -160,10 +165,10 @@
       .map((r: any, i: number) => ({
         id: lotKey(r, i),
         x: unitPrice(r),
-        y: r.density,
+        y: comp ? (levelOf(r) != null ? xpOfLevel(levelOf(r)!) : NaN) : r.density, // companions: total xp of the level (price follows it)
         label: r.name,
-        added: r.effects.some((e: any) => e.status === "added"),
-        missing: r.effects.some((e: any) => e.status === "removed"),
+        added: comp ? isLegendary(r) : r.effects.some((e: any) => e.status === "added"), // companions: blue dot = legendary
+        missing: !comp && r.effects.some((e: any) => e.status === "removed"),
         faded: lacksFade(r),
       }))
       .filter((p: any) => Number.isFinite(p.x) && Number.isFinite(p.y)),
@@ -181,7 +186,7 @@
       .slice(0, 6);
   });
 
-  const trans = $derived(transcendance(rows, unitPrice, runes, stored, focus));
+  const trans = $derived(transcendance(comp ? [] : rows, unitPrice, runes, stored, focus));
   const runeName = (n: string) => n;
 
   /** Clicking a dot: unroll the lot and scroll the list down to it (nothing is filtered out). */
@@ -266,11 +271,11 @@
       {#if points.length >= 3}
         <div class="graph"><DensityChart {points} selected={picked} onselect={focusLot} /></div>
       {/if}
-      <div class="tabs">
+      {#if !comp}<div class="tabs">
         <button class:on={tab === "listing"} onclick={() => (tab = "listing")}>Listing</button>
         <button class:on={tab === "trans"} onclick={() => (tab = "trans")}>Transcendance{trans.opportunities.length ? ` · ${trans.opportunities.length}` : ""}</button>
-      </div>
-      {#if tab === "trans"}
+      </div>{/if}
+      {#if tab === "trans" && !comp}
         <div class="trans">
           <div class="mut note">
             Lots of this item with the transcendance lock and an added effect show what a rune is worth. Candidates are unlocked lots
@@ -322,7 +327,7 @@
               {#if alt}
                 <div class="warn altw">⚠ Similar item available through Transcendance: lot {kamas(alt.buy)} + {alt.rune.name} {kamas(alt.runeCost)} = {kamas(alt.cost)} (saves {kamas(alt.saving)})</div>
               {/if}
-              <ItemCard row={d.row} {fade} onfade={toggleFade} pinned={isPin(d.row)} onpin={() => togglePin(d.row)} versus={versusFor(d.row)} />
+              <ItemCard row={d.row} companion={comp} {fade} onfade={toggleFade} pinned={isPin(d.row)} onpin={comp ? undefined : () => togglePin(d.row)} versus={versusFor(d.row)} />
             </div>
           {/each}
         </div>
@@ -330,7 +335,7 @@
       {#each rows as r, i (lotKey(r, i))}
         {@const key = lotKey(r, i)}
         <div id="lot-{key}" class="lot" class:picked={picked === key} class:faded={lacksFade(r)} animate:flip={{ duration: 320 }}>
-          <ItemCard row={r} collapsible open={allOpen || openSet.has(key)} ontoggle={() => toggleOpen(key)} {fade} onfade={toggleFade} pinned={isPin(r)} onpin={() => togglePin(r)} versus={versusFor(r)} />
+          <ItemCard row={r} companion={comp} collapsible open={allOpen || openSet.has(key)} ontoggle={() => toggleOpen(key)} {fade} onfade={toggleFade} pinned={isPin(r)} onpin={comp ? undefined : () => togglePin(r)} versus={versusFor(r)} />
         </div>
       {:else}
         <div class="mut">No lot matches the filter</div>
@@ -341,6 +346,17 @@
 
   <div class="filter">
     {#if item}
+      {#if comp}
+        <div class="fh">Filter {item.type?.toLowerCase() ?? "companion"}s</div>
+        {@const lv = flist(item.gid).find((z) => z.a === LEVEL_EFFECT)}
+        <div class="frow lv" class:on={active(LEVEL_EFFECT)}>
+          <div class="lb">Niveau</div>
+          <input type="number" placeholder="min" value={lv?.min ?? ""} oninput={(e) => (filterOf(item.gid, LEVEL_EFFECT).min = e.currentTarget.value)} />
+          <input type="number" placeholder="max" value={lv?.max ?? ""} oninput={(e) => (filterOf(item.gid, LEVEL_EFFECT).max = e.currentTarget.value)} />
+          <button class="mini" disabled={!active(LEVEL_EFFECT)} onclick={() => clearEffect(LEVEL_EFFECT)}>Clear</button>
+        </div>
+        <label class="leg"><input type="checkbox" bind:checked={legendOnly} /> Statut légendaire only</label>
+      {:else}
       <div class="fh">Filter effects</div>
       <div class="btns">
         <button onclick={() => preset("min")} title="min = lowest value of each effect's default range">Min values</button>
@@ -365,6 +381,7 @@
       {:else}
         <div class="mut">No effects</div>
       {/each}
+      {/if}
     {/if}
   </div>
 </div>
@@ -411,6 +428,8 @@
   .oh { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; font-size: 12px; margin-bottom: 4px; }
   .oh .ok { color: var(--ok); font-size: 14px; }
   .btns { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+  .frow.lv { grid-template-columns: 1fr 52px 52px auto; }
+  .leg { display: block; margin: 8px 0; }
   .frow { display: grid; grid-template-columns: 1fr auto 52px 52px auto auto; gap: 4px; align-items: center; margin: 3px 0; }
   .frow input { width: 100%; padding: 2px 4px; }
   .frow .lb { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
