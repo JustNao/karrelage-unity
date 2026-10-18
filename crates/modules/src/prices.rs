@@ -172,6 +172,21 @@ impl Module for Prices {
                 v.sort_by_key(|x| x["gid"].as_i64());
                 Ok(Value::Array(v))
             }
+            // args: {names: [string]} -> {name: gid} (case / nbsp / apostrophe insensitive; lowest gid wins on duplicates)
+            "gids_by_name" => {
+                let norm = |s: &str| s.replace('\u{a0}', " ").replace('\u{2019}', "'").trim().to_lowercase();
+                let mut by: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+                for g in ctx.data.items.keys() {
+                    by.entry(norm(&ctx.data.item_name(*g))).and_modify(|x| *x = (*x).min(*g)).or_insert(*g);
+                }
+                let mut out = serde_json::Map::new();
+                for n in args["names"].as_array().into_iter().flatten().filter_map(Value::as_str) {
+                    if let Some(g) = by.get(&norm(n)) {
+                        out.insert(n.to_string(), json!(g));
+                    }
+                }
+                Ok(Value::Object(out))
+            }
             // args: {gid, value: number | null}; null removes the override
             "set_override" => {
                 let gid = args["gid"].as_i64().ok_or_else(|| anyhow!("prices: gid required"))?;
