@@ -6,8 +6,9 @@
   import SmoothScroll from "../../../../lib/components/SmoothScroll.svelte";
   import type { StoredPrice } from "../../../../lib/transcend";
 
-  type SortKey = "name" | "craft" | "cumul" | "sale" | "profit" | "pct";
-  interface Row { gid: number; name: string; effect: string | null; recipe: string; craft: number | null; cumul: number | null; sale: number | null; profit: number | null; pct: number | null; missing: string[] }
+  const ASTRAL = ["mineure", "moyenne", "majeure", "épatante", "merveilleuse", "légendaire"]; // weakest to strongest
+  type SortKey = "name" | "effect" | "astral" | "craft" | "cumul" | "sale" | "profit" | "pct";
+  interface Row { gid: number; name: string; effect: string | null; recipe: string; astral: string | null; astralRank: number | null; craft: number | null; cumul: number | null; sale: number | null; profit: number | null; pct: number | null; missing: string[] }
 
   let list = $state.raw<{ gid: number; name: string; effect: string | null }[]>([]);
   let recipes = $state.raw<Recipes>({ recipes: {}, names: {} });
@@ -29,7 +30,9 @@
       const sale = storedPrice(stored, r.gid);
       const b = cumul != null && sale != null ? benefit(sale, cumul) : null;
       const recipe = ing.map(([g, n]) => `${n} × ${recipes.names[g] ?? g}`).join(" + ");
-      return { ...r, recipe, craft, cumul, sale, profit: b?.profit ?? null, pct: b?.pct ?? null, missing: c?.missing ?? [] };
+      // astral rune ingredient ("Rune astrale mineure" -> "mineure"); forgemagie Pa / Ra runes have none
+      const astral = ing.map(([g]) => (recipes.names[g] ?? "").replace(/ /g, " ")).find((n) => n.startsWith("Rune astrale "))?.slice("Rune astrale ".length) ?? null;
+      return { ...r, recipe, astral, astralRank: astral ? Math.max(0, ASTRAL.indexOf(astral)) : null, craft, cumul, sale, profit: b?.profit ?? null, pct: b?.pct ?? null, missing: c?.missing ?? [] };
     }),
   );
 
@@ -38,7 +41,7 @@
     const k = sort;
     const out = rows.filter((r) => (!n || r.name.toLowerCase().includes(n)) && (!onlyPriced || r.pct != null));
     return out.sort((a, b) => {
-      const x = a[k], y = b[k];
+      const x = k === "astral" ? a.astralRank : a[k], y = k === "astral" ? b.astralRank : b[k];
       if (x == null && y == null) return 0;
       if (x == null) return 1; // unknown values always last
       if (y == null) return -1;
@@ -75,6 +78,8 @@
       <thead>
         <tr>
           <th><button onclick={() => setSort("name")}>Rune{arrow("name")}</button></th>
+          <th><button onclick={() => setSort("effect")}>Effet{arrow("effect")}</button></th>
+          <th><button onclick={() => setSort("astral")}>Rune astrale{arrow("astral")}</button></th>
           <th class="n"><button onclick={() => setSort("craft")}>Prix de craft{arrow("craft")}</button></th>
           <th class="n"><button onclick={() => setSort("cumul")}>Prix cumulé{arrow("cumul")}</button></th>
           <th class="n"><button onclick={() => setSort("sale")}>Prix de vente{arrow("sale")}</button></th>
@@ -85,7 +90,9 @@
       <tbody>
         {#each view as r (r.gid)}
           <tr>
-            <td title={r.recipe}><b>{r.name}</b>{#if r.effect}<span class="eff">{r.effect}</span>{/if}<div class="sub"><small>{r.recipe}</small></div></td>
+            <td title={r.recipe}><b>{r.name}</b></td>
+            <td>{r.effect ?? "—"}</td>
+            <td>{r.astral ?? "—"}</td>
             <td class="n">{r.craft != null ? kamas(r.craft) : "—"}</td>
             <td class="n" title={r.missing.length ? "Prix manquant : " + r.missing.join(", ") : ""}>{r.cumul != null ? kamas(r.cumul) : "—"}{#if r.missing.length} <span class="warn">⚠</span>{/if}</td>
             <td class="n">{r.sale != null ? kamas(r.sale) : "—"}</td>
@@ -93,7 +100,7 @@
             <td class="n" class:good={(r.pct ?? 0) > 0} class:bad={(r.pct ?? 0) < 0}><b>{r.pct != null ? (r.pct > 0 ? "+" : "") + r.pct.toFixed(1) + " %" : "—"}</b></td>
           </tr>
         {:else}
-          <tr><td colspan="6" class="mut">Aucune rune à afficher : ouvrez les runes et leurs ingrédients à l'hôtel de vente pour enregistrer leurs prix (ou désactivez « Prix connus seulement »).</td></tr>
+          <tr><td colspan="8" class="mut">Aucune rune à afficher : ouvrez les runes et leurs ingrédients à l'hôtel de vente pour enregistrer leurs prix (ou désactivez « Prix connus seulement »).</td></tr>
         {/each}
       </tbody>
     </table>
@@ -110,8 +117,6 @@
   th { text-align: left; font-weight: 400; color: var(--mut); padding: 2px 6px; position: sticky; top: 0; background: var(--bg); }
   th button { border: 0; background: none; color: inherit; font: inherit; padding: 0; cursor: pointer; }
   td { padding: 4px 6px; border-top: 1px solid var(--line); }
-  .sub { margin-top: 3px; color: var(--mut); }
-  .eff { margin-left: 8px; color: var(--mut); }
   .n { text-align: right; white-space: nowrap; }
   .good { color: var(--good, #4caf50); }
   .bad { color: var(--bad, #e05555); }
