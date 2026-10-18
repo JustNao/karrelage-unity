@@ -1,0 +1,127 @@
+//! Schema-aware decoding with the descriptor set exported by pipeline/build_protos.py, and the clear-name layer
+//! (names.json = beta matches + hand-confirmed overrides, plus per-user overrides). Port of schema.py.
+pub mod names;
+pub mod util;
+
+use anyhow::{Context, Result};
+pub use prost_reflect::{DynamicMessage, MessageDescriptor, Value as PbValue};
+use prost_reflect::{DescriptorPool, Kind, MapKey, ReflectMessage};
+use serde_json::{json, Map, Value};
+use std::path::{Path, PathBuf};
+use std::sync::RwLock;
+
+pub use names::Names;
+
+pub struct Proto {
+    pool: DescriptorPool,
+    names: RwLock<Names>,
+    override_path: PathBuf,
+}
+
+impl Proto {
+    /// `dir` = data pack folder; `override_path` = user overrides file (same format as work/overrides.json).
+    pub fn load(dir: &Path, override_path: PathBuf) -> Result<Self> {
+        let pool = DescriptorPool::decode(std::fs::read(dir.join("protocol.desc")).context("protocol.desc")?.as_slice())?;
+        let base: Value = serde_json::from_slice(&std::fs::read(dir.join("names.json")).context("names.json")?)?;
+        let overrides: Value = std::fs::read(&override_path).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_else(|| json!({}));
+        Ok(Self { pool, names: RwLock::new(Names::new(base, overrides)), override_path })
+    }
+
+    pub fn message(&self, type_name: &str) -> Option<MessageDescriptor> {
+        self.pool.get_message_by_name(type_name)
+    }
+
+    pub fn decode(&self, type_name: &str, bytes: &[u8]) -> Option<DynamicMessage> {
+        DynamicMessage::decode(self.message(type_name)?, bytes).ok()
+    }
+
+    /// (clear name or the obfuscated type name, confidence)
+    pub fn message_name(&self, type_name: &str) -> (String, Option<String>) {
+        self.names.read().unwrap().message_name(type_name)
+    }
+
+    pub fn mapped_count(&self) -> usize {
+        self.names.read().unwrap().len()
+    }
+
+    /// Obfuscated type name for a clear message name (first match), if known in this build.
+    pub fn obf_for_clear(&self, clear: &str) -> Option<String> {
+        self.names.read().unwrap().obf_for_clear(clear)
+    }
+
+    /// Persist a confirmed name (`field = None` -> the message itself). Empty `name` removes it.
+    pub fn set_override(&self, msg: &str, field: Option<&str>, name: &str) -> Result<()> {
+        let mut n = self.names.write().unwrap();
+        n.set_override(msg, field, name);
+        let tmp = self.override_path.with_extension("tmp");
+        if let Some(p) = self.override_path.parent() {
+            std::fs::create_dir_all(p)?;
+        }
+        std::fs::write(&tmp, serde_json::to_vec_pretty(n.overrides())?)?;
+        std::fs::rename(&tmp, &self.override_path)?;
+        Ok(())
+    }
+
+    pub fn overrides(&self) -> Value {
+        self.names.read().unwrap().overrides().clone()
+    }
+
+    /// Decoded message as JSON with clear field names plus `__t` (message name) and `__f` (label -> obfuscated field).
+    pub fn to_json(&self, m: &DynamicMessage) -> Value {
+        let names = self.names.read().unwrap();
+        rename(&names, m)
+    }
+}
+
+fn rename(names: &Names, m: &DynamicMessage) -> Value {
+    let desc = m.descriptor();
+    let mname = desc.full_name().to_string();
+    let (mut out, mut meta) = (Map::new(), Map::new());
+    for (fd, v) in m.fields() {
+        let label = names.field_label(&mname, fd.name());
+        out.insert(label.clone(), value_json(names, v, &fd.kind()));
+        meta.insert(label, Value::String(fd.name().to_string()));
+    }
+    out.insert("__t".into(), Value::String(mname));
+    out.insert("__f".into(), Value::Object(meta));
+    Value::Object(out)
+}
+
+fn key_str(k: &MapKey) -> String {
+    match k {
+        MapKey::Bool(b) => b.to_string(),
+        MapKey::I32(x) => x.to_string(),
+        MapKey::I64(x) => x.to_string(),
+        MapKey::U32(x) => x.to_string(),
+        MapKey::U64(x) => x.to_string(),
+        MapKey::String(s) => s.clone(),
+    }
+}
+
+fn value_json(names: &Names, v: &PbValue, kind: &Kind) -> Value {
+    match v {
+        PbValue::Bool(b) => json!(b),
+        PbValue::I32(x) => json!(x),
+        PbValue::U32(x) => json!(x),
+        // 64-bit ints as strings, like protobuf's JSON mapping (JS cannot hold them exactly)
+        PbValue::I64(x) => json!(x.to_string()),
+        PbValue::U64(x) => json!(x.to_string()),
+        PbValue::F32(x) => json!(x),
+        PbValue::F64(x) => json!(x),
+        PbValue::String(s) => json!(s),
+        PbValue::Bytes(b) => json!(format!("0x{}", b.iter().map(|x| format!("{x:02x}")).collect::<String>())),
+        PbValue::EnumNumber(n) => match kind {
+            Kind::Enum(e) => e.get_value(*n).map_or(json!(n), |v| json!(v.name())),
+            _ => json!(n),
+        },
+        PbValue::Message(m) => rename(names, m),
+        PbValue::List(l) => Value::Array(l.iter().map(|x| value_json(names, x, kind)).collect()),
+        PbValue::Map(m) => {
+            let vk = match kind {
+                Kind::Message(md) => md.get_field_by_name("value").map(|f| f.kind()),
+                _ => None,
+            };
+            Value::Object(m.iter().map(|(k, x)| (key_str(k), value_json(names, x, vk.as_ref().unwrap_or(kind)))).collect())
+        }
+    }
+}

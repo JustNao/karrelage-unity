@@ -1,0 +1,11 @@
+[package]
+name = "loutil-proto"
+version.workspace = true
+edition.workspace = true
+description = "Dynamic protobuf decoding from the data pack's FileDescriptorSet + clear-name layer"
+
+[dependencies]
+anyhow.workspace = true
+serde_json.workspace = true
+prost = "0.13"
+prost-reflect = "0.14"
