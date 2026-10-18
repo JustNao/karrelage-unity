@@ -231,6 +231,7 @@
   /** Graph dots: price (per unit) against the lot's density. Same lots as the list, so every dot has a card. */
   /** Rune focus (Transcendance tab): the graph fades the lots that lack the focused effect (like the highlight). */
   const focusEffect = $derived(tab === "trans" && !comp && focus ? Number(focus.split(":")[0]) : null);
+  const mount = $derived(!!mountInfo(item?.name));
   const points = $derived(
     rows
       .map((r: any, i: number) => {
@@ -241,8 +242,8 @@
         x: unitPrice(r),
         y: comp ? (levelOf(r) != null ? xpOfLevel(levelOf(r)!) : NaN) : r.density, // companions: total xp of the level (price follows it)
         label: r.name,
-        added: comp ? isLegendary(r) : r.effects.some((e: any) => e.status === "added"), // companions: blue dot = legendary
-        missing: !comp && r.effects.some((e: any) => e.status === "removed"),
+        added: comp ? isLegendary(r) : !mount && r.effects.some((e: any) => e.status === "added"), // companions: blue dot = legendary; mounts have no EXO
+        missing: !comp && !mount && r.effects.some((e: any) => e.status === "removed"),
         faded: lacksFade(r) || !has,
       };
       })
@@ -438,7 +439,7 @@
         </div>
       {/if}
       {#if points.length >= 3}
-        <div class="graph"><DensityChart {points} selected={tab === "trans" && cand ? cand.id : picked} onselect={focusLot} /></div>
+        <div class="graph"><DensityChart {points} equipment={!comp && !mount} selected={tab === "trans" && cand ? cand.id : picked} onselect={focusLot} /></div>
       {/if}
       {#if !comp}<div class="tabs">
         <button class:on={tab === "listing"} onclick={() => (tab = "listing")}>Liste</button>

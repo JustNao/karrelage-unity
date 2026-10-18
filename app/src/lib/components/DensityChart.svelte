@@ -23,7 +23,7 @@
    * Green dots sit far above the line: more value than their price suggests (good deals). Blue = has an added effect,
    * orange = lacks some default effect.
    */
-  let { points, selected = null, onselect }: { points: Point[]; selected?: string | number | null; onselect: (id: string | number) => void } = $props();
+  let { points, selected = null, equipment = true, onselect }: { points: Point[]; selected?: string | number | null; /** Equipment only: EXO / missing-effect legend entries are meaningless for companions and mounts. */ equipment?: boolean; onselect: (id: string | number) => void } = $props();
 
   const H = 220;
   const M = { l: 14, r: 14, t: 12, b: 26 };
@@ -69,7 +69,7 @@
 
 <div class="chart" bind:clientWidth={W}>
   <div class="legend">
-    <span><i class="d good"></i>Bonne affaire</span><span><i class="d added"></i>EXO</span><span><i class="d missing"></i>Effet manquant</span>
+    <span><i class="d good"></i>Bonne affaire</span>{#if equipment}<span><i class="d added"></i>EXO</span><span><i class="d missing"></i>Effet manquant</span>{/if}
   </div>
   <svg width={W} height={H} role="img" aria-label="Densité en fonction du prix">
     <path d={band} class="band" />
