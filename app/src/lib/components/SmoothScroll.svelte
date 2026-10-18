@@ -6,7 +6,7 @@
    * slides in from the right edge (i.e. from under the neighbouring panel) while the content padding eases left,
    * instead of the native bar popping in and shifting everything instantly.
    */
-  let { children, pad = "12px", maxHeight }: { children: Snippet; pad?: string; maxHeight?: string } = $props();
+  let { children, pad = "12px", maxHeight, toTop = false }: { children: Snippet; pad?: string; maxHeight?: string; /** Floating "back to top" button once scrolled down. */ toTop?: boolean } = $props();
 
   let scroller: HTMLElement;
   let inner: HTMLElement;
@@ -14,12 +14,14 @@
   let thumbH = $state(0);
   let thumbY = $state(0);
   let dragging = $state(false);
+  let scrolled = $state(false);
   let grab = { y: 0, top: 0 };
 
   function measure() {
     if (!scroller) return;
     const { scrollHeight: sh, clientHeight: ch, scrollTop: st } = scroller;
     overflow = sh > ch + 1;
+    scrolled = st > 400;
     thumbH = Math.max(32, (ch * ch) / sh);
     thumbY = sh > ch ? (st / (sh - ch)) * (ch - thumbH) : 0;
   }
@@ -55,6 +57,11 @@
   <div class="scroller" class:over={overflow} bind:this={scroller} onscroll={measure} style:--pad={pad} style:height={maxHeight ? "auto" : "100%"} style:max-height={maxHeight}>
     <div bind:this={inner}>{@render children()}</div>
   </div>
+  {#if toTop}
+    <button class="top" class:show={scrolled} aria-label="Back to top" title="Back to top" tabindex={scrolled ? 0 : -1} onclick={() => scroller.scrollTo({ top: 0, behavior: "smooth" })}>
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" /></svg>
+    </button>
+  {/if}
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
   <div class="track" class:on={overflow} onclick={trackClick}>
     <div
@@ -81,6 +88,9 @@
   }
   .scroller::-webkit-scrollbar { display: none; }
   .scroller.over { padding-right: calc(var(--pad, 12px) + 14px); }
+  .top { position: absolute; right: 28px; bottom: 16px; width: 36px; height: 36px; padding: 0; display: grid; place-items: center; border-radius: 50%; background: var(--panel); border: 1px solid var(--acc); color: var(--acc); box-shadow: 0 2px 10px #0008; opacity: 0; pointer-events: none; transform: translateY(8px); transition: opacity 0.2s, transform 0.2s; z-index: 5; }
+  .top.show { opacity: 1; pointer-events: auto; transform: none; }
+  .top:hover { background: var(--bg); }
   .track {
     position: absolute;
     top: 0;

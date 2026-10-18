@@ -310,7 +310,7 @@
     {/each}
   </div>
 
-  <SmoothScroll>
+  <SmoothScroll toTop>
     {#if item}
       <div class="head">
         <div class="fh">{item.name} <span class="mut">{item.type ?? ""} · gid {item.gid} · updated {ago(item.updated)} ago · {rows.length}/{item.lots} lots</span></div>
