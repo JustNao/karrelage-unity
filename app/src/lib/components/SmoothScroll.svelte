@@ -17,13 +17,21 @@
   let scrolled = $state(false);
   let grab = { y: 0, top: 0 };
 
+  let frame = 0;
+  /** Scroll events fire faster than frames: update the bar once per frame. */
+  function schedule() {
+    if (!frame) frame = requestAnimationFrame(() => ((frame = 0), measure()));
+  }
+
   function measure() {
     if (!scroller) return;
     const { scrollHeight: sh, clientHeight: ch, scrollTop: st } = scroller;
-    overflow = sh > ch + 1;
-    scrolled = st > 400;
-    thumbH = Math.max(32, (ch * ch) / sh);
-    thumbY = sh > ch ? (st / (sh - ch)) * (ch - thumbH) : 0;
+    if (overflow !== sh > ch + 1) overflow = sh > ch + 1;
+    if (scrolled !== st > 400) scrolled = st > 400;
+    const h = Math.max(32, (ch * ch) / sh);
+    if (Math.abs(h - thumbH) > 0.5) thumbH = h;
+    const y = sh > ch ? (st / (sh - ch)) * (ch - h) : 0;
+    if (Math.abs(y - thumbY) > 0.25) thumbY = y;
   }
 
   onMount(() => {
@@ -54,7 +62,7 @@
 </script>
 
 <div class="wrap">
-  <div class="scroller" class:over={overflow} bind:this={scroller} onscroll={measure} style:--pad={pad} style:height={maxHeight ? "auto" : "100%"} style:max-height={maxHeight}>
+  <div class="scroller" class:over={overflow} bind:this={scroller} onscroll={schedule} style:--pad={pad} style:height={maxHeight ? "auto" : "100%"} style:max-height={maxHeight}>
     <div bind:this={inner}>{@render children()}</div>
   </div>
   {#if toTop}
