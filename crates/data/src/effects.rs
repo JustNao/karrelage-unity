@@ -58,6 +58,16 @@ impl Data {
         let Some(tpl) = row.and_then(|e| self.text(e.description_id)) else {
             return (format!("effect {action}: {}", Value::Array(params.to_vec())), row);
         };
+        // weapon hits can arrive as (max, min): always show the range ascending
+        let mut ordered = params.to_vec();
+        if row.is_some_and(|e| e.group == "weapon") {
+            if let (Some(a), Some(b)) = (ordered.first().and_then(Value::as_i64), ordered.get(1).and_then(Value::as_i64)) {
+                if a > b {
+                    ordered.swap(0, 1);
+                }
+            }
+        }
+        let params = &ordered[..];
         let val = |i: usize| params.get(i - 1).filter(|v| !v.is_null());
         let out = cond_re().replace_all(tpl, |c: &regex::Captures| {
             let b: usize = c[2].parse().unwrap();

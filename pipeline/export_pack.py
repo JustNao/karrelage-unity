@@ -34,8 +34,8 @@ MAIN = ["actionPoints", "movementPoints", "range", "criticalHit", "damagePercent
 
 def classify(e):
     ch = gd.characteristics.get(e["characteristic"]) if e["characteristic"] else None
-    if e["category"] == 2:
-        return "weapon", 0
+    if e["category"] == 2:   # hits first ("dommages X", "vole X"), then -PA / -PM..., then flags (pushback...)
+        return "weapon", 0 if e["useDice"] and not e["characteristic"] else 1 if e["useDice"] else 2
     if not ch:
         return "other", 0
     kw = ch["keyword"]
