@@ -3,7 +3,7 @@
   import { app } from "../app.svelte";
   import { fmtDelta, pairRows } from "../compare";
   import { isLegendary, levelOf, xpOfLevel } from "../companion";
-  import { HIDDEN_EFFECTS, isBelowMin, isNegative, isPerfectLine, isWeaponEffect, perfection, rangeLabel, sortEffects } from "../effects";
+  import { HIDDEN_EFFECTS, LEGENDARY_EFFECT, isBelowMin, isNegative, isPerfectLine, isWeaponEffect, perfection, rangeLabel, sortEffects } from "../effects";
 
   /** One auction lot (see crates/modules/src/auction.rs for the shape). */
   let {
@@ -113,7 +113,7 @@
       {#each pairs as p (p.key)}
         <div class="l" class:hot={hov === p.key} {...hover(p.key)}>
           {#if p.left}
-            <span class="ln {isWeaponEffect(p.left) && p.left.status !== 'added' && p.left.status !== 'removed' ? '' : p.left.status}" class:unk={!p.left.known} class:perfect={isPerfectLine(p.left)} class:low={isBelowMin(p.left)} class:neg={isNegative(p.left)} title={hint(p.left)}>
+            <span class="ln {isWeaponEffect(p.left) && p.left.status !== 'added' && p.left.status !== 'removed' ? '' : p.left.status}" class:unk={!p.left.known} class:perfect={isPerfectLine(p.left)} class:low={isBelowMin(p.left)} class:neg={isNegative(p.left)} class:legend={p.left.action === LEGENDARY_EFFECT} title={hint(p.left)}>
               {@render line(p.left, false)}{@render highlight(p.left)}
             </span>
           {/if}
@@ -121,7 +121,7 @@
         <div class="d" class:hot={hov === p.key} {...hover(p.key)} class:up={p.delta > 0} class:down={p.delta < 0}>{fmtDelta(p.delta)}</div>
         <div class="r" class:hot={hov === p.key} {...hover(p.key)}>
           {#if p.right}
-            <span class="ln {isWeaponEffect(p.right) && p.right.status !== 'added' && p.right.status !== 'removed' ? '' : p.right.status}" class:unk={!p.right.known} class:perfect={isPerfectLine(p.right)} class:low={isBelowMin(p.right)} class:neg={isNegative(p.right)} title={hint(p.right)}>
+            <span class="ln {isWeaponEffect(p.right) && p.right.status !== 'added' && p.right.status !== 'removed' ? '' : p.right.status}" class:unk={!p.right.known} class:perfect={isPerfectLine(p.right)} class:low={isBelowMin(p.right)} class:neg={isNegative(p.right)} class:legend={p.right.action === LEGENDARY_EFFECT} title={hint(p.right)}>
               {@render line(p.right, true)}
             </span>
           {/if}
@@ -148,7 +148,7 @@
       {/if}
       <ul class="eff">
         {#each statEffs as e}
-          <li class="ln {e.status}" class:unk={!e.known} class:perfect={isPerfectLine(e)} class:low={isBelowMin(e)} class:neg={isNegative(e)} title={hint(e)}>
+          <li class="ln {e.status}" class:unk={!e.known} class:perfect={isPerfectLine(e)} class:low={isBelowMin(e)} class:neg={isNegative(e)} class:legend={e.action === LEGENDARY_EFFECT} title={hint(e)}>
             {@render line(e, false)}{@render highlight(e)}
           </li>
         {/each}
@@ -177,6 +177,7 @@
   .ln.perfect { font-weight: 700; }
   .ln.low { color: #f08a3c; }
   .ln.neg { color: var(--bad); font-weight: 400; }
+  .ln.legend { color: #e6b800; font-weight: 700; }
   .ln.removed { color: var(--mut); opacity: 0.55; }
   .ln small { font-weight: 400; color: var(--mut); margin-left: 6px; }
   .ln small.rg { margin: 0 6px 0 0; }

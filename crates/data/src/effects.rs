@@ -6,6 +6,8 @@ use std::sync::OnceLock;
 
 /// "Arme de chasse": the only effect of the "other" group kept in the filter.
 pub const HUNTING_WEAPON_EFFECT: i64 = 795;
+/// Passive of a legendary item: the single param is a spell id, rendered as the spell's name.
+pub const LEGENDARY_EFFECT: i64 = 1175;
 
 fn re(cell: &'static OnceLock<Regex>, p: &str) -> &'static Regex {
     cell.get_or_init(|| Regex::new(p).unwrap())
@@ -55,6 +57,11 @@ impl Data {
     /// Render an effect description. `params` = [p1, p2, ...] (null = absent). Returns (text, effect row if known).
     pub fn render_effect(&self, action: i64, params: &[Value]) -> (String, Option<&EffectRow>) {
         let row = self.effects.get(&action);
+        if action == LEGENDARY_EFFECT {
+            if let Some(name) = params.first().and_then(Value::as_i64).and_then(|id| self.spells.get(&id)).and_then(|s| self.text(s.name_id)) {
+                return (name.to_string(), row);
+            }
+        }
         let Some(tpl) = row.and_then(|e| self.text(e.description_id)) else {
             return (format!("effect {action}: {}", Value::Array(params.to_vec())), row);
         };

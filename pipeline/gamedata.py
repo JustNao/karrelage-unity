@@ -32,7 +32,7 @@ def _load(n):
     return {int(k): v for k, v in json.loads(f.read_text(encoding="utf-8")).items()} if f.exists() else {}
 
 
-items, effects, characteristics, itemtypes = _load("items"), _load("effects"), _load("characteristics"), _load("itemtypes")
+items, effects, characteristics, itemtypes, spells = _load("items"), _load("effects"), _load("characteristics"), _load("itemtypes"), _load("spells")
 _i18n = None
 
 

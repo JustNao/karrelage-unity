@@ -15,8 +15,10 @@ import UnityPy
 GAME = pathlib.Path(r"C:\Users\nao3n\AppData\Local\Ankama\Dofus-dofus3\Dofus_Data\StreamingAssets\Content")
 OUT = root / "work" / "gamedata"
 BUNDLES = OUT / "bundles"
-TABLES = ["items", "effects", "characteristics", "itemtypes", "itemsets", "itemsupertypes"]
+TABLES = ["items", "effects", "characteristics", "itemtypes", "itemsets", "itemsupertypes", "spells"]
 UnityPy.config.FALLBACK_UNITY_VERSION = "6000.3.16f1"   # bundles ship with a stripped version; matches UnityPlayer.dll
+
+LEGENDARY_SPELL_TYPE = 339   # spells.typeId of the passives of legendary items
 
 
 def refresh():
@@ -62,7 +64,9 @@ def main():
     effects = {r["id"]: {k: r.get(k) for k in ("id", "descriptionId", "characteristic", "category", "useDice", "isInPercent", "effectPowerRate", "showInTooltip", "elementId", "boost", "oppositeId")} for r in rows("effects")}
     chars = {r["id"]: {k: r.get(k) for k in ("id", "keyword", "nameId", "order", "categoryId")} for r in rows("characteristics")}
     types = {r["id"]: {k: r.get(k) for k in ("id", "nameId", "superTypeId", "categoryId")} for r in rows("itemtypes")}
-    for n, d in (("items", items), ("effects", effects), ("characteristics", chars), ("itemtypes", types)):
+    # legendary item passives (effect 1175 carries the spell id): only their names are needed
+    spells = {r["id"]: {"id": r["id"], "nameId": r["nameId"]} for r in rows("spells") if r.get("typeId") == LEGENDARY_SPELL_TYPE and "nameId" in r}
+    for n, d in (("items", items), ("effects", effects), ("characteristics", chars), ("itemtypes", types), ("spells", spells)):
         (OUT / f"{n}.json").write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
         print(n, len(d))
 

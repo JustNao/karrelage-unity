@@ -43,6 +43,12 @@ pub struct Item {
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
+pub struct SpellRow {
+    pub name_id: i64,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct EffectRow {
     pub description_id: i64,
     pub characteristic: i64,
@@ -82,6 +88,8 @@ pub struct Data {
     pub items: HashMap<i64, Item>,
     pub effects: HashMap<i64, EffectRow>,
     pub itemtypes: HashMap<i64, ItemType>,
+    /// Legendary passives: spell id -> name string id (absent in older packs).
+    pub spells: HashMap<i64, SpellRow>,
     pub strings: HashMap<i64, String>,
     /// Build-specific obfuscated names per role (bindings.json), see pipeline/bindings.json.
     pub bindings: Value,
@@ -114,6 +122,7 @@ impl Data {
             manifest: read_manifest(dir)?,
             effects: read_map(dir, "effects.json")?,
             itemtypes,
+            spells: read_map(dir, "spells.json").unwrap_or_default(),
             equipment_effects,
             bindings: serde_json::from_slice(&std::fs::read(dir.join("bindings.json"))?)?,
             dir: dir.to_path_buf(),
@@ -165,6 +174,10 @@ mod tests {
         // classification + density (effectPowerRate) from the pack
         assert_eq!((d.effects[&111].group.as_str(), d.effects[&111].density), ("main", 100.0)); // PA
         assert_eq!((d.effects[&128].group.as_str(), d.effects[&128].density), ("main", 90.0)); // PM
+        // legendary passive: the spell id param is rendered as the passive's name
+        if d.spells.contains_key(&11352) {
+            assert_eq!(d.render_effect(effects::LEGENDARY_EFFECT, &[11352.into(), 11352.into()]).0, "Appétit de Crocobur");
+        }
         assert_eq!(d.effects[&118].group, "stats");
         assert_eq!(d.effects[&210].group, "resist");
         assert_eq!(d.stat_of(118), d.stat_of(157), "+Force and -Force are one stat");

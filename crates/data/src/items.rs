@@ -160,7 +160,7 @@ impl Data {
 
     /// Density of one effect instance (None when it has no numeric value or is unknown). See `item_density`.
     pub fn effect_density(&self, action: i64, params: &[Value]) -> Option<f64> {
-        if DENSITY_EXCLUDED_STATS.contains(&self.stat_of(action)) {
+        if action == ELEMENT_CHANGE_EFFECT || DENSITY_EXCLUDED_STATS.contains(&self.stat_of(action)) {
             return None;
         }
         let nums: Vec<f64> = params.iter().filter_map(Value::as_f64).collect();
