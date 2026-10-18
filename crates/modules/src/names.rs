@@ -123,12 +123,14 @@ fn game_check(ctx: &Ctx) -> Value {
     })
 }
 
-fn spawn_pipeline(root: PathBuf, full: bool, emit: Arc<dyn Fn(&str, Value) + Send + Sync>, running: Arc<AtomicBool>) {
+fn spawn_pipeline(root: PathBuf, mode: &'static str, emit: Arc<dyn Fn(&str, Value) + Send + Sync>, running: Arc<AtomicBool>) {
     std::thread::spawn(move || {
         let mut cmd = Command::new("python");
         cmd.arg("pipeline/update_names.py").current_dir(&root).env("PYTHONUTF8", "1").env("PYTHONUNBUFFERED", "1");
-        if full {
-            cmd.arg("--from-game");
+        match mode {
+            "full" => drop(cmd.arg("--from-game")),
+            "repack" => drop(cmd.arg("--repack")),
+            _ => {}
         }
         cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
         #[cfg(windows)]
@@ -224,15 +226,19 @@ impl Module for NamesTab {
                     "canCompute": repo_root().is_some(), "running": self.running.load(Ordering::Relaxed),
                 }))
             }
-            // args: {mode: "names" | "full"}; runs pipeline/update_names.py, streaming its output as names:log events
+            // args: {mode: "names" | "full" | "repack"}; runs pipeline/update_names.py, streaming its output as names:log events
             "compute" => {
                 let root = repo_root().ok_or_else(|| anyhow!("disponible seulement depuis le dépôt de développement (pipeline/update_names.py introuvable)"))?;
                 if self.running.swap(true, Ordering::SeqCst) {
                     return Err(anyhow!("un calcul est déjà en cours"));
                 }
-                let full = args.get("mode").and_then(Value::as_str) == Some("full");
-                spawn_pipeline(root, full, ctx.emitter(), self.running.clone());
-                Ok(json!({"started": true, "full": full}))
+                let mode = match args.get("mode").and_then(Value::as_str) {
+                    Some("full") => "full",
+                    Some("repack") => "repack",
+                    _ => "names",
+                };
+                spawn_pipeline(root, mode, ctx.emitter(), self.running.clone());
+                Ok(json!({"started": true, "mode": mode}))
             }
             _ => Err(anyhow!("names: unknown method {method}")),
         }

@@ -1,6 +1,7 @@
 """Recompute the data pack's message names (what the app's developer "Noms" tab runs).
 
   python pipeline/update_names.py               # names only: match_protos.py + export_pack.py (protos already built for this game build)
+  python pipeline/update_names.py --repack      # only export_pack.py + package_pack.py (no matching, no dump): refresh dist/datapack.zip
   python pipeline/update_names.py --from-game   # whole chain after a game update: copy the game files, dump them with
                                                 # Il2CppInspectorRedux, protodec -> protos, build_protos, game data, match, export
 
@@ -16,7 +17,8 @@ GAME = pathlib.Path(os.environ.get("LOUTIL_GAME") or pathlib.Path(os.environ.get
 
 
 FULL = "--from-game" in sys.argv
-TOTAL = 7 if FULL else 2   # steps, reported to the app's progress bar as "@@STEP k n title" lines
+REPACK = "--repack" in sys.argv
+TOTAL = 7 if FULL else 1 if REPACK else 2   # steps, reported to the app's progress bar as "@@STEP k n title" lines
 _k = 0
 
 
@@ -70,8 +72,9 @@ def from_game():
 if "--from-game" in sys.argv:
     from_game()
 
-step("Calcul des noms (correspondance structurelle avec les protos beta)")
-run([py, "pipeline/match_protos.py"])
+if not REPACK:
+    step("Calcul des noms (correspondance structurelle avec les protos beta)")
+    run([py, "pipeline/match_protos.py"])
 
 step("Export du pack de données")
 run([py, "pipeline/export_pack.py"])

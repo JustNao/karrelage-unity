@@ -42,11 +42,11 @@
     }
   }
 
-  async function compute(mode: "names" | "full") {
+  async function compute(mode: "names" | "full" | "repack") {
     if (mode === "full" && !confirm("Régénérer tout depuis les fichiers du jeu (copie, dump IL2CPP, protos, données) ? Cela peut prendre plusieurs minutes.")) return;
     log = [];
     finished = null;
-    progress = { k: 1, n: mode === "full" ? 7 : 2, title: "Démarrage…" };
+    progress = { k: 1, n: mode === "full" ? 7 : mode === "repack" ? 1 : 2, title: "Démarrage…" };
     try {
       await call("names", "compute", { mode });
       running = true;
@@ -88,6 +88,7 @@
     {#if report}<span class="badge {VERDICT[report.verdict].cls}">{VERDICT[report.verdict].label}</span>{/if}
     <button onclick={refresh}>Vérifier</button>
     <button disabled={running || !report?.canCompute} onclick={() => compute("names")} title="Relance la correspondance des noms (match_protos) puis l'export du pack">Calculer les noms</button>
+    <button disabled={running || !report?.canCompute} onclick={() => compute("repack")} title="Réexporte le pack (export_pack) et régénère dist/datapack.zip, sans correspondance des noms ni dump du jeu">Repack data</button>
     <button disabled={running || !report?.canCompute} onclick={() => compute("full")} title="Après une mise à jour du jeu : copie des fichiers, dump IL2CPP, protos, données, noms, export">Tout régénérer depuis le jeu</button>
   </div>
   {#if progress && (running || finished !== null)}
