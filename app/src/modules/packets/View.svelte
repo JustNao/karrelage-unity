@@ -59,8 +59,12 @@
 
   onMount(() => {
     const offs: Promise<() => void>[] = [on("packets:packet", add)];
-    call<any[]>("packets", "list").then((l) => (packets = l));
-    return () => void offs.forEach((o) => o.then((f) => f()));
+    // the backend only records while this tab is open, and drops its buffer when it closes
+    call("packets", "set_active", { on: true }).then(() => call<any[]>("packets", "list")).then((l) => (packets = l));
+    return () => {
+      call("packets", "set_active", { on: false });
+      offs.forEach((o) => o.then((f) => f()));
+    };
   });
 
   function clickType(k: string, e: MouseEvent) {

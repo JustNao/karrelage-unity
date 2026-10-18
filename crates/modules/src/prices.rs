@@ -17,6 +17,9 @@ fn category_name(id: Option<i64>) -> &'static str {
     }
 }
 
+/// itemtypes id of "Rune de transcendance".
+const RUNE_TYPE: i64 = 211;
+
 pub struct Prices {
     /// gid -> {gid, name, type_id, type, category, unit, updated, override}
     store: Mutex<BTreeMap<i64, Value>>,
@@ -103,6 +106,21 @@ impl Module for Prices {
     fn call(&self, method: &str, args: Value, ctx: &Ctx) -> Result<Value> {
         match method {
             "list" => Ok(Value::Array(self.store.lock().unwrap().values().cloned().collect())),
+            // Rune de transcendance items: [{gid, name, a, value}] (the effect a rune adds to an item)
+            "runes" => {
+                let mut v: Vec<Value> = ctx
+                    .data
+                    .items
+                    .iter()
+                    .filter(|(_, i)| i.type_id == RUNE_TYPE)
+                    .filter_map(|(g, i)| {
+                        let e = i.effects.iter().find(|e| ![2825, 2826, 2827].contains(&e.a))?;
+                        Some(json!({"gid": g, "name": ctx.data.item_name(*g), "a": e.a, "value": e.max}))
+                    })
+                    .collect();
+                v.sort_by_key(|x| x["gid"].as_i64());
+                Ok(Value::Array(v))
+            }
             // args: {gid, value: number | null}; null removes the override
             "set_override" => {
                 let gid = args["gid"].as_i64().ok_or_else(|| anyhow!("prices: gid required"))?;

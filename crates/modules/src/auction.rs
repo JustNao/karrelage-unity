@@ -346,6 +346,7 @@ mod tests {
         let dir = std::env::temp_dir().join("loutil-golden");
         let _ = std::fs::remove_dir_all(&dir);
         let hub = crate::Hub::new(data, proto, dir, emit, Arc::new(|_| {}));
+        hub.call("packets", "set_active", json!({"on": true})).unwrap(); // the inspector only records while its tab is open
 
         let payload = std::fs::read(root.join("fixtures/ah_demo.bin")).unwrap();
         hub.handle(RawMessage { t: 1.0, srv: "demo".into(), dir: "S->C", payload });

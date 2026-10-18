@@ -9,6 +9,7 @@
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
   import { analyse, isGoodDeal } from "../../lib/density";
   import { rangeLabel, sections, type EffectMeta } from "../../lib/effects";
+  import { AH_TAX, transcendance, type Rune, type StoredPrice } from "../../lib/transcend";
 
   interface Filter { a: number; min: string | number; max: string | number }
 
@@ -33,6 +34,10 @@
   const versusFor = (r: any) => (pin && !isPin(r) ? { pin: pin.row, name: pin.item.name, unitPrice } : null);
   const lacksFade = (r: any) => fade !== null && !r.effects.some((e: any) => e.action === fade && e.status !== "removed");
   const toggleFade = (a: number) => (fade = fade === a ? null : a);
+  let tab = $state<"listing" | "trans">("listing");
+  let dealsOpen = $state(false); // "Good deals" starts collapsed
+  let runes = $state.raw<Rune[]>([]);
+  let stored = new SvelteMap<number, StoredPrice>(); // stored prices (the rune prices feed the transcendance tab)
   let allOpen = $state(false);
   let sortDir = $state(1);
 
@@ -174,6 +179,9 @@
       .slice(0, 6);
   });
 
+  const trans = $derived(transcendance(rows, unitPrice, runes, stored));
+  const runeName = (n: string) => n;
+
   /** Clicking a dot: unroll the lot and scroll the list down to it (nothing is filtered out). */
   async function focusLot(id: string | number) {
     picked = id;
@@ -202,12 +210,16 @@
   onMount(() => {
     call<EffectMeta[]>("auction", "effects").then((e) => (picker = e));
     call<EffectMeta[]>("auction", "effect_meta").then((l) => (meta = Object.fromEntries(l.map((e) => [e.id, e]))));
+    call<Rune[]>("prices", "runes").then((l) => (runes = l));
+    call<StoredPrice[]>("prices", "list").then((l) => l.forEach((p) => stored.set(p.gid, p)));
     call<any[]>("auction", "items").then((l) => {
       l.forEach(put);
       if (selGid === null && l.length) selGid = l[0].gid;
     });
     const offs = [
       on("auction:item", showNew),
+      on<StoredPrice>("prices:price", (p) => stored.set(p.gid, p)),
+      on("prices:cleared", () => stored.clear()),
       on("auction:cleared", () => {
         items.clear();
         selGid = null;
@@ -252,10 +264,53 @@
       {#if points.length >= 3}
         <div class="graph"><DensityChart {points} selected={picked} onselect={focusLot} /></div>
       {/if}
+      <div class="tabs">
+        <button class:on={tab === "listing"} onclick={() => (tab = "listing")}>Listing</button>
+        <button class:on={tab === "trans"} onclick={() => (tab = "trans")}>Transcendance{trans.opportunities.length ? ` · ${trans.opportunities.length}` : ""}</button>
+      </div>
+      {#if tab === "trans"}
+        <div class="trans">
+          <div class="mut note">
+            Lots of this item with the transcendance lock and an added effect show what a rune is worth. Candidates are unlocked lots
+            without an overmax effect; profit = sale price − {AH_TAX * 100}% tax − lot price − rune price (Stored prices tab).
+          </div>
+          {#if trans.targets.length === 0}
+            <div class="mut">No transcended lot of this item in the listing: nothing to compare with.</div>
+          {:else}
+            <div class="ghead">Transcended lots seen</div>
+            {#each trans.targets as t (`${t.a}:${t.value}`)}
+              <div class="trow">
+                <b>+{t.value} {effLabel(t.a)}</b>
+                <span class="mut">{t.lots} {t.lots === 1 ? "lot" : "lots"} · from {kamas(t.sale)} ·</span>
+                {#if !t.rune}<span class="warn">no matching rune</span>
+                {:else if t.runeCost == null}<span class="warn">{runeName(t.rune.name)}: price unknown, open it in the auction house</span>
+                {:else}<span class="mut">{runeName(t.rune.name)} {kamas(t.runeCost)}</span>{/if}
+              </div>
+            {/each}
+            {#if trans.unpricedCount}<div class="mut note">{trans.unpricedCount} candidate lots cannot be ranked until their rune has a stored price.</div>{/if}
+            <div class="ghead">Profitable candidates</div>
+            {#each trans.opportunities as o (o.row.uid ?? o.buy + "-" + o.row.density)}
+              {@const t = o.best!.target}
+              <div class="opp">
+                <div class="oh">
+                  <b class="ok">+{kamas(o.best!.profit)}</b>
+                  <span>add {t.rune?.name} (+{t.value} {effLabel(t.a)})</span>
+                  <span class="mut">buy {kamas(o.buy)} · rune {kamas(t.runeCost ?? 0)} · sell ~{kamas(t.sale)} · density {o.z >= 0 ? "+" : ""}{o.z.toFixed(1)}σ</span>
+                </div>
+                <ItemCard row={o.row} collapsible open={openSet.has("t" + (o.row.uid ?? ""))} ontoggle={() => toggleOpen("t" + (o.row.uid ?? ""))} />
+              </div>
+            {:else}
+              <div class="mut">No profitable candidate right now.</div>
+            {/each}
+          {/if}
+        </div>
+      {:else}
       {#if deals.length}
         <div class="deals">
-          <div class="dhead">Good deals <span class="mut">· {deals.length} {deals.length === 1 ? "lot stands" : "lots stand"} out above the price trend</span></div>
-          {#each deals as d (d.key)}
+          <button class="dhead" aria-expanded={dealsOpen} onclick={() => (dealsOpen = !dealsOpen)}>
+            <span class="chev" class:shut={!dealsOpen}>▾</span> Good deals <span class="mut">· {deals.length} {deals.length === 1 ? "lot stands" : "lots stand"} out above the price trend</span>
+          </button>
+          {#each dealsOpen ? deals : [] as d (d.key)}
             <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
             <div class="deal" class:faded={lacksFade(d.row)} title="Click to jump to the lot in the list" onclick={() => focusLot(d.key)}>
               <ItemCard row={d.row} {fade} onfade={toggleFade} pinned={isPin(d.row)} onpin={() => togglePin(d.row)} versus={versusFor(d.row)} />
@@ -271,6 +326,7 @@
       {:else}
         <div class="mut">No lot matches the filter</div>
       {/each}
+      {/if}
     {/if}
   </SmoothScroll>
 
@@ -327,13 +383,21 @@
   .graph { margin-bottom: 12px; }
   .head .on { border-color: var(--acc); color: var(--acc); }
   .deals { margin-bottom: 14px; padding: 8px 10px 2px; border: 1px solid color-mix(in srgb, var(--ok) 45%, var(--line)); border-radius: 10px; background: color-mix(in srgb, var(--ok) 5%, transparent); }
-  .dhead { font: 600 13px system-ui; color: var(--ok); margin-bottom: 8px; }
+  .dhead { display: flex; gap: 6px; align-items: center; width: 100%; border: 0; background: none; font: 600 13px system-ui; color: var(--ok); margin-bottom: 8px; padding: 0; text-align: left; }
   .dhead .mut { font-weight: 400; }
   .deal { cursor: pointer; }
   .deal, .lot { transition: opacity 0.25s; }
   .deal.faded, .lot.faded { opacity: 0.2; }
   .lot.picked :global(.card) { border-color: var(--acc); animation: pulse 1.6s ease-out; }
   @keyframes pulse { from { box-shadow: 0 0 0 0 color-mix(in srgb, var(--acc) 70%, transparent); } to { box-shadow: 0 0 0 14px transparent; } }
+  .tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+  .tabs .on { border-color: var(--acc); color: var(--acc); }
+  .trans .note { margin: 4px 0 8px; font-size: 12px; }
+  .trow { padding: 2px 0; font-size: 12px; }
+  .warn { color: var(--warn, orange); }
+  .opp { margin-bottom: 12px; }
+  .oh { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; font-size: 12px; margin-bottom: 4px; }
+  .oh .ok { color: var(--ok); font-size: 14px; }
   .btns { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
   .frow { display: grid; grid-template-columns: 1fr auto 52px 52px auto auto; gap: 4px; align-items: center; margin: 3px 0; }
   .frow input { width: 100%; padding: 2px 4px; }

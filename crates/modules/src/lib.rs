@@ -76,6 +76,10 @@ impl Ctx {
 pub trait Module: Send + Sync {
     fn id(&self) -> &'static str;
     fn interest(&self) -> Interest;
+    /// False = skip this module entirely (no decoding done on its behalf, nothing stored). Default: always on.
+    fn wants(&self) -> bool {
+        true
+    }
     fn init(&self, _ctx: &Ctx) {}
     /// Render a message into a UI-friendly structure (shown in the packet inspector's formatted column).
     fn format(&self, _m: &Message, _ctx: &Ctx) -> Option<Value> {
@@ -120,7 +124,7 @@ impl Hub {
             None => (String::new(), None),
         };
         let mut msg = Message { id: self.seq.fetch_add(1, Ordering::Relaxed) + 1, raw, env, type_name, name, conf, decoded: None, fmt: None };
-        let interested: Vec<&Box<dyn Module>> = self.modules.iter().filter(|m| m.interest().matches(&msg)).collect();
+        let interested: Vec<&Box<dyn Module>> = self.modules.iter().filter(|m| m.wants() && m.interest().matches(&msg)).collect();
         if interested.is_empty() {
             return;
         }
