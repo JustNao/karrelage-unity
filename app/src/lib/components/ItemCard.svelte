@@ -1,7 +1,7 @@
 <script lang="ts">
   import { kamas } from "../api";
   import { fmtDelta, pairRows } from "../compare";
-  import { isBelowMin, isNegative, isPerfectLine, perfection, sortEffects } from "../effects";
+  import { isBelowMin, isNegative, isPerfectLine, perfection, rangeLabel, sortEffects } from "../effects";
 
   /** One auction lot (see crates/modules/src/auction.rs for the shape). */
   let {
@@ -41,15 +41,15 @@
   const priceDelta = $derived(myPrice - pinPrice);
   const hint = (e: any) =>
     `effect ${e.action}` +
-    (e.range ? ` · default ${e.range[0]}–${e.range[1]}` : "") +
+    (e.range ? ` · default ${rangeLabel(e.range).slice(1, -1)}` : "") +
     (e.status === "added" ? " · added (not a default effect)" : e.status === "above" ? " · above default max" : e.status === "removed" ? " · removed (default effect missing)" : "");
 </script>
 
 {#snippet line(e: any, mirror: boolean)}
   {#if mirror}
-    {#if e.range && e.status !== "removed"}<small class="rg">[{e.range[0]}–{e.range[1]}]</small>{/if}{e.text}
+    {#if e.range && e.status !== "removed"}<small class="rg">{rangeLabel(e.range)}</small>{/if}{e.text}
   {:else}
-    {e.text}{#if e.range && e.status !== "removed"}<small>[{e.range[0]}–{e.range[1]}]</small>{/if}
+    {e.text}{#if e.range && e.status !== "removed"}<small>{rangeLabel(e.range)}</small>{/if}
   {/if}
 {/snippet}
 

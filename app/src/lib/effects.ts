@@ -71,6 +71,9 @@ export function perfection(effs: any[]): Perfection {
   return { damage: check(["damage"]), resist: check(["resist"]), main: check(["stats", "main"]) };
 }
 
+/** [X] for a single possible value, [min–max] for a range (filter rows and item lines alike). */
+export const rangeLabel = (def: number[] | null | undefined) => (def ? (def[0] === def[1] ? `[${def[0]}]` : `[${def[0]}–${def[1]}]`) : "");
+
 /** Accent/case-insensitive form for matching what the user types. */
 export const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 

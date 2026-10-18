@@ -8,7 +8,7 @@
   import ItemCard from "../../lib/components/ItemCard.svelte";
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
   import { analyse, isGoodDeal } from "../../lib/density";
-  import { sections, type EffectMeta } from "../../lib/effects";
+  import { rangeLabel, sections, type EffectMeta } from "../../lib/effects";
 
   interface Filter { a: number; min: string | number; max: string | number }
 
@@ -48,8 +48,6 @@
   const flist = (gid: number) => filters[gid] ?? [];
 
   const lotKey = (r: any, i: number) => r.uid ?? `n${i}`;
-  /** [X] for a single possible value, [min–max] for a range. */
-  const rangeLabel = (def: number[] | null) => (def ? (def[0] === def[1] ? `[${def[0]}]` : `[${def[0]}–${def[1]}]`) : "");
 
   /** Effects the item has by default (filterable ones only), then the ones the user added himself. */
   const effectRows = $derived.by(() => {
