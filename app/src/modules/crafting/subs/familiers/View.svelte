@@ -84,7 +84,7 @@
 
 <div class="rv">
   <div class="head">
-    <div class="fh">Familiers <span class="mut">· données dofustool.com : XP par repas et quantité de ressource par repas</span></div>
+    <div class="fh">Familiers</div>
   </div>
   <div class="form">
     <label>Niveau actuel <input type="number" min="1" max="100" value={level} oninput={(e) => (level = int(e))} /></label>
