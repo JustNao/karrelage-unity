@@ -543,7 +543,7 @@
   .view { flex: 1; min-height: 0; display: grid; }
   .ilist { overflow: auto; background: var(--panel); border-right: 1px solid var(--line); }
   .deal-ico { display: inline-block; width: 8px; height: 8px; margin-left: 4px; border-radius: 50%; background: var(--ok); vertical-align: middle; position: relative; top: -1px; font-size: 0; }
-  .craft { margin: 0 0 10px; padding: 6px 10px; border: 1px solid var(--bad); border-radius: 8px; font-family: var(--font); font-size: 13px; }
+  .craft { margin: 0 0 10px; padding: 6px 10px; border: 1px solid var(--bad); border-radius: 8px; font-family: system-ui, sans-serif; font-size: 13px; }
   .craft.good { border-color: var(--ok); }
   .craft .crow { display: flex; gap: 14px; flex-wrap: wrap; align-items: baseline; }
   .craft .gain b, .craft .gain { color: var(--ok); }
@@ -555,20 +555,20 @@
   .ilist .sbar { display: flex; gap: 6px; padding: 6px 10px; cursor: default; position: sticky; top: 0; z-index: 2; background: var(--panel); }
   .sbar .danger { color: var(--bad); border-color: var(--bad); }
   .sbar input { flex: 1; min-width: 0; padding: 3px 6px; }
-  .thead { display: flex; width: 100%; align-items: center; gap: 6px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: var(--bg); color: inherit; padding: 5px 10px; font: 600 11px var(--font); letter-spacing: 0.04em; text-transform: uppercase; text-align: left; position: sticky; top: 36px; z-index: 1; }
+  .thead { display: flex; width: 100%; align-items: center; gap: 6px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: var(--bg); color: inherit; padding: 5px 10px; font: 600 11px system-ui; letter-spacing: 0.04em; text-transform: uppercase; text-align: left; position: sticky; top: 36px; z-index: 1; }
   .chev { display: inline-block; transition: transform 0.2s; }
   .chev.shut { transform: rotate(-90deg); }
-  .ilist div { padding: 6px 10px; border-bottom: 1px solid var(--line); cursor: pointer; font-family: var(--font); }
+  .ilist div { padding: 6px 10px; border-bottom: 1px solid var(--line); cursor: pointer; font-family: system-ui, sans-serif; }
   .ilist .irow:hover { background: var(--bg); }
   .ilist div.sel { outline: 1px solid var(--acc); }
   .ilist .empty { cursor: default; }
-  .view > :global(.wrap) { font-family: var(--font); }
+  .view > :global(.wrap) { font-family: system-ui, sans-serif; }
   .sort { display: inline-flex; gap: 6px; align-items: center; }
   .arrow { display: inline-block; transition: transform 0.32s cubic-bezier(0.3, 1.4, 0.5, 1); }
   .arrow.desc { transform: rotate(180deg); }
   .head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
   .head .fh { margin: 0; flex: 1; }
-  .filter { overflow: auto; background: var(--panel); border-left: 1px solid var(--line); padding: 10px; font-family: var(--font); font-size: 12px; }
+  .filter { overflow: auto; background: var(--panel); border-left: 1px solid var(--line); padding: 10px; font-family: system-ui, sans-serif; font-size: 12px; }
   .filter .ghead { display: flex; align-items: center; justify-content: flex-start; gap: 10px; }
   .ghead { margin: 12px 0 2px; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--mut); }
   .gbtns { display: flex; gap: 4px; text-transform: none; letter-spacing: 0; }
@@ -577,7 +577,7 @@
   .graph { margin-bottom: 12px; }
   .head .on { border-color: var(--acc); color: var(--acc); }
   .deals { margin-bottom: 14px; padding: 8px 10px 2px; border: 1px solid color-mix(in srgb, var(--ok) 45%, var(--line)); border-radius: 10px; background: color-mix(in srgb, var(--ok) 5%, transparent); }
-  .dhead { display: flex; gap: 6px; align-items: center; width: 100%; border: 0; background: none; font: 600 13px var(--font); color: var(--ok); margin-bottom: 8px; padding: 0; text-align: left; }
+  .dhead { display: flex; gap: 6px; align-items: center; width: 100%; border: 0; background: none; font: 600 13px system-ui; color: var(--ok); margin-bottom: 8px; padding: 0; text-align: left; }
   .dhead .mut { font-weight: 400; }
   .deal { cursor: pointer; }
   .deal, .lot { transition: opacity 0.25s; }
