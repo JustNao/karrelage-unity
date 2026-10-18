@@ -4,6 +4,9 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
+/// Characteristics left out of the item density: prospection (magicFind) says nothing about what an item is worth.
+pub const DENSITY_EXCLUDED_STATS: [i64; 1] = [48];
+
 pub const LOT_SIZES: [i64; 4] = [1, 10, 100, 1000];
 /// Info-only effects: "Modifié par : X", "Fabriqué par : X" -> metadata, not stats.
 pub const INFO_EFFECTS: [(i64, &str); 2] = [(985, "modified_by"), (988, "crafted_by")];
@@ -155,6 +158,9 @@ impl Data {
 
     /// Density of one effect instance (None when it has no numeric value or is unknown). See `item_density`.
     pub fn effect_density(&self, action: i64, params: &[Value]) -> Option<f64> {
+        if DENSITY_EXCLUDED_STATS.contains(&self.stat_of(action)) {
+            return None;
+        }
         let nums: Vec<f64> = params.iter().filter_map(Value::as_f64).collect();
         if nums.is_empty() {
             return None;
@@ -208,5 +214,6 @@ mod tests {
         close(d.item_density(&[eff(125, vec![5.into()]), eff(153, vec![10.into()])]), 0.0);
         close(d.item_density(&[eff(100, vec![8.into(), 10.into()])]), 9.0); // 8 à 10 dommages Neutre: mean 9, rate 1
         close(d.item_density(&[eff(981, vec![])]), 0.0); // flag without value
+        close(d.item_density(&[eff(176, vec![30.into()]), eff(125, vec![5.into()])]), 1.0); // prospection is ignored
     }
 }

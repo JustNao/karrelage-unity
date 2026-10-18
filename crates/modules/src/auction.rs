@@ -220,7 +220,7 @@ impl Module for Auction {
                     v["defaults"] = Value::Array(ctx.data.defaults_for(v["gid"].as_i64()));
                 }
                 // Stored lots may predate (or disagree with) the current data pack: re-tag their effects with the pack's
-                // group/order/density, and derive the lot density when it is missing.
+                // group/order/density, and recompute the lot density from them (the formula may have changed).
                 if let Some(rows) = v.get_mut("rows").and_then(Value::as_array_mut) {
                     for e in rows.iter_mut().flat_map(|r| r["effects"].as_array_mut()).flatten() {
                         if let Some(row) = e["action"].as_i64().and_then(|a| ctx.data.effects.get(&a)) {
@@ -230,7 +230,7 @@ impl Module for Auction {
                             e["stat"] = json!(ctx.data.stat_of(e["action"].as_i64().unwrap_or(0)));
                         }
                     }
-                    for r in rows.iter_mut().filter(|r| r.get("density").is_none()) {
+                    for r in rows.iter_mut() {
                         let sum: f64 = r["effects"]
                             .as_array()
                             .into_iter()
@@ -314,7 +314,8 @@ mod tests {
         let store = json!({"1": {"gid": 1, "updated": 0, "rows": [{"effects": [
             {"action": 125, "params": [5], "status": "normal"},
             {"action": 118, "params": [10], "status": "removed"}, // default effect missing on the lot: not counted
-            {"action": 153, "params": [10], "status": "normal"}]}]}});
+            {"action": 153, "params": [10], "status": "normal"},
+            {"action": 176, "params": [30], "status": "normal"}]}], "density": 99.0}}); // prospection ignored; stale density replaced
         crate::save_json(&dir.join("auction/items.json"), &store).unwrap();
         let data = Arc::new(Data::load(&pack, "fr").unwrap());
         let proto = Arc::new(Proto::load(&pack, dir.join("o.json")).unwrap());
