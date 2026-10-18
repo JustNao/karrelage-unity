@@ -89,7 +89,7 @@
       <div class="hd r">Pinned · {versus.name}</div>
 
       <div class="l" class:hot={hov === "price"} {...hover("price")}>{#if Number.isFinite(myPrice)}<span class="pr"><b>{kamas(myPrice)}</b></span>{:else}<span class="pr no">—</span>{/if}</div>
-      <div class="d" class:hot={hov === "price"} {...hover("price")} class:up={priceDelta < 0} class:down={priceDelta > 0}>{Number.isFinite(priceDelta) ? fmtDelta(priceDelta) + " kamas" : ""}</div>
+      <div class="d" class:hot={hov === "price"} {...hover("price")} class:up={priceDelta < 0} class:down={priceDelta > 0}>{Number.isFinite(priceDelta) ? (priceDelta === 0 ? "=" : (priceDelta > 0 ? "+" : "−") + kamas(Math.abs(priceDelta))) : ""}</div>
       <div class="r" class:hot={hov === "price"} {...hover("price")}>{#if Number.isFinite(pinPrice)}<span class="pr"><b>{kamas(pinPrice)}</b></span>{:else}<span class="pr no">—</span>{/if}</div>
 
       {#each pairs as p (p.key)}

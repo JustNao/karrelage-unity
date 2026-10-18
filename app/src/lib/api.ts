@@ -27,8 +27,14 @@ export const getStatus = () => invoke<Status>("status");
 export const captureSet = (on: boolean) => invoke<Status>("capture_set", { on });
 export const devInject = () => invoke<Status>("dev_inject");
 
-/** A price with its unit: "12 345 kamas". */
-export const kamas = (n: number) => `${Number(n).toLocaleString("fr-FR")} kamas`;
+/** A price with its unit: "12 345 kamas"; from a million up, compacted: 1M3 = 1.3 million, 10M3 = 10.3 million. */
+export const kamas = (n: number) => {
+  const v = Number(n);
+  if (Math.abs(v) < 1e6) return `${v.toLocaleString("fr-FR")} kamas`;
+  const tenths = Math.round(Math.abs(v) / 1e5); // millions, one decimal, as an integer
+  const frac = tenths % 10;
+  return `${v < 0 ? "−" : ""}${Math.floor(tenths / 10)}M${frac || ""} kamas`;
+};
 export const ago = (t: number) => {
   const d = Math.round(Date.now() / 1000 - t);
   return d < 60 ? `${d}s` : d < 3600 ? `${Math.round(d / 60)}min` : `${Math.round(d / 3600)}h`;

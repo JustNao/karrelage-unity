@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
-  import { call, on } from "../../lib/api";
+  import { call, kamas, on } from "../../lib/api";
   import ItemCard from "../../lib/components/ItemCard.svelte";
   import JsonTree from "../../lib/components/JsonTree.svelte";
 
@@ -27,7 +27,7 @@
     const f = p.fmt;
     if (f?.kind === "auction_items") {
       const mins = f.rows.map((r: any) => r.prices[0]?.price).filter((x: number) => x > 0);
-      return `${f.title || "?"} · ${f.rows.length} lots` + (mins.length ? ` · min ${Math.min(...mins).toLocaleString("fr-FR")} kamas` : "");
+      return `${f.title || "?"} · ${f.rows.length} lots` + (mins.length ? ` · min ${kamas(Math.min(...mins))}` : "");
     }
     const o = p.decoded ?? p.body ?? p.unparsed;
     if (o == null) return "";
