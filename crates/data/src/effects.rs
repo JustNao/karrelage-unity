@@ -65,6 +65,9 @@ impl Data {
                 if a > b {
                     ordered.swap(0, 1);
                 }
+                if a == b {
+                    ordered.truncate(1); // fixed value: "2 dommages Eau", not "2 à 2"
+                }
             }
         }
         let params = &ordered[..];

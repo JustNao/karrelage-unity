@@ -3,7 +3,7 @@
   import { app } from "../app.svelte";
   import { fmtDelta, pairRows } from "../compare";
   import { isLegendary, levelOf, xpOfLevel } from "../companion";
-  import { isBelowMin, isNegative, isPerfectLine, isWeaponEffect, perfection, rangeLabel, sortEffects } from "../effects";
+  import { HIDDEN_EFFECTS, isBelowMin, isNegative, isPerfectLine, isWeaponEffect, perfection, rangeLabel, sortEffects } from "../effects";
 
   /** One auction lot (see crates/modules/src/auction.rs for the shape). */
   let {
@@ -34,7 +34,7 @@
 
   const level = $derived(companion ? levelOf(row) : null);
   const legendary = $derived(companion && isLegendary(row));
-  const effects = $derived(sortEffects<any>(row.effects)); // new first, then stats/main, damage, resistances, utility
+  const effects = $derived(sortEffects<any>(row.effects.filter((e: any) => !HIDDEN_EFFECTS.has(e.action)))); // new first, then stats/main, damage, resistances, utility
   const perfect = $derived(perfection(row.effects));
   const shown = $derived(open ? effects : effects.filter((e: any) => e.status === "added" || e.status === "above"));
   // the weapon's own effects (hits, -PA, pushback...) are not stats: listed apart, plain, without range
@@ -113,7 +113,7 @@
       {#each pairs as p (p.key)}
         <div class="l" class:hot={hov === p.key} {...hover(p.key)}>
           {#if p.left}
-            <span class="ln {isWeaponEffect(p.left) ? '' : p.left.status}" class:unk={!p.left.known} class:perfect={isPerfectLine(p.left)} class:low={isBelowMin(p.left)} class:neg={isNegative(p.left)} title={hint(p.left)}>
+            <span class="ln {isWeaponEffect(p.left) && p.left.status !== 'added' && p.left.status !== 'removed' ? '' : p.left.status}" class:unk={!p.left.known} class:perfect={isPerfectLine(p.left)} class:low={isBelowMin(p.left)} class:neg={isNegative(p.left)} title={hint(p.left)}>
               {@render line(p.left, false)}{@render highlight(p.left)}
             </span>
           {/if}
@@ -121,7 +121,7 @@
         <div class="d" class:hot={hov === p.key} {...hover(p.key)} class:up={p.delta > 0} class:down={p.delta < 0}>{fmtDelta(p.delta)}</div>
         <div class="r" class:hot={hov === p.key} {...hover(p.key)}>
           {#if p.right}
-            <span class="ln {isWeaponEffect(p.right) ? '' : p.right.status}" class:unk={!p.right.known} class:perfect={isPerfectLine(p.right)} class:low={isBelowMin(p.right)} class:neg={isNegative(p.right)} title={hint(p.right)}>
+            <span class="ln {isWeaponEffect(p.right) && p.right.status !== 'added' && p.right.status !== 'removed' ? '' : p.right.status}" class:unk={!p.right.known} class:perfect={isPerfectLine(p.right)} class:low={isBelowMin(p.right)} class:neg={isNegative(p.right)} title={hint(p.right)}>
               {@render line(p.right, true)}
             </span>
           {/if}
@@ -131,7 +131,7 @@
   {:else}
     <div class="prices">
       {#each prices as p (p.qty)}
-        <span class="pr">×{p.qty} <b>{kamas(p.price)}</b></span>
+        <span class="pr">{#if p.qty > 1}×{p.qty} {/if}<b>{kamas(p.price)}</b></span>
       {:else}
         <span class="pr no">—</span>
       {/each}
@@ -142,7 +142,7 @@
       {#if weaponEffs.length}
         <ul class="eff wpn">
           {#each weaponEffs as e}
-            <li class="ln" title={hint(e)}>{e.text}</li>
+            <li class="ln {e.status === 'added' || e.status === 'removed' ? e.status : ''}" title={hint(e)}>{e.text}</li>
           {/each}
         </ul>
       {/if}

@@ -2,7 +2,7 @@
 //! and keeps the latest listing per item. Port of formatters.format_ah_list + webapp.update_store.
 use crate::{load_json, save_json, Ctx, Interest, Message, Module};
 use anyhow::{anyhow, Result};
-use loutil_data::items::{info_key, Effect, LOCK_EFFECT, LOT_SIZES};
+use loutil_data::items::{info_key, Effect, ELEMENT_CHANGE_EFFECT, LOCK_EFFECT, LOT_SIZES};
 use loutil_data::Data;
 use loutil_proto::util::{as_i64, int, int_list, messages, oneof_value};
 use loutil_proto::{DynamicMessage, Kind, PbValue, ReflectMessage};
@@ -184,7 +184,7 @@ fn format_ah_list(data: &Data, b: &Bindings, msg: &DynamicMessage) -> Value {
             .filter_map(|e| info_key(e.action).map(|k| (k.to_string(), e.str.clone().map_or(Value::Null, Value::from))))
             .collect();
         let locked = effs.iter().any(|e| e.action == LOCK_EFFECT);
-        let stats: Vec<Effect> = effs.into_iter().filter(|e| info_key(e.action).is_none() && e.action != LOCK_EFFECT).collect();
+        let stats: Vec<Effect> = effs.into_iter().filter(|e| info_key(e.action).is_none() && e.action != LOCK_EFFECT && e.action != ELEMENT_CHANGE_EFFECT).collect();
         let density = (data.item_density(&stats) * 1000.0).round() / 1000.0;
         rows.push(json!({
             "uid": uid, "gid": gid, "ints": ints,

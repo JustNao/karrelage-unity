@@ -48,6 +48,10 @@ const PERFECT_TOLERANCE: Record<number, number> = { 125: 10, 118: 3, 126: 3, 119
 const tolerance = (action: number) => PERFECT_TOLERANCE[action] ?? 0;
 
 /** The weapon's own effects (hits, -PA, pushback...): shown plain, without range or colours. */
+/** Effects that are only markers (element change: the lot has the new hit, flagged "added", on its own). */
+export const HIDDEN_EFFECTS = new Set([700]);
+/** Flag effects (hunting weapon): present or not, no value. */
+export const FLAG_EFFECTS = new Set([795]);
 export const isWeaponEffect = (e: any) => e.group === "weapon";
 export const isNegative = (e: any) => !isWeaponEffect(e) && e.density < 0 || String(e.text ?? "").startsWith("-");
 /** The line is at (or above) its default max, within the main-stat tolerance. */
@@ -74,7 +78,7 @@ export function perfection(effs: any[]): Perfection {
 }
 
 /** [X] for a single possible value, [min–max] for a range (filter rows and item lines alike). */
-export const rangeLabel = (def: number[] | null | undefined) => (def ? (def[0] === def[1] ? `[${def[0]}]` : `[${def[0]}–${def[1]}]`) : "");
+export const rangeLabel = (def: number[] | null | undefined) => (def && (def[0] || def[1]) ? (def[0] === def[1] ? `[${def[0]}]` : `[${def[0]}–${def[1]}]`) : "");
 
 /** Accent/case-insensitive form for matching what the user types. */
 export const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();

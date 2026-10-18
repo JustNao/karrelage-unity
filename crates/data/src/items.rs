@@ -12,6 +12,8 @@ pub const LOT_SIZES: [i64; 4] = [1, 10, 100, 1000];
 pub const INFO_EFFECTS: [(i64, &str); 2] = [(985, "modified_by"), (988, "crafted_by")];
 /// "Empêche les futures forgemagies" -> shield flag.
 pub const LOCK_EFFECT: i64 = 2825;
+/// "Change l'élément de frappe": only a marker, the lot already carries the new element's hit (added) and the old one (removed).
+pub const ELEMENT_CHANGE_EFFECT: i64 = 700;
 
 pub fn info_key(action: i64) -> Option<&'static str> {
     INFO_EFFECTS.iter().find(|(a, _)| *a == action).map(|x| x.1)

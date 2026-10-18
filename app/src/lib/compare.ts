@@ -1,4 +1,4 @@
-import { groupRank, isNegative } from "./effects";
+import { HIDDEN_EFFECTS, groupRank, isNegative } from "./effects";
 
 /** One stat of the comparison: the lot's effect (left), the pinned lot's effect (right) and the difference between them. */
 export interface Pair {
@@ -19,6 +19,7 @@ const signed = (e: any): number => (e.status === "removed" || e.hi == null ? 0 :
 function bucket(row: any): Map<number, any[]> {
   const m = new Map<number, any[]>();
   for (const e of row.effects ?? []) {
+    if (HIDDEN_EFFECTS.has(e.action)) continue;
     const k = keyOf(e);
     m.set(k, [...(m.get(k) ?? []), e]);
   }

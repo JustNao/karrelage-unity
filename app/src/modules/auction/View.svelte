@@ -11,7 +11,7 @@
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
   import { LEVEL_EFFECT, isLegendary, levelOf, xpOfLevel } from "../../lib/companion";
   import { analyse, isGoodDeal } from "../../lib/density";
-  import { norm, rangeLabel, sections, type EffectMeta } from "../../lib/effects";
+  import { FLAG_EFFECTS, norm, rangeLabel, sections, type EffectMeta } from "../../lib/effects";
   import { targetKey, transcendance, type Rune, type StoredPrice } from "../../lib/transcend";
 
   interface Filter { a: number; min: string | number; max: string | number }
@@ -113,6 +113,7 @@
     return item.rows
       .filter((r: any) => !(comp && legendOnly) || isLegendary(r))
       .filter((r: any) => f.every((x) => {
+        if (FLAG_EFFECTS.has(x.a)) return x.min === "" || r.effects.some((e: any) => e.action === x.a && e.status !== "removed");
         const v = lotVal(r, x.a);
         return (x.min === "" || v >= +x.min) && (x.max === "" || v <= +x.max);
       }))
@@ -472,12 +473,16 @@
           {@const y = flist(item.gid).find((z) => z.a === x.a)}
           <div class="frow" class:on={active(x.a)}>
             <div class="lb">{x.label}</div>
+            {#if FLAG_EFFECTS.has(x.a)}
+              <label class="tog"><input type="checkbox" checked={active(x.a)} onchange={(e) => (filterOf(item.gid, x.a).min = e.currentTarget.checked ? "1" : "")} /> Uniquement les lots qui l'ont</label>
+            {:else}
             <small class="rg">{rangeLabel(x.def)}</small>
             <input type="number" placeholder="min" value={y?.min ?? ""} oninput={(e) => (filterOf(item.gid, x.a).min = e.currentTarget.value)} />
             <input type="number" placeholder="max" value={y?.max ?? ""} oninput={(e) => (filterOf(item.gid, x.a).max = e.currentTarget.value)} />
             <button class="mini" onclick={() => setMin(x.a, x.def)} title="Remplir le min avec le bas de la plage de base">Jet min</button>
             <button class="mini" onclick={() => setPerf(x.a, x.def)} title="Remplir le min avec le max de la plage de base (jet parfait)">Jet parfait</button>
             <button class="mini" disabled={!active(x.a)} onclick={() => clearEffect(x.a)}>Effacer</button>
+            {/if}
           </div>
         {/each}
       {:else}
@@ -545,6 +550,8 @@
   .leg { display: block; margin: 8px 0; }
   .frow { display: grid; grid-template-columns: 1fr auto 52px 52px auto auto auto; gap: 4px; align-items: center; margin: 3px 0; }
   .frow input { width: 100%; padding: 2px 4px; }
+  .frow .tog { grid-column: 2 / -1; display: flex; gap: 6px; align-items: center; }
+  .frow .tog input { width: auto; }
   .frow .lb { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .frow .rg { color: var(--mut); text-align: right; white-space: nowrap; padding-right: 2px; }
   .frow.on .lb { font-weight: 700; color: var(--acc); }
