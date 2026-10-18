@@ -140,7 +140,22 @@ fn restart_app(app: AppHandle) {
     app.restart()
 }
 
+/// Data folders (roaming: stores, overrides, packs; local: the webview profile with the UI preferences) used by versions that
+/// were still called "loutil": moved once to the new identifier's folders. Runs before any window creates its profile.
+fn migrate_legacy_dirs() {
+    const OLD: &str = "fr.dofus.loutil.packets";
+    const NEW: &str = "fr.dofus.karrelage";
+    for var in ["APPDATA", "LOCALAPPDATA"] {
+        let Some(base) = std::env::var_os(var).map(PathBuf::from) else { continue };
+        let (old, new) = (base.join(OLD), base.join(NEW));
+        if old.exists() && !new.exists() {
+            let _ = std::fs::rename(&old, &new); // fails harmlessly while an old instance still holds files
+        }
+    }
+}
+
 fn main() {
+    migrate_legacy_dirs();
     // the state is registered before any window exists: the webview can call `status` before `setup` has run (release builds load
     // the page faster than setup completes), and a command on unmanaged state fails
     let log = Arc::new(Mutex::new(VecDeque::new()));

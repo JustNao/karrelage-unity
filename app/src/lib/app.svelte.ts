@@ -12,12 +12,12 @@ function persisted(key: string, fallback: boolean) {
 /** App-wide reactive state shared by the shell and modules. */
 class AppState {
   status = $state<Status>({ ready: false, log: [] });
-  dev = $state(persisted("loutil.dev", false));
+  dev = $state(persisted("karrelage.dev", false));
 
   setDev(v: boolean) {
     this.dev = v;
     try {
-      localStorage.setItem("loutil.dev", v ? "1" : "0");
+      localStorage.setItem("karrelage.dev", v ? "1" : "0");
     } catch {}
   }
 

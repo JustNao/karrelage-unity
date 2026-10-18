@@ -76,7 +76,7 @@ cd app && npm install && npm run tauri dev
 cd app && npm run tauri build             # NSIS installer, bundles datapack/ as a resource
 ```
 Dev toggle in the UI header ("Développeur") reveals the Paquets and Noms tabs.
-A newer pack can be dropped in `%APPDATA%/fr.dofus.loutil.packets/datapack/` and wins over the bundled one.
+A newer pack can be dropped in `%APPDATA%/fr.dofus.karrelage/datapack/` and wins over the bundled one.
 
 ## Conventions / gotchas
 - Windows: set `PYTHONUTF8=1` when python scripts read/write files with accents; the console may garble UTF-8 (display only).

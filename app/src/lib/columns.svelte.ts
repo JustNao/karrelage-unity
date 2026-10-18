@@ -2,7 +2,7 @@
  * Resizable columns, the default layout for tabs with side-by-side panels: a grid whose panels are separated by thin
  * draggable grips. Widths are in px, remembered between sessions; the flexible column (1fr) takes what is left.
  *
- *   const cols = new Columns("loutil.cols.<tab>", { left: 280, right: 470 });
+ *   const cols = new Columns("karrelage.cols.<tab>", { left: 280, right: 470 });
  *   <div class="grid" style:grid-template-columns="{cols.w.left}px 5px 1fr 5px {cols.w.right}px"> panel, <div class="grip" onpointerdown={(e) => cols.drag("left", 1, e)}>, ...
  *
  * `dir` is +1 when the panel sits on the left of the grip (grows with the pointer), -1 when on its right. Style `.grip`

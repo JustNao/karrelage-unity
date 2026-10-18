@@ -19,7 +19,7 @@
   let nameDraft = $state("");
 
   // resizable panels: types | list (flexible) | formatted | detail
-  const cols = new Columns("loutil.cols.packets", { types: 170, fmt: 420, detail: 480 });
+  const cols = new Columns("karrelage.cols.packets", { types: 170, fmt: 420, detail: 480 });
 
   const nm = (p: any) => p.name || p.type || "?";
   const fmtT = (t: number) => {

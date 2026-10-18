@@ -1,3 +1,4 @@
+import "./lib/migrate"; // first: renames the stored preferences before anything reads them
 import { mount } from "svelte";
 import { invoke } from "@tauri-apps/api/core";
 import { emitTo } from "@tauri-apps/api/event";

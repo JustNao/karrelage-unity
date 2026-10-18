@@ -16,7 +16,7 @@
 
   interface Filter { a: number; min: string | number; max: string | number }
 
-  const cols = new Columns("loutil.cols.items", { list: 280, filter: 470 }); // resizable: list | listing (flexible) | filter
+  const cols = new Columns("karrelage.cols.items", { list: 280, filter: 470 }); // resizable: list | listing (flexible) | filter
   let items = new SvelteMap<number, any>();
   let selGid = $state<number | null>(null);
   let picker = $state<EffectMeta[]>([]); // effects found on level 150-200 equipment (what the picker offers)
@@ -52,7 +52,7 @@
   let legendOnly = $state(false); // companions: only legendary ones
   const list = $derived([...items.values()].sort((a, b) => b.updated - a.updated));
   /** Left panel: items grouped by type, each group collapsible (collapsed groups are remembered). */
-  const COLLAPSE_KEY = "loutil.collapsedTypes";
+  const COLLAPSE_KEY = "karrelage.collapsedTypes";
   const collapsed = new SvelteSet<string>();
   try {
     JSON.parse(localStorage.getItem(COLLAPSE_KEY) ?? "[]").forEach((t: string) => collapsed.add(t));
@@ -225,7 +225,7 @@
 
   // ---- saved transcendance candidates: a snapshot kept across scans (the lot may be sold by the time you come back)
   interface Saved { key: string; gid: number; itemName: string; savedAt: number; row: any; label: string; value: number; rune: string; buy: number; runeCost: number; sale: number; profit: number }
-  const SAVED_KEY = "loutil.savedCandidates";
+  const SAVED_KEY = "karrelage.savedCandidates";
   let saved = $state.raw<Saved[]>([]);
   try {
     saved = JSON.parse(localStorage.getItem(SAVED_KEY) ?? "[]");
