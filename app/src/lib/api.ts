@@ -25,7 +25,7 @@ export interface Status {
 
 export const getStatus = () => invoke<Status>("status");
 export const captureSet = (on: boolean) => invoke<Status>("capture_set", { on });
-export const devInject = () => invoke<Status>("dev_inject");
+export const restartApp = () => invoke("restart_app");
 
 /** A price with its unit: "12 345 kamas"; from a million up, compacted: 1M3 = 1.3 million, 10M3 = 10.3 million. */
 export const kamas = (n: number) => {

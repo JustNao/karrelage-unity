@@ -111,11 +111,15 @@ it usually needs updating after a game update, app code never hard-codes obfusca
 
 CLI alternative to the app for recording fixtures: `python pipeline/sniff.py` (add `--raw` for payload hex) writes JSONL.
 
+## Publishing a data pack
+`python pipeline/package_pack.py` (also run at the end of `update_names.py`) writes `dist/datapack.zip` + `dist/pack.json`. Commit and push them to `master`:
+running apps check `dist/pack.json` at startup and offer a one-click download of newer packs (top bar), then ask for a restart.
+
 ## Run, test, build the app
 ```bash
 cargo test                      # unit tests + golden test (Rust output == python formatter output; skipped without datapack/)
 cd app && npm install
-npm run tauri dev               # dev app (capture starts OFF; tick "Développeur" for the Paquets tab and "Injecter la démo")
+npm run tauri dev               # dev app (capture starts OFF; tick "Développeur" for the Paquets tab)
 npm run check                   # svelte-check
 npm run tauri build             # NSIS installer in target/release/bundle/nsis/, bundles datapack/ as a resource
 ```

@@ -75,6 +75,7 @@ run([py, "pipeline/match_protos.py"])
 
 step("Export du pack de données")
 run([py, "pipeline/export_pack.py"])
+run([py, "pipeline/package_pack.py"])   # dist/: what the app downloads from GitHub
 
 print(f"@@STEP {TOTAL} {TOTAL} fin", flush=True)
 print("\nTERMINE : redémarrez Karrelage pour charger le nouveau pack.", flush=True)

@@ -12,7 +12,6 @@ use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 /// Synthetic AH packet for the build the data pack was generated from (pipeline/make_fixtures.py).
-const DEMO_AH: &[u8] = include_bytes!("../../../fixtures/ah_demo.bin");
 const LANG: &str = "fr";
 
 struct Core {
@@ -116,10 +115,10 @@ fn capture_set(app: AppHandle, s: State<AppState>, on: bool) -> Result<Value, St
 }
 
 /// Developer helper: push the bundled synthetic AH packet through the whole pipeline.
+/// Relaunch the app (after a data pack update).
 #[tauri::command]
-fn dev_inject(s: State<AppState>) -> Result<Value, String> {
-    core(&s)?.capture.lock().unwrap().inject("demo", "S->C", DEMO_AH.to_vec());
-    Ok(status_of(&s))
+fn restart_app(app: AppHandle) {
+    app.restart()
 }
 
 fn main() {
@@ -133,7 +132,7 @@ fn main() {
             app.manage(AppState { core, error, log });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![status, module_call, capture_set, dev_inject])
+        .invoke_handler(tauri::generate_handler![status, module_call, capture_set, restart_app])
         .run(tauri::generate_context!())
         .expect("error while running Karrelage");
 }

@@ -75,7 +75,7 @@ cargo test                                # unit tests + golden test (Rust outpu
 cd app && npm install && npm run tauri dev
 cd app && npm run tauri build             # NSIS installer, bundles datapack/ as a resource
 ```
-Dev toggle in the UI header ("developer") reveals the Packets inspector and "Inject demo" (pushes the bundled synthetic AH packet).
+Dev toggle in the UI header ("Développeur") reveals the Paquets and Noms tabs.
 A newer pack can be dropped in `%APPDATA%/fr.dofus.loutil.packets/datapack/` and wins over the bundled one.
 
 ## Conventions / gotchas
@@ -99,3 +99,4 @@ A newer pack can be dropped in `%APPDATA%/fr.dofus.loutil.packets/datapack/` and
 - Companions (Familier 18 / Montilier 121, `COMPANION_TYPES`, row `companion` flag): tracked by level only (`lib/companion.ts`: effect 2821 "X niveau", effect 2862 "Statut légendaire" -> flag/blue dot). No perfect/lock flags, pin or Transcendance tab. The graph plots price against the *total xp* of the level (`xpOfLevel`, the non-linear xp curve), so deals = lots well below the price/xp trend.
 - Average prices: `ObjectAveragePricesEvent` (bindings role `avg_prices`: items / gid / price; the entry's third int is unused) preloads the Stored prices tab (`avg`, 7-day per-unit average). Priority everywhere: manual `override` > price read in the AH (`unit`) > `avg`; a rune known only by its average is flagged in the Transcendance tab.
 - Developer tab "Noms" (`names.rs`, `pipeline/update_names.py`): checks the pack against the game (bindings resolve in protocol.desc, required clear names, stale names, `manifest.game` file-size fingerprint vs the installed game, live share of unknown message types while the tab is open) and runs `update_names.py` (names only, or `--from-game` for the whole dump -> protos -> game data -> names -> export chain) from a dev checkout. Restart after it.
+- Pack updates (`update.rs`, `pipeline/package_pack.py`): `dist/datapack.zip` + `dist/pack.json` (generated, size, sha256) are committed; at startup the app fetches `pack.json` from `raw.githubusercontent.com/JustNao/karrelage-unity/master/dist` (override: env `KARRELAGE_PACK_URL`) and, if `generated` is newer than the loaded pack, the top bar offers download -> verify -> unpack into `%APPDATA%/<app>/datapack` (newest pack wins in `pick_pack`) -> restart (`restart_app`). `update_names.py` re-packages dist/; commit + push it to publish a new pack.

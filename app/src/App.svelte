@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { app } from "./lib/app.svelte";
-  import { captureSet, devInject } from "./lib/api";
+  import { call, captureSet, on, restartApp } from "./lib/api";
   import { modules } from "./lib/registry";
 
   let current = $state(modules.find((m) => !m.devOnly)?.id ?? modules[0]?.id);
@@ -10,7 +10,32 @@
   const s = $derived(app.status);
   let err = $state("");
 
-  onMount(() => void app.init());
+  /** Data pack update (see crates/modules/src/update.rs): checked once at startup. */
+  type Upd = { state: "none" | "available" | "installing" | "ready" | "error"; pct: number; label: string };
+  let upd = $state<Upd>({ state: "none", pct: 0, label: "" });
+
+  async function install() {
+    upd = { state: "installing", pct: 0, label: "Téléchargement…" };
+    try {
+      await call("update", "install");
+    } catch (e) {
+      upd = { state: "error", pct: 0, label: String(e) };
+    }
+  }
+
+  onMount(() => {
+    void app.init();
+    call<{ available: boolean }>("update", "check")
+      .then((r) => r.available && (upd = { state: "available", pct: 0, label: "" }))
+      .catch(() => {}); // offline or no GitHub: nothing to show
+    const off = on<{ phase: string; done: number; total: number; message?: string }>("update:progress", (p) => {
+      if (p.phase === "error") upd = { state: "error", pct: 0, label: p.message ?? "échec" };
+      else if (p.phase === "done") upd = { state: "ready", pct: 100, label: "" };
+      else if (p.phase === "download") upd = { state: "installing", pct: Math.round((p.done / Math.max(p.total, 1)) * 80), label: `Téléchargement ${Math.round((p.done / Math.max(p.total, 1)) * 100)} %` };
+      else upd = { state: "installing", pct: 80 + Math.round((p.done / Math.max(p.total, 1)) * 20), label: "Installation…" };
+    });
+    return () => void off.then((f) => f());
+  });
 
   async function toggle() {
     err = "";
@@ -34,7 +59,18 @@
     <span class="state" class:on={s.on}>{s.on ? "ACTIVE" : "INACTIVE"}</span>
     <span class="mut">{s.on ? (s.tracking?.length ? "Connecté à Dofus" : "En attente de Dofus.exe…") : ""}</span>
     <span class="grow"></span>
-    {#if app.dev}<button onclick={() => devInject()} title="Injecter le paquet d'hôtel de vente synthétique fourni">Injecter la démo</button>{/if}
+    {#if upd.state === "available"}
+      <span class="upd warn" title="Un pack de données plus récent est publié sur GitHub">⚠ Nouvelles données du jeu disponibles</span>
+      <button class="updbtn" onclick={install}>Télécharger et mettre à jour</button>
+    {:else if upd.state === "installing"}
+      <span class="upd"><span class="ubar"><span class="ufill" style:width="{upd.pct}%"></span></span>{upd.label}</span>
+    {:else if upd.state === "ready"}
+      <span class="upd ok">✓ Mise à jour installée</span>
+      <button class="updbtn" onclick={() => restartApp()}>Redémarrer</button>
+    {:else if upd.state === "error"}
+      <span class="upd bad" title={upd.label}>⚠ Mise à jour impossible</span>
+      <button class="updbtn" onclick={install}>Réessayer</button>
+    {/if}
     <label class="mut"><input type="checkbox" checked={app.dev} onchange={(e) => app.setDev(e.currentTarget.checked)} /> Développeur</label>
   </header>
 
@@ -74,6 +110,13 @@
   .state { font-weight: 600; color: var(--mut); }
   .state.on { color: var(--ok); }
   .grow { flex: 1; }
+  .upd { display: inline-flex; align-items: center; gap: 8px; line-height: 1.4; }
+  .upd.warn { color: var(--warn); }
+  .upd.ok { color: var(--ok); }
+  .upd.bad { color: var(--bad); }
+  .updbtn { border-color: var(--acc); color: var(--acc); }
+  .ubar { display: inline-block; width: 140px; height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
+  .ufill { display: block; height: 100%; background: var(--acc); transition: width 0.25s; }
   .banner { padding: 6px 12px; font-family: system-ui, sans-serif; }
   .banner.bad { background: color-mix(in srgb, var(--bad) 20%, transparent); }
   .banner.warn { background: color-mix(in srgb, var(--warn) 20%, transparent); }
