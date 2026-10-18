@@ -510,7 +510,7 @@
   .head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
   .head .fh { margin: 0; flex: 1; }
   .filter { overflow: auto; background: var(--panel); border-left: 1px solid var(--line); padding: 10px; font-family: system-ui, sans-serif; font-size: 12px; }
-  .filter .ghead { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+  .filter .ghead { display: flex; align-items: center; justify-content: flex-start; gap: 10px; }
   .ghead { margin: 12px 0 2px; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--mut); }
   .gbtns { display: flex; gap: 4px; text-transform: none; letter-spacing: 0; }
   .mini { padding: 2px 7px; font-size: 11px; }
