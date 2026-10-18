@@ -224,6 +224,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "loutil-modules"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "loutil-core",
+ "loutil-data",
+ "loutil-proto",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "loutil-proto"
 version = "0.1.0"
 dependencies = [

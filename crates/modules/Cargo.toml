@@ -1,0 +1,13 @@
+[package]
+name = "loutil-modules"
+version.workspace = true
+edition.workspace = true
+description = "Feature modules (packets inspector, auction house) and the hub that dispatches decoded messages to them"
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+loutil-core = { path = "../core" }
+loutil-data = { path = "../data" }
+loutil-proto = { path = "../proto" }

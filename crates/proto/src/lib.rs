@@ -4,8 +4,8 @@ pub mod names;
 pub mod util;
 
 use anyhow::{Context, Result};
-pub use prost_reflect::{DynamicMessage, MessageDescriptor, Value as PbValue};
-use prost_reflect::{DescriptorPool, Kind, MapKey, ReflectMessage};
+pub use prost_reflect::{DynamicMessage, Kind, MessageDescriptor, ReflectMessage, Value as PbValue};
+use prost_reflect::{DescriptorPool, MapKey};
 use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};
 use std::sync::RwLock;
