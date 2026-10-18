@@ -97,7 +97,7 @@
 
 <div class="rv">
   <div class="head">
-    <div class="fh">Dragodindes <span class="mut">· une dragodinde <b>sénile</b> ne donne qu'1 neurone ; le meilleur lot vu à l'HDV est retenu (sinon prix enregistré, sénilité inconnue)</span></div>
+    <div class="fh">Dragodindes</div>
     <input type="search" placeholder="Rechercher une dragodinde…" bind:value={q} />
     <label><input type="checkbox" bind:checked={onlyPriced} /> Prix connus seulement</label>
   </div>
