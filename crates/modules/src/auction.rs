@@ -84,7 +84,7 @@ impl Auction {
             "gid": gid,
             "name": if f["title"].is_null() { rows[0]["name"].clone() } else { f["title"].clone() },
             "type": if f["type"].is_null() { rows[0]["type"].clone() } else { f["type"].clone() },
-            "companion": ctx.data.is_companion(Some(gid)), "level": rows[0]["level"], "icon": rows[0]["icon"], "updated": m.raw.t, "lots": rows.len(),
+            "companion": ctx.data.is_companion(Some(gid)), "feedable": ctx.data.is_feedable(Some(gid)), "level": rows[0]["level"], "icon": rows[0]["icon"], "updated": m.raw.t, "lots": rows.len(),
             "min_price": mins.iter().min(), "rows": rows, "defaults": f["defaults"], "demo": m.raw.srv == "demo",
         });
         self.store.lock().unwrap().insert(gid.to_string(), ent.clone());
@@ -223,6 +223,7 @@ impl Module for Auction {
                     continue; // stored before the HDV tab was limited to equipment
                 }
                 v["companion"] = json!(ctx.data.is_companion(v["gid"].as_i64()));
+                v["feedable"] = json!(ctx.data.is_feedable(v["gid"].as_i64()));
                 if v.get("defaults").is_none() {
                     v["defaults"] = Value::Array(ctx.data.defaults_for(v["gid"].as_i64()));
                 }

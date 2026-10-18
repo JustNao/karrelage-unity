@@ -79,8 +79,10 @@ pub struct ItemType {
 /// Item levels scanned to decide which effects are "equipment effects" (used by the effect picker).
 pub const EQUIPMENT_LEVELS: std::ops::RangeInclusive<i64> = 150..=200;
 const EQUIPMENT_CATEGORY: i64 = 0;
-/// Item types treated as companions (Familier, Montilier): tracked by level instead of by stats.
-pub const COMPANION_TYPES: [i64; 2] = [18, 121];
+/// Item types treated as companions (Familier, Montilier, Dragodinde, Muldo, Volkorne): tracked by level instead of by stats.
+pub const COMPANION_TYPES: [i64; 5] = [18, 121, 331, 332, 333];
+/// Companions that are levelled up by feeding them resources (the mounts are not).
+pub const FEEDABLE_TYPES: [i64; 2] = [18, 121];
 
 pub struct Data {
     pub dir: PathBuf,
@@ -160,6 +162,10 @@ impl Data {
     /// Equipment category (weapons, rings, hats, pets...): the only items the HDV tab keeps.
     pub fn is_equipment(&self, gid: i64) -> bool {
         self.items.get(&gid).and_then(|i| self.itemtypes.get(&i.type_id)).and_then(|t| t.category_id) == Some(EQUIPMENT_CATEGORY)
+    }
+
+    pub fn is_feedable(&self, gid: Option<i64>) -> bool {
+        gid.and_then(|g| self.items.get(&g)).map_or(false, |i| FEEDABLE_TYPES.contains(&i.type_id))
     }
 
     pub fn is_companion(&self, gid: Option<i64>) -> bool {

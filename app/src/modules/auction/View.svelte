@@ -89,7 +89,7 @@
   let levelTarget = $state(100);
   interface LevelOpt { row: any; level: number; price: number; feed: number; total: number; plan: ReturnType<ReturnType<typeof feeder>["plan"]> }
   const levelling = $derived.by(() => {
-    if (!comp || !item) return null;
+    if (!comp || !item?.feedable) return null; // only familiars / montiliers are fed
     const f = feeder(foodIds, stored);
     const target = Math.min(Math.max(Math.round(levelTarget) || 1, 1), 100);
     const opts: LevelOpt[] = [];
