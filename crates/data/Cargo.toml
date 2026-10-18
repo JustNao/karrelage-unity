@@ -1,0 +1,11 @@
+[package]
+name = "loutil-data"
+version.workspace = true
+edition.workspace = true
+description = "Data pack loader + item/effect lookups and rendering"
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+regex = "1"
