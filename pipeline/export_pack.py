@@ -24,10 +24,38 @@ for k, v in gd.items.items():
     items[k] = {"nameId": v["nameId"], "typeId": v["typeId"], "level": v["level"], "iconId": v["iconId"],
                 "effects": [{"a": e["a"], "min": e["min"], "max": e["max"]} for e in v.get("effects", [])]}
     ids.add(v["nameId"])
-effects = {}
+# Effect classification, following the in-game characteristics panel:
+#   stats (vitality, force, ...) / main (AP, MP, range, ...) / secondary (tackle, initiative, ...) / damage / resist / other.
+# Weapon "hit" effects (category 2 with dice: damage, steal, heal) count as damage. `density` = effectPowerRate (rune weight
+# per unit: AP 100, MP 90, vitality 0.2, ...), kept for later features.
+STATS = ["vitality", "wisdom", "strength", "intelligence", "chance", "agility"]
+MAIN = ["actionPoints", "movementPoints", "range", "criticalHit", "damagePercent", "maxSummonedCreaturesBoost"]
+
+
+def classify(e):
+    ch = gd.characteristics.get(e["characteristic"]) if e["characteristic"] else None
+    if e["category"] == 2 and e["useDice"]:
+        return "damage", 0
+    if not ch:
+        return "other", 0
+    kw = ch["keyword"]
+    if kw in STATS:
+        return "stats", STATS.index(kw)
+    if kw in MAIN:
+        return "main", MAIN.index(kw)
+    return {3: "secondary", 4: "damage", 5: "resist"}.get(ch["categoryId"], "other"), 100 + ch["order"]
+
+
+effects, ranked = {}, {}
 for k, v in gd.effects.items():
-    effects[k] = {"descriptionId": v["descriptionId"], "characteristic": v["characteristic"], "useDice": v["useDice"]}
+    group, rank = classify(v)
+    effects[k] = {"descriptionId": v["descriptionId"], "characteristic": v["characteristic"], "useDice": v["useDice"],
+                  "group": group, "density": v["effectPowerRate"]}
+    ranked.setdefault(group, []).append(((rank, v["effectPowerRate"] < 0, k), k))   # positives before their negative twins
     ids.add(v["descriptionId"])
+for items_ in ranked.values():
+    for i, (_, k) in enumerate(sorted(items_)):
+        effects[k]["order"] = i
 types = {k: {"nameId": v["nameId"], "categoryId": v["categoryId"]} for k, v in gd.itemtypes.items()}
 ids.update(v["nameId"] for v in types.values())
 dump("items.json", items); dump("effects.json", effects); dump("itemtypes.json", types)
