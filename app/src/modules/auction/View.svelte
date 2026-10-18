@@ -350,6 +350,7 @@
               <div class="opp">
                 <div class="oh">
                   <b class="ok">+{kamas(sv.profit)}</b>
+                  <span class="inv" title="Lot price + rune price">invest {kamas(sv.buy + sv.runeCost)}</span>
                   <button class="link" onclick={() => (selGid = sv.gid)}>{sv.itemName}</button>
                   <span>add {sv.rune} (+{sv.value} {sv.label})</span>
                   <span class="mut">buy {kamas(sv.buy)} · rune {kamas(sv.runeCost)} · sell ~{kamas(sv.sale)} · saved {ago(sv.savedAt)} ago</span>
@@ -384,6 +385,7 @@
                 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
                 <div class="oh sel" class:picked={cand?.id === cid} title="Click to highlight this lot and the lots with the same rune on the graph" onclick={() => (cand = cand?.id === cid ? null : { id: cid, a: t.a, value: t.value })}>
                   <b class="ok">+{kamas(o.best!.profit)}</b>
+                  <span class="inv" title="Lot price + rune price">invest {kamas(o.buy + (t.runeCost ?? 0))}</span>
                   <span>add {t.rune?.name} (+{t.value} {effLabel(t.a)})</span>
                   {#if t.stale}<span class="warn" title="Rune price older than a day">⚠ stale rune price</span>{/if}
                   <button class="mini" class:on={isSaved(o)} title="Keep this candidate to come back to it later" onclick={(ev) => (ev.stopPropagation(), toggleSaved(o))}>{isSaved(o) ? "Saved ✓" : "Save"}</button>
@@ -515,6 +517,7 @@
   .oh.sel { cursor: pointer; padding: 3px 6px; border: 1px solid transparent; border-radius: 6px; }
   .oh.sel:hover { background: var(--bg); }
   .oh.picked { border-color: var(--acc); }
+  .inv { font-weight: 600; }
   .oh .ok { color: var(--ok); font-size: 14px; }
   .btns { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
   .frow.lv { grid-template-columns: 1fr 52px 52px auto; }
