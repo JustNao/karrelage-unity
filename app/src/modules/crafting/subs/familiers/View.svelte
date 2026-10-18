@@ -11,7 +11,15 @@
   /** Croquette enrichie: a flat 500 xp (not in the site's table). */
   const CROQUETTE = { name: "Croquette enrichie", xp: 500, qty: 1 };
   /** Food table from dofustool.com: [name, xp given per meal, quantity of the resource per meal]. */
-  const FOODS: { name: string; xp: number; qty: number }[] = [CROQUETTE, ...(table.foods as [string, number, number][]).map(([name, xp, qty]) => ({ name, xp, qty }))];
+  const FOODS: { name: string; xp: number; qty: number }[] = (() => {
+    // the site lists some resources twice: keep the entry with the best xp per unit
+    const by = new Map<string, { name: string; xp: number; qty: number }>();
+    for (const [name, xp, qty] of [[CROQUETTE.name, CROQUETTE.xp, CROQUETTE.qty], ...(table.foods as [string, number, number][])] as [string, number, number][]) {
+      const old = by.get(name);
+      if (!old || xp / qty > old.xp / old.qty) by.set(name, { name, xp, qty });
+    }
+    return [...by.values()];
+  })();
 
   type SortKey = "name" | "xp" | "qty" | "unit" | "meal" | "perXp" | "meals" | "total";
   interface Row { gid: number; name: string; xp: number; qty: number; unit: number | null; meal: number | null; perXp: number | null; meals: number; total: number | null }
@@ -108,7 +116,7 @@
         </tr>
       </thead>
       <tbody>
-        {#each view as r (r.gid + r.name)}
+        {#each view as r (r.name)}
           <tr>
             <td><b>{r.name}</b></td>
             <td class="n">{num(r.xp)}</td>

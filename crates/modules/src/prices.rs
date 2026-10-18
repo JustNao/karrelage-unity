@@ -276,4 +276,22 @@ mod tests {
         let list = p.call("list", Value::Null, &hub.ctx).unwrap();
         assert_eq!(get(&list, 1711)["override"], 42);
     }
+
+    #[test]
+    fn gids_by_name_finds_foods() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let pack = root.join("datapack");
+        if !pack.join("manifest.json").exists() {
+            return;
+        }
+        let dir = std::env::temp_dir().join("loutil-gids");
+        let _ = std::fs::remove_dir_all(&dir);
+        let data = Arc::new(Data::load(&pack, "fr").unwrap());
+        let proto = Arc::new(Proto::load(&pack, dir.join("o.json")).unwrap());
+        let hub = crate::Hub::new(data, proto, dir, Arc::new(|_, _| {}), Arc::new(|_| {}));
+        let r = Prices::new().call("gids_by_name", json!({"names": ["Croquette enrichie", "Queue d'Ecumouth", "Eau calme"]}), &hub.ctx).unwrap();
+        println!("{r}");
+        assert_eq!(r["Croquette enrichie"], 20125);
+        assert!(r.as_object().unwrap().len() >= 2);
+    }
 }
