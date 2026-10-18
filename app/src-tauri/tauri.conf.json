@@ -11,7 +11,8 @@
   },
   "app": {
     "windows": [
-      { "label": "main", "title": "Karrelage", "width": 1280, "height": 800, "maximized": true, "minWidth": 720, "minHeight": 480 }
+      { "label": "main", "title": "Karrelage", "width": 1280, "height": 800, "maximized": true, "visible": false, "backgroundColor": "#14161a", "minWidth": 720, "minHeight": 480 },
+      { "label": "splash", "url": "splash.html", "title": "Karrelage", "width": 240, "height": 200, "center": true, "resizable": false, "decorations": false, "transparent": true, "shadow": false, "alwaysOnTop": true, "skipTaskbar": true }
     ],
     "security": {
       "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'"

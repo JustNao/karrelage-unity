@@ -25,7 +25,7 @@
 
   onMount(() => {
     void app.init();
-    call<{ available: boolean }>("update", "check")
+    call<{ available: boolean }>("update", "check", {}, true)
       .then((r) => r.available && (upd = { state: "available", pct: 0, label: "" }))
       .catch(() => {}); // offline or no GitHub: nothing to show
     const off = on<{ phase: string; done: number; total: number; message?: string }>("update:progress", (p) => {
