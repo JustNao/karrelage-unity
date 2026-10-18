@@ -1,5 +1,6 @@
 <script lang="ts">
   import { kamas } from "../api";
+  import type { Chip } from "../compare";
   import { isBelowMin, isNegative, isPerfectLine, perfection, sortEffects } from "../effects";
 
   /** One auction lot (see crates/modules/src/auction.rs for the shape). */
@@ -10,7 +11,21 @@
     ontoggle,
     fade = null,
     onfade,
-  }: { row: any; collapsible?: boolean; open?: boolean; ontoggle?: () => void; fade?: number | null; onfade?: (action: number) => void } = $props();
+    pinned = false,
+    onpin,
+    chips = null,
+  }: {
+    row: any;
+    collapsible?: boolean;
+    open?: boolean;
+    ontoggle?: () => void;
+    fade?: number | null;
+    onfade?: (action: number) => void;
+    pinned?: boolean;
+    onpin?: () => void;
+    /** Differences against the pinned lot (null = no pin). */
+    chips?: Chip[] | null;
+  } = $props();
 
   const effects = $derived(sortEffects<any>(row.effects)); // new first, then stats/main, damage, resistances, utility
   const perfect = $derived(perfection(row.effects));
@@ -30,6 +45,9 @@
     {row.name} <span class="mut">{row.level != null ? "niv. " + row.level : ""}</span>
     <span class="flag" class:on={perfect.damage} title="All default damage effects at their max">★ Perfect damage</span>
     <span class="flag" class:on={perfect.resist} title="All default resistances at their max">★ Perfect resistances</span>
+    {#if onpin}
+      <button class="pin" class:on={pinned} title="Compare every lot you look at with this one" onclick={(ev) => (ev.stopPropagation(), onpin())}>{pinned ? "Unpin" : "Pin item"}</button>
+    {/if}
     <span class="flag" class:on={perfect.main} title="Main stats at max (within 3 for force/intelligence/agility/chance/wisdom, 10 for vitality)">★ Perfect main stats</span>
     {#if row.locked}<span class="shield" title="Empêche les futures forgemagies — cannot be modified anymore">🛡 Transcendance</span>{/if}
   </h4>
@@ -39,6 +57,11 @@
     {#if row.meta?.crafted_by} · fabriqué par {row.meta.crafted_by}{/if}
     {#if row.meta?.modified_by} · modifié par {row.meta.modified_by}{/if}
   </div>
+  {#if chips}
+    <div class="chips">
+      {#each chips as c}<span class="chip {c.tone}">{c.text}</span>{:else}<span class="chip same">Same as the pinned item</span>{/each}
+    </div>
+  {/if}
   <div class="prices">
     {#each prices as p (p.qty)}
       <span class="pr">×{p.qty} <b>{kamas(p.price)} kamas</b></span>
@@ -53,8 +76,8 @@
           {e.text}{#if e.range && e.status !== "removed"}<small>[{e.range[0]}–{e.range[1]}]</small>{/if}
           {#if e.status === "added" && onfade}
             <!-- stopPropagation: the card toggles / jumps on click, this button must not -->
-            <button class="fade" class:on={fade === e.action} title="Fade out the lots that do not have this effect (list and graph)" onclick={(ev) => (ev.stopPropagation(), onfade(e.action))}>
-              {fade === e.action ? "Show all" : "Fade others"}
+            <button class="fade" class:on={fade === e.action} title="Highlight the lots that have this effect: the others fade out (list, graph, good deals)" onclick={(ev) => (ev.stopPropagation(), onfade(e.action))}>
+              {fade === e.action ? "Show all" : "Highlight"}
             </button>
           {/if}
         </li>
@@ -83,7 +106,14 @@
   .eff li.low { color: #f08a3c; }
   .eff li.neg { color: var(--bad); font-weight: 400; }
   .eff li.removed { color: var(--mut); opacity: 0.55; }
-  .fade { margin-left: 8px; padding: 0 7px; font-size: 11px; font-weight: 400; border-radius: 8px; }
+  .pin { margin-left: 8px; padding: 0 8px; font-size: 11px; font-weight: 400; border-radius: 8px; }
+  .pin.on { background: color-mix(in srgb, var(--acc) 25%, transparent); border-color: var(--acc); color: var(--acc); }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 0; }
+  .chip { padding: 0 7px; border-radius: 8px; font-size: 11px; border: 1px solid var(--line); }
+  .chip.up { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
+  .chip.down { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); }
+  .chip.same { color: var(--mut); }
+  .fade { margin-left: 10px; padding: 1px 11px; font-size: 12.5px; font-weight: 400; border-radius: 9px; }
   .fade.on { background: color-mix(in srgb, var(--acc) 25%, transparent); border-color: var(--acc); color: var(--acc); }
   .eff li small { font-weight: 400; color: var(--mut); margin-left: 6px; }
   .none { color: var(--mut); font-size: 12px; }

@@ -11,6 +11,8 @@ export interface EffectMeta {
   density: number;
   /** Offered in the item filter (no negative twins, nothing from "other" but the hunting weapon). */
   filterable?: boolean;
+  /** Characteristic the effect modifies ("+Force" and "-Force" share it). */
+  stat?: number;
 }
 
 /** Sections of the filter list / effect picker, following the in-game characteristics panel. */
@@ -25,6 +27,9 @@ export const FILTER_GROUPS = [
 
 /** Order of effects on an item: weapon hits, stats / main stats, damage, resistances, then utility (secondary + other). */
 const ITEM_ORDER: Record<string, number> = { weapon: 0, stats: 1, main: 2, damage: 3, resist: 4, secondary: 5, other: 6 };
+
+/** Rank of an effect group in the item ordering. */
+export const groupRank = (g: string) => ITEM_ORDER[g] ?? 6;
 
 /** New (added) effects first, missing default effects last, the rest by group then rank. */
 export function sortEffects<T extends { status?: string; group?: string; order?: number }>(effs: T[]): T[] {

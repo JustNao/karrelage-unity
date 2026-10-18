@@ -28,6 +28,8 @@ pub struct Effect {
     pub group: String,
     pub order: i64,
     pub density: f64,
+    /// Which stat the effect changes (see `Data::stat_of`): "+Force" and "-Force" share it.
+    pub stat: i64,
     /// "normal" | "added" | "above" | "removed"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<&'static str>,
@@ -74,11 +76,21 @@ impl Data {
         m
     }
 
+    /// The characteristic an effect modifies, so an effect and its negative twin compare as the same stat. Effects without a
+    /// characteristic (weapon hits, flags) stand alone: `-action`.
+    pub fn stat_of(&self, action: i64) -> i64 {
+        match self.effects.get(&action) {
+            Some(r) if r.characteristic != 0 => r.characteristic,
+            _ => -action,
+        }
+    }
+
     fn tag(&self, e: &mut Effect) {
         match self.effects.get(&e.action) {
             Some(r) => (e.group, e.order, e.density) = (r.group.clone(), r.order, r.density),
             None => (e.group, e.order, e.density) = ("other".into(), i64::MAX, 0.0),
         }
+        e.stat = self.stat_of(e.action);
     }
 
     /// Annotate effects vs the item's default effects: added (not a default), above (over default max), normal; plus removed.
@@ -125,6 +137,7 @@ impl Data {
                 group: String::new(),
                 order: 0,
                 density: 0.0,
+                stat: 0,
             };
             self.tag(&mut removed);
             effs.push(removed);
@@ -177,7 +190,7 @@ mod tests {
     use super::*;
 
     fn eff(action: i64, params: Vec<Value>) -> Effect {
-        Effect { action, text: String::new(), params, raw: Value::Null, known: true, hi: None, str: None, group: String::new(), order: 0, density: 0.0, status: None, range: None }
+        Effect { action, text: String::new(), params, raw: Value::Null, known: true, hi: None, str: None, group: String::new(), order: 0, density: 0.0, stat: 0, status: None, range: None }
     }
 
     /// Needs the generated data pack; skipped otherwise.

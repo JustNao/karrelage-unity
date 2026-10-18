@@ -152,6 +152,8 @@ mod tests {
         assert_eq!((d.effects[&128].group.as_str(), d.effects[&128].density), ("main", 90.0)); // PM
         assert_eq!(d.effects[&118].group, "stats");
         assert_eq!(d.effects[&210].group, "resist");
+        assert_eq!(d.stat_of(118), d.stat_of(157), "+Force and -Force are one stat");
+        assert_ne!(d.stat_of(118), d.stat_of(126));
         assert_eq!(d.effects[&430].group, "damage");
         assert_eq!(d.effects[&174].group, "secondary");
         // weapon hits live in their own group; negatives and most "other" effects are not filterable

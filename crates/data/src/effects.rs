@@ -97,7 +97,7 @@ impl Data {
     /// {id, label, group, order, density, filterable} for one effect (None when it has no label).
     pub fn effect_entry(&self, a: i64) -> Option<Value> {
         let (e, label) = (self.effects.get(&a)?, self.effect_label(a)?);
-        Some(json!({"id": a, "label": label, "group": e.group, "order": e.order, "density": e.density, "filterable": self.is_filterable(a)}))
+        Some(json!({"id": a, "label": label, "group": e.group, "order": e.order, "density": e.density, "stat": self.stat_of(a), "filterable": self.is_filterable(a)}))
     }
 
     /// Every labelled effect, so the UI can group/label anything it meets in a lot.

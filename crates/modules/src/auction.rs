@@ -160,6 +160,7 @@ fn parse_effect(data: &Data, b: &ObjectEffect, e: &DynamicMessage) -> Effect {
         group: String::new(),
         order: 0,
         density: 0.0,
+        stat: 0,
         status: None,
         range: None,
     }
@@ -226,6 +227,7 @@ impl Module for Auction {
                             e["group"] = json!(row.group);
                             e["order"] = json!(row.order);
                             e["density"] = json!(row.density);
+                            e["stat"] = json!(ctx.data.stat_of(e["action"].as_i64().unwrap_or(0)));
                         }
                     }
                     for r in rows.iter_mut().filter(|r| r.get("density").is_none()) {
@@ -352,7 +354,7 @@ mod tests {
         let (_, pkt) = events.iter().find(|(n, _)| n == "packets:packet").expect("packet event");
         assert_eq!(pkt["name"], expected["name"]);
         let mut got = pkt["fmt"].clone();
-        strip_keys(&mut got, &["group", "order", "density"]); // added after the python reference was written
+        strip_keys(&mut got, &["group", "order", "density", "stat"]); // added after the python reference was written
         let mut want = expected["fmt"].take();
         strip_nulls(&mut got);
         strip_nulls(&mut want);
