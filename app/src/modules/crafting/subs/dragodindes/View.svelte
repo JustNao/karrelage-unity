@@ -97,7 +97,7 @@
 
 <div class="rv">
   <div class="head">
-    <div class="fh">Dragodindes <span class="mut">· extraction en {NEURONE.toLowerCase()} ; valeur = neurones × prix unitaire, taxe HDV de 2 % déduite ; prix d'achat = lot le moins cher <b>non sénile</b> vu à l'HDV (sinon prix enregistré, sénilité inconnue)</span></div>
+    <div class="fh">Dragodindes <span class="mut">· prix d'achat = lot le moins cher <b>non sénile</b> vu à l'HDV (sinon prix enregistré, sénilité inconnue)</span></div>
     <input type="search" placeholder="Rechercher une dragodinde…" bind:value={q} />
     <label><input type="checkbox" bind:checked={onlyPriced} /> Prix connus seulement</label>
   </div>
