@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { kamas, kamasFull } from "../api";
+  import { kamasFull } from "../api";
   import { app } from "../app.svelte";
   import { fmtDelta, pairRows } from "../compare";
   import { isLegendary, levelOf, xpOfLevel } from "../companion";
@@ -45,7 +45,9 @@
   /** Row being hovered in the comparison: its effect on both lots and the difference light up together. */
   let hov = $state<number | "price" | null>(null);
   const hover = (k: number | "price") => ({ onmouseenter: () => (hov = k), onmouseleave: () => (hov = null) });
-  const pairs = $derived(versus ? pairRows(versus.pin, row) : []);
+  const allPairs = $derived(versus ? pairRows(versus.pin, row) : []);
+  // like the plain list: a folded lot only shows its new / above-max stats, the rest comes with the unfolding
+  const pairs = $derived(open ? allPairs : allPairs.filter((p: any) => [p.left, p.right].some((x: any) => x && (x.status === "added" || x.status === "above"))));
   const myPrice = $derived(versus ? versus.unitPrice(row) : Infinity);
   const pinPrice = $derived(versus ? versus.unitPrice(versus.pin) : Infinity);
   const priceDelta = $derived(myPrice - pinPrice);
@@ -92,8 +94,6 @@
   {/if}
   <h4>
     {#if collapsible}<span class="chev">{open ? "▾" : "▸"}</span>{/if}
-    {row.name} <span class="mut">{row.level != null ? "niv. " + row.level : ""}</span>
-    {#if row.type}<span class="mut typ">· {row.type}</span>{/if}
     {#if companion}
       <span class="flag on" title="Niveau (xp totale {level != null ? xpOfLevel(level).toLocaleString('fr-FR') : '?'})">{level != null ? "Niveau " + level : "Niveau ?"}</span>
       <span class="flag" class:on={legendary}>★ Statut légendaire</span>
@@ -117,9 +117,9 @@
       <div class="hd"></div>
       <div class="hd r">Épinglé · {versus.name}</div>
 
-      <div class="l" class:hot={hov === "price"} {...hover("price")}>{#if Number.isFinite(myPrice)}<span class="pr"><b>{kamas(myPrice)}</b></span>{:else}<span class="pr no">—</span>{/if}</div>
-      <div class="d" class:hot={hov === "price"} {...hover("price")} class:up={priceDelta < 0} class:down={priceDelta > 0}>{Number.isFinite(priceDelta) ? (priceDelta === 0 ? "=" : (priceDelta > 0 ? "+" : "−") + kamas(Math.abs(priceDelta))) : ""}</div>
-      <div class="r" class:hot={hov === "price"} {...hover("price")}>{#if Number.isFinite(pinPrice)}<span class="pr"><b>{kamas(pinPrice)}</b></span>{:else}<span class="pr no">—</span>{/if}</div>
+      <div class="l" class:hot={hov === "price"} {...hover("price")}>{#if Number.isFinite(myPrice)}<span class="price">{kamasFull(myPrice)}</span>{:else}<span class="price no">—</span>{/if}</div>
+      <div class="d" class:hot={hov === "price"} {...hover("price")} class:up={priceDelta < 0} class:down={priceDelta > 0}>{open && Number.isFinite(priceDelta) ? (priceDelta === 0 ? "=" : (priceDelta > 0 ? "+" : "−") + kamasFull(Math.abs(priceDelta))) : ""}</div>
+      <div class="r" class:hot={hov === "price"} {...hover("price")}>{#if Number.isFinite(pinPrice)}<span class="price">{kamasFull(pinPrice)}</span>{:else}<span class="price no">—</span>{/if}</div>
 
       {#each pairs as p (p.key)}
         <div class="l" class:hot={hov === p.key} {...hover(p.key)}>
@@ -129,7 +129,7 @@
             </span>
           {/if}
         </div>
-        <div class="d" class:hot={hov === p.key} {...hover(p.key)} class:up={p.delta > 0} class:down={p.delta < 0}>{fmtDelta(p.delta)}</div>
+        <div class="d" class:hot={hov === p.key} {...hover(p.key)} class:up={p.delta > 0} class:down={p.delta < 0}>{open ? fmtDelta(p.delta) : ""}</div>
         <div class="r" class:hot={hov === p.key} {...hover(p.key)}>
           {#if p.right}
             <span class="ln {isWeaponEffect(p.right) && p.right.status !== 'added' && p.right.status !== 'removed' ? '' : p.right.status}" class:unk={!p.right.known} class:perfect={isPerfectLine(p.right)} class:low={isBelowMin(p.right)} class:neg={isNegative(p.right)} class:legend={p.right.action === LEGENDARY_EFFECT} title={hint(p.right)}>
@@ -167,15 +167,12 @@
   /* off-screen lots are not laid out / painted (long listings scroll much lighter); "auto" remembers the real height once seen */
   .card { content-visibility: auto; contain-intrinsic-size: auto 150px; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 0 0 8px; background: var(--bg); font-family: var(--font); }
   .card.col { cursor: pointer; }
-  h4 { margin: 0 0 2px; font-size: 13px; }
+  h4 { margin: 0 0 8px; font-size: 13px; }
   .sub { color: var(--mut); font-size: 12px; }
   .chev { float: right; color: var(--mut); }
   .prices { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; margin: 0 0 2px; }
   .price { font-weight: 700; color: var(--fg); font-size: 14px; }
   .price.no { opacity: 0.4; }
-  .pr { border: 1px solid var(--line); border-radius: 6px; padding: 1px 7px; font-variant-numeric: tabular-nums; }
-  .pr b { color: var(--ok); }
-  .pr.no { opacity: 0.4; }
   .eff { margin: 0; padding-left: 16px; }
   .eff.wpn { margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px dashed var(--line); }
   .ln.unk { color: var(--warn); }
@@ -208,7 +205,7 @@
   .fade { margin-left: 10px; padding: 1px 11px; font-size: 12.5px; font-weight: 400; border-radius: 9px; }
   .fade.on { background: color-mix(in srgb, var(--acc) 25%, transparent); border-color: var(--acc); color: var(--acc); }
   .none { color: var(--mut); font-size: 12px; }
-  .flag { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 8px; background: transparent; color: var(--mut); opacity: 0.55; font-size: 11px; font-weight: 600; white-space: nowrap; }
+  .flag { display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 8px; background: transparent; color: var(--mut); opacity: 0.55; font-size: 11px; font-weight: 600; white-space: nowrap; }
   .flag.on { background: color-mix(in srgb, var(--ok) 20%, transparent); color: var(--ok); opacity: 1; }
-  .shield { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 8px; background: color-mix(in srgb, var(--warn) 25%, transparent); color: var(--warn); font-size: 12px; }
+  .shield { display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 8px; background: color-mix(in srgb, var(--warn) 25%, transparent); color: var(--warn); font-size: 12px; }
 </style>

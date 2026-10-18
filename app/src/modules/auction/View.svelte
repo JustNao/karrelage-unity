@@ -353,7 +353,7 @@
   <SmoothScroll toTop>
     {#if item}
       <div class="head">
-        <div class="fh">{item.name} <span class="mut">{item.type ?? ""}{app.dev ? " · gid " + item.gid : ""} · mis à jour {ago(item.updated)} · {rows.length}/{item.lots} lots</span></div>
+        <div class="fh">{item.name} <span class="mut">{item.level != null ? "niv. " + item.level + " · " : ""}{item.type ?? ""}{app.dev ? " · gid " + item.gid : ""} · mis à jour {ago(item.updated)} · {rows.length}/{item.lots} lots</span></div>
         <button class="sort" onclick={() => (sortDir = -sortDir)} title="Cliquer pour inverser l'ordre des prix">
           Prix <span class="arrow" class:desc={sortDir === -1}>↑</span>
         </button>
@@ -486,6 +486,12 @@
   <div class="grip" role="separator" aria-orientation="vertical" onpointerdown={(e) => cols.drag("filter", -1, e)}></div>
 
   <div class="filter">
+    {#if pin}
+      <div class="pinned">
+        <div class="fh">Objet épinglé <span class="mut">· {pin.item.name}{pin.item.level != null ? " niv. " + pin.item.level : ""}</span></div>
+        <ItemCard row={pin.row} companion={!!pin.item.companion} pinned onpin={() => (pin = null)} />
+      </div>
+    {/if}
     {#if item}
       {#if comp}
         <div class="fh">Filtrer les {item.type?.toLowerCase() ?? "compagnon"}s</div>
@@ -569,6 +575,7 @@
   .head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
   .head .fh { margin: 0; flex: 1; }
   .filter { overflow: auto; background: var(--panel); border-left: 1px solid var(--line); padding: 10px; font-family: var(--font); font-size: 12px; }
+  .filter .pinned { margin-bottom: 12px; }
   .filter .ghead { display: flex; align-items: center; justify-content: flex-start; gap: 10px; }
   .ghead { margin: 12px 0 2px; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--mut); }
   .gbtns { display: flex; gap: 4px; text-transform: none; letter-spacing: 0; }
@@ -594,7 +601,10 @@
   .warn { color: var(--warn, orange); }
   .link { border: 0; background: none; color: var(--acc); padding: 0; text-decoration: underline; }
   .oh .on { border-color: var(--acc); color: var(--acc); }
-  .opp { margin-bottom: 12px; }
+  /* one frame around the gain line and the lot; the card inside drops its own edge */
+  .opp { margin-bottom: 12px; padding: 6px; border: 1px solid var(--line); border-radius: 10px; }
+  .opp :global(.card) { border: 0; padding: 0 4px 4px; margin-bottom: 0; }
+  .opp .oh { margin-bottom: 0; }
   .oh { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; font-size: 12px; margin-bottom: 4px; }
   .oh.sel { cursor: pointer; padding: 3px 6px; border: 1px solid transparent; border-radius: 6px; }
   .oh.sel:hover { background: var(--bg); }
