@@ -81,12 +81,13 @@
 
   {#if versus}
     <div class="cmp">
-      <div class="hd">This lot</div>
-      <div class="hd"></div>
-      <div class="hd r">Pinned · {versus.name}</div>
+      <div class="hd hl">This lot</div>
+      <div class="hd r hr">Pinned · {versus.name}</div>
 
       <div class="l">{#if Number.isFinite(myPrice)}<span class="pr"><b>{kamas(myPrice)} kamas</b></span>{:else}<span class="pr no">—</span>{/if}</div>
+      <div class="ld"></div>
       <div class="d" class:up={priceDelta < 0} class:down={priceDelta > 0}>{Number.isFinite(priceDelta) ? fmtDelta(priceDelta) : ""}</div>
+      <div class="ld"></div>
       <div class="r">{#if Number.isFinite(pinPrice)}<span class="pr"><b>{kamas(pinPrice)} kamas</b></span>{:else}<span class="pr no">—</span>{/if}</div>
 
       {#each pairs as p (p.key)}
@@ -97,7 +98,9 @@
             </span>
           {/if}
         </div>
+        <div class="ld"></div>
         <div class="d" class:up={p.delta > 0} class:down={p.delta < 0}>{fmtDelta(p.delta)}</div>
+        <div class="ld"></div>
         <div class="r">
           {#if p.right}
             <span class="ln {p.right.status}" class:unk={!p.right.known} class:perfect={isPerfectLine(p.right)} class:low={isBelowMin(p.right)} class:neg={isNegative(p.right)} title={hint(p.right)}>
@@ -149,10 +152,14 @@
   .ln.removed { color: var(--mut); opacity: 0.55; }
   .ln small { font-weight: 400; color: var(--mut); margin-left: 6px; }
   .ln small.rg { margin: 0 6px 0 0; }
-  .cmp { display: grid; grid-template-columns: 1fr auto 1fr; column-gap: 14px; row-gap: 2px; align-items: baseline; margin-top: 6px; }
+  .cmp { display: grid; grid-template-columns: auto 1fr auto 1fr auto; row-gap: 2px; align-items: baseline; margin-top: 6px; }
+  .cmp .hl { grid-column: 1 / 4; }
+  .cmp .hr { grid-column: 4 / 6; }
+  /* faded dotted leaders tie each difference to the effects on both sides of it */
+  .cmp .ld { align-self: center; height: 0; border-top: 1px dotted var(--mut); opacity: 0.4; margin: 0 8px; }
   .cmp .hd { color: var(--mut); font-size: 11px; }
   .cmp .r { text-align: right; }
-  .cmp .d { text-align: center; min-width: 56px; font-size: 12px; font-weight: 600; color: var(--mut); font-variant-numeric: tabular-nums; }
+  .cmp .d { text-align: center; min-width: 48px; font-size: 12px; font-weight: 600; color: var(--mut); font-variant-numeric: tabular-nums; }
   .cmp .d.up { color: var(--ok); }
   .cmp .d.down { color: var(--bad); }
   .pin { margin-left: 8px; padding: 0 8px; font-size: 11px; font-weight: 400; border-radius: 8px; }
