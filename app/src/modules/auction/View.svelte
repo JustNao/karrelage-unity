@@ -27,6 +27,7 @@
     selGid; // another item: forget the fade and the rune focus
     fade = null;
     focus = null;
+    cand = null;
   });
   // Pinned lot (kept across items): every other lot shown gets a diff against it.
   let pin = $state.raw<{ item: any; row: any } | null>(null);
@@ -38,6 +39,7 @@
   const toggleFade = (a: number) => (fade = fade === a ? null : a);
   let tab = $state<"listing" | "trans">("listing");
   let dealsOpen = $state(false); // "Good deals" starts collapsed
+  let cand = $state<{ id: string | number; a: number; value: number } | null>(null); // selected candidate: its point + the lots with the same rune applied stand out
   let focus = $state<string | null>(null); // transcended effect (targetKey) the candidates are limited to
   let runes = $state.raw<Rune[]>([]);
   let stored = new SvelteMap<number, StoredPrice>(); // stored prices (the rune prices feed the transcendance tab)
@@ -173,7 +175,8 @@
   const points = $derived(
     rows
       .map((r: any, i: number) => {
-        const has = focusEffect === null || r.effects.some((e: any) => e.action === focusEffect && e.status !== "removed");
+        const sameRune = cand && (lotKey(r, i) === cand.id || (r.locked && r.effects.some((e: any) => e.status === "added" && e.action === cand!.a && e.hi === cand!.value)));
+        const has = cand ? !!sameRune : focusEffect === null || r.effects.some((e: any) => e.action === focusEffect && e.status !== "removed");
         return {
         id: lotKey(r, i),
         x: unitPrice(r),
@@ -328,7 +331,7 @@
         <button onclick={forget}>Forget all items</button>
       </div>
       {#if points.length >= 3}
-        <div class="graph"><DensityChart {points} selected={picked} onselect={focusLot} /></div>
+        <div class="graph"><DensityChart {points} selected={tab === "trans" && cand ? cand.id : picked} onselect={focusLot} /></div>
       {/if}
       {#if !comp}<div class="tabs">
         <button class:on={tab === "listing"} onclick={() => (tab = "listing")}>Listing</button>
@@ -376,12 +379,14 @@
             <div class="ghead">Profitable candidates{#if focus} <button class="mini" onclick={() => (focus = null)}>Show all runes ✕</button>{/if}</div>
             {#each trans.opportunities as o (o.row.uid ?? o.buy + "-" + o.row.density)}
               {@const t = o.best!.target}
+              {@const cid = lotKey(o.row, rows.indexOf(o.row))}
               <div class="opp">
-                <div class="oh">
+                <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+                <div class="oh sel" class:picked={cand?.id === cid} title="Click to highlight this lot and the lots with the same rune on the graph" onclick={() => (cand = cand?.id === cid ? null : { id: cid, a: t.a, value: t.value })}>
                   <b class="ok">+{kamas(o.best!.profit)}</b>
                   <span>add {t.rune?.name} (+{t.value} {effLabel(t.a)})</span>
                   {#if t.stale}<span class="warn" title="Rune price older than a day">⚠ stale rune price</span>{/if}
-                  <button class="mini" class:on={isSaved(o)} title="Keep this candidate to come back to it later" onclick={() => toggleSaved(o)}>{isSaved(o) ? "Saved ✓" : "Save"}</button>
+                  <button class="mini" class:on={isSaved(o)} title="Keep this candidate to come back to it later" onclick={(ev) => (ev.stopPropagation(), toggleSaved(o))}>{isSaved(o) ? "Saved ✓" : "Save"}</button>
                   <span class="mut">buy {kamas(o.buy)} · rune {kamas(t.runeCost ?? 0)} · sell ~{kamas(t.sale)} · density {o.z >= 0 ? "+" : ""}{o.z.toFixed(1)}σ</span>
                 </div>
                 <ItemCard row={o.row} collapsible open={openSet.has("t" + (o.row.uid ?? ""))} ontoggle={() => toggleOpen("t" + (o.row.uid ?? ""))} />
@@ -507,6 +512,9 @@
   .oh .on { border-color: var(--acc); color: var(--acc); }
   .opp { margin-bottom: 12px; }
   .oh { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; font-size: 12px; margin-bottom: 4px; }
+  .oh.sel { cursor: pointer; padding: 3px 6px; border: 1px solid transparent; border-radius: 6px; }
+  .oh.sel:hover { background: var(--bg); }
+  .oh.picked { border-color: var(--acc); }
   .oh .ok { color: var(--ok); font-size: 14px; }
   .btns { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
   .frow.lv { grid-template-columns: 1fr 52px 52px auto; }
