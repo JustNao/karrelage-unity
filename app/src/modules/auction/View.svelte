@@ -194,6 +194,35 @@
       .slice(0, 6);
   });
 
+  // ---- saved transcendance candidates: a snapshot kept across scans (the lot may be sold by the time you come back)
+  interface Saved { key: string; gid: number; itemName: string; savedAt: number; row: any; label: string; value: number; rune: string; buy: number; runeCost: number; sale: number; profit: number }
+  const SAVED_KEY = "loutil.savedCandidates";
+  let saved = $state.raw<Saved[]>([]);
+  try {
+    saved = JSON.parse(localStorage.getItem(SAVED_KEY) ?? "[]");
+  } catch {}
+  const persistSaved = (l: Saved[]) => {
+    saved = l;
+    try {
+      localStorage.setItem(SAVED_KEY, JSON.stringify(l));
+    } catch {}
+  };
+  const candKey = (o: any) => `${item.gid}:${o.row.uid ?? o.buy + "-" + o.row.density}`;
+  const isSaved = (o: any) => saved.some((s) => s.key === candKey(o));
+  function toggleSaved(o: any) {
+    const key = candKey(o);
+    if (isSaved(o)) return persistSaved(saved.filter((s) => s.key !== key));
+    const t = o.best.target;
+    persistSaved([
+      { key, gid: item.gid, itemName: item.name, savedAt: Date.now() / 1000, row: o.row, label: effLabel(t.a), value: t.value, rune: t.rune?.name ?? "?", buy: o.buy, runeCost: t.runeCost ?? 0, sale: t.sale, profit: o.best.profit },
+      ...saved,
+    ]);
+  }
+  /** Is the saved lot still in the latest scan of its item? null = the item has not been scanned (here) since. */
+  const stillListed = (sv: Saved) => {
+    const it = items.get(sv.gid);
+    return it && sv.row.uid != null ? it.rows.some((r: any) => r.uid === sv.row.uid) && it.updated > sv.savedAt : null;
+  };
   const trans = $derived(transcendance(comp ? [] : rows, unitPrice, runes, stored, focus));
   const runeName = (n: string) => n;
 
@@ -289,6 +318,23 @@
             Lots of this item with the transcendance lock and an added effect show what a rune is worth. Candidates are unlocked lots
             without an overmax effect; profit = sale price − {AH_TAX * 100}% tax − lot price − rune price (Stored prices tab).
           </div>
+          {#if saved.length}
+            <div class="ghead">Saved candidates</div>
+            {#each saved as sv (sv.key)}
+              {@const live = stillListed(sv)}
+              <div class="opp">
+                <div class="oh">
+                  <b class="ok">+{kamas(sv.profit)}</b>
+                  <button class="link" onclick={() => (selGid = sv.gid)}>{sv.itemName}</button>
+                  <span>add {sv.rune} (+{sv.value} {sv.label})</span>
+                  <span class="mut">buy {kamas(sv.buy)} · rune {kamas(sv.runeCost)} · sell ~{kamas(sv.sale)} · saved {ago(sv.savedAt)} ago</span>
+                  {#if live === true}<span class="ok">still listed</span>{:else if live === false}<span class="warn">no longer in the latest scan</span>{/if}
+                  <button class="mini" onclick={() => persistSaved(saved.filter((x) => x.key !== sv.key))}>Remove ✕</button>
+                </div>
+                <ItemCard row={sv.row} collapsible open={openSet.has("s" + sv.key)} ontoggle={() => toggleOpen("s" + sv.key)} />
+              </div>
+            {/each}
+          {/if}
           {#if trans.targets.length === 0}
             <div class="mut">No transcended lot of this item in the listing: nothing to compare with.</div>
           {:else}
@@ -313,6 +359,7 @@
                   <b class="ok">+{kamas(o.best!.profit)}</b>
                   <span>add {t.rune?.name} (+{t.value} {effLabel(t.a)})</span>
                   {#if t.stale}<span class="warn" title="Rune price older than a day">⚠ stale rune price</span>{/if}
+                  <button class="mini" class:on={isSaved(o)} title="Keep this candidate to come back to it later" onclick={() => toggleSaved(o)}>{isSaved(o) ? "Saved ✓" : "Save"}</button>
                   <span class="mut">buy {kamas(o.buy)} · rune {kamas(t.runeCost ?? 0)} · sell ~{kamas(t.sale)} · density {o.z >= 0 ? "+" : ""}{o.z.toFixed(1)}σ</span>
                 </div>
                 <ItemCard row={o.row} collapsible open={openSet.has("t" + (o.row.uid ?? ""))} ontoggle={() => toggleOpen("t" + (o.row.uid ?? ""))} />
@@ -433,6 +480,8 @@
   .trow.foc { border-color: var(--acc); }
   .altw { font-size: 12px; margin-bottom: 4px; }
   .warn { color: var(--warn, orange); }
+  .link { border: 0; background: none; color: var(--acc); padding: 0; text-decoration: underline; }
+  .oh .on { border-color: var(--acc); color: var(--acc); }
   .opp { margin-bottom: 12px; }
   .oh { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; font-size: 12px; margin-bottom: 4px; }
   .oh .ok { color: var(--ok); font-size: 14px; }
