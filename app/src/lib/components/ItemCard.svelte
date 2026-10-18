@@ -1,6 +1,6 @@
 <script lang="ts">
   import { kamas } from "../api";
-  import { perfection, sortEffects } from "../effects";
+  import { isBelowMin, isNegative, isPerfectLine, perfection, sortEffects } from "../effects";
 
   /** One auction lot (see crates/modules/src/auction.rs for the shape). */
   let { row, collapsible = false, open = true, ontoggle }: { row: any; collapsible?: boolean; open?: boolean; ontoggle?: () => void } = $props();
@@ -42,7 +42,7 @@
   {#if shown.length}
     <ul class="eff">
       {#each shown as e}
-        <li class={e.status} class:unk={!e.known} title={hint(e)}>
+        <li class={e.status} class:unk={!e.known} class:perfect={isPerfectLine(e)} class:low={isBelowMin(e)} class:neg={isNegative(e)} title={hint(e)}>
           {e.text}{#if e.range && e.status !== "removed"}<small>[{e.range[0]}–{e.range[1]}]</small>{/if}
         </li>
       {/each}
@@ -66,6 +66,9 @@
   .eff li.unk { color: var(--warn); }
   .eff li.added { color: var(--acc); font-weight: 700; }
   .eff li.above { color: var(--ok); font-weight: 700; }
+  .eff li.perfect { font-weight: 700; }
+  .eff li.low { color: #f08a3c; }
+  .eff li.neg { color: var(--bad); font-weight: 400; }
   .eff li.removed { color: var(--mut); opacity: 0.55; }
   .eff li small { font-weight: 400; color: var(--mut); margin-left: 6px; }
   .none { color: var(--mut); font-size: 12px; }

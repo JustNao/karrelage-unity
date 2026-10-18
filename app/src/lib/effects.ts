@@ -40,6 +40,14 @@ export function sortEffects<T extends { status?: string; group?: string; order?:
 /** How close to the default max still counts as "perfect": vitality within 10; force, intelligence, agility, chance (and wisdom) within 3. */
 const PERFECT_TOLERANCE: Record<number, number> = { 125: 10, 118: 3, 126: 3, 119: 3, 123: 3, 124: 3 };
 
+const tolerance = (action: number) => PERFECT_TOLERANCE[action] ?? 0;
+
+export const isNegative = (e: any) => e.density < 0 || String(e.text ?? "").startsWith("-");
+/** The line is at (or above) its default max, within the main-stat tolerance. */
+export const isPerfectLine = (e: any) => !!e.range && !isNegative(e) && e.status !== "removed" && (e.hi ?? -Infinity) >= e.range[1] - tolerance(e.action);
+/** The line is below the default minimum of its range. */
+export const isBelowMin = (e: any) => !!e.range && !isNegative(e) && e.status !== "removed" && (e.hi ?? Infinity) < e.range[0];
+
 export interface Perfection {
   damage: boolean;
   resist: boolean;
@@ -51,11 +59,11 @@ export interface Perfection {
  * default effects and all of them are present at (or above) their default max, within the tolerance for main stats.
  */
 export function perfection(effs: any[]): Perfection {
-  const check = (groups: string[], tol: (a: number) => number) => {
+  const check = (groups: string[]) => {
     const rel = effs.filter((e) => groups.includes(e.group) && e.range && !(e.density < 0));
-    return rel.length > 0 && rel.every((e) => e.status !== "removed" && (e.hi ?? -Infinity) >= e.range[1] - tol(e.action));
+    return rel.length > 0 && rel.every(isPerfectLine);
   };
-  return { damage: check(["damage"], () => 0), resist: check(["resist"], () => 0), main: check(["stats", "main"], (a) => PERFECT_TOLERANCE[a] ?? 0) };
+  return { damage: check(["damage"]), resist: check(["resist"]), main: check(["stats", "main"]) };
 }
 
 /** Accent/case-insensitive form for matching what the user types. */
