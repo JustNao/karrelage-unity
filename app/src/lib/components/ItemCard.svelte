@@ -153,7 +153,11 @@
   .ln small { font-weight: 400; color: var(--mut); margin-left: 6px; }
   .ln small.rg { margin: 0 6px 0 0; }
   /* compact: the pinned stats sit right next to the lot's own, columns hug their content */
-  .cmp { display: grid; grid-template-columns: max-content max-content max-content; justify-content: start; row-gap: 1px; align-items: baseline; margin-top: 6px; }
+  .cmp { display: grid; grid-template-columns: max-content max-content max-content; justify-content: start; row-gap: 1px; align-items: stretch; margin-top: 6px; }
+  /* every cell fills the full row height (and centres its text), so the hover bar has no gaps above/below the difference */
+  .cmp > .l, .cmp > .r, .cmp > .d { display: flex; align-items: center; }
+  .cmp > .r { justify-content: flex-end; }
+  .cmp > .d { justify-content: center; }
   .cmp > div { padding: 1px 12px; transition: background 0.12s; }
   .cmp > .hot { background: color-mix(in srgb, var(--acc) 18%, transparent); }
   .cmp > .l.hot { border-radius: 6px 0 0 6px; }
