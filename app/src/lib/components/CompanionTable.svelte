@@ -2,7 +2,7 @@
   import { kamas } from "../api";
   import { benefit } from "../craft";
   import { isLegendary, levelOf } from "../companion";
-  import { isSenile, neuronsOf } from "../dragodinde";
+  import { isSenile, neuronsOf } from "../mounts";
 
   /** Familier / montilier / monture lots as a table (same look as the Crafting tab tables). `neurons` + `neuroneUnit` = mount extraction. */
   let {
@@ -10,15 +10,18 @@
     unitPrice,
     neurons = null,
     neuroneUnit = null,
+    resource = "Neurones",
     picked = null,
     faded = () => false,
     onpick,
   }: {
     lots: { row: any; key: string | number }[];
     unitPrice: (r: any) => number;
-    /** Neurones obtained by extracting this mount (null = not a dragodinde from the table). */
+    /** Resources obtained by extracting this mount (null = not a mount from the tables). */
     neurons?: number | null;
     neuroneUnit?: number | null;
+    /** Plural name of the extracted resource (column headers). */
+    resource?: string;
     picked?: string | number | null;
     faded?: (r: any) => boolean;
     onpick?: (key: string | number) => void;
@@ -27,7 +30,7 @@
   const mount = $derived(neurons != null);
   const sgn = (n: number) => (n > 0 ? "+" : "") + kamas(n);
 
-  /** Per lot: price, level and, for mounts, the profit of extracting it (senile lots give 1 neurone). */
+  /** Per lot: price, level and, for mounts, the profit of extracting it (senile lots give 1 resource). */
   const rows = $derived(
     lots.map(({ row, key }) => {
       const price = unitPrice(row);
@@ -72,8 +75,8 @@
       <th><button onclick={() => setSort("status")}>Statut{arrow("status")}</button></th>
       <th class="n"><button onclick={() => setSort("price")}>Prix{arrow("price")}</button></th>
       {#if mount}
-        <th class="n"><button onclick={() => setSort("n")}>Neurones{arrow("n")}</button></th>
-        <th class="n"><button onclick={() => setSort("sale")}>Valeur des neurones{arrow("sale")}</button></th>
+        <th class="n"><button onclick={() => setSort("n")}>{resource}{arrow("n")}</button></th>
+        <th class="n"><button onclick={() => setSort("sale")}>Valeur des {resource.toLowerCase()}{arrow("sale")}</button></th>
         <th class="n"><button onclick={() => setSort("profit")}>Bénéfice{arrow("profit")}</button></th>
         <th class="n"><button onclick={() => setSort("pct")}>Rentabilité{arrow("pct")}</button></th>
       {/if}
@@ -87,7 +90,7 @@
         <td>
           {#if r.legendary}<span class="tag leg">★ Légendaire</span>{/if}
           {#if r.senile}<span class="tag mut">Sénile</span>{/if}
-          {#if (r.profit ?? 0) > 0}<span class="tag good" title="Extraire cette monture en neurones rapporte plus que son prix d'achat">⚠ Rentable en neurones</span>{/if}
+          {#if (r.profit ?? 0) > 0}<span class="tag good" title="Extraire cette monture rapporte plus que son prix d'achat">⚠ Rentable en {resource.toLowerCase()}</span>{/if}
         </td>
         <td class="n">{Number.isFinite(r.price) ? kamas(r.price) : "—"}</td>
         {#if mount}

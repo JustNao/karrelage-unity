@@ -13,7 +13,7 @@
   import { analyse, isGoodDeal } from "../../lib/density";
   import { feeder, foodGids, levelBase } from "../../lib/familiar";
   import CompanionTable from "../../lib/components/CompanionTable.svelte";
-  import { mountInfo, neuroneGid, neuronsOf } from "../../lib/dragodinde";
+  import { mountInfo, neuroneGids, neuronsOf, resourcePlural } from "../../lib/mounts";
   import { storedPrice } from "../../lib/craft";
   import { FLAG_EFFECTS, norm, rangeLabel, sections, type EffectMeta } from "../../lib/effects";
   import { benefit, craftCost, type CraftLine, type Recipes } from "../../lib/craft";
@@ -160,10 +160,12 @@
       });
   });
 
-  // dragodindes: extraction into neurones (heads-up on lots worth extracting)
-  let neurGid = $state<number | null>(null);
-  const neurons = $derived(comp ? (mountInfo(item?.name)?.neurons ?? null) : null);
-  const neuroneUnit = $derived(neurGid != null ? storedPrice(stored, neurGid) : null);
+  // dragodindes / muldos / volkornes: extraction into neurones / ambres / cornes (heads-up on lots worth extracting)
+  let neurGids = $state.raw<Record<string, number>>({});
+  const minfo = $derived(comp ? mountInfo(item?.name) : null);
+  const neurons = $derived(minfo?.neurons ?? null);
+  const resource = $derived(minfo ? resourcePlural(minfo.neurone) : "Neurones");
+  const neuroneUnit = $derived(minfo && neurGids[minfo.neurone] != null ? storedPrice(stored, neurGids[minfo.neurone]) : null);
   const extractable = $derived(
     neurons != null && neuroneUnit != null ? rows.filter((r: any) => Number.isFinite(unitPrice(r)) && benefit(neuroneUnit * neuronsOf(r, neurons), unitPrice(r)).profit > 0).length : 0,
   );
@@ -349,7 +351,7 @@
     call<EffectMeta[]>("auction", "effects").then((e) => (picker = e));
     call<EffectMeta[]>("auction", "effect_meta").then((l) => (meta = Object.fromEntries(l.map((e) => [e.id, e]))));
     call<Recipes>("auction", "recipes").then((r) => (recipes = r));
-    neuroneGid().then((g) => (neurGid = g));
+    neuroneGids().then((m) => (neurGids = m)).catch(() => {});
     foodGids().then((m) => (foodIds = m)).catch(() => {});
     call<Rune[]>("prices", "runes").then((l) => (runes = l));
     call<StoredPrice[]>("prices", "list").then((l) => l.forEach((p) => stored.set(p.gid, p)));
@@ -529,7 +531,7 @@
             <span class="chev" class:shut={!dealsOpen}>▾</span> Bonnes affaires <span class="mut">· {deals.length} {deals.length === 1 ? "lot se démarque" : "lots se démarquent"} au-dessus de la tendance des prix</span>
           </button>
           {#if comp}
-            {#if dealsOpen}<CompanionTable lots={lotsOf(deals.map((d: any) => d.row)).map((l) => ({ ...l, key: "d-" + l.key }))} {unitPrice} {neurons} {neuroneUnit} faded={lacksFade} onpick={(k) => pickLot(String(k).slice(2))} />{/if}
+            {#if dealsOpen}<CompanionTable lots={lotsOf(deals.map((d: any) => d.row)).map((l) => ({ ...l, key: "d-" + l.key }))} {unitPrice} {neurons} {neuroneUnit} {resource} faded={lacksFade} onpick={(k) => pickLot(String(k).slice(2))} />{/if}
           {:else}
           {#each dealsOpen ? deals : [] as d (d.key)}
             {@const alt = trans.alternative(d.row)}
@@ -546,9 +548,9 @@
       {/if}
       {#if comp}
         {#if extractable}
-          <div class="warn altw">⚠ {extractable} lot{extractable > 1 ? "s" : ""} rentable{extractable > 1 ? "s" : ""} à extraire en neurones</div>
+          <div class="warn altw">⚠ {extractable} lot{extractable > 1 ? "s" : ""} rentable{extractable > 1 ? "s" : ""} à extraire en {resource.toLowerCase()}</div>
         {/if}
-        <CompanionTable lots={lotsOf(rows)} {unitPrice} {neurons} {neuroneUnit} {picked} faded={lacksFade} onpick={pickLot} />
+        <CompanionTable lots={lotsOf(rows)} {unitPrice} {neurons} {neuroneUnit} {resource} {picked} faded={lacksFade} onpick={pickLot} />
       {:else}
       {#each rows as r, i (lotKey(r, i))}
         {@const key = lotKey(r, i)}
