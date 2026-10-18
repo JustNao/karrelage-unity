@@ -135,5 +135,5 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![status, module_call, capture_set, dev_inject])
         .run(tauri::generate_context!())
-        .expect("error while running Loutil");
+        .expect("error while running Karrelage");
 }

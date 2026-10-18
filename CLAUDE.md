@@ -1,4 +1,4 @@
-# Loutil – passive Dofus 3 packet reader
+# Karrelage – passive Dofus 3 packet reader
 
 ## Goal
 Read the messages the Dofus 3 (Unity / IL2CPP) client exchanges with Ankama's servers and present them usefully

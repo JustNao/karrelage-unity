@@ -2,7 +2,7 @@
 name = "loutil-app"
 version.workspace = true
 edition.workspace = true
-description = "Loutil: passive Dofus 3 packet reader"
+description = "Karrelage: passive Dofus 3 packet reader"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

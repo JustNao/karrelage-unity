@@ -24,7 +24,7 @@
 
 <div class="shell">
   <header>
-    <h1>Loutil</h1>
+    <h1>Karrelage</h1>
     <nav>
       {#each tabs as m (m.id)}
         <button class="tab" class:on={active?.id === m.id} onclick={() => (current = m.id)}>{m.title}</button>
@@ -43,7 +43,7 @@
   {/if}
   {#if s.npcapError}
     <div class="banner warn">
-      La capture nécessite <b>Npcap</b> ({s.npcapError}). Installez-le depuis <b>npcap.com</b>, puis relancez Loutil.
+      La capture nécessite <b>Npcap</b> ({s.npcapError}). Installez-le depuis <b>npcap.com</b>, puis relancez Karrelage.
     </div>
   {/if}
   {#if err}<div class="banner bad">{err}</div>{/if}

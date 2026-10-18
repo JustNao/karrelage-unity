@@ -85,7 +85,7 @@
   </div>
   {#if error}<div class="banner bad">{error}</div>{/if}
   {#if report && !report.canCompute}<div class="mut note">Le calcul n'est disponible que depuis le dépôt de développement (le dossier pipeline/ est introuvable).</div>{/if}
-  {#if finished === true}<div class="banner ok">Terminé : redémarrez Loutil pour charger le nouveau pack.</div>{/if}
+  {#if finished === true}<div class="banner ok">Terminé : redémarrez Karrelage pour charger le nouveau pack.</div>{/if}
   {#if finished === false}<div class="banner bad">Le calcul a échoué (voir le journal).</div>{/if}
 
   {#if report}

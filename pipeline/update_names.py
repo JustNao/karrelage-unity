@@ -5,7 +5,7 @@
                                                 # Il2CppInspectorRedux, protodec -> protos, build_protos, game data, match, export
 
 The game folder is only READ (two files are copied into work/dump_input); nothing there is ever modified.
-Restart Loutil afterwards so it loads the new datapack/.
+Restart Karrelage afterwards so it loads the new datapack/.
 """
 import os, pathlib, shutil, subprocess, sys, time
 
@@ -68,4 +68,4 @@ run([py, "pipeline/match_protos.py"])
 step("Export du pack de données")
 run([py, "pipeline/export_pack.py"])
 
-print("\nTERMINE : redémarrez Loutil pour charger le nouveau pack.", flush=True)
+print("\nTERMINE : redémarrez Karrelage pour charger le nouveau pack.", flush=True)

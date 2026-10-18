@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Loutil",
+  "productName": "Karrelage",
   "version": "0.1.0",
   "identifier": "fr.dofus.loutil.packets",
   "build": {
@@ -11,7 +11,7 @@
   },
   "app": {
     "windows": [
-      { "label": "main", "title": "Loutil", "width": 1280, "height": 800, "maximized": true, "minWidth": 720, "minHeight": 480 }
+      { "label": "main", "title": "Karrelage", "width": 1280, "height": 800, "maximized": true, "minWidth": 720, "minHeight": 480 }
     ],
     "security": {
       "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'"
