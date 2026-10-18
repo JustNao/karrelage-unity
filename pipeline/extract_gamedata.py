@@ -15,7 +15,7 @@ import UnityPy
 GAME = pathlib.Path(r"C:\Users\nao3n\AppData\Local\Ankama\Dofus-dofus3\Dofus_Data\StreamingAssets\Content")
 OUT = root / "work" / "gamedata"
 BUNDLES = OUT / "bundles"
-TABLES = ["items", "effects", "characteristics", "itemtypes", "itemsets", "itemsupertypes", "spells"]
+TABLES = ["items", "effects", "characteristics", "itemtypes", "itemsets", "itemsupertypes", "spells", "recipes"]
 UnityPy.config.FALLBACK_UNITY_VERSION = "6000.3.16f1"   # bundles ship with a stripped version; matches UnityPlayer.dll
 
 LEGENDARY_SPELL_TYPE = 339   # spells.typeId of the passives of legendary items
@@ -66,7 +66,12 @@ def main():
     types = {r["id"]: {k: r.get(k) for k in ("id", "nameId", "superTypeId", "categoryId")} for r in rows("itemtypes")}
     # legendary item passives (effect 1175 carries the spell id): only their names are needed
     spells = {r["id"]: {"id": r["id"], "nameId": r["nameId"]} for r in rows("spells") if r.get("typeId") == LEGENDARY_SPELL_TYPE and "nameId" in r}
-    for n, d in (("items", items), ("effects", effects), ("characteristics", chars), ("itemtypes", types), ("spells", spells)):
+    # crafting recipes: result item -> list of recipes, each a list of [ingredient gid, quantity]
+    recipes = {}
+    for r in rows("recipes"):
+        if "resultId" in r:
+            recipes.setdefault(r["resultId"], []).append([[i, q] for i, q in zip(r["ingredientIds"], r["quantities"])])
+    for n, d in (("items", items), ("effects", effects), ("characteristics", chars), ("itemtypes", types), ("spells", spells), ("recipes", recipes)):
         (OUT / f"{n}.json").write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
         print(n, len(d))
 

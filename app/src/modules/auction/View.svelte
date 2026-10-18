@@ -12,7 +12,8 @@
   import { LEVEL_EFFECT, isLegendary, levelOf, xpOfLevel } from "../../lib/companion";
   import { analyse, isGoodDeal } from "../../lib/density";
   import { FLAG_EFFECTS, norm, rangeLabel, sections, type EffectMeta } from "../../lib/effects";
-  import { targetKey, transcendance, type Rune, type StoredPrice } from "../../lib/transcend";
+  import { benefit, craftCost, type CraftLine, type Recipes } from "../../lib/craft";
+  import { AH_TAX, targetKey, transcendance, type Rune, type StoredPrice } from "../../lib/transcend";
 
   interface Filter { a: number; min: string | number; max: string | number }
 
@@ -46,6 +47,7 @@
   let focus = $state<string | null>(null); // transcended effect (targetKey) the candidates are limited to
   let runes = $state.raw<Rune[]>([]);
   let stored = new SvelteMap<number, StoredPrice>(); // stored prices (the rune prices feed the transcendance tab)
+  let recipes = $state.raw<Recipes>({ recipes: {}, names: {} });
   let allOpen = $state(false);
   let sortDir = $state(1);
 
@@ -84,6 +86,10 @@
     const v = r.prices.filter((p: any) => p.price > 0).map((p: any) => p.price / p.qty);
     return v.length ? Math.min(...v) : Infinity;
   };
+  /** Craft cost of the open item (recursive, from the stored prices) and what selling it would earn. */
+  const craft = $derived(item && !comp ? craftCost(item.gid, recipes, stored) : null);
+  const sale = $derived(item ? Math.min(Infinity, ...item.rows.map(unitPrice)) : Infinity);
+  const gain = $derived(craft?.cost != null && Number.isFinite(sale) ? benefit(sale, craft.cost) : null);
   const lotVal = (r: any, a: number) => Math.max(0, ...r.effects.filter((e: any) => e.action === a && e.status !== "removed").map((e: any) => e.hi ?? 0));
   const flist = (gid: number) => filters[gid] ?? [];
 
@@ -295,6 +301,7 @@
   onMount(() => {
     call<EffectMeta[]>("auction", "effects").then((e) => (picker = e));
     call<EffectMeta[]>("auction", "effect_meta").then((l) => (meta = Object.fromEntries(l.map((e) => [e.id, e]))));
+    call<Recipes>("auction", "recipes").then((r) => (recipes = r));
     call<Rune[]>("prices", "runes").then((l) => (runes = l));
     call<StoredPrice[]>("prices", "list").then((l) => l.forEach((p) => stored.set(p.gid, p)));
     call<any[]>("auction", "items").then((l) => {
@@ -352,6 +359,35 @@
         <button onclick={() => ((allOpen = !allOpen), openSet.clear())}>{allOpen ? "Tout replier" : "Tout déplier"}</button>
         {#if pin}<button class="on" onclick={() => (pin = null)} title="Arrêter de comparer les lots avec le lot épinglé">Désépingler {pin.item.name}</button>{/if}
       </div>
+      {#if craft}
+        <div class="craft">
+          <div class="crow">
+            <span>Craft <b>{craft.cost != null ? kamas(Math.round(craft.cost)) : "—"}</b></span>
+            {#if Number.isFinite(sale)}<span class="mut">Vente min {kamas(Math.round(sale))}</span>{/if}
+            {#if gain}
+              <span class={gain.profit >= 0 ? "gain" : "loss"} title="Après {AH_TAX * 100} % de taxe de vente : prix de vente − coût de craft">
+                Bénéfice <b>{gain.profit >= 0 ? "+" : "−"}{kamas(Math.abs(gain.profit))}</b> ({gain.pct >= 0 ? "+" : "−"}{Math.abs(gain.pct).toFixed(1)} %)
+              </span>
+            {/if}
+            {#if craft.missing.length}<span class="warn-t" title={craft.missing.join(", ")}>prix manquant : {craft.missing.slice(0, 3).join(", ")}{craft.missing.length > 3 ? "…" : ""}</span>{/if}
+          </div>
+          <details>
+            <summary class="mut">Ingrédients</summary>
+            {#snippet tree(lines: CraftLine[])}
+              <ul>
+                {#each lines as l}
+                  <li>
+                    {l.qty}× {l.name}
+                    <span class="mut">{l.unit != null ? kamas(Math.round(l.unit)) + " l'unité" + (l.how === "craft" ? " · crafté" : "") : "prix inconnu"}</span>
+                    {#if l.sub}{@render tree(l.sub)}{/if}
+                  </li>
+                {/each}
+              </ul>
+            {/snippet}
+            {@render tree(craft.lines)}
+          </details>
+        </div>
+      {/if}
       {#if points.length >= 3}
         <div class="graph"><DensityChart {points} selected={tab === "trans" && cand ? cand.id : picked} onselect={focusLot} /></div>
       {/if}
@@ -505,7 +541,15 @@
 <style>
   .view { flex: 1; min-height: 0; display: grid; }
   .ilist { overflow: auto; background: var(--panel); border-right: 1px solid var(--line); }
-  .deal-ico { color: var(--ok); font-size: 10px; vertical-align: middle; }
+  .deal-ico { display: inline-block; width: 8px; height: 8px; margin-left: 4px; border-radius: 50%; background: var(--ok); vertical-align: middle; position: relative; top: -1px; font-size: 0; }
+  .craft { padding: 4px 10px; font-family: system-ui, sans-serif; font-size: 13px; }
+  .craft .crow { display: flex; gap: 14px; flex-wrap: wrap; align-items: baseline; }
+  .craft .gain b, .craft .gain { color: var(--ok); }
+  .craft .loss b, .craft .loss { color: var(--bad); }
+  .craft .warn-t { color: var(--warn); }
+  .craft details { margin-top: 2px; font-size: 12px; }
+  .craft summary { cursor: pointer; }
+  .craft ul { margin: 2px 0; padding-left: 18px; }
   .ilist .sbar { display: flex; gap: 6px; padding: 6px 10px; cursor: default; position: sticky; top: 0; z-index: 2; background: var(--panel); }
   .sbar .danger { color: var(--bad); border-color: var(--bad); }
   .sbar input { flex: 1; min-width: 0; padding: 3px 6px; }

@@ -62,6 +62,7 @@ ids.update(v["nameId"] for v in types.values())
 spells = {k: {"nameId": v["nameId"]} for k, v in gd.spells.items()}
 ids.update(v["nameId"] for v in spells.values())
 dump("spells.json", spells)
+dump("recipes.json", {k: v for k, v in gd.recipes.items() if k in items})
 dump("items.json", items); dump("effects.json", effects); dump("itemtypes.json", types)
 
 for lang in ("fr", "en"):

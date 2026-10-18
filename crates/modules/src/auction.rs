@@ -262,6 +262,7 @@ impl Module for Auction {
         match method {
             "items" => Ok(Value::Array(self.store.lock().unwrap().values().cloned().collect())),
             "effects" => Ok(ctx.data.filterable_effects()),
+            "recipes" => Ok(ctx.data.recipes_json()),
             "effect_meta" => Ok(ctx.data.effect_meta()),
             "clear" => {
                 self.store.lock().unwrap().clear();

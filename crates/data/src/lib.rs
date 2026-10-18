@@ -90,6 +90,8 @@ pub struct Data {
     pub itemtypes: HashMap<i64, ItemType>,
     /// Legendary passives: spell id -> name string id (absent in older packs).
     pub spells: HashMap<i64, SpellRow>,
+    /// Crafting recipes: result gid -> recipes, each a list of (ingredient gid, quantity) (absent in older packs).
+    pub recipes: HashMap<i64, Vec<Vec<(i64, i64)>>>,
     pub strings: HashMap<i64, String>,
     /// Build-specific obfuscated names per role (bindings.json), see pipeline/bindings.json.
     pub bindings: Value,
@@ -123,6 +125,7 @@ impl Data {
             effects: read_map(dir, "effects.json")?,
             itemtypes,
             spells: read_map(dir, "spells.json").unwrap_or_default(),
+            recipes: read_map(dir, "recipes.json").unwrap_or_default(),
             equipment_effects,
             bindings: serde_json::from_slice(&std::fs::read(dir.join("bindings.json"))?)?,
             dir: dir.to_path_buf(),
@@ -138,6 +141,20 @@ impl Data {
 
     pub fn item_name(&self, gid: i64) -> String {
         self.items.get(&gid).and_then(|i| self.text(i.name_id)).map(str::to_owned).unwrap_or_else(|| format!("item#{gid}"))
+    }
+
+    /// Every craftable item's first recipe, with the names the UI needs: {recipes: {gid: [[ingredient, qty]]}, names: {gid: name}}.
+    pub fn recipes_json(&self) -> Value {
+        let mut recipes = serde_json::Map::new();
+        let mut names = serde_json::Map::new();
+        for (g, rs) in &self.recipes {
+            let Some(r) = rs.first() else { continue };
+            recipes.insert(g.to_string(), serde_json::json!(r));
+            for id in std::iter::once(g).chain(r.iter().map(|(i, _)| i)) {
+                names.entry(id.to_string()).or_insert_with(|| Value::String(self.item_name(*id)));
+            }
+        }
+        serde_json::json!({"recipes": recipes, "names": names})
     }
 
     pub fn is_companion(&self, gid: Option<i64>) -> bool {
