@@ -24,6 +24,10 @@ pub struct Effect {
     pub known: bool,
     pub hi: Option<i64>,
     pub str: Option<String>,
+    /// Classification from the data pack (see EffectRow); used by the UI to order effects.
+    pub group: String,
+    pub order: i64,
+    pub density: f64,
     /// "normal" | "added" | "above" | "removed"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<&'static str>,
@@ -70,12 +74,20 @@ impl Data {
         m
     }
 
+    fn tag(&self, e: &mut Effect) {
+        match self.effects.get(&e.action) {
+            Some(r) => (e.group, e.order, e.density) = (r.group.clone(), r.order, r.density),
+            None => (e.group, e.order, e.density) = ("other".into(), i64::MAX, 0.0),
+        }
+    }
+
     /// Annotate effects vs the item's default effects: added (not a default), above (over default max), normal; plus removed.
     pub fn compare_effects(&self, mut effs: Vec<Effect>, gid: Option<i64>) -> Vec<Effect> {
         let known_item = gid.map_or(false, |g| self.items.contains_key(&g));
         let defaults = self.default_ranges(gid);
         let mut present = std::collections::HashSet::new();
         for e in &mut effs {
+            self.tag(e);
             present.insert(e.action);
             let d = defaults.get(&e.action);
             let dmax = d.map(|d| d.iter().map(|x| x.1).max().unwrap());
@@ -100,7 +112,7 @@ impl Data {
             let (lo, hi) = (ds.iter().map(|x| x.0).min().unwrap(), ds.iter().map(|x| x.1).max().unwrap());
             let params: Vec<Value> = if hi != lo { vec![lo.into(), hi.into()] } else { vec![lo.into()] };
             let (text, _) = self.render_effect(*a, &params);
-            effs.push(Effect {
+            let mut removed = Effect {
                 action: *a,
                 text,
                 params: vec![lo.into(), hi.into()],
@@ -110,7 +122,12 @@ impl Data {
                 str: None,
                 status: Some("removed"),
                 range: Some([lo, hi]),
-            });
+                group: String::new(),
+                order: 0,
+                density: 0.0,
+            };
+            self.tag(&mut removed);
+            effs.push(removed);
         }
         effs
     }

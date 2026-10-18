@@ -157,6 +157,9 @@ fn parse_effect(data: &Data, b: &ObjectEffect, e: &DynamicMessage) -> Effect {
         str: raw.as_str().map(str::to_owned),
         raw: if raw.is_array() { Value::Null } else { raw },
         params,
+        group: String::new(),
+        order: 0,
+        density: 0.0,
         status: None,
         range: None,
     }
@@ -234,6 +237,7 @@ impl Module for Auction {
         match method {
             "items" => Ok(Value::Array(self.store.lock().unwrap().values().cloned().collect())),
             "effects" => Ok(ctx.data.filterable_effects()),
+            "effect_meta" => Ok(ctx.data.effect_meta()),
             "clear" => {
                 self.store.lock().unwrap().clear();
                 self.save(ctx);
@@ -251,6 +255,17 @@ mod tests {
     use loutil_core::RawMessage;
     use loutil_proto::Proto;
     use std::sync::Arc;
+
+    fn strip_keys(v: &mut Value, keys: &[&str]) {
+        match v {
+            Value::Object(m) => {
+                m.retain(|k, _| !keys.contains(&k.as_str()));
+                m.values_mut().for_each(|x| strip_keys(x, keys));
+            }
+            Value::Array(a) => a.iter_mut().for_each(|x| strip_keys(x, keys)),
+            _ => {}
+        }
+    }
 
     fn strip_nulls(v: &mut Value) {
         match v {
@@ -291,6 +306,7 @@ mod tests {
         let (_, pkt) = events.iter().find(|(n, _)| n == "packets:packet").expect("packet event");
         assert_eq!(pkt["name"], expected["name"]);
         let mut got = pkt["fmt"].clone();
+        strip_keys(&mut got, &["group", "order", "density"]); // added after the python reference was written
         let mut want = expected["fmt"].take();
         strip_nulls(&mut got);
         strip_nulls(&mut want);

@@ -84,33 +84,31 @@ impl Data {
         (!t.is_empty()).then(|| t.to_string())
     }
 
-    pub fn effect_group(&self, a: i64) -> &'static str {
-        let (Some(e), Some(lab)) = (self.effects.get(&a), self.effect_label(a)) else { return "other" };
-        if lab.starts_with('-') {
-            return "other";
-        }
-        let stat = e.use_dice != 0 && e.characteristic != 0;
-        if stat && lab.contains("Dommage") && !lab.contains("Résistance") && !lab.contains("Renvoy") {
-            "damage"
-        } else if stat && lab.contains('%') && lab.contains("Résistance") {
-            "resist"
-        } else {
-            "other"
-        }
+    /// {id, label, group, order, density} for one effect (None when it has no label).
+    pub fn effect_entry(&self, a: i64) -> Option<Value> {
+        let (e, label) = (self.effects.get(&a)?, self.effect_label(a)?);
+        Some(json!({"id": a, "label": label, "group": e.group, "order": e.order, "density": e.density}))
+    }
+
+    /// Every labelled effect, so the UI can group/label anything it meets in a lot.
+    pub fn effect_meta(&self) -> Value {
+        Value::Array(self.effects.keys().filter_map(|a| self.effect_entry(*a)).collect())
     }
 
     /// Effects that appear on equipment of levels 150-200 (see `Data::equipment_effects`), for the UI effect picker.
     pub fn filterable_effects(&self) -> Value {
-        let mut out: Vec<(String, Value)> = self
+        const GROUPS: [&str; 6] = ["stats", "main", "secondary", "damage", "resist", "other"];
+        let rank = |g: &str| GROUPS.iter().position(|x| *x == g).unwrap_or(GROUPS.len());
+        let mut out: Vec<(usize, i64, String, Value)> = self
             .equipment_effects
             .iter()
             .filter(|a| crate::items::info_key(**a).is_none() && **a != crate::items::LOCK_EFFECT)
             .filter_map(|a| {
-                let l = self.effect_label(*a)?;
-                Some((l.to_lowercase(), json!({"id": a, "label": l, "group": self.effect_group(*a)})))
+                let (e, v) = (self.effects.get(a)?, self.effect_entry(*a)?);
+                Some((rank(&e.group), e.order, v["label"].as_str()?.to_lowercase(), v))
             })
             .collect();
-        out.sort_by(|a, b| a.0.cmp(&b.0));
-        Value::Array(out.into_iter().map(|x| x.1).collect())
+        out.sort_by(|a, b| (a.0, a.1, &a.2).cmp(&(b.0, b.1, &b.2)));
+        Value::Array(out.into_iter().map(|x| x.3).collect())
     }
 }

@@ -38,6 +38,19 @@ pub struct EffectRow {
     pub description_id: i64,
     pub characteristic: i64,
     pub use_dice: i64,
+    /// stats | main | secondary | damage | resist | other (classified by pipeline/export_pack.py).
+    #[serde(default = "other_group")]
+    pub group: String,
+    /// Rank inside the group (the in-game characteristics panel order).
+    #[serde(default)]
+    pub order: i64,
+    /// effectPowerRate: rune weight per unit (AP 100, MP 90, vitality 0.2, ...). Kept for later features.
+    #[serde(default)]
+    pub density: f64,
+}
+
+fn other_group() -> String {
+    "other".into()
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -134,5 +147,14 @@ mod tests {
         assert!(listed.iter().all(|e| d.equipment_effects.contains(&e["id"].as_i64().unwrap())));
         // Force (118) is on every level-200 equipment piece
         assert!(listed.iter().any(|e| e["id"] == 118));
+        // classification + density (effectPowerRate) from the pack
+        assert_eq!((d.effects[&111].group.as_str(), d.effects[&111].density), ("main", 100.0)); // PA
+        assert_eq!((d.effects[&128].group.as_str(), d.effects[&128].density), ("main", 90.0)); // PM
+        assert_eq!(d.effects[&118].group, "stats");
+        assert_eq!(d.effects[&210].group, "resist");
+        assert_eq!(d.effects[&430].group, "damage");
+        assert_eq!(d.effects[&174].group, "secondary");
+        // the picker is ordered stats -> main -> secondary -> damage -> resist
+        assert_eq!(listed[0]["group"], "stats");
     }
 }
