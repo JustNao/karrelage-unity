@@ -161,7 +161,7 @@
 
 <style>
   /* off-screen lots are not laid out / painted (long listings scroll much lighter); "auto" remembers the real height once seen */
-  .card { content-visibility: auto; contain-intrinsic-size: auto 150px; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 0 0 8px; background: var(--bg); font-family: system-ui, sans-serif; }
+  .card { content-visibility: auto; contain-intrinsic-size: auto 150px; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 0 0 8px; background: var(--bg); font-family: var(--font); }
   .card.col { cursor: pointer; }
   h4 { margin: 0 0 2px; font-size: 13px; }
   .sub { color: var(--mut); font-size: 12px; }

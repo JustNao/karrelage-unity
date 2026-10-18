@@ -150,7 +150,7 @@
 </div>
 
 <style>
-  .view { flex: 1; min-height: 0; overflow: auto; padding: 12px; font-family: system-ui, sans-serif; font-size: 13px; }
+  .view { flex: 1; min-height: 0; overflow: auto; padding: 12px; font-family: var(--font); font-size: 13px; }
   .head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
   .head .fh { flex: 1; margin: 0; font-weight: 600; }
   .badge { padding: 2px 10px; border-radius: 10px; font-weight: 600; border: 1px solid; }

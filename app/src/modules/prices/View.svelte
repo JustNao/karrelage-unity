@@ -105,14 +105,14 @@
 </div>
 
 <style>
-  .view { flex: 1; min-height: 0; display: flex; flex-direction: column; font-family: system-ui, sans-serif; }
+  .view { flex: 1; min-height: 0; display: flex; flex-direction: column; font-family: var(--font); }
   .view > :global(.wrap) { flex: 1; }
   .head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
   .head .fh { margin: 0; flex: 1; }
   .head input { width: 200px; padding: 3px 6px; }
   .cat, .type { display: flex; width: 100%; align-items: center; gap: 6px; border: 0; border-radius: 0; text-align: left; background: none; color: inherit; }
-  .cat { font: 700 14px system-ui; padding: 8px 4px; border-bottom: 1px solid var(--line); margin-top: 8px; }
-  .type { font: 600 12px system-ui; padding: 5px 4px 5px 18px; }
+  .cat { font: 700 14px var(--font); padding: 8px 4px; border-bottom: 1px solid var(--line); margin-top: 8px; }
+  .type { font: 600 12px var(--font); padding: 5px 4px 5px 18px; }
   .chev { display: inline-block; transition: transform 0.2s; }
   .chev.shut { transform: rotate(-90deg); }
   /* fixed layout + the same widths in every table: the price columns line up across all item types */
