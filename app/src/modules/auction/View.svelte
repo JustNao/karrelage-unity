@@ -11,6 +11,7 @@
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
   import { LEVEL_EFFECT, isLegendary, levelOf, xpOfLevel } from "../../lib/companion";
   import { analyse, isGoodDeal } from "../../lib/density";
+  import { feeder, foodGids, levelBase } from "../../lib/familiar";
   import { FLAG_EFFECTS, norm, rangeLabel, sections, type EffectMeta } from "../../lib/effects";
   import { benefit, craftCost, type CraftLine, type Recipes } from "../../lib/craft";
   import { AH_TAX, targetKey, transcendance, type Rune, type StoredPrice } from "../../lib/transcend";
@@ -42,6 +43,7 @@
   const lacksFade = (r: any) => fade !== null && !r.effects.some((e: any) => e.action === fade && e.status !== "removed");
   const toggleFade = (a: number) => (fade = fade === a ? null : a);
   let tab = $state<"listing" | "trans">("listing");
+  let levelOpen = $state(true);
   let dealsOpen = $state(false); // "Good deals" starts collapsed
   let cand = $state<{ id: string | number; a: number; value: number } | null>(null); // selected candidate: its point + the lots with the same rune applied stand out
   let focus = $state<string | null>(null); // transcended effect (targetKey) the candidates are limited to
@@ -81,6 +83,32 @@
 
   /** Familier / montilier listing: tracked by level (price follows the xp curve), no stats / pin / transcendance. */
   const comp = $derived(!!item?.companion);
+
+  // ---- companions: cheapest way to reach a level, buying a lot and feeding it (resource prices = stored prices)
+  let foodIds = $state.raw<Record<string, number>>({});
+  let levelTarget = $state(100);
+  interface LevelOpt { row: any; level: number; price: number; feed: number; total: number; plan: ReturnType<ReturnType<typeof feeder>["plan"]> }
+  const levelling = $derived.by(() => {
+    if (!comp || !item) return null;
+    const f = feeder(foodIds, stored);
+    const target = Math.min(Math.max(Math.round(levelTarget) || 1, 1), 100);
+    const opts: LevelOpt[] = [];
+    let direct: { row: any; price: number } | null = null; // cheapest lot already at the target level
+    for (const row of item.rows) {
+      const level = levelOf(row);
+      const price = unitPrice(row);
+      if (level == null || !Number.isFinite(price)) continue;
+      if (level >= target) {
+        if (!direct || price < direct.price) direct = { row, price };
+        continue;
+      }
+      const plan = f.plan(levelBase(target) - levelBase(level));
+      if (plan) opts.push({ row, level, price, feed: plan.cost, total: price + plan.cost, plan });
+    }
+    opts.sort((a, b) => a.total - b.total);
+    const best = opts[0] ?? null;
+    return { target, direct, opts: opts.slice(0, 5), best, deal: !!best && (!direct || best.total < direct.price), saving: best && direct ? direct.price - best.total : null, priced: f.priced };
+  });
   const effLabel = (a: number) => meta[a]?.label ?? `effect ${a}`;
   const unitPrice = (r: any) => {
     const v = r.prices.filter((p: any) => p.price > 0).map((p: any) => p.price / p.qty);
@@ -302,6 +330,7 @@
     call<EffectMeta[]>("auction", "effects").then((e) => (picker = e));
     call<EffectMeta[]>("auction", "effect_meta").then((l) => (meta = Object.fromEntries(l.map((e) => [e.id, e]))));
     call<Recipes>("auction", "recipes").then((r) => (recipes = r));
+    foodGids().then((m) => (foodIds = m)).catch(() => {});
     call<Rune[]>("prices", "runes").then((l) => (runes = l));
     call<StoredPrice[]>("prices", "list").then((l) => l.forEach((p) => stored.set(p.gid, p)));
     call<any[]>("auction", "items").then((l) => {
@@ -454,6 +483,26 @@
           {/if}
         </div>
       {:else}
+      {#if comp && levelling && levelling.opts.length}
+        <div class="deals">
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <div class="dhead" role="button" tabindex="0" aria-expanded={levelOpen} onclick={() => (levelOpen = !levelOpen)}>
+            <span class="chev" class:shut={!levelOpen}>▾</span> Monter au niveau
+            <input class="lvt" type="number" min="1" max="100" bind:value={levelTarget} onclick={(e) => e.stopPropagation()} />
+            <span class="mut">· {#if levelling.deal}bonne affaire : {kamas(Math.round(levelling.best!.total))} en achetant le niveau {levelling.best!.level} et en le nourrissant{#if levelling.saving != null}, soit {kamas(Math.round(levelling.saving))} de moins que le niveau {levelling.target} le moins cher ({kamas(levelling.direct!.price)}){/if}{:else}acheter directement le niveau {levelling.target} ({kamas(levelling.direct!.price)}) reste le moins cher{/if}</span>
+          </div>
+          {#if levelOpen}
+            {#each levelling.opts as o, i (o.row.uid ?? i + "-" + o.price)}
+              {@const li = rows.indexOf(o.row)}
+              <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+              <div class="deal" title={li >= 0 ? "Cliquer pour aller au lot dans la liste" : ""} onclick={() => li >= 0 && focusLot(lotKey(o.row, li))}>
+                <div class="lvl"><b>{kamas(Math.round(o.total))}</b> <span class="mut">= niveau {o.level} à {kamas(o.price)} + {kamas(Math.round(o.feed))} de nourriture</span></div>
+                <div class="mut">{o.plan?.feeds.map((x) => `${x.meals} repas ${x.food} (${x.units} unité${x.units > 1 ? "s" : ""})`).join(" + ")}</div>
+              </div>
+            {/each}
+          {/if}
+        </div>
+      {/if}
       {#if deals.length}
         <div class="deals">
           <button class="dhead" aria-expanded={dealsOpen} onclick={() => (dealsOpen = !dealsOpen)}>
@@ -583,6 +632,8 @@
   .mini:disabled { opacity: 0.35; cursor: default; border-color: var(--line); }
   .graph { margin-bottom: 12px; }
   .head .on { border-color: var(--acc); color: var(--acc); }
+  .lvt { width: 56px; padding: 1px 4px; margin: 0 4px; }
+  .lvl { padding: 2px 0; }
   .deals { margin-bottom: 14px; padding: 8px 10px 2px; border: 1px solid color-mix(in srgb, var(--ok) 45%, var(--line)); border-radius: 10px; background: color-mix(in srgb, var(--ok) 5%, transparent); }
   .dhead { display: flex; gap: 6px; align-items: center; width: 100%; border: 0; background: none; font: 600 13px var(--font); color: var(--ok); margin-bottom: 8px; padding: 0; text-align: left; }
   .dhead .mut { font-weight: 400; }
