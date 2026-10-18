@@ -11,7 +11,7 @@
   const MOUNTS = table.mounts as [string, number, number][];
   const NEURONE = table.neurone;
 
-  /** Effect carried by senile lots only ("effect 3836: [0]"): a senile mount gives no neurons. */
+  /** Effect carried by senile lots only ("effect 3836: [0]"): a senile mount gives a single neuron whatever its generation. */
   const SENILE_EFFECT = 3836;
   const isSenile = (lot: any) => lot.effects.some((e: any) => e.action === SENILE_EFFECT && e.status !== "removed");
   const lotPrice = (lot: any) => {
@@ -21,12 +21,12 @@
   const MOUNT_NAMES = new Set(MOUNTS.map((m) => m[0]));
 
   type SortKey = "name" | "gen" | "neurons" | "buy" | "sale" | "profit" | "pct" | "good";
-  interface Row { gid: number; name: string; gen: number; neurons: number; buy: number | null; scanned: boolean; senile: number; good: number; sale: number | null; profit: number | null; pct: number | null }
+  interface Row { gid: number; name: string; gen: number; neurons: number; buy: number | null; scanned: boolean; bestSenile: boolean; good: number; goodSenile: number; sale: number | null; profit: number | null; pct: number | null }
 
   let gids = $state.raw<Record<string, number>>({});
   let stored = new SvelteMap<number, StoredPrice>();
-  /** Per scanned mount: unit prices of its non-senile lots and the number of senile ones (from the auction house scans). */
-  let scans = new SvelteMap<number, { fresh: number[]; senile: number }>();
+  /** Per scanned mount: its lots (unit price, senile or not), from the auction house scans. */
+  let scans = new SvelteMap<number, { price: number; senile: boolean }[]>();
   let q = $state("");
   let err = $state("");
   let onlyPriced = $state(false);
@@ -41,12 +41,16 @@
       const gid = gids[name];
       if (gid == null) return [];
       const sc = scans.get(gid);
-      // scanned: the cheapest lot that is not senile; otherwise the stored price (senility unknown)
-      const buy = sc ? (sc.fresh.length ? Math.min(...sc.fresh) : null) : storedPrice(stored, gid);
-      const sale = unit != null ? unit * neurons : null;
-      const b = buy != null && sale != null ? benefit(sale, buy) : null;
-      const good = sc && sale != null ? sc.fresh.filter((p) => benefit(sale, p).profit > 0).length : 0;
-      return [{ gid, name, gen, neurons, buy, scanned: !!sc, senile: sc?.senile ?? 0, good, sale, profit: b?.profit ?? null, pct: b?.pct ?? null }];
+      // a senile lot gives 1 neuron, otherwise `neurons` (= generation); scanned: the lot with the best profit, else the stored price (senility unknown, assumed not senile)
+      const gain = (n: number, price: number) => (unit != null ? benefit(unit * n, price) : null);
+      const lots = sc?.map((l) => ({ ...l, n: l.senile ? 1 : neurons, b: gain(l.senile ? 1 : neurons, l.price) }));
+      const best = lots?.reduce<(typeof lots)[number] | null>((m, l) => (!m || (l.b?.profit ?? -Infinity) > (m.b?.profit ?? -Infinity) || (!m.b && l.price < m.price) ? l : m), null);
+      const n = best?.n ?? neurons;
+      const buy = best ? best.price : sc ? null : storedPrice(stored, gid);
+      const sale = unit != null ? unit * n : null;
+      const bn = best ? best.b : buy != null ? gain(n, buy) : null;
+      const prof = lots?.filter((l) => (l.b?.profit ?? 0) > 0) ?? [];
+      return [{ gid, name, gen, neurons: n, buy, scanned: !!sc, bestSenile: !!best?.senile, good: prof.length, goodSenile: prof.filter((l) => l.senile).length, sale, profit: bn?.profit ?? null, pct: bn?.pct ?? null }];
     }),
   );
 
@@ -67,16 +71,12 @@
 
   const scan = (it: any) => {
     if (!MOUNT_NAMES.has(it.name)) return;
-    const fresh: number[] = [];
-    let senile = 0;
+    const lots: { price: number; senile: boolean }[] = [];
     for (const lot of it.rows) {
-      if (isSenile(lot)) senile++;
-      else {
-        const p = lotPrice(lot);
-        if (p != null) fresh.push(p);
-      }
+      const price = lotPrice(lot);
+      if (price != null) lots.push({ price, senile: isSenile(lot) });
     }
-    scans.set(it.gid, { fresh, senile });
+    scans.set(it.gid, lots);
   };
 
   const setSort = (k: SortKey) => {
@@ -97,13 +97,13 @@
 
 <div class="rv">
   <div class="head">
-    <div class="fh">Dragodindes <span class="mut">· prix d'achat = lot le moins cher <b>non sénile</b> vu à l'HDV (sinon prix enregistré, sénilité inconnue)</span></div>
+    <div class="fh">Dragodindes <span class="mut">· une dragodinde <b>sénile</b> ne donne qu'1 neurone ; le meilleur lot vu à l'HDV est retenu (sinon prix enregistré, sénilité inconnue)</span></div>
     <input type="search" placeholder="Rechercher une dragodinde…" bind:value={q} />
     <label><input type="checkbox" bind:checked={onlyPriced} /> Prix connus seulement</label>
   </div>
   <div class="sum">
     {#if unit == null}<span class="mut">Prix du {NEURONE.toLowerCase()} inconnu : ouvrez-le à l'hôtel de vente.</span>
-    {:else}{NEURONE} : <b>{kamas(unit)}</b> · {#if profitable}<b class="good">{profitable}</b> dragodinde{profitable > 1 ? "s" : ""} avec un lot non sénile rentable{:else}<span class="mut">aucun lot non sénile rentable pour l'instant</span>{/if}{/if}
+    {:else}{NEURONE} : <b>{kamas(unit)}</b> · {#if profitable}<b class="good">{profitable}</b> dragodinde{profitable > 1 ? "s" : ""} avec un lot rentable{:else}<span class="mut">aucun lot rentable pour l'instant</span>{/if}{/if}
   </div>
   {#if err}<div class="bad">Erreur : {err} (relancez l'application pour charger la dernière version)</div>{/if}
   <SmoothScroll>
@@ -125,12 +125,12 @@
           <tr class:hot={r.good > 0}>
             <td><b>{r.name}</b></td>
             <td class="n">{r.gen}</td>
-            <td class="n">{r.neurons}</td>
-            <td class="n" title={r.scanned ? "" : "Prix enregistré : sénilité inconnue, ouvrez la dragodinde à l'HDV"}>{r.buy != null ? kamas(r.buy) : r.scanned ? "sénile" : "—"}{#if !r.scanned && r.buy != null} <span class="mut">?</span>{/if}</td>
+            <td class="n">{r.neurons}{#if r.bestSenile} <span class="mut" title="Meilleur lot : dragodinde sénile">sénile</span>{/if}</td>
+            <td class="n" title={r.scanned ? "" : "Prix enregistré : sénilité inconnue, ouvrez la dragodinde à l'HDV"}>{r.buy != null ? kamas(r.buy) : "—"}{#if !r.scanned && r.buy != null} <span class="mut">?</span>{/if}</td>
             <td class="n">{r.sale != null ? kamas(r.sale) : "—"}</td>
             <td class="n" class:good={(r.profit ?? 0) > 0} class:bad={(r.profit ?? 0) < 0}>{r.profit != null ? sgn(r.profit) : "—"}</td>
             <td class="n" class:good={(r.pct ?? 0) > 0} class:bad={(r.pct ?? 0) < 0}><b>{r.pct != null ? (r.pct > 0 ? "+" : "") + r.pct.toFixed(1) + " %" : "—"}</b></td>
-            <td class="n" class:good={r.good > 0} title={r.senile ? `${r.senile} lot(s) sénile(s) ignoré(s)` : ""}>{#if r.scanned}<b>{r.good}</b>{#if r.senile} <span class="mut">(+{r.senile} sénile{r.senile > 1 ? "s" : ""})</span>{/if}{:else}—{/if}</td>
+            <td class="n" class:good={r.good > 0} >{#if r.scanned}<b>{r.good}</b>{#if r.goodSenile} <span class="mut">(dont {r.goodSenile} sénile{r.goodSenile > 1 ? "s" : ""})</span>{/if}{:else}—{/if}</td>
           </tr>
         {:else}
           <tr><td colspan="8" class="mut">Aucune dragodinde à afficher : ouvrez-les et le {NEURONE.toLowerCase()} à l'hôtel de vente pour enregistrer leurs prix (ou désactivez « Prix connus seulement »).</td></tr>
