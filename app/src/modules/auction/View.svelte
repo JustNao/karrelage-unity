@@ -250,6 +250,7 @@
   async function focusLot(id: string | number) {
     picked = id;
     openSet.add(id);
+    tab = "listing"; // from the Transcendance tab: switch so the lot is rendered
     await tick();
     document.getElementById(`lot-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
   }
