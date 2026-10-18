@@ -14,6 +14,14 @@ export const AH_TAX = 0.02;
 
 /** A lot whose effect was added by a rune: carries the transcendance lock and an effect the item does not have by default. */
 export const isTranscended = (r: any) => r.locked && r.effects.some((e: any) => e.status === "added");
+/**
+ * The lot's weapon hit was changed to another element (an exo, not a rune): the new hit is "added" in the weapon group.
+ * Such a lot cannot be reproduced with a plain lot + a rune (the damage would stay in the original element), so it is
+ * neither a source of rune targets nor comparable with an unlocked lot.
+ */
+export const elementChanged = (r: any) => r.effects.some((e: any) => e.group === "weapon" && e.status === "added");
+/** The effects a rune added (weapon hits added by an element change are not runes). */
+const runeEffects = (r: any) => r.effects.filter((e: any) => e.status === "added" && e.hi != null && e.group !== "weapon");
 /** Overmax (above the default max) lots cannot take a rune; neither can locked ones. */
 export const canTranscend = (r: any) => !r.locked && !r.effects.some((e: any) => e.status === "above" || e.status === "added");
 
@@ -61,10 +69,10 @@ export function transcendance(rows: any[], unit: (r: any) => number, runes: Rune
   };
 
   const targets = new Map<string, Target>();
-  for (const r of rows.filter(isTranscended)) {
+  for (const r of rows.filter((r) => isTranscended(r) && !elementChanged(r))) {
     const u = unit(r);
     if (!Number.isFinite(u)) continue;
-    for (const e of r.effects.filter((e: any) => e.status === "added" && e.hi != null)) {
+    for (const e of runeEffects(r)) {
       const k = `${e.action}:${e.hi}`;
       const t = targets.get(k);
       if (t) {
@@ -105,10 +113,10 @@ export function transcendance(rows: any[], unit: (r: any) => number, runes: Rune
   }
   /** For a transcended lot: the cheaper way to get a similar item (an unlocked lot + the rune), if any. */
   const alternative = (row: any) => {
-    if (!isTranscended(row)) return null;
+    if (!isTranscended(row) || elementChanged(row)) return null;
     const price = unit(row);
     let best: { cost: number; buy: number; runeCost: number; rune: Rune } | null = null;
-    for (const e of row.effects.filter((e: any) => e.status === "added" && e.hi != null)) {
+    for (const e of runeEffects(row)) {
       const m = make.get(`${e.action}:${e.hi}`);
       if (m && m.cost < price && (!best || m.cost < best.cost)) best = m;
     }
