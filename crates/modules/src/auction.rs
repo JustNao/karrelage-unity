@@ -184,13 +184,14 @@ fn format_ah_list(data: &Data, b: &Bindings, msg: &DynamicMessage) -> Value {
             .collect();
         let locked = effs.iter().any(|e| e.action == LOCK_EFFECT);
         let stats: Vec<Effect> = effs.into_iter().filter(|e| info_key(e.action).is_none() && e.action != LOCK_EFFECT).collect();
+        let density = (data.item_density(&stats) * 1000.0).round() / 1000.0;
         rows.push(json!({
             "uid": uid, "gid": gid, "ints": ints,
             "name": gid.map_or_else(|| "item#None".to_string(), |g| data.item_name(g)),
             "level": info.map(|i| i.level), "type": data.type_name(typ.or(info.map(|i| i.type_id))),
             "icon": info.map(|i| i.icon_id),
             "prices": prices.iter().enumerate().map(|(i, p)| json!({"qty": LOT_SIZES.get(i).copied().unwrap_or(i as i64), "price": p})).collect::<Vec<_>>(),
-            "meta": meta, "locked": locked,
+            "meta": meta, "locked": locked, "density": density,
             "effects": data.compare_effects(stats, gid),
         }));
     }

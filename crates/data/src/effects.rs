@@ -4,6 +4,9 @@ use regex::Regex;
 use serde_json::{json, Value};
 use std::sync::OnceLock;
 
+/// "Arme de chasse": the only effect of the "other" group kept in the filter.
+pub const HUNTING_WEAPON_EFFECT: i64 = 795;
+
 fn re(cell: &'static OnceLock<Regex>, p: &str) -> &'static Regex {
     cell.get_or_init(|| Regex::new(p).unwrap())
 }
@@ -84,10 +87,17 @@ impl Data {
         (!t.is_empty()).then(|| t.to_string())
     }
 
-    /// {id, label, group, order, density} for one effect (None when it has no label).
+    /// Whether the effect belongs in the item filter: no negative twins, and from the "other" group only the
+    /// hunting weapon mark (everything else there is flags, spell tweaks, titles...).
+    pub fn is_filterable(&self, a: i64) -> bool {
+        let (Some(e), Some(label)) = (self.effects.get(&a), self.effect_label(a)) else { return false };
+        !(e.density < 0.0 || label.starts_with('-')) && (e.group != "other" || a == HUNTING_WEAPON_EFFECT)
+    }
+
+    /// {id, label, group, order, density, filterable} for one effect (None when it has no label).
     pub fn effect_entry(&self, a: i64) -> Option<Value> {
         let (e, label) = (self.effects.get(&a)?, self.effect_label(a)?);
-        Some(json!({"id": a, "label": label, "group": e.group, "order": e.order, "density": e.density}))
+        Some(json!({"id": a, "label": label, "group": e.group, "order": e.order, "density": e.density, "filterable": self.is_filterable(a)}))
     }
 
     /// Every labelled effect, so the UI can group/label anything it meets in a lot.
@@ -97,12 +107,12 @@ impl Data {
 
     /// Effects that appear on equipment of levels 150-200 (see `Data::equipment_effects`), for the UI effect picker.
     pub fn filterable_effects(&self) -> Value {
-        const GROUPS: [&str; 6] = ["stats", "main", "secondary", "damage", "resist", "other"];
+        const GROUPS: [&str; 7] = ["weapon", "stats", "main", "secondary", "damage", "resist", "other"];
         let rank = |g: &str| GROUPS.iter().position(|x| *x == g).unwrap_or(GROUPS.len());
         let mut out: Vec<(usize, i64, String, Value)> = self
             .equipment_effects
             .iter()
-            .filter(|a| crate::items::info_key(**a).is_none() && **a != crate::items::LOCK_EFFECT)
+            .filter(|a| crate::items::info_key(**a).is_none() && **a != crate::items::LOCK_EFFECT && self.is_filterable(**a))
             .filter_map(|a| {
                 let (e, v) = (self.effects.get(a)?, self.effect_entry(*a)?);
                 Some((rank(&e.group), e.order, v["label"].as_str()?.to_lowercase(), v))

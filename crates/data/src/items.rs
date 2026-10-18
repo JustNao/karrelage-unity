@@ -132,6 +132,23 @@ impl Data {
         effs
     }
 
+    /// Value of an item instance: sum of (effect value x effect density). Densities are the game's effectPowerRate
+    /// (AP 100, MP 90, vitality 0.2, ...), and negative effects carry half of their positive twin's density, so
+    /// "5 vitalité" = 1.0 and "-10 vitalité" = -1.0. Ranges count as their mean; effects without a numeric value
+    /// (flags, titles) count for nothing.
+    pub fn item_density(&self, effs: &[Effect]) -> f64 {
+        effs.iter()
+            .filter_map(|e| {
+                let nums: Vec<f64> = e.params.iter().filter_map(Value::as_f64).collect();
+                let value = nums.iter().sum::<f64>() / nums.len().max(1) as f64;
+                if nums.is_empty() {
+                    return None;
+                }
+                Some(value * self.effects.get(&e.action)?.density)
+            })
+            .sum()
+    }
+
     /// Consolidated default effects of an item: [{a, min, max, label}] (info/lock effects excluded).
     pub fn defaults_for(&self, gid: Option<i64>) -> Vec<Value> {
         let mut out = vec![];
@@ -152,5 +169,31 @@ impl Data {
             }
         }
         out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn eff(action: i64, params: Vec<Value>) -> Effect {
+        Effect { action, text: String::new(), params, raw: Value::Null, known: true, hi: None, str: None, group: String::new(), order: 0, density: 0.0, status: None, range: None }
+    }
+
+    /// Needs the generated data pack; skipped otherwise.
+    #[test]
+    fn density_follows_effect_power_rate() {
+        let pack = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../datapack");
+        if !pack.join("manifest.json").exists() {
+            return;
+        }
+        let d = Data::load(&pack, "fr").unwrap();
+        let close = |a: f64, b: f64| assert!((a - b).abs() < 1e-3, "{a} vs {b}");
+        close(d.item_density(&[eff(125, vec![5.into()])]), 1.0); // 5 vitalité
+        close(d.item_density(&[eff(111, vec![1.into()]), eff(128, vec![1.into()])]), 190.0); // 1 PA + 1 PM
+        close(d.item_density(&[eff(153, vec![10.into()])]), -1.0); // -10 vitalité: half of the 2.0 it would add
+        close(d.item_density(&[eff(125, vec![5.into()]), eff(153, vec![10.into()])]), 0.0);
+        close(d.item_density(&[eff(100, vec![8.into(), 10.into()])]), 9.0); // 8 à 10 dommages Neutre: mean 9, rate 1
+        close(d.item_density(&[eff(981, vec![])]), 0.0); // flag without value
     }
 }

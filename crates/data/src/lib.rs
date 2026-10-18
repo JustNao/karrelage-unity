@@ -38,7 +38,7 @@ pub struct EffectRow {
     pub description_id: i64,
     pub characteristic: i64,
     pub use_dice: i64,
-    /// stats | main | secondary | damage | resist | other (classified by pipeline/export_pack.py).
+    /// weapon | stats | main | secondary | damage | resist | other (classified by pipeline/export_pack.py).
     #[serde(default = "other_group")]
     pub group: String,
     /// Rank inside the group (the in-game characteristics panel order).
@@ -154,7 +154,14 @@ mod tests {
         assert_eq!(d.effects[&210].group, "resist");
         assert_eq!(d.effects[&430].group, "damage");
         assert_eq!(d.effects[&174].group, "secondary");
+        // weapon hits live in their own group; negatives and most "other" effects are not filterable
+        assert_eq!(d.effects[&100].group, "weapon");
+        assert_eq!(d.effects[&95].group, "weapon"); // vole Neutre
+        assert!(d.is_filterable(100) && d.is_filterable(effects::HUNTING_WEAPON_EFFECT));
+        assert!(!d.is_filterable(101) && !d.is_filterable(157) && !d.is_filterable(168), "negatives"); // -PA hit, -Force, -PA
+        assert!(!d.is_filterable(281) && !d.is_filterable(981), "other group");
+        assert!(listed.iter().all(|e| e["filterable"] == true && !e["label"].as_str().unwrap().starts_with('-')));
         // the picker is ordered stats -> main -> secondary -> damage -> resist
-        assert_eq!(listed[0]["group"], "stats");
+        assert_eq!(listed[0]["group"], "weapon");
     }
 }
