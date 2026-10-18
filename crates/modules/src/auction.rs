@@ -218,6 +218,19 @@ impl Module for Auction {
                 if v.get("defaults").is_none() {
                     v["defaults"] = Value::Array(ctx.data.defaults_for(v["gid"].as_i64()));
                 }
+                // lots stored before densities existed: derive them from the stored effects
+                if let Some(rows) = v.get_mut("rows").and_then(Value::as_array_mut) {
+                    for r in rows.iter_mut().filter(|r| r.get("density").is_none()) {
+                        let sum: f64 = r["effects"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter(|e| e["status"] != "removed")
+                            .filter_map(|e| ctx.data.effect_density(e["action"].as_i64()?, e["params"].as_array()?))
+                            .sum();
+                        r["density"] = json!((sum * 1000.0).round() / 1000.0);
+                    }
+                }
                 s.insert(k, v);
             }
         }
@@ -277,6 +290,27 @@ mod tests {
             Value::Array(a) => a.iter_mut().for_each(strip_nulls),
             _ => {}
         }
+    }
+
+    #[test]
+    fn backfills_density_of_stored_lots() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let pack = root.join("datapack");
+        if !pack.join("manifest.json").exists() {
+            return;
+        }
+        let dir = std::env::temp_dir().join("loutil-backfill");
+        let _ = std::fs::remove_dir_all(&dir);
+        let store = json!({"1": {"gid": 1, "updated": 0, "rows": [{"effects": [
+            {"action": 125, "params": [5], "status": "normal"},
+            {"action": 118, "params": [10], "status": "removed"}, // default effect missing on the lot: not counted
+            {"action": 153, "params": [10], "status": "normal"}]}]}});
+        crate::save_json(&dir.join("auction/items.json"), &store).unwrap();
+        let data = Arc::new(Data::load(&pack, "fr").unwrap());
+        let proto = Arc::new(Proto::load(&pack, dir.join("o.json")).unwrap());
+        let hub = crate::Hub::new(data, proto, dir, Arc::new(|_, _| {}), Arc::new(|_| {}));
+        let items = hub.call("auction", "items", Value::Null).unwrap();
+        assert_eq!(items[0]["rows"][0]["density"], json!(0.0)); // +5 vitalité (1.0) and -10 vitalité (-1.0)
     }
 
     /// Golden test: the python formatter's output for the synthetic AH packet must equal ours.

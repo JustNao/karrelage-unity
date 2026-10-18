@@ -115,7 +115,9 @@
 
   /** Graph dots: price (per unit) against the lot's density. Same lots as the list, so every dot has a card. */
   const points = $derived(
-    rows.map((r: any, i: number) => ({ id: lotKey(r, i), x: unitPrice(r), y: r.density ?? 0, label: r.name })).filter((p: any) => Number.isFinite(p.x)),
+    rows
+      .map((r: any, i: number) => ({ id: lotKey(r, i), x: unitPrice(r), y: r.density, label: r.name }))
+      .filter((p: any) => Number.isFinite(p.x) && Number.isFinite(p.y)),
   );
 
   /** Clicking a dot: unroll the lot and scroll the list down to it (nothing is filtered out). */

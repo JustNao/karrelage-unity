@@ -137,16 +137,16 @@ impl Data {
     /// "5 vitalité" = 1.0 and "-10 vitalité" = -1.0. Ranges count as their mean; effects without a numeric value
     /// (flags, titles) count for nothing.
     pub fn item_density(&self, effs: &[Effect]) -> f64 {
-        effs.iter()
-            .filter_map(|e| {
-                let nums: Vec<f64> = e.params.iter().filter_map(Value::as_f64).collect();
-                let value = nums.iter().sum::<f64>() / nums.len().max(1) as f64;
-                if nums.is_empty() {
-                    return None;
-                }
-                Some(value * self.effects.get(&e.action)?.density)
-            })
-            .sum()
+        effs.iter().filter_map(|e| self.effect_density(e.action, &e.params)).sum()
+    }
+
+    /// Density of one effect instance (None when it has no numeric value or is unknown). See `item_density`.
+    pub fn effect_density(&self, action: i64, params: &[Value]) -> Option<f64> {
+        let nums: Vec<f64> = params.iter().filter_map(Value::as_f64).collect();
+        if nums.is_empty() {
+            return None;
+        }
+        Some(nums.iter().sum::<f64>() / nums.len() as f64 * self.effects.get(&action)?.density)
     }
 
     /// Consolidated default effects of an item: [{a, min, max, label}] (info/lock effects excluded).
