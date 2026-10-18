@@ -489,7 +489,7 @@
           <div class="dhead" role="button" tabindex="0" aria-expanded={levelOpen} onclick={() => (levelOpen = !levelOpen)}>
             <span class="chev" class:shut={!levelOpen}>▾</span> Monter au niveau
             <input class="lvt" type="number" min="1" max="100" bind:value={levelTarget} onclick={(e) => e.stopPropagation()} />
-            <span class="mut">· {#if levelOpen}bonne affaire : {kamas(Math.round(levelling.best!.total))} en achetant le niveau {levelling.best!.level} et en le nourrissant{#if levelling.saving != null}, soit {kamas(Math.round(levelling.saving))} de moins que le niveau {levelling.target} le moins cher ({kamas(levelling.direct!.price)}){/if}{:else}Plus rentable de partir du niveau {levelling.best!.level}{/if}</span>
+            <span class="mut">· Plus rentable de partir du niveau {levelling.best!.level}</span>
           </div>
           {#if levelOpen}
             {#each levelling.opts as o, i (o.row.uid ?? i + "-" + o.price)}
