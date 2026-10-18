@@ -107,7 +107,7 @@
     }
     opts.sort((a, b) => a.total - b.total);
     const best = opts[0] ?? null;
-    return { target, direct, opts: opts.slice(0, 5), best, deal: !!best && (!direct || best.total < direct.price), saving: best && direct ? direct.price - best.total : null, priced: f.priced };
+    return { target, direct, opts: opts.slice(0, 1), best, deal: !!best && (!direct || best.total < direct.price), saving: best && direct ? direct.price - best.total : null, priced: f.priced };
   });
   const effLabel = (a: number) => meta[a]?.label ?? `effect ${a}`;
   const unitPrice = (r: any) => {
@@ -483,13 +483,13 @@
           {/if}
         </div>
       {:else}
-      {#if comp && levelling && levelling.opts.length}
+      {#if comp && levelling && levelling.deal}
         <div class="deals">
           <!-- svelte-ignore a11y_click_events_have_key_events -->
           <div class="dhead" role="button" tabindex="0" aria-expanded={levelOpen} onclick={() => (levelOpen = !levelOpen)}>
             <span class="chev" class:shut={!levelOpen}>▾</span> Monter au niveau
             <input class="lvt" type="number" min="1" max="100" bind:value={levelTarget} onclick={(e) => e.stopPropagation()} />
-            <span class="mut">· {#if levelling.deal}bonne affaire : {kamas(Math.round(levelling.best!.total))} en achetant le niveau {levelling.best!.level} et en le nourrissant{#if levelling.saving != null}, soit {kamas(Math.round(levelling.saving))} de moins que le niveau {levelling.target} le moins cher ({kamas(levelling.direct!.price)}){/if}{:else}acheter directement le niveau {levelling.target} ({kamas(levelling.direct!.price)}) reste le moins cher{/if}</span>
+            <span class="mut">· bonne affaire : {kamas(Math.round(levelling.best!.total))} en achetant le niveau {levelling.best!.level} et en le nourrissant{#if levelling.saving != null}, soit {kamas(Math.round(levelling.saving))} de moins que le niveau {levelling.target} le moins cher ({kamas(levelling.direct!.price)}){/if}</span>
           </div>
           {#if levelOpen}
             {#each levelling.opts as o, i (o.row.uid ?? i + "-" + o.price)}
