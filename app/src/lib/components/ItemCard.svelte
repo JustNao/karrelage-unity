@@ -1,6 +1,6 @@
 <script lang="ts">
   import { kamas } from "../api";
-  import type { Chip } from "../compare";
+  import { fmtDelta, pairRows } from "../compare";
   import { isBelowMin, isNegative, isPerfectLine, perfection, sortEffects } from "../effects";
 
   /** One auction lot (see crates/modules/src/auction.rs for the shape). */
@@ -13,7 +13,7 @@
     onfade,
     pinned = false,
     onpin,
-    chips = null,
+    versus = null,
   }: {
     row: any;
     collapsible?: boolean;
@@ -23,8 +23,8 @@
     onfade?: (action: number) => void;
     pinned?: boolean;
     onpin?: () => void;
-    /** Differences against the pinned lot (null = no pin). */
-    chips?: Chip[] | null;
+    /** The pinned lot to compare with (null = no pin): its stats are mirrored on the right, differences in the middle. */
+    versus?: { pin: any; name: string; unitPrice: (r: any) => number } | null;
   } = $props();
 
   const effects = $derived(sortEffects<any>(row.effects)); // new first, then stats/main, damage, resistances, utility
@@ -32,22 +32,43 @@
   const shown = $derived(open ? effects : effects.filter((e: any) => e.status === "added" || e.status === "above"));
   // equipment is sold per unit: only show the lot sizes (x10, x100, x1000) that actually have a price
   const prices = $derived(row.prices.filter((p: any) => p.price > 0));
+  const pairs = $derived(versus ? pairRows(versus.pin, row) : []);
+  const myPrice = $derived(versus ? versus.unitPrice(row) : Infinity);
+  const pinPrice = $derived(versus ? versus.unitPrice(versus.pin) : Infinity);
+  const priceDelta = $derived(myPrice - pinPrice);
   const hint = (e: any) =>
     `effect ${e.action}` +
     (e.range ? ` · default ${e.range[0]}–${e.range[1]}` : "") +
     (e.status === "added" ? " · added (not a default effect)" : e.status === "above" ? " · above default max" : e.status === "removed" ? " · removed (default effect missing)" : "");
 </script>
 
+{#snippet line(e: any, mirror: boolean)}
+  {#if mirror}
+    {#if e.range && e.status !== "removed"}<small class="rg">[{e.range[0]}–{e.range[1]}]</small>{/if}{e.text}
+  {:else}
+    {e.text}{#if e.range && e.status !== "removed"}<small>[{e.range[0]}–{e.range[1]}]</small>{/if}
+  {/if}
+{/snippet}
+
+{#snippet highlight(e: any)}
+  {#if e.status === "added" && onfade}
+    <!-- stopPropagation: the card toggles / jumps on click, this button must not -->
+    <button class="fade" class:on={fade === e.action} title="Highlight the lots that have this effect: the others fade out (list, graph, good deals)" onclick={(ev) => (ev.stopPropagation(), onfade(e.action))}>
+      {fade === e.action ? "Show all" : "Highlight"}
+    </button>
+  {/if}
+{/snippet}
+
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div class="card" class:col={collapsible} onclick={() => collapsible && ontoggle?.()}>
   <h4>
     {#if collapsible}<span class="chev">{open ? "▾" : "▸"}</span>{/if}
     {row.name} <span class="mut">{row.level != null ? "niv. " + row.level : ""}</span>
-    <span class="flag" class:on={perfect.damage} title="All default damage effects at their max">★ Perfect damage</span>
-    <span class="flag" class:on={perfect.resist} title="All default resistances at their max">★ Perfect resistances</span>
     {#if onpin}
       <button class="pin" class:on={pinned} title="Compare every lot you look at with this one" onclick={(ev) => (ev.stopPropagation(), onpin())}>{pinned ? "Unpin" : "Pin item"}</button>
     {/if}
+    <span class="flag" class:on={perfect.damage} title="All default damage effects at their max">★ Perfect damage</span>
+    <span class="flag" class:on={perfect.resist} title="All default resistances at their max">★ Perfect resistances</span>
     <span class="flag" class:on={perfect.main} title="Main stats at max (within 3 for force/intelligence/agility/chance/wisdom, 10 for vitality)">★ Perfect main stats</span>
     {#if row.locked}<span class="shield" title="Empêche les futures forgemagies — cannot be modified anymore">🛡 Transcendance</span>{/if}
   </h4>
@@ -57,34 +78,54 @@
     {#if row.meta?.crafted_by} · fabriqué par {row.meta.crafted_by}{/if}
     {#if row.meta?.modified_by} · modifié par {row.meta.modified_by}{/if}
   </div>
-  {#if chips}
-    <div class="chips">
-      {#each chips as c}<span class="chip {c.tone}">{c.text}</span>{:else}<span class="chip same">Same as the pinned item</span>{/each}
-    </div>
-  {/if}
-  <div class="prices">
-    {#each prices as p (p.qty)}
-      <span class="pr">×{p.qty} <b>{kamas(p.price)} kamas</b></span>
-    {:else}
-      <span class="pr no">—</span>
-    {/each}
-  </div>
-  {#if shown.length}
-    <ul class="eff">
-      {#each shown as e}
-        <li class={e.status} class:unk={!e.known} class:perfect={isPerfectLine(e)} class:low={isBelowMin(e)} class:neg={isNegative(e)} title={hint(e)}>
-          {e.text}{#if e.range && e.status !== "removed"}<small>[{e.range[0]}–{e.range[1]}]</small>{/if}
-          {#if e.status === "added" && onfade}
-            <!-- stopPropagation: the card toggles / jumps on click, this button must not -->
-            <button class="fade" class:on={fade === e.action} title="Highlight the lots that have this effect: the others fade out (list, graph, good deals)" onclick={(ev) => (ev.stopPropagation(), onfade(e.action))}>
-              {fade === e.action ? "Show all" : "Highlight"}
-            </button>
+
+  {#if versus}
+    <div class="cmp">
+      <div class="hd">This lot</div>
+      <div class="hd"></div>
+      <div class="hd r">Pinned · {versus.name}</div>
+
+      <div class="l">{#if Number.isFinite(myPrice)}<span class="pr"><b>{kamas(myPrice)} kamas</b></span>{:else}<span class="pr no">—</span>{/if}</div>
+      <div class="d" class:up={priceDelta < 0} class:down={priceDelta > 0}>{Number.isFinite(priceDelta) ? fmtDelta(priceDelta) : ""}</div>
+      <div class="r">{#if Number.isFinite(pinPrice)}<span class="pr"><b>{kamas(pinPrice)} kamas</b></span>{:else}<span class="pr no">—</span>{/if}</div>
+
+      {#each pairs as p (p.key)}
+        <div class="l">
+          {#if p.left}
+            <span class="ln {p.left.status}" class:unk={!p.left.known} class:perfect={isPerfectLine(p.left)} class:low={isBelowMin(p.left)} class:neg={isNegative(p.left)} title={hint(p.left)}>
+              {@render line(p.left, false)}{@render highlight(p.left)}
+            </span>
           {/if}
-        </li>
+        </div>
+        <div class="d" class:up={p.delta > 0} class:down={p.delta < 0}>{fmtDelta(p.delta)}</div>
+        <div class="r">
+          {#if p.right}
+            <span class="ln {p.right.status}" class:unk={!p.right.known} class:perfect={isPerfectLine(p.right)} class:low={isBelowMin(p.right)} class:neg={isNegative(p.right)} title={hint(p.right)}>
+              {@render line(p.right, true)}
+            </span>
+          {/if}
+        </div>
       {/each}
-    </ul>
-  {:else if open}
-    <div class="none">no effects</div>
+    </div>
+  {:else}
+    <div class="prices">
+      {#each prices as p (p.qty)}
+        <span class="pr">×{p.qty} <b>{kamas(p.price)} kamas</b></span>
+      {:else}
+        <span class="pr no">—</span>
+      {/each}
+    </div>
+    {#if shown.length}
+      <ul class="eff">
+        {#each shown as e}
+          <li class="ln {e.status}" class:unk={!e.known} class:perfect={isPerfectLine(e)} class:low={isBelowMin(e)} class:neg={isNegative(e)} title={hint(e)}>
+            {@render line(e, false)}{@render highlight(e)}
+          </li>
+        {/each}
+      </ul>
+    {:else if open}
+      <div class="none">no effects</div>
+    {/if}
   {/if}
 </div>
 
@@ -99,23 +140,25 @@
   .pr b { color: var(--ok); }
   .pr.no { opacity: 0.4; }
   .eff { margin: 0; padding-left: 16px; }
-  .eff li.unk { color: var(--warn); }
-  .eff li.added { color: var(--acc); font-weight: 700; }
-  .eff li.above { color: var(--ok); font-weight: 700; }
-  .eff li.perfect { font-weight: 700; }
-  .eff li.low { color: #f08a3c; }
-  .eff li.neg { color: var(--bad); font-weight: 400; }
-  .eff li.removed { color: var(--mut); opacity: 0.55; }
+  .ln.unk { color: var(--warn); }
+  .ln.added { color: var(--acc); font-weight: 700; }
+  .ln.above { color: var(--ok); font-weight: 700; }
+  .ln.perfect { font-weight: 700; }
+  .ln.low { color: #f08a3c; }
+  .ln.neg { color: var(--bad); font-weight: 400; }
+  .ln.removed { color: var(--mut); opacity: 0.55; }
+  .ln small { font-weight: 400; color: var(--mut); margin-left: 6px; }
+  .ln small.rg { margin: 0 6px 0 0; }
+  .cmp { display: grid; grid-template-columns: 1fr auto 1fr; column-gap: 14px; row-gap: 2px; align-items: baseline; margin-top: 6px; }
+  .cmp .hd { color: var(--mut); font-size: 11px; }
+  .cmp .r { text-align: right; }
+  .cmp .d { text-align: center; min-width: 56px; font-size: 12px; font-weight: 600; color: var(--mut); font-variant-numeric: tabular-nums; }
+  .cmp .d.up { color: var(--ok); }
+  .cmp .d.down { color: var(--bad); }
   .pin { margin-left: 8px; padding: 0 8px; font-size: 11px; font-weight: 400; border-radius: 8px; }
   .pin.on { background: color-mix(in srgb, var(--acc) 25%, transparent); border-color: var(--acc); color: var(--acc); }
-  .chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 0; }
-  .chip { padding: 0 7px; border-radius: 8px; font-size: 11px; border: 1px solid var(--line); }
-  .chip.up { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
-  .chip.down { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); }
-  .chip.same { color: var(--mut); }
   .fade { margin-left: 10px; padding: 1px 11px; font-size: 12.5px; font-weight: 400; border-radius: 9px; }
   .fade.on { background: color-mix(in srgb, var(--acc) 25%, transparent); border-color: var(--acc); color: var(--acc); }
-  .eff li small { font-weight: 400; color: var(--mut); margin-left: 6px; }
   .none { color: var(--mut); font-size: 12px; }
   .flag { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 8px; background: transparent; color: var(--mut); opacity: 0.55; font-size: 11px; font-weight: 600; white-space: nowrap; }
   .flag.on { background: color-mix(in srgb, var(--ok) 20%, transparent); color: var(--ok); opacity: 1; }

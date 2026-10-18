@@ -7,7 +7,6 @@
   import EffectPicker from "../../lib/components/EffectPicker.svelte";
   import ItemCard from "../../lib/components/ItemCard.svelte";
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
-  import { diffAgainst } from "../../lib/compare";
   import { analyse, isGoodDeal } from "../../lib/density";
   import { sections, type EffectMeta } from "../../lib/effects";
 
@@ -28,15 +27,10 @@
   });
   // Pinned lot (kept across items): every other lot shown gets a diff against it.
   let pin = $state.raw<{ item: any; row: any } | null>(null);
-  /** stat id -> name of its positive effect ("Force"), to label differences. */
-  const statLabels = $derived.by(() => {
-    const m = new Map<number, string>();
-    for (const e of Object.values(meta)) if (e.stat !== undefined && !e.label.startsWith("-") && !m.has(e.stat)) m.set(e.stat, e.label);
-    return m;
-  });
   const isPin = (r: any) => !!pin && !!item && pin.item.gid === item.gid && pin.row.uid === r.uid;
   const togglePin = (r: any) => (pin = isPin(r) ? null : { item, row: r });
-  const chipsFor = (r: any) => (pin && !isPin(r) ? diffAgainst(pin.row, r, (s, fb) => statLabels.get(s) ?? fb, unitPrice) : null);
+  /** What a lot is compared with: the pinned lot (never shown against itself). */
+  const versusFor = (r: any) => (pin && !isPin(r) ? { pin: pin.row, name: pin.item.name, unitPrice } : null);
   const lacksFade = (r: any) => fade !== null && !r.effects.some((e: any) => e.action === fade && e.status !== "removed");
   const toggleFade = (a: number) => (fade = fade === a ? null : a);
   let allOpen = $state(false);
@@ -225,6 +219,7 @@
           Price <span class="arrow" class:desc={sortDir === -1}>↑</span>
         </button>
         <button onclick={() => ((allOpen = !allOpen), openSet.clear())}>{allOpen ? "Collapse all" : "Expand all"}</button>
+        {#if pin}<button class="on" onclick={() => (pin = null)} title="Stop comparing lots with the pinned lot">Unpin {pin.item.name}</button>{/if}
         <button onclick={forget}>Forget all items</button>
       </div>
       {#if points.length >= 3}
@@ -236,7 +231,7 @@
           {#each deals as d (d.key)}
             <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
             <div class="deal" class:faded={lacksFade(d.row)} title="Click to jump to the lot in the list" onclick={() => focusLot(d.key)}>
-              <ItemCard row={d.row} {fade} onfade={toggleFade} pinned={isPin(d.row)} onpin={() => togglePin(d.row)} chips={chipsFor(d.row)} />
+              <ItemCard row={d.row} {fade} onfade={toggleFade} pinned={isPin(d.row)} onpin={() => togglePin(d.row)} versus={versusFor(d.row)} />
             </div>
           {/each}
         </div>
@@ -244,7 +239,7 @@
       {#each rows as r, i (lotKey(r, i))}
         {@const key = lotKey(r, i)}
         <div id="lot-{key}" class="lot" class:picked={picked === key} class:faded={lacksFade(r)} animate:flip={{ duration: 320 }}>
-          <ItemCard row={r} collapsible open={allOpen || openSet.has(key)} ontoggle={() => toggleOpen(key)} {fade} onfade={toggleFade} pinned={isPin(r)} onpin={() => togglePin(r)} chips={chipsFor(r)} />
+          <ItemCard row={r} collapsible open={allOpen || openSet.has(key)} ontoggle={() => toggleOpen(key)} {fade} onfade={toggleFade} pinned={isPin(r)} onpin={() => togglePin(r)} versus={versusFor(r)} />
         </div>
       {:else}
         <div class="mut">No lot matches the filter</div>
@@ -253,12 +248,6 @@
   </SmoothScroll>
 
   <div class="filter">
-    {#if pin}
-      <div class="pinbox">
-        <div class="fh">Pinned <span class="mut">{pin.item.name} · every lot you look at is compared with it</span></div>
-        <ItemCard row={pin.row} pinned onpin={() => (pin = null)} />
-      </div>
-    {/if}
     {#if item}
       <div class="fh">Filter effects</div>
       <div class="btns">
@@ -306,7 +295,7 @@
   .mini { padding: 2px 7px; font-size: 11px; }
   .mini:disabled { opacity: 0.35; cursor: default; border-color: var(--line); }
   .graph { margin-bottom: 12px; }
-  .pinbox { margin-bottom: 14px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+  .head .on { border-color: var(--acc); color: var(--acc); }
   .deals { margin-bottom: 14px; padding: 8px 10px 2px; border: 1px solid color-mix(in srgb, var(--ok) 45%, var(--line)); border-radius: 10px; background: color-mix(in srgb, var(--ok) 5%, transparent); }
   .dhead { font: 600 13px system-ui; color: var(--ok); margin-bottom: 8px; }
   .dhead .mut { font-weight: 400; }
