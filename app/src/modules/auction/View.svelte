@@ -9,7 +9,7 @@
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
   import { analyse, isGoodDeal } from "../../lib/density";
   import { rangeLabel, sections, type EffectMeta } from "../../lib/effects";
-  import { AH_TAX, transcendance, type Rune, type StoredPrice } from "../../lib/transcend";
+  import { AH_TAX, targetKey, transcendance, type Rune, type StoredPrice } from "../../lib/transcend";
 
   interface Filter { a: number; min: string | number; max: string | number }
 
@@ -23,8 +23,9 @@
   let fade = $state<number | null>(null); // effect id: lots without it are faded out (list, graph, good deals)
 
   $effect(() => {
-    selGid; // another item: forget the fade
+    selGid; // another item: forget the fade and the rune focus
     fade = null;
+    focus = null;
   });
   // Pinned lot (kept across items): every other lot shown gets a diff against it.
   let pin = $state.raw<{ item: any; row: any } | null>(null);
@@ -36,6 +37,7 @@
   const toggleFade = (a: number) => (fade = fade === a ? null : a);
   let tab = $state<"listing" | "trans">("listing");
   let dealsOpen = $state(false); // "Good deals" starts collapsed
+  let focus = $state<string | null>(null); // transcended effect (targetKey) the candidates are limited to
   let runes = $state.raw<Rune[]>([]);
   let stored = new SvelteMap<number, StoredPrice>(); // stored prices (the rune prices feed the transcendance tab)
   let allOpen = $state(false);
@@ -179,7 +181,7 @@
       .slice(0, 6);
   });
 
-  const trans = $derived(transcendance(rows, unitPrice, runes, stored));
+  const trans = $derived(transcendance(rows, unitPrice, runes, stored, focus));
   const runeName = (n: string) => n;
 
   /** Clicking a dot: unroll the lot and scroll the list down to it (nothing is filtered out). */
@@ -278,23 +280,26 @@
             <div class="mut">No transcended lot of this item in the listing: nothing to compare with.</div>
           {:else}
             <div class="ghead">Transcended lots seen</div>
-            {#each trans.targets as t (`${t.a}:${t.value}`)}
-              <div class="trow">
+            {#each trans.targets as t (targetKey(t))}
+              <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+              <div class="trow" class:foc={focus === targetKey(t)} title="Click to show only candidates for this rune" onclick={() => (focus = focus === targetKey(t) ? null : targetKey(t))}>
                 <b>+{t.value} {effLabel(t.a)}</b>
                 <span class="mut">{t.lots} {t.lots === 1 ? "lot" : "lots"} · from {kamas(t.sale)} ·</span>
                 {#if !t.rune}<span class="warn">no matching rune</span>
                 {:else if t.runeCost == null}<span class="warn">{runeName(t.rune.name)}: price unknown, open it in the auction house</span>
-                {:else}<span class="mut">{runeName(t.rune.name)} {kamas(t.runeCost)}</span>{/if}
+                {:else}<span class="mut">{runeName(t.rune.name)} {kamas(t.runeCost)}</span>
+                  {#if t.stale}<span class="warn" title="Open the rune in the auction house to refresh its price">⚠ rune price older than a day</span>{/if}{/if}
               </div>
             {/each}
             {#if trans.unpricedCount}<div class="mut note">{trans.unpricedCount} candidate lots cannot be ranked until their rune has a stored price.</div>{/if}
-            <div class="ghead">Profitable candidates</div>
+            <div class="ghead">Profitable candidates{#if focus} <button class="mini" onclick={() => (focus = null)}>Show all runes ✕</button>{/if}</div>
             {#each trans.opportunities as o (o.row.uid ?? o.buy + "-" + o.row.density)}
               {@const t = o.best!.target}
               <div class="opp">
                 <div class="oh">
                   <b class="ok">+{kamas(o.best!.profit)}</b>
                   <span>add {t.rune?.name} (+{t.value} {effLabel(t.a)})</span>
+                  {#if t.stale}<span class="warn" title="Rune price older than a day">⚠ stale rune price</span>{/if}
                   <span class="mut">buy {kamas(o.buy)} · rune {kamas(t.runeCost ?? 0)} · sell ~{kamas(t.sale)} · density {o.z >= 0 ? "+" : ""}{o.z.toFixed(1)}σ</span>
                 </div>
                 <ItemCard row={o.row} collapsible open={openSet.has("t" + (o.row.uid ?? ""))} ontoggle={() => toggleOpen("t" + (o.row.uid ?? ""))} />
@@ -393,7 +398,9 @@
   .tabs { display: flex; gap: 6px; margin-bottom: 10px; }
   .tabs .on { border-color: var(--acc); color: var(--acc); }
   .trans .note { margin: 4px 0 8px; font-size: 12px; }
-  .trow { padding: 2px 0; font-size: 12px; }
+  .trow { padding: 3px 6px; font-size: 12px; cursor: pointer; border-radius: 6px; border: 1px solid transparent; }
+  .trow:hover { background: var(--bg); }
+  .trow.foc { border-color: var(--acc); }
   .warn { color: var(--warn, orange); }
   .opp { margin-bottom: 12px; }
   .oh { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; font-size: 12px; margin-bottom: 4px; }

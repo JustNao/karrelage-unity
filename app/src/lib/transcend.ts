@@ -2,7 +2,11 @@
 import { analyse } from "./density";
 
 export interface Rune { gid: number; name: string; a: number; value: number }
-export interface StoredPrice { gid: number; unit: number; override: number | null }
+export interface StoredPrice { gid: number; unit: number; override: number | null; updated: number }
+
+/** A captured rune price older than this is flagged (a manual override never is). */
+export const STALE_SECS = 24 * 3600;
+export const targetKey = (t: { a: number; value: number }) => `${t.a}:${t.value}`;
 
 /** Sale tax taken by the auction house on the selling price. */
 export const AH_TAX = 0.02;
@@ -20,6 +24,8 @@ export interface Target {
   lots: number;
   rune: Rune | null;
   runeCost: number | null;
+  /** Captured rune price older than a day. */
+  stale: boolean;
 }
 
 export interface Opportunity {
@@ -36,8 +42,12 @@ export interface Opportunity {
  * `unit` gives a lot's unit price. Targets = every (added effect, value) seen on the transcended lots of this listing.
  * Profit = sale * (1 - tax) - buy price - rune price.
  */
-export function transcendance(rows: any[], unit: (r: any) => number, runes: Rune[], prices: Map<number, StoredPrice>) {
+export function transcendance(rows: any[], unit: (r: any) => number, runes: Rune[], prices: Map<number, StoredPrice>, focus: string | null = null, now = Date.now() / 1000) {
   const runeFor = (a: number, v: number) => runes.find((r) => r.a === a && r.value === v) ?? null;
+  const isStale = (gid: number) => {
+    const p = prices.get(gid);
+    return !!p && p.override == null && now - p.updated > STALE_SECS;
+  };
   const price = (gid: number) => {
     const p = prices.get(gid);
     return p ? (p.override ?? p.unit) : null;
@@ -55,7 +65,7 @@ export function transcendance(rows: any[], unit: (r: any) => number, runes: Rune
         t.lots++;
       } else {
         const rune = runeFor(e.action, e.hi);
-        targets.set(k, { a: e.action, value: e.hi, sale: u, lots: 1, rune, runeCost: rune ? price(rune.gid) : null });
+        targets.set(k, { a: e.action, value: e.hi, sale: u, lots: 1, rune, runeCost: rune ? price(rune.gid) : null, stale: rune ? isStale(rune.gid) : false });
       }
     }
   }
@@ -68,6 +78,7 @@ export function transcendance(rows: any[], unit: (r: any) => number, runes: Rune
     let best: Opportunity["best"] = null;
     const unpriced: Target[] = [];
     for (const t of targets.values()) {
+      if (focus && targetKey(t) !== focus) continue;
       if (row.effects.some((e: any) => e.action === t.a && e.status !== "removed")) continue; // already has that effect
       if (t.runeCost == null) {
         unpriced.push(t);
