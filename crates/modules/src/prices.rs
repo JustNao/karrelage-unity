@@ -156,6 +156,18 @@ impl Module for Prices {
                 v.sort_by_key(|x| x["gid"].as_i64());
                 Ok(Value::Array(v))
             }
+            // Craftable runes (type 211 with a recipe: Ta / Pata / Rata): [{gid, name}]
+            "craft_runes" => {
+                let mut v: Vec<Value> = ctx
+                    .data
+                    .items
+                    .iter()
+                    .filter(|(g, i)| i.type_id == RUNE_TYPE && ctx.data.recipes.contains_key(g))
+                    .map(|(g, _)| json!({"gid": g, "name": ctx.data.item_name(*g)}))
+                    .collect();
+                v.sort_by_key(|x| x["gid"].as_i64());
+                Ok(Value::Array(v))
+            }
             // args: {gid, value: number | null}; null removes the override
             "set_override" => {
                 let gid = args["gid"].as_i64().ok_or_else(|| anyhow!("prices: gid required"))?;
