@@ -8,7 +8,7 @@
 
   const CATEGORIES = ["Équipement", "Ressource", "Consommable", "Autre"];
   let prices = new SvelteMap<number, Price>();
-  let shut = new SvelteSet<string>(); // collapsed "category" / "category/type" keys
+  let opened = new SvelteSet<string>(); // expanded "category" / "category/type" keys: everything starts collapsed
   let q = $state("");
 
   const tree = $derived.by(() => {
@@ -30,7 +30,9 @@
     }));
   });
 
-  const toggle = (k: string) => (shut.has(k) ? shut.delete(k) : shut.add(k));
+  /** Collapsed unless opened; while searching, matches are shown expanded. */
+  const isShut = (k: string) => !q.trim() && !opened.has(k);
+  const toggle = (k: string) => (opened.has(k) ? opened.delete(k) : opened.add(k));
   const stamp = (p: Price) => p.updated ?? p.avg_updated ?? 0;
   const latest = (items: Price[]) => Math.max(...items.map(stamp));
   /** The price used elsewhere: manual, else read in the auction house, else the weekly average. */
@@ -62,18 +64,19 @@
       <button onclick={forget}>Oublier tous les prix</button>
     </div>
     {#each tree as c (c.name)}
-      <button class="cat" aria-expanded={!shut.has(c.name)} onclick={() => toggle(c.name)}>
-        <span class="chev" class:shut={shut.has(c.name)}>▾</span> {c.name} <span class="mut">{c.count}</span>
+      <button class="cat" aria-expanded={!isShut(c.name)} onclick={() => toggle(c.name)}>
+        <span class="chev" class:shut={isShut(c.name)}>▾</span> {c.name} <span class="mut">{c.count}</span>
       </button>
-      {#if !shut.has(c.name)}
+      {#if !isShut(c.name)}
         {#each c.types as t (t.type)}
           {@const k = `${c.name}/${t.type}`}
-          <button class="type" aria-expanded={!shut.has(k)} onclick={() => toggle(k)}>
-            <span class="chev" class:shut={shut.has(k)}>▾</span> {t.type}
+          <button class="type" aria-expanded={!isShut(k)} onclick={() => toggle(k)}>
+            <span class="chev" class:shut={isShut(k)}>▾</span> {t.type}
             <span class="mut">{t.items.length} · mis à jour {ago(latest(t.items))}</span>
           </button>
-          {#if !shut.has(k)}
+          {#if !isShut(k)}
             <table>
+              <colgroup><col /><col class="c1" /><col class="c2" /><col class="c3" /><col class="c4" /><col class="c5" /></colgroup>
               <thead><tr><th>Objet</th><th class="n">Prix utilisé</th><th class="n">Relevé HDV / unité</th><th class="n">Moyenne 7 j</th><th>Dernier relevé</th><th class="n">Prix manuel (kamas)</th></tr></thead>
               <tbody>
                 {#each t.items as p (p.gid)}
@@ -112,7 +115,10 @@
   .type { font: 600 12px system-ui; padding: 5px 4px 5px 18px; }
   .chev { display: inline-block; transition: transform 0.2s; }
   .chev.shut { transform: rotate(-90deg); }
-  table { width: calc(100% - 22px); margin: 0 0 6px 22px; border-collapse: collapse; font-size: 12px; }
+  /* fixed layout + the same widths in every table: the price columns line up across all item types */
+  table { width: calc(100% - 22px); margin: 0 0 6px 22px; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
+  col.c1 { width: 190px; } col.c2 { width: 150px; } col.c3 { width: 150px; } col.c4 { width: 120px; } col.c5 { width: 190px; }
+  td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   th { text-align: left; font-weight: 400; color: var(--mut); padding: 2px 6px; }
   td { padding: 3px 6px; border-top: 1px solid var(--line); }
   .n { text-align: right; }
