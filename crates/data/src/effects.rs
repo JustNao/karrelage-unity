@@ -99,13 +99,13 @@ impl Data {
         }
     }
 
-    /// Stat-like effects (those that can appear on equipment) for the UI filter.
+    /// Effects that appear on equipment of levels 150-200 (see `Data::equipment_effects`), for the UI effect picker.
     pub fn filterable_effects(&self) -> Value {
         let mut out: Vec<(String, Value)> = self
-            .effects
+            .equipment_effects
             .iter()
-            .filter(|(_, e)| e.use_dice != 0 && e.characteristic != 0)
-            .filter_map(|(a, _)| {
+            .filter(|a| crate::items::info_key(**a).is_none() && **a != crate::items::LOCK_EFFECT)
+            .filter_map(|a| {
                 let l = self.effect_label(*a)?;
                 Some((l.to_lowercase(), json!({"id": a, "label": l, "group": self.effect_group(*a)})))
             })

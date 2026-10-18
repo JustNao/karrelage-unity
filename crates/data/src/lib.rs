@@ -44,7 +44,13 @@ pub struct EffectRow {
 #[serde(rename_all = "camelCase")]
 pub struct ItemType {
     pub name_id: i64,
+    /// 0 = equipment (weapons, rings, hats, pets, dofus, ...).
+    pub category_id: Option<i64>,
 }
+
+/// Item levels scanned to decide which effects are "equipment effects" (used by the effect picker).
+pub const EQUIPMENT_LEVELS: std::ops::RangeInclusive<i64> = 150..=200;
+const EQUIPMENT_CATEGORY: i64 = 0;
 
 pub struct Data {
     pub dir: PathBuf,
@@ -55,6 +61,8 @@ pub struct Data {
     pub strings: HashMap<i64, String>,
     /// Build-specific obfuscated names per role (bindings.json), see pipeline/bindings.json.
     pub bindings: Value,
+    /// Effect ids appearing in the default effects of equipment of levels EQUIPMENT_LEVELS.
+    pub equipment_effects: std::collections::HashSet<i64>,
     pub(crate) by_name_id: HashMap<i64, i64>,
 }
 
@@ -72,10 +80,17 @@ impl Data {
         let items: HashMap<i64, Item> = read_map(dir, "items.json")?;
         let strings = read_map::<String>(dir, &format!("strings.{lang}.json")).or_else(|_| read_map::<String>(dir, "strings.fr.json"))?;
         let by_name_id = items.iter().map(|(k, v)| (v.name_id, *k)).collect();
+        let itemtypes: HashMap<i64, ItemType> = read_map(dir, "itemtypes.json")?;
+        let equipment_effects = items
+            .values()
+            .filter(|i| EQUIPMENT_LEVELS.contains(&i.level) && itemtypes.get(&i.type_id).and_then(|t| t.category_id) == Some(EQUIPMENT_CATEGORY))
+            .flat_map(|i| i.effects.iter().map(|e| e.a))
+            .collect();
         Ok(Self {
             manifest: read_manifest(dir)?,
             effects: read_map(dir, "effects.json")?,
-            itemtypes: read_map(dir, "itemtypes.json")?,
+            itemtypes,
+            equipment_effects,
             bindings: serde_json::from_slice(&std::fs::read(dir.join("bindings.json"))?)?,
             dir: dir.to_path_buf(),
             items,
@@ -97,5 +112,27 @@ impl Data {
             Some(t) => self.itemtypes.get(&t).and_then(|t| self.text(t.name_id)).map(str::to_owned).unwrap_or_else(|| format!("type#{t}")),
             None => "type#None".into(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Needs the generated data pack (`python pipeline/export_pack.py`); skipped otherwise.
+    #[test]
+    fn effect_picker_only_lists_equipment_effects() {
+        let pack = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../datapack");
+        if !pack.join("manifest.json").exists() {
+            eprintln!("skipped: no datapack/");
+            return;
+        }
+        let d = Data::load(&pack, "fr").unwrap();
+        let listed = d.filterable_effects();
+        let listed = listed.as_array().unwrap();
+        assert!(!listed.is_empty() && listed.len() < d.effects.len() / 2, "{} of {}", listed.len(), d.effects.len());
+        assert!(listed.iter().all(|e| d.equipment_effects.contains(&e["id"].as_i64().unwrap())));
+        // Force (118) is on every level-200 equipment piece
+        assert!(listed.iter().any(|e| e["id"] == 118));
     }
 }
