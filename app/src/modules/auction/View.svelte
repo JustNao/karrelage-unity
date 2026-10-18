@@ -155,6 +155,16 @@
     if (selGid === null) selGid = i.gid;
   }
 
+  /** An item just captured from the game: show it (a refresh of the item already open keeps its scroll position). */
+  async function showNew(i: any) {
+    put(i);
+    if (selGid === i.gid) return;
+    selGid = i.gid;
+    picked = null;
+    await tick();
+    document.querySelector(".view .scroller")?.scrollTo({ top: 0 });
+  }
+
   onMount(() => {
     call<EffectMeta[]>("auction", "effects").then((e) => (picker = e));
     call<EffectMeta[]>("auction", "effect_meta").then((l) => (meta = Object.fromEntries(l.map((e) => [e.id, e]))));
@@ -163,7 +173,7 @@
       if (selGid === null && l.length) selGid = l[0].gid;
     });
     const offs = [
-      on("auction:item", put),
+      on("auction:item", showNew),
       on("auction:cleared", () => {
         items.clear();
         selGid = null;
