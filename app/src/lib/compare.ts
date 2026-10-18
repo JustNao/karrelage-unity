@@ -9,7 +9,7 @@ export interface Pair {
   delta: number;
   group: string;
   order: number;
-  /** 0 = added on the lot, 1 = normal, 2 = default effect missing on the lot. */
+  /** 0 = added (on either lot), 1 = normal, 2 = default effect missing on the lot. */
   phase: number;
 }
 
@@ -45,7 +45,7 @@ export function pairRows(pin: any, row: any): Pair[] {
         delta: sum(L.get(key)) - sum(R.get(key)),
         group: ref.group,
         order: ref.order ?? 0,
-        phase: left?.status === "added" ? 0 : left?.status === "removed" ? 2 : 1,
+        phase: left?.status === "added" || right?.status === "added" ? 0 : left?.status === "removed" ? 2 : 1,
       };
     })
     .sort((a, b) => a.phase - b.phase || groupRank(a.group) - groupRank(b.group) || a.order - b.order);
