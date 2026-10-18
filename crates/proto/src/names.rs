@@ -33,6 +33,14 @@ impl Names {
         self.merged = m;
     }
 
+    /// (obfuscated type, clear name, confidence) of every named message.
+    pub fn entries(&self) -> Vec<(String, String, Option<String>)> {
+        self.merged
+            .iter()
+            .filter_map(|(k, v)| Some((k.clone(), v.get("name")?.as_str()?.to_string(), v.get("conf").and_then(Value::as_str).map(str::to_owned))))
+            .collect()
+    }
+
     pub fn len(&self) -> usize {
         self.merged.len()
     }

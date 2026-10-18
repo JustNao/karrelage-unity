@@ -3,6 +3,7 @@
 //!
 //! Adding a feature = one file here implementing `Module` + registering it in `all()` + a UI folder under app/ui/src/modules.
 pub mod auction;
+pub mod names;
 pub mod packets;
 pub mod prices;
 
@@ -63,6 +64,11 @@ impl Ctx {
         (self.emit)(&format!("{module}:{event}"), payload);
     }
 
+    /// Owned handle to the event emitter, for background threads ("<module>:<event>" names).
+    pub fn emitter(&self) -> Arc<dyn Fn(&str, Value) + Send + Sync> {
+        self.emit.clone()
+    }
+
     pub fn log(&self, line: impl Into<String>) {
         (self.log)(line.into());
     }
@@ -92,7 +98,7 @@ pub trait Module: Send + Sync {
 
 /// Every module of the app. Register new ones here.
 pub fn all() -> Vec<Box<dyn Module>> {
-    vec![Box::new(packets::Packets::new()), Box::new(auction::Auction::new()), Box::new(prices::Prices::new())]
+    vec![Box::new(packets::Packets::new()), Box::new(auction::Auction::new()), Box::new(prices::Prices::new()), Box::new(names::NamesTab::new())]
 }
 
 pub struct Hub {

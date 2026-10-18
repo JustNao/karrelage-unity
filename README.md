@@ -101,6 +101,8 @@ python pipeline/extract_gamedata.py --refresh   # copies Content/Data + Content/
 python pipeline/export_pack.py              # -> datapack/
 python pipeline/make_fixtures.py            # only if the demo packet / formatter changed
 ```
+All of the above except step 1's copy can be run from the app: developer mode › **Noms** tab checks that the pack matches the installed game and has
+a *Calculer les noms* button (`pipeline/update_names.py`) and a *Tout régénérer depuis le jeu* button (`--from-game`: the whole chain). Restart afterwards.
 Name precedence: auto beta match < `pipeline/reference/message_names.json` < `work/overrides.json`.
 `pipeline/bindings.json` maps *roles* (AH list fields, effect fields, average prices…) to the build-specific obfuscated field names:
 it usually needs updating after a game update, app code never hard-codes obfuscated names.

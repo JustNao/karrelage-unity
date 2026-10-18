@@ -31,6 +31,16 @@ impl Proto {
         self.pool.get_message_by_name(type_name)
     }
 
+    /// Top-level messages known to the descriptor set.
+    pub fn message_count(&self) -> usize {
+        self.pool.all_messages().filter(|m| m.parent_message().is_none()).count()
+    }
+
+    /// (obfuscated type, clear name, confidence) of every named message.
+    pub fn named(&self) -> Vec<(String, String, Option<String>)> {
+        self.names.read().unwrap().entries()
+    }
+
     pub fn decode(&self, type_name: &str, bytes: &[u8]) -> Option<DynamicMessage> {
         DynamicMessage::decode(self.message(type_name)?, bytes).ok()
     }

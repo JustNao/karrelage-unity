@@ -66,6 +66,12 @@ for lang in ("fr", "en"):
         i = gd.I18n(f)
         dump(f"strings.{lang}.json", {str(n): s for n in sorted(ids) if (s := i.get(n))})
 
+# fingerprint of the game build the protos were dumped from (sizes of the copied files): the app compares it with the installed game
+fp = {}
+for key, name in (("assembly", "GameAssembly.dll"), ("metadata", "global-metadata.dat")):
+    f = root / "work" / "dump_input" / name
+    if f.exists():
+        fp[key] = f.stat().st_size
 dump("manifest.json", {"pack": 1, "generated": int(time.time()), "items": len(items), "effects": len(effects),
-                       "messages": len(schema.mapping())})
+                       "messages": len(schema.mapping()), "game": fp})
 print("datapack:", {p.name: p.stat().st_size for p in out.iterdir()})

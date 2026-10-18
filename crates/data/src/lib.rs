@@ -13,6 +13,15 @@ use std::path::{Path, PathBuf};
 pub struct Manifest {
     pub pack: u32,
     pub generated: u64,
+    /// Sizes of the game files the protos were dumped from (absent in older packs).
+    #[serde(default)]
+    pub game: Option<GameFingerprint>,
+}
+
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct GameFingerprint {
+    pub assembly: Option<u64>,
+    pub metadata: Option<u64>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
