@@ -14,12 +14,11 @@
 </script>
 
 <script lang="ts">
-  import { kamas } from "../api";
   import { analyse, isGoodDeal } from "../density";
 
   /**
    * Price (x) against density (y) of the lots of one item, with a least-squares trend line and a ±2σ band.
-   * Gold dots sit far above the line: more value than their price suggests (good deals). Blue = has an added effect,
+   * Green dots sit far above the line: more value than their price suggests (good deals). Blue = has an added effect,
    * orange = lacks some default effect.
    */
   let { points, selected = null, onselect }: { points: Point[]; selected?: string | number | null; onselect: (id: string | number) => void } = $props();
@@ -27,7 +26,6 @@
   const H = 220;
   const M = { l: 14, r: 14, t: 12, b: 26 };
   let W = $state(600);
-  let hover = $state<number | null>(null);
 
   const fit = $derived(analyse(points));
 
@@ -59,24 +57,17 @@
     return out;
   });
 
-  /** gold = good deal, else blue (added effect) / orange (missing effect), both = blue with an orange ring. */
-  type Tone = "gold" | "added" | "missing" | "both" | "mid";
+  /** green = good deal, else blue (added effect) / orange (missing effect), both = blue with an orange ring. */
+  type Tone = "good" | "added" | "missing" | "both" | "mid";
   const tone = (i: number): Tone => {
     const p = points[i];
-    return isGoodDeal(fit, i, points.length) ? "gold" : p.added ? (p.missing ? "both" : "added") : p.missing ? "missing" : "mid";
+    return isGoodDeal(fit, i, points.length) ? "good" : p.added ? (p.missing ? "both" : "added") : p.missing ? "missing" : "mid";
   };
-  const info = $derived(hover === null ? null : { p: points[hover], tone: tone(hover) });
-  const tag: Record<Tone, string> = { gold: "good deal", added: "extra effect", missing: "missing effect", both: "extra and missing effects", mid: "" };
 </script>
 
 <div class="chart" bind:clientWidth={W}>
-  <div class="status">
-    {#if info}
-      <b>{info.p.label}</b> · {kamas(info.p.x)} kamas{#if tag[info.tone]} · <span class="t-{info.tone}">{tag[info.tone]}</span>{/if}
-    {:else}
-      <span class="mut">Price → · above the line = more value than its price suggests · click a dot to jump to the lot</span>
-      <span class="legend"><i class="d gold"></i>Good deal <i class="d added"></i>Added effect <i class="d missing"></i>Missing effect</span>
-    {/if}
+  <div class="legend">
+    <span><i class="d good"></i>Good deal</span><span><i class="d added"></i>Added effect</span><span><i class="d missing"></i>Missing effect</span>
   </div>
   <svg width={W} height={H} role="img" aria-label="Density against price">
     <path d={band} class="band" />
@@ -89,9 +80,9 @@
     {#each points as p, i (p.id)}
       {@const t = tone(i)}
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-      <g class="dot {t}" class:sel={selected === p.id} onclick={() => onselect(p.id)} onmouseenter={() => (hover = i)} onmouseleave={() => (hover = null)}>
+      <g class="dot {t}" class:sel={selected === p.id} onclick={() => onselect(p.id)}>
         <circle cx={sx(p.x)} cy={sy(p.y)} r="11" class="hit" />
-        <circle cx={sx(p.x)} cy={sy(p.y)} r={t === "gold" ? 6.5 : 4.5} class="pt" />
+        <circle cx={sx(p.x)} cy={sy(p.y)} r={t === "good" ? 6.5 : 4.5} class="pt" />
         {#if selected === p.id}<circle cx={sx(p.x)} cy={sy(p.y)} r="10" class="ring" />{/if}
       </g>
     {/each}
@@ -100,7 +91,7 @@
 
 <style>
   .chart { width: 100%; font-family: system-ui, sans-serif; }
-  .status { min-height: 20px; font-size: 12px; margin-bottom: 4px; }
+  .legend { display: flex; gap: 14px; min-height: 20px; font-size: 12px; margin-bottom: 4px; color: var(--mut); }
   svg { display: block; background: #0a0b0e; border: 1px solid #2a2e38; border-radius: 8px; }
   .band { fill: color-mix(in srgb, var(--acc) 9%, transparent); }
   .trend { stroke: var(--acc); stroke-width: 1.5; stroke-dasharray: 5 4; fill: none; opacity: 0.85; }
@@ -110,18 +101,14 @@
   .hit { fill: transparent; }
   .pt { transition: r 0.12s; stroke: #0a0b0e; stroke-width: 1; }
   .dot:hover .pt { r: 7; }
-  .gold .pt { fill: #f2c94c; }
+  .good .pt { fill: var(--ok); }
   .added .pt, .both .pt { fill: #4a9eff; }
   .missing .pt { fill: #f08a3c; }
   .both .pt { stroke: #f08a3c; stroke-width: 2; }
   .mid .pt { fill: #8a91a0; }
   .ring { fill: none; stroke: #fff; stroke-width: 1.5; }
-  .t-gold { color: #f2c94c; }
-  .t-added, .t-both { color: #4a9eff; }
-  .t-missing { color: #f08a3c; }
-  .legend { margin-left: 10px; color: var(--mut); white-space: nowrap; }
-  .d { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin: 0 4px 0 8px; background: #8a91a0; }
-  .d.gold { background: #f2c94c; }
+  .d { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin: 0 5px 0 0; background: #8a91a0; }
+  .d.good { background: var(--ok); }
   .d.added { background: #4a9eff; }
   .d.missing { background: #f08a3c; }
   .mut { color: var(--mut); }

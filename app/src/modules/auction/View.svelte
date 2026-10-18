@@ -128,7 +128,7 @@
       .filter((p: any) => Number.isFinite(p.x) && Number.isFinite(p.y)),
   );
 
-  /** Lots far above the price trend (same rule as the gold dots), best first. */
+  /** Lots far above the price trend (same rule as the green dots), best first. */
   const deals = $derived.by(() => {
     if (points.length === 0) return [];
     const fit = analyse(points);
@@ -267,8 +267,8 @@
   .mini { padding: 2px 7px; font-size: 11px; }
   .mini:disabled { opacity: 0.35; cursor: default; border-color: var(--line); }
   .graph { margin-bottom: 12px; }
-  .deals { margin-bottom: 14px; padding: 8px 10px 2px; border: 1px solid color-mix(in srgb, #f2c94c 45%, var(--line)); border-radius: 10px; background: color-mix(in srgb, #f2c94c 5%, transparent); }
-  .dhead { font: 600 13px system-ui; color: #f2c94c; margin-bottom: 8px; }
+  .deals { margin-bottom: 14px; padding: 8px 10px 2px; border: 1px solid color-mix(in srgb, var(--ok) 45%, var(--line)); border-radius: 10px; background: color-mix(in srgb, var(--ok) 5%, transparent); }
+  .dhead { font: 600 13px system-ui; color: var(--ok); margin-bottom: 8px; }
   .dhead .mut { font-weight: 400; }
   .deal { cursor: pointer; }
   .lot.picked :global(.card) { border-color: var(--acc); animation: pulse 1.6s ease-out; }
