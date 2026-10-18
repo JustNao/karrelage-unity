@@ -130,7 +130,7 @@ fn spawn_pipeline(root: PathBuf, full: bool, emit: Arc<dyn Fn(&str, Value) + Sen
         if full {
             cmd.arg("--from-game");
         }
-        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+        cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;

@@ -30,7 +30,7 @@ def step(title):
 def run(cmd, extra_env=None):
     print("$ " + " ".join(str(c) for c in cmd), flush=True)
     t = time.time()
-    r = subprocess.run([str(c) for c in cmd], cwd=root, env={**env, **(extra_env or {})})
+    r = subprocess.run([str(c) for c in cmd], cwd=root, env={**env, **(extra_env or {})}, stdin=subprocess.DEVNULL)  # no stdin: some tools wait for a keypress when done
     if r.returncode:
         print(f"ECHEC (code {r.returncode})", flush=True)
         sys.exit(r.returncode)
