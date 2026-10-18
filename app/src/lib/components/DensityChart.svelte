@@ -10,6 +10,8 @@
     added?: boolean;
     /** The lot lacks some default effect. */
     missing?: boolean;
+    /** Drawn faded (the lot lacks the effect being looked at). */
+    faded?: boolean;
   }
 </script>
 
@@ -80,7 +82,7 @@
     {#each points as p, i (p.id)}
       {@const t = tone(i)}
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-      <g class="dot {t}" class:sel={selected === p.id} onclick={() => onselect(p.id)}>
+      <g class="dot {t}" class:faded={p.faded} class:sel={selected === p.id} onclick={() => onselect(p.id)}>
         <circle cx={sx(p.x)} cy={sy(p.y)} r="11" class="hit" />
         <circle cx={sx(p.x)} cy={sy(p.y)} r={t === "good" ? 6.5 : 4.5} class="pt" />
         {#if selected === p.id}<circle cx={sx(p.x)} cy={sy(p.y)} r="10" class="ring" />{/if}
@@ -97,7 +99,8 @@
   .trend { stroke: var(--acc); stroke-width: 1.5; stroke-dasharray: 5 4; fill: none; opacity: 0.85; }
   .axis { stroke: #3a3f4b; stroke-width: 1; }
   .tick { fill: var(--mut); font-size: 10px; text-anchor: middle; }
-  .dot { cursor: pointer; }
+  .dot { cursor: pointer; transition: opacity 0.25s; }
+  .dot.faded { opacity: 0.14; }
   .hit { fill: transparent; }
   .pt { transition: r 0.12s; stroke: #0a0b0e; stroke-width: 1; }
   .dot:hover .pt { r: 7; }

@@ -3,7 +3,14 @@
   import { isBelowMin, isNegative, isPerfectLine, perfection, sortEffects } from "../effects";
 
   /** One auction lot (see crates/modules/src/auction.rs for the shape). */
-  let { row, collapsible = false, open = true, ontoggle }: { row: any; collapsible?: boolean; open?: boolean; ontoggle?: () => void } = $props();
+  let {
+    row,
+    collapsible = false,
+    open = true,
+    ontoggle,
+    fade = null,
+    onfade,
+  }: { row: any; collapsible?: boolean; open?: boolean; ontoggle?: () => void; fade?: number | null; onfade?: (action: number) => void } = $props();
 
   const effects = $derived(sortEffects<any>(row.effects)); // new first, then stats/main, damage, resistances, utility
   const perfect = $derived(perfection(row.effects));
@@ -44,6 +51,12 @@
       {#each shown as e}
         <li class={e.status} class:unk={!e.known} class:perfect={isPerfectLine(e)} class:low={isBelowMin(e)} class:neg={isNegative(e)} title={hint(e)}>
           {e.text}{#if e.range && e.status !== "removed"}<small>[{e.range[0]}–{e.range[1]}]</small>{/if}
+          {#if e.status === "added" && onfade}
+            <!-- stopPropagation: the card toggles / jumps on click, this button must not -->
+            <button class="fade" class:on={fade === e.action} title="Fade out the lots that do not have this effect (list and graph)" onclick={(ev) => (ev.stopPropagation(), onfade(e.action))}>
+              {fade === e.action ? "Show all" : "Fade others"}
+            </button>
+          {/if}
         </li>
       {/each}
     </ul>
@@ -70,6 +83,8 @@
   .eff li.low { color: #f08a3c; }
   .eff li.neg { color: var(--bad); font-weight: 400; }
   .eff li.removed { color: var(--mut); opacity: 0.55; }
+  .fade { margin-left: 8px; padding: 0 7px; font-size: 11px; font-weight: 400; border-radius: 8px; }
+  .fade.on { background: color-mix(in srgb, var(--acc) 25%, transparent); border-color: var(--acc); color: var(--acc); }
   .eff li small { font-weight: 400; color: var(--mut); margin-left: 6px; }
   .none { color: var(--mut); font-size: 12px; }
   .flag { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 8px; background: transparent; color: var(--mut); opacity: 0.55; font-size: 11px; font-weight: 600; white-space: nowrap; }

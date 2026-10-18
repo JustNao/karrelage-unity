@@ -19,6 +19,14 @@
   let filters = $state<Record<number, Filter[]>>({}); // gid -> filters
   let openSet = new SvelteSet<string | number>(); // lot keys
   let picked = $state<string | number | null>(null); // lot chosen from the graph
+  let fade = $state<number | null>(null); // effect id: lots without it are faded out (list, graph, good deals)
+
+  $effect(() => {
+    selGid; // another item: forget the fade
+    fade = null;
+  });
+  const lacksFade = (r: any) => fade !== null && !r.effects.some((e: any) => e.action === fade && e.status !== "removed");
+  const toggleFade = (a: number) => (fade = fade === a ? null : a);
   let allOpen = $state(false);
   let sortDir = $state(1);
 
@@ -124,6 +132,7 @@
         label: r.name,
         added: r.effects.some((e: any) => e.status === "added"),
         missing: r.effects.some((e: any) => e.status === "removed"),
+        faded: lacksFade(r),
       }))
       .filter((p: any) => Number.isFinite(p.x) && Number.isFinite(p.y)),
   );
@@ -214,14 +223,16 @@
           <div class="dhead">Good deals <span class="mut">· {deals.length} {deals.length === 1 ? "lot stands" : "lots stand"} out above the price trend</span></div>
           {#each deals as d (d.key)}
             <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-            <div class="deal" title="Click to jump to the lot in the list" onclick={() => focusLot(d.key)}><ItemCard row={d.row} /></div>
+            <div class="deal" class:faded={lacksFade(d.row)} title="Click to jump to the lot in the list" onclick={() => focusLot(d.key)}>
+              <ItemCard row={d.row} {fade} onfade={toggleFade} />
+            </div>
           {/each}
         </div>
       {/if}
       {#each rows as r, i (lotKey(r, i))}
         {@const key = lotKey(r, i)}
-        <div id="lot-{key}" class="lot" class:picked={picked === key} animate:flip={{ duration: 320 }}>
-          <ItemCard row={r} collapsible open={allOpen || openSet.has(key)} ontoggle={() => toggleOpen(key)} />
+        <div id="lot-{key}" class="lot" class:picked={picked === key} class:faded={lacksFade(r)} animate:flip={{ duration: 320 }}>
+          <ItemCard row={r} collapsible open={allOpen || openSet.has(key)} ontoggle={() => toggleOpen(key)} {fade} onfade={toggleFade} />
         </div>
       {:else}
         <div class="mut">No lot matches the filter</div>
@@ -281,6 +292,8 @@
   .dhead { font: 600 13px system-ui; color: var(--ok); margin-bottom: 8px; }
   .dhead .mut { font-weight: 400; }
   .deal { cursor: pointer; }
+  .deal, .lot { transition: opacity 0.25s; }
+  .deal.faded, .lot.faded { opacity: 0.2; }
   .lot.picked :global(.card) { border-color: var(--acc); animation: pulse 1.6s ease-out; }
   @keyframes pulse { from { box-shadow: 0 0 0 0 color-mix(in srgb, var(--acc) 70%, transparent); } to { box-shadow: 0 0 0 14px transparent; } }
   .btns { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
