@@ -39,7 +39,9 @@ const r = (stat: number, label: string, icon: string): StatRow => ({ stat, label
 /** Characteristic ids (game `characteristics` table) shown in each panel; icon = Dofusbook element code. */
 export const PANELS = {
   main: [r(1, "PA", "pa"), r(23, "PM", "pm"), r(19, "PO", "po"), r(48, "Prospection", "pp"), r(44, "Initiative", "ii"), r(18, "Critique", "cc"), r(26, "Invocations", "ic"), r(49, "Soin", "so")],
-  carac: [r(11, "Vitalité", "vi"), r(12, "Sagesse", "sa"), r(10, "Force", "fo"), r(15, "Intelligence", "in"), r(13, "Chance", "ch"), r(14, "Agilité", "ag"), r(25, "Puissance", "pu")],
+  /** Vitality: not listed (the PdV row stands for it), kept so its effects stay known and labelled. */
+  hp: [r(11, "Vitalité", "vi")],
+  carac: [r(12, "Sagesse", "sa"), r(10, "Force", "fo"), r(15, "Intelligence", "in"), r(13, "Chance", "ch"), r(14, "Agilité", "ag"), r(25, "Puissance", "pu")],
   secondary: [r(78, "Fuite", "fu"), r(79, "Tacle", "ta"), r(27, "Esq. PA", "rpa"), r(28, "Esq. PM", "rp"), r(82, "Ret. PA", "rap"), r(83, "Ret. PM", "rp"), r(40, "Pods", "")],
   damage: [r(92, "Do Neutre", "dnf"), r(88, "Do Terre", "dtf"), r(89, "Do Feu", "dff"), r(90, "Do Eau", "def"), r(91, "Do Air", "daf"), r(16, "Dommages", "dm"), r(86, "Do Critique", "dc"), r(84, "Do Poussée", "dp"),
     r(31, "% Do Armes", "dw"), r(98, "% Do Sorts", "sp"), r(125, "% Do Mêlée", "da"), r(120, "% Do Dist", "da")],

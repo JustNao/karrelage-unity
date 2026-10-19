@@ -289,15 +289,16 @@
         <div class="sheetwrap"><div class="sheet">
           <section class="stats left">
             <div class="box">
-              <div class="st hp"><b class:bad={anyChosen && (real?.hp ?? 0) < (max?.hp ?? 0)} class:good={anyChosen && (real?.hp ?? 0) >= (max?.hp ?? 0)} title={anyChosen ? `Max théorique : ${max?.hp}` : ""}>{real?.hp}</b><span class="fm"></span>{#if icon("stat", "pv")}<img src={icon("stat", "pv")} alt="" />{:else}<span class="ph"></span>{/if}<span class="lab">PdV</span>
-                {#if anyChosen && real && max && real.hp !== max.hp}<span class="mut">/ {max.hp}</span>{/if}
-                <button class="pf" title="Viser le maximum atteignable avec les objets ({max?.hp})" onclick={() => setTarget(HP_STAT, String(max?.hp ?? 0))}>Max</button>
-                <input class="tg" inputmode="numeric" placeholder="min" value={build.targets[HP_STAT] ?? ""} onchange={(e) => setTarget(HP_STAT, e.currentTarget.value)} title="PdV minimum voulu pour la recherche de la combinaison la moins chère" />
-              </div>
               {#each PANELS.main as s (s.stat)}{@render statRow(s)}{/each}
             </div>
             <div class="box">
               <div class="st hd"><span class="lab"></span><span class="tgw"></span><span class="c4 mut">+⚡</span><span class="c4 mut">Base</span><span class="c4 mut">Parcho</span></div>
+              <div class="st hp"><b class:bad={anyChosen && (real?.hp ?? 0) < (max?.hp ?? 0)} class:good={anyChosen && (real?.hp ?? 0) >= (max?.hp ?? 0)} title={anyChosen ? `Max théorique : ${max?.hp}` : ""}>{real?.hp}</b><span class="fm" title="Forgemagie">{fmOf(build, 11) ? `+${fmOf(build, 11)}` : ""}</span>{#if icon("stat", "pv")}<img src={icon("stat", "pv")} alt="" />{:else}<span class="ph"></span>{/if}<span class="lab">PdV</span>
+                {#if anyChosen && real && max && real.hp !== max.hp}<span class="mut">/ {max.hp}</span>{/if}
+                <button class="pf" title="Viser le maximum atteignable avec les objets ({max?.hp})" onclick={() => setTarget(HP_STAT, String(max?.hp ?? 0))}>Max</button>
+                <input class="tg" inputmode="numeric" placeholder="min" value={build.targets[HP_STAT] ?? ""} onchange={(e) => setTarget(HP_STAT, e.currentTarget.value)} title="PdV minimum voulu pour la recherche de la combinaison la moins chère" />
+                <span class="c4"></span><span class="c4">{build.carac.base_vi ?? 0}</span><span class="c4">{build.carac.scroll_vi ?? 0}</span>
+              </div>
               {#each PANELS.carac as s (s.stat)}{@render statRow(s)}{/each}
             </div>
             <div class="box">{#each PANELS.secondary as s (s.stat)}{@render statRow(s)}{/each}</div>
