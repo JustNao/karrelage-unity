@@ -1,6 +1,10 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import { call, on } from "../../lib/api";
+  import { fmtInt } from "../../lib/fmt";
+  import Banner from "../../lib/components/Banner.svelte";
+  import ConfirmButton from "../../lib/components/ConfirmButton.svelte";
+  import ProgressBar from "../../lib/components/ProgressBar.svelte";
 
   interface Check { role: string; ok: boolean; detail: string }
   interface Report {
@@ -25,12 +29,12 @@
   const pct = $derived(!progress ? 0 : progress.title === "fin" ? 100 : Math.round(((progress.k - 1) / progress.n) * 100));
 
   const VERDICT = {
-    compatible: { label: "Compatible", cls: "ok" },
+    compatible: { label: "Compatible", cls: "good" },
     uncertain: { label: "À confirmer", cls: "warn" },
     incompatible: { label: "Incompatible", cls: "bad" },
   };
   const date = (t: number) => new Date(t * 1000).toLocaleString("fr-FR");
-  const num = (n: number | null | undefined) => (n == null ? "?" : n.toLocaleString("fr-FR"));
+  const num = (n: number | null | undefined) => (n == null ? "?" : fmtInt(n));
 
   /** One check at a time: the 3 s poll (and the button) skip while the previous one is still running. */
   let checking = false;
@@ -49,7 +53,6 @@
   }
 
   async function compute(mode: "names" | "full" | "repack") {
-    if (mode === "full" && !confirm("Régénérer tout depuis les fichiers du jeu (copie, dump IL2CPP, protos, données) ? Cela peut prendre plusieurs minutes.")) return;
     log = [];
     finished = null;
     progress = { k: 1, n: mode === "full" ? 7 : mode === "repack" ? 1 : 2, title: "Démarrage…" };
@@ -95,21 +98,21 @@
     <button onclick={refresh}>Vérifier</button>
     <button disabled={running || !report?.canCompute} onclick={() => compute("names")} title="Relance la correspondance des noms (match_protos) puis l'export du pack">Calculer les noms</button>
     <button disabled={running || !report?.canCompute} onclick={() => compute("repack")} title="Réexporte le pack (export_pack) et régénère dist/datapack.zip, sans correspondance des noms ni dump du jeu">Repack data</button>
-    <button disabled={running || !report?.canCompute} onclick={() => compute("full")} title="Après une mise à jour du jeu : copie des fichiers, dump IL2CPP, protos, données, noms, export">Tout régénérer depuis le jeu</button>
+    <ConfirmButton label="Tout régénérer depuis le jeu" confirmLabel="Confirmer (plusieurs minutes)" disabled={running || !report?.canCompute} title="Après une mise à jour du jeu : copie des fichiers, dump IL2CPP, protos, données, noms, export" onconfirm={() => compute("full")} />
   </div>
   {#if progress && (running || finished !== null)}
-    <div class="prog" class:fail={finished === false}>
-      <div class="bar"><div class="fill" class:busy={running} style:width="{pct}%"></div></div>
+    <div class="prog">
+      <ProgressBar value={pct / 100} busy={running} fail={finished === false} height={10} speed={0.4} />
       <div class="plabel">
         {#if finished === true}Terminé{:else if finished === false}Échec à l'étape {progress.k}/{progress.n}{:else}Étape {progress.k}/{progress.n} — {progress.title}{/if}
         <span class="mut">{pct} %</span>
       </div>
     </div>
   {/if}
-  {#if error}<div class="banner bad">{error}</div>{/if}
+  {#if error}<Banner inset>{error}</Banner>{/if}
   {#if report && !report.canCompute}<div class="mut note">Le calcul n'est disponible que depuis le dépôt de développement (le dossier pipeline/ est introuvable).</div>{/if}
-  {#if finished === true}<div class="banner ok">Terminé : redémarrez Karrelage pour charger le nouveau pack.</div>{/if}
-  {#if finished === false}<div class="banner bad">Le calcul a échoué (voir le journal).</div>{/if}
+  {#if finished === true}<Banner tone="ok" inset>Terminé : redémarrez Karrelage pour charger le nouveau pack.</Banner>{/if}
+  {#if finished === false}<Banner inset>Le calcul a échoué (voir le journal).</Banner>{/if}
 
   {#if report}
     <div class="cols">
@@ -131,7 +134,7 @@
           <div class="mut">Rien observé pour l'instant : activez la capture et jouez (ouvrez l'hôtel de vente, changez de carte…). L'observation ne tourne que pendant que cet onglet est ouvert.</div>
         {:else}
           <div>{num(report.live.messages)} messages · {report.live.types} types distincts</div>
-          <div class:bad-t={report.live.unknownTypes > 0}>{report.live.unknownTypes} types inconnus du pack ({(report.live.ratio * 100).toFixed(1)} % des messages)</div>
+          <div class:bad={report.live.unknownTypes > 0}>{report.live.unknownTypes} types inconnus du pack ({(report.live.ratio * 100).toFixed(1)} % des messages)</div>
           <div class="mut">{report.live.unnamedTypes} types connus mais sans nom clair</div>
           {#if !report.live.enough}<div class="mut small">Échantillon encore faible (moins de 15 types) : verdict provisoire.</div>{/if}
           {#each report.live.unknown as u (u.type)}<div class="mut small">• {u.type} ×{u.count}</div>{/each}
@@ -141,10 +144,10 @@
       <section>
         <h3>Contrôles du pack</h3>
         {#each report.bindings as c (c.role)}
-          <div class="chk"><span class={c.ok ? "ok-t" : "bad-t"}>{c.ok ? "✓" : "✗"}</span> {c.role} <span class="mut small">{c.detail}</span></div>
+          <div class="chk"><span class={c.ok ? "good" : "bad"}>{c.ok ? "✓" : "✗"}</span> {c.role} <span class="mut small">{c.detail}</span></div>
         {/each}
         <div class="chk">
-          <span class={report.stale.count ? "warn-t" : "ok-t"}>{report.stale.count ? "!" : "✓"}</span> Noms obsolètes
+          <span class={report.stale.count ? "warn" : "good"}>{report.stale.count ? "!" : "✓"}</span> Noms obsolètes
           <span class="mut small">{report.stale.count ? `${report.stale.count} noms pointent vers des messages absents (${report.stale.examples.join(", ")}…)` : "aucun"}</span>
         </div>
 
@@ -160,19 +163,8 @@
   .head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
   .head .fh { flex: 1; margin: 0; font-weight: 600; }
   .badge { padding: 2px 10px; border-radius: 10px; font-weight: 600; border: 1px solid; }
-  .badge.ok, .ok-t { color: var(--ok); }
-  .badge.warn, .warn-t { color: var(--warn, orange); }
-  .badge.bad, .bad-t { color: var(--bad, #e5534b); }
-  .banner { padding: 6px 10px; margin-bottom: 8px; border-radius: 6px; }
-  .banner.ok { background: color-mix(in srgb, var(--ok) 20%, transparent); }
-  .banner.bad { background: color-mix(in srgb, var(--bad, #e5534b) 20%, transparent); }
   .prog { margin-bottom: 10px; }
-  .bar { height: 10px; border-radius: 5px; background: var(--line); overflow: hidden; }
-  .fill { height: 100%; background: var(--acc); transition: width 0.4s; }
-  .fill.busy { background-image: linear-gradient(110deg, transparent 30%, #fff4 50%, transparent 70%); background-size: 200% 100%; animation: sweep 1.4s linear infinite; background-color: var(--acc); }
-  .prog.fail .fill { background: var(--bad, #e5534b); }
   .plabel { margin-top: 4px; display: flex; gap: 10px; font-size: 12px; }
-  @keyframes sweep { from { background-position: 200% 0; } to { background-position: -200% 0; } }
   .note { margin-bottom: 8px; }
   .cols { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(320px, 1.4fr); gap: 20px; }
   h3 { margin: 14px 0 4px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--mut); display: flex; gap: 8px; align-items: center; }
@@ -181,6 +173,6 @@
   .state.match { color: var(--ok); }
   .state.changed { color: var(--bad, #e5534b); font-weight: 600; }
   .state.unknown { color: var(--warn, orange); }
-  .mini { padding: 1px 6px; font-size: 11px; text-transform: none; letter-spacing: 0; }
+  h3 .mini { text-transform: none; letter-spacing: 0; }
   .log { margin: 0; height: 260px; overflow: auto; background: #0a0b0e; border: 1px solid var(--line); border-radius: 6px; padding: 8px; font: 11px/1.4 ui-monospace, Consolas, monospace; white-space: pre-wrap; }
 </style>

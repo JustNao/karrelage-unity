@@ -1,8 +1,7 @@
 /** Stuff tab logic: slots, stat panels, totals (items + set bonuses + base / scrolls / exo), prices and the cheapest-combination solver.
  *  Item stats and set bonuses come from the data pack (`stuff.item_info`), never from Dofusbook. */
 import { craftCost, type Recipes } from "./craft";
-import { unitPriceOrNull } from "./price";
-import type { StoredPrice } from "./transcend";
+import { effectivePrice, priceOf, unitPriceOrNull, type StoredPrice } from "./price";
 
 /** Breed ids (Dofusbook `character_class` = the game's breed ids). */
 export const CLASSES: Record<number, string> = {
@@ -172,10 +171,7 @@ export function compute(b: Build, info: Info, resolved: Resolved[]): Computed {
 // ---- prices -----------------------------------------------------------------------------------------------------------
 
 /** Real prices only: a manual override or the price read in the auction house. Weekly averages are estimates and are not used. */
-export const realPrice = (prices: Map<number, StoredPrice>, gid: number): number | null => {
-  const p = prices.get(gid);
-  return p ? (p.override ?? p.unit ?? null) : null;
-};
+export const realPrice = (prices: Map<number, StoredPrice>, gid: number): number | null => priceOf(prices, gid, { avg: false });
 
 export interface SlotPrice { craft: number | null; estimated: boolean; first: number | null; chosen: number | null; missing: string[]; scanned: boolean }
 
@@ -184,11 +180,11 @@ export function slotPrices(gid: number, lots: Lot[], chosenUid: number | null | 
   const c = craftCost(gid, recipes, prices);
   // items without a recipe (Dofus, ...) can't be crafted: their price is bought, so the stored price (weekly average included) stands in
   const uncraftable = !recipes.recipes[gid];
-  const stored = uncraftable ? prices.get(gid) : undefined;
-  const bought = stored ? (stored.override ?? stored.unit ?? stored.avg ?? null) : null;
+  const stored = uncraftable ? effectivePrice(prices.get(gid)) : null;
+  const bought = stored?.value ?? null;
   const units = lots.map(lotUnit).filter((x): x is number => x != null);
   const ch = chosenUid != null ? lots.find((l) => l.uid === chosenUid) : null;
-  return { craft: uncraftable ? bought : c?.cost ?? null, estimated: uncraftable && bought != null && stored?.override == null && stored?.unit == null, first: units.length ? Math.min(...units) : null, chosen: ch ? lotUnit(ch) : null, missing: c?.missing ?? [], scanned: lots.length > 0 };
+  return { craft: uncraftable ? bought : c?.cost ?? null, estimated: stored?.source === "moyenne", first: units.length ? Math.min(...units) : null, chosen: ch ? lotUnit(ch) : null, missing: c?.missing ?? [], scanned: lots.length > 0 };
 }
 
 export interface Totalled { total: number; priced: number; missingSlots: string[] }

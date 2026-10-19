@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { kamasFull } from "../api";
+  import { fmtInt, kamasFull } from "../fmt";
   import { unitPrice } from "../price";
   import { app } from "../app.svelte";
   import { fmtDelta, pairRows } from "../compare";
@@ -99,7 +99,7 @@
   <h4>
     {#if collapsible}<span class="chev">{open ? "▾" : "▸"}</span>{/if}
     {#if companion}
-      <span class="flag on" title="Niveau (xp totale {level != null ? xpOfLevel(level).toLocaleString('fr-FR') : '?'})">{level != null ? "Niveau " + level : "Niveau ?"}</span>
+      <span class="flag on" title="Niveau (xp totale {level != null ? fmtInt(xpOfLevel(level)) : '?'})">{level != null ? "Niveau " + level : "Niveau ?"}</span>
       <span class="flag" class:on={legendary}>★ Statut légendaire</span>
     {:else if flags}
     <span class="flag" class:on={perfect.damage} title="Tous les effets de dommages de base à leur maximum">★ Dommages parfaits</span>
@@ -122,7 +122,7 @@
       <div class="hd r">Épinglé · {versus.name}</div>
 
       <div class="l" class:hot={hov === "price"} {...hover("price")}>{#if Number.isFinite(myPrice)}<span class="price">{kamasFull(myPrice)}</span>{:else}<span class="price no">—</span>{/if}</div>
-      <div class="d" class:hot={hov === "price"} {...hover("price")} class:up={priceDelta < 0} class:down={priceDelta > 0}>{open && Number.isFinite(priceDelta) ? (priceDelta === 0 ? "=" : (priceDelta > 0 ? "+" : "−") + kamasFull(Math.abs(priceDelta))) : ""}</div>
+      <div class="d" class:hot={hov === "price"} {...hover("price")} class:up={priceDelta < 0} class:down={priceDelta > 0}>{open && Number.isFinite(priceDelta) ? (priceDelta === 0 ? "=" : (priceDelta > 0 ? "+" : "") + kamasFull(priceDelta)) : ""}</div>
       <div class="r" class:hot={hov === "price"} {...hover("price")}>{#if Number.isFinite(pinPrice)}<span class="price">{kamasFull(pinPrice)}</span>{:else}<span class="price no">—</span>{/if}</div>
 
       {#each pairs as p (p.key)}

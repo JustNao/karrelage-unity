@@ -39,3 +39,36 @@ h3 { font: 600 12px var(--font); margin: 12px 0 4px; color: var(--mut); text-tra
 .cz { overflow: hidden !important; min-width: 0; padding-left: 0 !important; padding-right: 0 !important; }
 .cz > :not(.phead) { display: none !important; }
 .cz .ptitle { display: none; }
+
+/* ---- shared look (lib/components): every tab uses these instead of its own copy ---- */
+
+/* text tones: one token each (profits, losses, warnings) */
+.good { color: var(--ok); }
+.bad { color: var(--bad); }
+.warn { color: var(--warn); }
+
+/* small secondary buttons (filters, "Effacer", "✕"...) */
+.mini { padding: 2px 7px; font-size: 11px; }
+.mini:disabled { opacity: 0.35; cursor: default; border-color: var(--line); }
+
+/* collapsible headers (Collapsible.svelte): zero specificity so each place styles its own header row */
+:where(.chd) { display: flex; width: 100%; align-items: center; gap: 6px; border: 0; border-radius: 0; text-align: left; background: none; color: inherit; }
+.chev { display: inline-block; transition: transform 0.2s; }
+.chev.shut { transform: rotate(-90deg); }
+
+/* data tables (SortTable.svelte and the lot tables): sticky header, numbers right-aligned */
+.tbl { width: 100%; border-collapse: collapse; font-size: 12px; font-family: var(--font); }
+.tbl th { text-align: left; font-weight: 400; color: var(--mut); padding: 2px 6px; position: sticky; top: 0; background: var(--bg); }
+.tbl th button { border: 0; background: none; color: inherit; font: inherit; padding: 0; cursor: pointer; }
+.tbl td { padding: 4px 6px; border-top: 1px solid var(--line); }
+.tbl .n { text-align: right; white-space: nowrap; }
+.tbl tr.hot td { background: color-mix(in srgb, var(--ok) 14%, transparent); }
+
+/* side lists (SideList.svelte): HDV items, Crafting, Stuff builds, Paquets types */
+.ilist { overflow: auto; min-height: 0; min-width: 0; background: var(--panel); border-right: 1px solid var(--line); font-family: var(--font); }
+.ilist .ibar { display: flex; gap: 6px; padding: 6px 10px; position: sticky; top: 30px; z-index: 3; background: var(--panel); }
+.irow { padding: 6px 10px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.irow:hover { background: var(--bg); }
+.irow.sel { outline: 1px solid var(--acc); outline-offset: -1px; position: relative; z-index: 2; }
+.irow.first { border-top: 1px solid var(--line); }
+.ilist .empty { padding: 6px 10px; cursor: default; }

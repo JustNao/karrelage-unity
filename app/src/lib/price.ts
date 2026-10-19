@@ -55,3 +55,22 @@ export function lotKeys(rows: any[]): Map<any, string> {
   keys.set(rows, m);
   return m;
 }
+
+/** A stored price (prices.rs): unit = price read in the auction house, avg = average of the last week (preloaded by the
+ *  game), override = manual. */
+export interface StoredPrice { gid: number; unit: number | null; avg?: number | null; override: number | null; updated?: number | null; avg_updated?: number | null }
+export type PriceSource = "manuel" | "relevé" | "moyenne";
+
+/**
+ * The price used for an item and where it comes from: manual override, else the price read in the auction house, else the
+ * weekly average. `{ avg: false }` = real prices only (the Stuff tab never counts an estimate as a price).
+ */
+export function effectivePrice(p: StoredPrice | undefined | null, { avg = true }: { avg?: boolean } = {}): { value: number; source: PriceSource } | null {
+  if (!p) return null;
+  if (p.override != null) return { value: p.override, source: "manuel" };
+  if (p.unit != null) return { value: p.unit, source: "relevé" };
+  if (avg && p.avg != null) return { value: p.avg, source: "moyenne" };
+  return null;
+}
+/** Just the value of `effectivePrice` for a gid of a price map. */
+export const priceOf = (prices: Map<number, StoredPrice>, gid: number, opts?: { avg?: boolean }): number | null => effectivePrice(prices.get(gid), opts)?.value ?? null;

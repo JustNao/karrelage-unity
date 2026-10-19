@@ -1,11 +1,18 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
-  import { SvelteMap, SvelteSet } from "svelte/reactivity";
+  import { SvelteSet } from "svelte/reactivity";
   import { app } from "../../lib/app.svelte";
   import Grip from "../../lib/components/Grip.svelte";
   import PanelHead from "../../lib/components/PanelHead.svelte";
   import { Columns } from "../../lib/columns.svelte";
-  import { ago, call, kamas, on } from "../../lib/api";
+  import { call } from "../../lib/api";
+  import { ago, kamas, pct, signedKamas } from "../../lib/fmt";
+  import { auction } from "../../lib/stores/auction.svelte";
+  import { prices } from "../../lib/stores/prices.svelte";
+  import Collapsible from "../../lib/components/Collapsible.svelte";
+  import ConfirmButton from "../../lib/components/ConfirmButton.svelte";
+  import SearchBar, { matcher } from "../../lib/components/SearchBar.svelte";
+  import SideList from "../../lib/components/SideList.svelte";
   import { flip } from "svelte/animate";
   import DensityChart from "../../lib/components/DensityChart.svelte";
   import EffectPicker from "../../lib/components/EffectPicker.svelte";
@@ -17,16 +24,15 @@
   import { feeder, foodGids, levelBase } from "../../lib/familiar";
   import CompanionTable from "../../lib/components/CompanionTable.svelte";
   import { mountInfo, neuroneGids, neuronsOf, resourcePlural } from "../../lib/mounts";
-  import { storedPrice } from "../../lib/craft";
-  import { FLAG_EFFECTS, norm, rangeLabel, sections, type EffectMeta } from "../../lib/effects";
+  import { FLAG_EFFECTS, rangeLabel, sections, type EffectMeta } from "../../lib/effects";
   import { benefit, craftCost, type CraftLine, type Recipes } from "../../lib/craft";
-  import { AH_TAX, isTranscended, targetKey, transcendance, type Rune, type StoredPrice } from "../../lib/transcend";
+  import { AH_TAX, isTranscended, targetKey, transcendance, type Rune } from "../../lib/transcend";
   import { byUnitPrice, lotKeys, unitPrice } from "../../lib/price";
 
   interface Filter { a: number; min: string | number; max: string | number }
 
   const cols = new Columns("karrelage.cols.items", { list: 280, filter: 470 }); // resizable: list | listing (flexible) | filter
-  let items = new SvelteMap<number, any>();
+  const items = auction.items; // shared store: every scanned listing, kept up to date for the whole session
   const SEL_KEY = "karrelage.auction.sel"; // the open item is restored when the tab is opened again
   let selGid = $state<number | null>((() => { try { return JSON.parse(localStorage.getItem(SEL_KEY) ?? "null"); } catch { return null; } })());
   $effect(() => { try { localStorage.setItem(SEL_KEY, JSON.stringify(selGid)); } catch {} });
@@ -55,7 +61,7 @@
   let cand = $state<{ id: string | number; a: number; value: number } | null>(null); // selected candidate: its point + the lots with the same rune applied stand out
   let focus = $state<string | null>(null); // transcended effect (targetKey) the candidates are limited to
   let runes = $state.raw<Rune[]>([]);
-  let stored = new SvelteMap<number, StoredPrice>(); // stored prices (the rune prices feed the transcendance tab)
+  const stored = prices.map; // stored prices (the rune prices feed the transcendance tab)
   let recipes = $state.raw<Recipes>({ recipes: {}, names: {} });
   let allOpen = $state(false);
   let sortDir = $state(1);
@@ -77,9 +83,9 @@
   let search = $state(""); // left list: filter by item or type name
   const typeGroups = $derived.by(() => {
     const m = new Map<string, any[]>();
-    const n = norm(search.trim());
+    const match = matcher(search);
     for (const i of list) {
-      if (n && !norm(i.name).includes(n) && !norm(i.type ?? "").includes(n)) continue;
+      if (!match(i.name, i.type)) continue;
       const t = i.type ?? "?";
       if (!m.has(t)) m.set(t, []);
       m.get(t)!.push(i);
@@ -171,7 +177,7 @@
   const minfo = $derived(comp ? mountInfo(item?.name) : null);
   const neurons = $derived(minfo?.neurons ?? null);
   const resource = $derived(minfo ? resourcePlural(minfo.neurone) : "Neurones");
-  const neuroneUnit = $derived(minfo && neurGids[minfo.neurone] != null ? storedPrice(stored, neurGids[minfo.neurone]) : null);
+  const neuroneUnit = $derived(minfo && neurGids[minfo.neurone] != null ? prices.price(neurGids[minfo.neurone]) : null);
   const extractable = $derived(
     neurons != null && neuroneUnit != null ? rows.filter((r: any) => Number.isFinite(unitPrice(r)) && benefit(neuroneUnit * neuronsOf(r, neurons), unitPrice(r)).profit > 0).length : 0,
   );
@@ -358,27 +364,8 @@
     tab = "listing"; // from the Transcendance tab: switch so the lot is rendered
     await revealLot(id);
   }
-  /** "Nettoyer" forgets every stored item, after a second click on "Confirmer" (reverts after a few seconds). */
-  let confirmClear = $state(false);
-  let confirmTimer: ReturnType<typeof setTimeout> | undefined;
-  async function forget() {
-    if (!confirmClear) {
-      confirmClear = true;
-      confirmTimer = setTimeout(() => (confirmClear = false), 4000);
-      return;
-    }
-    clearTimeout(confirmTimer);
-    confirmClear = false;
-    await call("auction", "clear");
-  }
-  function put(i: any) {
-    items.set(i.gid, i);
-    if (selGid === null) selGid = i.gid;
-  }
-
   /** An item just captured from the game: show it (a refresh of the item already open keeps its scroll position). */
   async function showNew(i: any) {
-    put(i);
     if (selGid === i.gid) return;
     selGid = i.gid;
     picked = null;
@@ -387,63 +374,41 @@
   }
 
   onMount(() => {
-    // Startup snapshots can come back after live events (or a "clear") that are newer than them: each answer is checked
-    // against these counters (bumped on clear and when the tab closes) and never replaces newer data.
-    let itemsEpoch = 0, pricesEpoch = 0, alive = true;
-    const live = <T,>(f: (v: T) => void) => (v: T) => void (alive && f(v));
+    let alive = true;
+    const live = <T,>(f: (v: T) => void) => (v: T) => void (alive && f(v)); // answers after the tab closed are dropped
     call<EffectMeta[]>("auction", "effects").then(live((e) => (picker = e)));
     call<EffectMeta[]>("auction", "effect_meta").then(live((l) => (meta = Object.fromEntries(l.map((e) => [e.id, e])))));
     call<Recipes>("auction", "recipes").then(live((r) => (recipes = r)));
     neuroneGids().then(live((m) => (neurGids = m))).catch(() => {});
     foodGids().then(live((m) => (foodIds = m))).catch(() => {});
     call<Rune[]>("prices", "runes").then(live((l) => (runes = l)));
-    const pe = pricesEpoch;
-    call<StoredPrice[]>("prices", "list").then(live((l) => {
-      if (pe !== pricesEpoch) return;
-      for (const p of l) if (!stored.has(p.gid)) stored.set(p.gid, p); // a price event already received is newer
-    }));
-    const ie = itemsEpoch;
-    call<any[]>("auction", "items").then(live((l) => {
-      if (ie !== itemsEpoch) return;
-      for (const i of l) {
-        const old = items.get(i.gid);
-        if (!old || old.updated <= i.updated) put(i); // an item scanned while the list was loading stays
-      }
-      if ((selGid === null || !items.has(selGid)) && l.length) selGid = l[0].gid;
+    void prices.ensure();
+    // the shared stores never let an older snapshot replace a newer scan / price (see lib/stores)
+    auction.ensure().then(live(() => {
+      if ((selGid === null || !items.has(selGid)) && list.length) selGid = list[0].gid;
       void tick().then(() => document.querySelector(".ilist .irow.sel")?.scrollIntoView({ block: "center" })); // back to the item that was open
     }));
-    const offs = [
-      on("auction:item", showNew),
-      on<StoredPrice>("prices:price", (p) => stored.set(p.gid, p)),
-      on<StoredPrice[]>("prices:bulk", (l) => l.forEach((p) => stored.set(p.gid, p))), // weekly averages preloaded by the game
-      on("prices:cleared", () => (pricesEpoch++, stored.clear())),
-      on("auction:cleared", () => {
-        itemsEpoch++;
-        items.clear();
-        selGid = null;
-      }),
-    ];
+    const off = auction.subscribe((c) => {
+      if (c.kind === "clear") selGid = null;
+      else if (c.live) void showNew(c.item);
+      else if (selGid === null) selGid = c.item.gid;
+    });
     return () => {
       alive = false;
-      clearTimeout(confirmTimer);
-      offs.forEach((o) => o.then((f) => f()));
+      off();
     };
   });
 </script>
 
 <div class="view cgrid" class:anim={!cols.dragging} style:grid-template-columns="{cols.px("list")}px 5px 1fr 5px {cols.px("filter")}px">
-  <div class="ilist" class:cz={cols.collapsed.list}>
-    <PanelHead {cols} name="list" title="Objets" />
-    <div class="sbar">
-      <input type="search" placeholder="Rechercher un objet…" bind:value={search} />
-      <button class="mini" class:danger={confirmClear} onclick={forget} onblur={() => (confirmClear = false)} title="Oublier tous les objets enregistrés">{confirmClear ? "Confirmer" : "Nettoyer"}</button>
-    </div>
+  <SideList {cols} name="list" title="Objets">
+    {#snippet bar()}
+      <SearchBar bind:value={search} placeholder="Rechercher un objet…" grow compact>
+        {#snippet after()}<ConfirmButton mini label="Nettoyer" title="Oublier tous les objets enregistrés" onconfirm={() => call("auction", "clear")} />{/snippet}
+      </SearchBar>
+    {/snippet}
     {#each typeGroups as g (g.type)}
-      {@const shut = collapsed.has(g.type)}
-      <button class="thead" aria-expanded={!shut} onclick={() => toggleType(g.type)}>
-        <span class="chev" class:shut>▾</span> {g.type} <span class="mut">{g.items.length}</span>
-      </button>
-      {#if !shut}
+      <Collapsible head="thead" title={g.type} count={g.items.length} open={!collapsed.has(g.type)} ontoggle={() => toggleType(g.type)}>
         {#each g.items as i (i.gid)}
           {@const dc = dealCount(i)}
           <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
@@ -453,11 +418,11 @@
             <span class="mut">{i.lots} lots · {i.min_price ? "min " + kamas(i.min_price) : "—"} · {ago(i.updated)}{i.demo ? " · demo" : ""}</span>
           </div>
         {/each}
-      {/if}
+      </Collapsible>
     {:else}
       <div class="mut empty">{search ? "Aucun objet ne correspond à la recherche." : "Ouvrez un objet à l'hôtel de vente : il apparaît ici (dernière liste par objet)."}</div>
     {/each}
-  </div>
+  </SideList>
 
   <Grip {cols} name="list" dir={1} />
 
@@ -472,16 +437,16 @@
         {#if pin}<button class="on" onclick={() => (pin = null)} title="Arrêter de comparer les lots avec le lot épinglé">Désépingler {pin.item.name}</button>{/if}
       </div>
       {#if craft}
-        <div class="craft" class:good={!!gain && gain.profit >= 0}>
+        <div class="craft" class:pos={!!gain && gain.profit >= 0}>
           <div class="crow">
             <span>Craft <b>{craft.cost != null ? kamas(Math.round(craft.cost)) : "—"}</b></span>
             {#if Number.isFinite(sale)}<span class="mut">Vente min {kamas(Math.round(sale))}</span>{/if}
             {#if gain}
               <span class={gain.profit >= 0 ? "gain" : "loss"} title="Après {AH_TAX * 100} % de taxe de vente : prix de vente − coût de craft">
-                Bénéfice <b>{gain.profit >= 0 ? "+" : "−"}{kamas(Math.abs(gain.profit))}</b> ({gain.pct >= 0 ? "+" : "−"}{Math.abs(gain.pct).toFixed(1)} %)
+                Bénéfice <b>{signedKamas(gain.profit)}</b> ({pct(gain.pct)})
               </span>
             {/if}
-            {#if craft.missing.length}<span class="warn-t" title={craft.missing.join(", ")}>prix manquant : {craft.missing.slice(0, 3).join(", ")}{craft.missing.length > 3 ? "…" : ""}</span>{/if}
+            {#if craft.missing.length}<span class="warn" title={craft.missing.join(", ")}>prix manquant : {craft.missing.slice(0, 3).join(", ")}{craft.missing.length > 3 ? "…" : ""}</span>{/if}
           </div>
           <details>
             <summary class="mut">Ingrédients</summary>
@@ -587,13 +552,11 @@
       {/if}
       {#if deals.length}
         <div class="deals">
-          <button class="dhead" aria-expanded={dealsOpen} onclick={() => (dealsOpen = !dealsOpen)}>
-            <span class="chev" class:shut={!dealsOpen}>▾</span> Bonnes affaires <span class="mut">· {deals.length} {deals.length === 1 ? "lot se démarque" : "lots se démarquent"} au-dessus de la tendance des prix</span>
-          </button>
+          <Collapsible head="dhead" title="Bonnes affaires" count="· {deals.length} {deals.length === 1 ? 'lot se démarque' : 'lots se démarquent'} au-dessus de la tendance des prix" bind:open={dealsOpen}>
           {#if comp}
-            {#if dealsOpen}<CompanionTable lots={lotsOf(deals.map((d: any) => d.row)).map((l) => ({ ...l, key: "d-" + l.key }))} {neurons} {neuroneUnit} {resource} faded={lacksFade} onpick={(k) => pickLot(String(k).slice(2))} />{/if}
+            <CompanionTable lots={lotsOf(deals.map((d: any) => d.row)).map((l) => ({ ...l, key: "d-" + l.key }))} {neurons} {neuroneUnit} {resource} faded={lacksFade} onpick={(k) => pickLot(String(k).slice(2))} />
           {:else}
-          {#each dealsOpen ? deals : [] as d (d.key)}
+          {#each deals as d (d.key)}
             {@const alt = trans.alternative(d.row)}
             <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
             <div class="deal" class:faded={lacksFade(d.row)} title="Cliquer pour aller au lot dans la liste" onclick={() => focusLot(d.key)}>
@@ -604,6 +567,7 @@
             </div>
           {/each}
           {/if}
+          </Collapsible>
         </div>
       {/if}
       {#if comp}
@@ -704,27 +668,17 @@
 
 <style>
   .view { flex: 1; min-height: 0; display: grid; }
-  .ilist { overflow: auto; background: var(--panel); border-right: 1px solid var(--line); }
   .deal-ico { display: inline-block; width: 8px; height: 8px; margin-left: 4px; border-radius: 50%; background: var(--ok); vertical-align: middle; position: relative; top: -1px; font-size: 0; }
   .craft { margin: 0 0 10px; padding: 6px 10px; border: 1px solid var(--bad); border-radius: 8px; font-family: var(--font); font-size: 13px; }
-  .craft.good { border-color: var(--ok); }
+  .craft.pos { border-color: var(--ok); }
   .craft .crow { display: flex; gap: 14px; flex-wrap: wrap; align-items: baseline; }
   .craft .gain b, .craft .gain { color: var(--ok); }
   .craft .loss b, .craft .loss { color: var(--bad); }
-  .craft .warn-t { color: var(--warn); }
   .craft details { margin-top: 2px; font-size: 12px; }
   .craft summary { cursor: pointer; }
   .craft ul { margin: 2px 0; padding-left: 18px; }
-  .ilist .sbar { display: flex; gap: 6px; padding: 6px 10px; cursor: default; position: sticky; top: 30px; z-index: 3; background: var(--panel); }
-  .sbar .danger { color: var(--bad); border-color: var(--bad); }
-  .sbar input { flex: 1; min-width: 0; padding: 3px 6px; }
-  .thead { display: flex; width: 100%; align-items: center; gap: 6px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: var(--bg); color: inherit; padding: 5px 10px; font: 600 11px var(--font); letter-spacing: 0.04em; text-transform: uppercase; text-align: left; position: sticky; top: 66px; z-index: 1; }
-  .chev { display: inline-block; transition: transform 0.2s; }
-  .chev.shut { transform: rotate(-90deg); }
-  .ilist div { padding: 6px 10px; border-bottom: 1px solid var(--line); cursor: pointer; font-family: var(--font); }
-  .ilist .irow:hover { background: var(--bg); }
-  .ilist div.sel { outline: 1px solid var(--acc); outline-offset: -1px; position: relative; z-index: 2; }
-  .ilist .empty { cursor: default; }
+  /* item types of the left list: sticky under the search bar */
+  .view :global(.chd.thead) { border-bottom: 1px solid var(--line); background: var(--bg); padding: 5px 10px; font: 600 11px var(--font); letter-spacing: 0.04em; text-transform: uppercase; position: sticky; top: 66px; z-index: 1; }
   .view > :global(.wrap) { font-family: var(--font); }
   .sort { display: inline-flex; gap: 6px; align-items: center; }
   .arrow { display: inline-block; transition: transform 0.32s cubic-bezier(0.3, 1.4, 0.5, 1); }
@@ -737,8 +691,6 @@
   .filter .ghead { display: flex; align-items: center; justify-content: flex-start; gap: 10px; }
   .ghead { margin: 12px 0 2px; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--mut); }
   .gbtns { display: flex; gap: 4px; text-transform: none; letter-spacing: 0; }
-  .mini { padding: 2px 7px; font-size: 11px; }
-  .mini:disabled { opacity: 0.35; cursor: default; border-color: var(--line); }
   .graph { margin-bottom: 12px; }
   .head .on { border-color: var(--acc); color: var(--acc); }
   .lvt { width: 56px; padding: 1px 4px; margin: 0 4px; }
@@ -747,6 +699,8 @@
   .deals { margin-bottom: 14px; padding: 8px 10px 2px; border: 1px solid color-mix(in srgb, var(--ok) 45%, var(--line)); border-radius: 10px; background: color-mix(in srgb, var(--ok) 5%, transparent); }
   .dhead { display: flex; gap: 6px; align-items: center; width: 100%; border: 0; background: none; font: 600 13px var(--font); color: var(--ok); margin-bottom: 8px; padding: 0; text-align: left; }
   .dhead .mut { font-weight: 400; }
+  .deals :global(.chd.dhead) { font: 600 13px var(--font); color: var(--ok); margin-bottom: 8px; padding: 0; }
+  .deals :global(.chd.dhead .mut) { font-weight: 400; }
   .deal { cursor: pointer; }
   .deal, .lot { transition: opacity 0.25s; }
   .deal.faded, .lot.faded { opacity: 0.2; }
@@ -759,7 +713,6 @@
   .trow:hover { background: var(--bg); }
   .trow.foc { border-color: var(--acc); }
   .altw { font-size: 12px; margin-bottom: 4px; }
-  .warn { color: var(--warn, orange); }
   .link { border: 0; background: none; color: var(--acc); padding: 0; text-decoration: underline; }
   .oh .on { border-color: var(--acc); color: var(--acc); }
   /* one frame around the gain line and the lot; the card inside drops its own edge */

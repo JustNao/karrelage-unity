@@ -1,8 +1,12 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
-  import { call, kamas, on } from "../../lib/api";
+  import { call, on } from "../../lib/api";
+  import { kamas } from "../../lib/fmt";
+  import { norm } from "../../lib/effects";
   import Grip from "../../lib/components/Grip.svelte";
   import PanelHead from "../../lib/components/PanelHead.svelte";
+  import SearchBar from "../../lib/components/SearchBar.svelte";
+  import SideList from "../../lib/components/SideList.svelte";
   import { Columns } from "../../lib/columns.svelte";
   import ItemCard from "../../lib/components/ItemCard.svelte";
   import JsonTree from "../../lib/components/JsonTree.svelte";
@@ -56,11 +60,11 @@
     }
     return s;
   }
-  /** Lower-cased text the filter box searches in (cached like the summary). */
+  /** Normalized (accent / case-insensitive) text the filter box searches in, cached like the summary. */
   const haystacks = new WeakMap<object, string>();
   const haystack = (p: any) => {
     let h = haystacks.get(p);
-    if (h === undefined) haystacks.set(p, (h = (nm(p) + " " + (p.type ?? "") + " " + summary(p)).toLowerCase()));
+    if (h === undefined) haystacks.set(p, (h = norm(nm(p) + " " + (p.type ?? "") + " " + summary(p))));
     return h;
   };
 
@@ -92,7 +96,7 @@
     return out;
   });
   const visible = $derived.by(() => {
-    const needle = q.trim().toLowerCase();
+    const needle = norm(q.trim());
     const out = packets.filter((p) => {
       if (hidden.has(nm(p)) || (onlyType && nm(p) !== onlyType)) return false;
       if ((fdir && p.dir !== fdir) || (fkind && p.kind !== fkind)) return false;
@@ -181,23 +185,25 @@
 </script>
 
 <div class="bar">
-  <input type="search" placeholder="Filtrer (nom, champ, valeur)…" bind:value={q} />
-  <select bind:value={fdir}><option value="">Les deux sens</option><option>C-&gt;S</option><option>S-&gt;C</option></select>
-  <select bind:value={fkind}><option value="">Tous types</option><option value="event">événement</option><option value="request">requête</option><option value="response">réponse</option></select>
-  <label><input type="checkbox" bind:checked={follow} /> Suivre</label>
-  <button onclick={clear}>Vider</button>
-  <span class="mut">{visible.length} affichés / {packets.length} en mémoire</span>
+  <SearchBar bind:value={q} placeholder="Filtrer (nom, champ, valeur)…" width="240px" compact>
+    {#snippet after()}
+      <select bind:value={fdir}><option value="">Les deux sens</option><option>C-&gt;S</option><option>S-&gt;C</option></select>
+      <select bind:value={fkind}><option value="">Tous types</option><option value="event">événement</option><option value="request">requête</option><option value="response">réponse</option></select>
+      <label><input type="checkbox" bind:checked={follow} /> Suivre</label>
+      <button onclick={clear}>Vider</button>
+      <span class="mut">{visible.length} affichés / {packets.length} en mémoire</span>
+    {/snippet}
+  </SearchBar>
 </div>
 <div class="grid cgrid" class:anim={!cols.dragging} style:grid-template-columns={`${cols.px("types")}px 5px 1fr 5px ${current?.fmt ? cols.w.fmt + "px 5px " : ""}${cols.px("detail")}px`}>
-  <div class="types" class:cz={cols.collapsed.types}>
-    <PanelHead {cols} name="types" title="Types" />
+  <SideList {cols} name="types" title="Types">
     {#each typeStats as [k, c] (k)}
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-      <div class:hid={hidden.has(k)} class:sel={onlyType === k} title="clic : seulement celui-ci · maj+clic : masquer" onclick={(e) => clickType(k, e)}>
+      <div class="irow ty" class:hid={hidden.has(k)} class:sel={onlyType === k} title="clic : seulement celui-ci · maj+clic : masquer" onclick={(e) => clickType(k, e)}>
         <span>{k}</span><span class="mut">{c}</span>
       </div>
     {/each}
-  </div>
+  </SideList>
   <Grip {cols} name="types" dir={1} />
   <div class="list" bind:this={listEl}>
     <VirtualList items={visible} key={(p) => p.id} estimate={23} overscan={20}>
@@ -253,17 +259,14 @@
 
 <style>
   .bar { display: flex; gap: 10px; align-items: center; padding: 6px 12px; border-bottom: 1px solid var(--line); }
-  input[type="search"] { width: 240px; }
   .grid { flex: 1; min-height: 0; display: grid; }
-  .types, .detail, .fmt { background: var(--panel); overflow: auto; }
-  .types { border-right: 1px solid var(--line); }
+  .detail, .fmt { background: var(--panel); overflow: auto; }
   .detail { border-left: 1px solid var(--line); padding: 10px; }
   .fmt { border-left: 1px solid var(--line); padding: 10px; }
-  .types div { padding: 3px 8px; cursor: pointer; display: flex; justify-content: space-between; gap: 6px; border-bottom: 1px solid var(--line); }
-  .types div:hover { background: var(--bg); }
-  .types div.sel { outline: 1px solid var(--acc); }
-  .types div.hid { opacity: 0.35; text-decoration: line-through; }
-  .types span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* compact rows: many message types */
+  .irow.ty { padding: 3px 8px; display: flex; justify-content: space-between; gap: 6px; }
+  .irow.ty.hid { opacity: 0.35; text-decoration: line-through; }
+  .irow.ty span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .list { overflow: auto; }
   /* rows are divs (the list is virtualized): same columns as the former table */
   .tr { display: grid; grid-template-columns: 84px 44px 64px 190px minmax(0, 1fr); cursor: pointer; border-bottom: 1px solid var(--line); }

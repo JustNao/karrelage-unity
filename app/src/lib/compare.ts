@@ -1,4 +1,5 @@
 import { HIDDEN_EFFECTS, groupRank, isNegative } from "./effects";
+import { fmtNum } from "./fmt";
 
 /** One stat of the comparison: the lot's effect (left), the pinned lot's effect (right) and the difference between them. */
 export interface Pair {
@@ -53,4 +54,4 @@ export function pairRows(pin: any, row: any): Pair[] {
 }
 
 /** "+12" / "−20" (typographic minus), "=" when equal. */
-export const fmtDelta = (d: number) => (Math.abs(d) < 1e-9 ? "=" : `${d > 0 ? "+" : "−"}${Math.abs(d).toLocaleString("fr-FR")}`);
+export const fmtDelta = (d: number) => (Math.abs(d) < 1e-9 ? "=" : `${d > 0 ? "+" : ""}${fmtNum(d, 3)}`);

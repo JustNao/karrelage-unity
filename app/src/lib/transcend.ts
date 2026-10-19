@@ -1,10 +1,9 @@
 /** Transcendance opportunities: unlocked lots that gain a rune effect worth more than the rune costs. */
 import { analyse } from "./density";
-import { unitPrice as unit } from "./price";
+import { effectivePrice, unitPrice as unit, type StoredPrice } from "./price";
 
 export interface Rune { gid: number; name: string; a: number; value: number }
-/** unit = price read in the auction house, avg = average of the last week (preload), override = manual. Priority: override, unit, avg. */
-export interface StoredPrice { gid: number; unit: number | null; avg?: number | null; override: number | null; updated?: number | null }
+export type { StoredPrice } from "./price";
 
 /** A captured rune price older than this is flagged (a manual override never is). */
 export const STALE_SECS = 24 * 3600;
@@ -56,18 +55,9 @@ export interface Opportunity {
  */
 export function transcendance(rows: any[], runes: Rune[], prices: Map<number, StoredPrice>, focus: string | null = null, now = Date.now() / 1000) {
   const runeFor = (a: number, v: number) => runes.find((r) => r.a === a && r.value === v) ?? null;
-  const isStale = (gid: number) => {
-    const p = prices.get(gid);
-    return !!p && p.override == null && p.unit != null && now - (p.updated ?? 0) > STALE_SECS;
-  };
-  const isAvgOnly = (gid: number) => {
-    const p = prices.get(gid);
-    return !!p && p.override == null && p.unit == null && p.avg != null;
-  };
-  const price = (gid: number) => {
-    const p = prices.get(gid);
-    return p ? (p.override ?? p.unit ?? p.avg ?? null) : null;
-  };
+  const isStale = (gid: number) => effectivePrice(prices.get(gid))?.source === "relevé" && now - (prices.get(gid)!.updated ?? 0) > STALE_SECS;
+  const isAvgOnly = (gid: number) => effectivePrice(prices.get(gid))?.source === "moyenne";
+  const price = (gid: number) => effectivePrice(prices.get(gid))?.value ?? null;
 
   const targets = new Map<string, Target>();
   for (const r of rows.filter((r) => isTranscended(r) && !elementChanged(r))) {

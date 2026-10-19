@@ -3,6 +3,8 @@
   import { app } from "./lib/app.svelte";
   import { call, captureSet, on, restartApp } from "./lib/api";
   import { modules } from "./lib/registry";
+  import Banner from "./lib/components/Banner.svelte";
+  import ProgressBar from "./lib/components/ProgressBar.svelte";
 
   let current = $state(modules.find((m) => !m.devOnly)?.id ?? modules[0]?.id);
   const tabs = $derived(modules.filter((m) => app.dev || !m.devOnly));
@@ -73,7 +75,7 @@
       <span class="upd warn" title="Un pack de données plus récent est publié sur GitHub">⚠ Nouvelles données du jeu disponibles</span>
       <button class="updbtn" onclick={install}>Télécharger et mettre à jour</button>
     {:else if upd.state === "installing"}
-      <span class="upd"><span class="ubar"><span class="ufill" style:width="{upd.pct}%"></span></span>{upd.label}</span>
+      <span class="upd"><ProgressBar value={upd.pct / 100} width="140px" />{upd.label}</span>
     {:else if upd.state === "ready"}
       <span class="upd ok">✓ Mise à jour installée</span>
       <button class="updbtn" onclick={() => restartApp()}>Redémarrer</button>
@@ -85,14 +87,12 @@
   </header>
 
   {#if !s.ready && s.error}
-    <div class="banner bad">Problème avec le pack de données : {s.error}</div>
+    <Banner>Problème avec le pack de données : {s.error}</Banner>
   {/if}
   {#if s.npcapError}
-    <div class="banner warn">
-      La capture nécessite <b>Npcap</b> ({s.npcapError}). Installez-le depuis <b>npcap.com</b>, puis relancez Karrelage.
-    </div>
+    <Banner tone="warn">La capture nécessite <b>Npcap</b> ({s.npcapError}). Installez-le depuis <b>npcap.com</b>, puis relancez Karrelage.</Banner>
   {/if}
-  {#if err}<div class="banner bad">{err}</div>{/if}
+  {#if err}<Banner>{err}</Banner>{/if}
 
   <main>
     {#if active}
@@ -125,10 +125,5 @@
   .upd.ok { color: var(--ok); }
   .upd.bad { color: var(--bad); }
   .updbtn { border-color: var(--acc); color: var(--acc); }
-  .ubar { display: inline-block; width: 140px; height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
-  .ufill { display: block; height: 100%; background: var(--acc); transition: width 0.25s; }
-  .banner { padding: 6px 12px; font-family: var(--font); }
-  .banner.bad { background: color-mix(in srgb, var(--bad) 20%, transparent); }
-  .banner.warn { background: color-mix(in srgb, var(--warn) 20%, transparent); }
   main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 </style>

@@ -1,10 +1,13 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { SvelteSet } from "svelte/reactivity";
-  import { ago, call, kamas, on } from "../../lib/api";
+  import { call } from "../../lib/api";
+  import { ago, kamas } from "../../lib/fmt";
+  import { effectivePrice, prices, type PriceRow as Price } from "../../lib/stores/prices.svelte";
+  import Collapsible from "../../lib/components/Collapsible.svelte";
+  import ConfirmButton from "../../lib/components/ConfirmButton.svelte";
+  import SearchBar, { matcher } from "../../lib/components/SearchBar.svelte";
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
-
-  interface Price { gid: number; name: string; type_id: number | null; type: string; category: string; unit: number | null; updated?: number | null; avg?: number | null; avg_updated?: number | null; override: number | null }
 
   const CATEGORIES = ["Équipement", "Ressource", "Consommable", "Autre"];
   const collator = new Intl.Collator("fr");
@@ -31,7 +34,10 @@
     sortedCache.delete(g);
     where.set(p.gid, [p.category, p.type]);
   }
-  const putAll = (l: Price[]) => (l.forEach(put), version++);
+  const putAll = (l: Iterable<Price>) => {
+    for (const p of l) put(p);
+    version++;
+  };
   const clearAll = () => (groups.clear(), where.clear(), sortedCache.clear(), version++);
   const sorted = (g: Map<number, Price>) => {
     let l = sortedCache.get(g);
@@ -41,11 +47,11 @@
 
   const tree = $derived.by(() => {
     version;
-    const n = q.trim().toLowerCase();
+    const m = matcher(q);
     return CATEGORIES.filter((c) => groups.has(c))
       .map((c) => {
         const types = [...groups.get(c)!.entries()]
-          .map(([type, g]) => ({ type, items: n && !type.toLowerCase().includes(n) ? sorted(g).filter((p) => p.name.toLowerCase().includes(n)) : sorted(g) }))
+          .map(([type, g]) => ({ type, items: m(type) ? sorted(g) : sorted(g).filter((p) => m(p.name)) }))
           .filter((t) => t.items.length)
           .sort((a, b) => collator.compare(a.type, b.type));
         return { name: c, count: types.reduce((a, t) => a + t.items.length, 0), types };
@@ -58,9 +64,6 @@
   const toggle = (k: string) => (opened.has(k) ? opened.delete(k) : opened.add(k));
   const stamp = (p: Price) => p.updated ?? p.avg_updated ?? 0;
   const latest = (items: Price[]) => Math.max(...items.map(stamp));
-  /** The price used elsewhere: manual, else read in the auction house, else the weekly average. */
-  const used = (p: Price): { v: number; src: string } | null =>
-    p.override != null ? { v: p.override, src: "manuel" } : p.unit != null ? { v: p.unit, src: "relevé" } : p.avg != null ? { v: p.avg, src: "moyenne" } : null;
 
   async function setOverride(p: Price, raw: string) {
     const v = raw.trim() === "" ? null : Number(raw);
@@ -68,14 +71,15 @@
     if (v === p.override) return;
     await call("prices", "set_override", { gid: p.gid, value: v });
   }
-  async function forget() {
-    if (confirm("Oublier tous les prix enregistrés ?")) await call("prices", "forget");
-  }
 
   onMount(() => {
-    call<Price[]>("prices", "list").then(putAll);
-    const offs = [on<Price>("prices:price", (p) => putAll([p])), on<Price[]>("prices:bulk", putAll), on("prices:cleared", clearAll)];
-    return () => void offs.forEach((o) => o.then((f) => f()));
+    // the shared store has the prices; this tab keeps its own grouping, updated with each change
+    const off = prices.subscribe((c) => (c.kind === "clear" ? clearAll() : putAll(c.prices)));
+    void prices.ensure().then(() => {
+      clearAll();
+      putAll(prices.map.values());
+    });
+    return off;
   });
 </script>
 
@@ -83,30 +87,23 @@
   <SmoothScroll>
     <div class="head">
       <div class="fh">Prix enregistrés <span class="mut">· à l'unité, d'après le plus gros lot en vente, mis à jour à chaque ouverture d'un objet</span></div>
-      <input type="search" placeholder="Rechercher un objet ou un type…" bind:value={q} />
-      <button onclick={forget}>Oublier tous les prix</button>
+      <SearchBar bind:value={q} placeholder="Rechercher un objet ou un type…" compact />
+      <ConfirmButton label="Oublier tous les prix" title="Oublier tous les prix enregistrés" onconfirm={() => call("prices", "forget")} />
     </div>
     {#each tree as c (c.name)}
-      <button class="cat" aria-expanded={!isShut(c.name)} onclick={() => toggle(c.name)}>
-        <span class="chev" class:shut={isShut(c.name)}>▾</span> {c.name} <span class="mut">{c.count}</span>
-      </button>
-      {#if !isShut(c.name)}
+      <Collapsible head="cat" title={c.name} count={c.count} open={!isShut(c.name)} ontoggle={() => toggle(c.name)}>
         {#each c.types as t (t.type)}
           {@const k = `${c.name}/${t.type}`}
-          <button class="type" aria-expanded={!isShut(k)} onclick={() => toggle(k)}>
-            <span class="chev" class:shut={isShut(k)}>▾</span> {t.type}
-            <span class="mut">{t.items.length} · mis à jour {ago(latest(t.items))}</span>
-          </button>
-          {#if !isShut(k)}
-            <table>
+          <Collapsible head="type" title={t.type} count="{t.items.length} · mis à jour {ago(latest(t.items))}" open={!isShut(k)} ontoggle={() => toggle(k)}>
+            <table class="tbl">
               <colgroup><col /><col class="c1" /><col class="c2" /><col class="c3" /><col class="c4" /><col class="c5" /></colgroup>
               <thead><tr><th>Objet</th><th class="n">Prix utilisé</th><th class="n">Relevé HDV / unité</th><th class="n">Moyenne 7 j</th><th>Dernier relevé</th><th class="n">Prix manuel (kamas)</th></tr></thead>
               <tbody>
                 {#each t.items as p (p.gid)}
-                  {@const u = used(p)}
+                  {@const u = effectivePrice(p)}
                   <tr>
                     <td>{p.name}</td>
-                                        <td class="n"><b>{u ? kamas(u.v) : "—"}</b> {#if u}<small class="src {u.src}">{u.src}</small>{/if}</td>
+                    <td class="n"><b>{u ? kamas(u.value) : "—"}</b> {#if u}<small class="src {u.source}">{u.source}</small>{/if}</td>
                     <td class="n" class:dim={p.override != null}>{p.unit != null ? kamas(p.unit) : "—"}</td>
                     <td class="n" class:dim={p.override != null || p.unit != null}>{p.avg != null ? kamas(p.avg) : "—"}</td>
                     <td class="mut">{p.updated != null ? ago(p.updated) : "—"}</td>
@@ -118,9 +115,9 @@
                 {/each}
               </tbody>
             </table>
-          {/if}
+          </Collapsible>
         {/each}
-      {/if}
+      </Collapsible>
     {:else}
       <div class="mut">Aucun prix pour l'instant : ouvrez des objets à l'hôtel de vente, leur prix unitaire sera enregistré ici.</div>
     {/each}
@@ -132,25 +129,17 @@
   .view > :global(.wrap) { flex: 1; }
   .head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
   .head .fh { margin: 0; flex: 1; }
-  .head input { width: 200px; padding: 3px 6px; }
-  .cat, .type { display: flex; width: 100%; align-items: center; gap: 6px; border: 0; border-radius: 0; text-align: left; background: none; color: inherit; }
-  .cat { font: 700 14px var(--font); padding: 8px 4px; border-bottom: 1px solid var(--line); margin-top: 8px; }
-  .type { font: 600 12px var(--font); padding: 5px 4px 5px 18px; }
-  .chev { display: inline-block; transition: transform 0.2s; }
-  .chev.shut { transform: rotate(-90deg); }
+  .view :global(.chd.cat) { font: 700 14px var(--font); padding: 8px 4px; border-bottom: 1px solid var(--line); margin-top: 8px; }
+  .view :global(.chd.type) { font: 600 12px var(--font); padding: 5px 4px 5px 18px; }
   /* fixed layout + the same widths in every table: the price columns line up across all item types */
-  table { width: calc(100% - 22px); margin: 0 0 6px 22px; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
+  .tbl { width: calc(100% - 22px); margin: 0 0 6px 22px; table-layout: fixed; }
+  .tbl th { position: static; }
   col.c1 { width: 190px; } col.c2 { width: 150px; } col.c3 { width: 150px; } col.c4 { width: 120px; } col.c5 { width: 190px; }
-  td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  th { text-align: left; font-weight: 400; color: var(--mut); padding: 2px 6px; }
-  td { padding: 3px 6px; border-top: 1px solid var(--line); }
-  .n { text-align: right; }
+  .tbl td { padding: 3px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .dim { opacity: 0.45; }
   .src { color: var(--mut); margin-left: 4px; }
   .src.manuel { color: var(--acc); }
-  .src.moyenne { color: var(--warn, orange); }
-  .struck { text-decoration: line-through; opacity: 0.5; }
+  .src.moyenne { color: var(--warn); }
   td input { width: 100px; padding: 2px 4px; text-align: right; }
   td input.set { border-color: var(--acc); color: var(--acc); }
-  .mini { padding: 1px 6px; font-size: 11px; }
 </style>

@@ -1,16 +1,20 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { SvelteMap } from "svelte/reactivity";
-  import { call, kamas, on } from "../../lib/api";
+  import { call } from "../../lib/api";
+  import { kamas } from "../../lib/fmt";
+  import { auction } from "../../lib/stores/auction.svelte";
+  import { prices } from "../../lib/stores/prices.svelte";
+  import ConfirmButton from "../../lib/components/ConfirmButton.svelte";
   import Grip from "../../lib/components/Grip.svelte";
-  import PanelHead from "../../lib/components/PanelHead.svelte";
+  import ProgressBar from "../../lib/components/ProgressBar.svelte";
+  import SideList from "../../lib/components/SideList.svelte";
   import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
   import { Columns } from "../../lib/columns.svelte";
   import { SCAN_LIST_KEY, type ScanItem } from "../../lib/scanlist";
   import type { Recipes } from "../../lib/craft";
   import ItemCard from "../../lib/components/ItemCard.svelte";
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
-  import type { StoredPrice } from "../../lib/transcend";
   import {
     CARAC, FM_STATS, className, FRESH_SECS, HP_STAT, PANELS, SLOT_LAYOUT, SLOT_TITLES, STAT_ICON_CODES, STAT_LABEL, compute, fmOf, itemStats, lotStats, lotUnit, slotPrices, solve, sumSlots,
     type Build, type Info, type Lot, type Resolved, type SolveResult, type StatRow,
@@ -28,8 +32,6 @@
   let info = $state.raw<Info>({ items: {}, sets: {} });
   let recipes = $state.raw<Recipes>({ recipes: {}, names: {} });
   let icons = new SvelteMap<string, string>();
-  let auction = new SvelteMap<number, any>();
-  let prices = new SvelteMap<number, StoredPrice>();
   let result = $state<SolveResult | null | "none">(null);
   let solving = $state(false);
   let progress = $state(0);
@@ -42,11 +44,11 @@
 
   const lotsOf = (slot: string): Lot[] => {
     const gid = build?.slots[slot]?.gid;
-    return gid != null ? ((auction.get(gid)?.rows ?? []) as Lot[]) : [];
+    return gid != null ? ((auction.items.get(gid)?.rows ?? []) as Lot[]) : [];
   };
   const fresh = (slot: string) => {
     const gid = build?.slots[slot]?.gid;
-    const t = gid != null ? auction.get(gid)?.updated : null;
+    const t = gid != null ? auction.items.get(gid)?.updated : null;
     return t != null && now - t <= FRESH_SECS;
   };
   const chosenLot = (slot: string) => lotsOf(slot).find((l) => l.uid === build?.chosen[slot]) ?? null;
@@ -71,7 +73,7 @@
   /** The search needs a scanned listing for every item that is bought. */
   const unscanned = $derived(slotIds.filter((s) => !ignored.has(s) && !fresh(s)));
   const perSlot = $derived(
-    Object.fromEntries(slotIds.map((s) => [s, slotPrices(build!.slots[s].gid, lotsOf(s), build!.chosen[s], recipes, prices)])),
+    Object.fromEntries(slotIds.map((s) => [s, slotPrices(build!.slots[s].gid, lotsOf(s), build!.chosen[s], recipes, prices.map)])),
   );
   const craft = $derived(sumSlots(slotIds, ignored, (s) => perSlot[s].craft));
   const estSlots = $derived(slotIds.filter((s) => !ignored.has(s) && perSlot[s].estimated));
@@ -135,7 +137,6 @@
     try { await call("stuff", "rename", { id: b.id, name }); b.name = name; } catch (e) { err = String(e); }
   };
   const del = async (b: Build) => {
-    if (!confirm(`Supprimer « ${b.name} » ?`)) return;
     await call("stuff", "delete", { id: b.id });
     builds = builds.filter((x) => x.id !== b.id);
     if (sel === b.id) sel = builds[0]?.id ?? null;
@@ -217,21 +218,13 @@
     let alive = true;
     call<Build[]>("stuff", "list").then((l) => { if (!alive) return; builds = l; if (l[0]) select(l[0].id); });
     call<Recipes>("auction", "recipes").then((r) => (recipes = r));
-    call<any[]>("auction", "items").then((l) => l.forEach((e) => auction.set(e.gid, e)));
-    call<StoredPrice[]>("prices", "list").then((l) => l.forEach((p) => prices.set(p.gid, p)));
-    const offs = [
-      on("auction:item", (e: any) => auction.set(e.gid, e)),
-      on("auction:cleared", () => auction.clear()),
-      on<StoredPrice>("prices:price", (p) => prices.set(p.gid, p)),
-      on<StoredPrice[]>("prices:bulk", (l) => l.forEach((p) => prices.set(p.gid, p))),
-      on("prices:cleared", () => prices.clear()),
-    ];
+    void auction.ensure();
+    void prices.ensure();
     return () => {
       alive = false;
       clearInterval(tick);
       infoReq++; // a pending item_info / icons answer is dropped
       stop(); // the solver must not keep running (and patch the build) once the tab is gone
-      offs.forEach((o) => o.then((f) => f()));
     };
   });
 </script>
@@ -274,28 +267,27 @@
 {/snippet}
 
 <div class="grid cgrid" class:anim={!cols.dragging} style:grid-template-columns="{cols.px("left")}px 5px 1fr">
-  <aside class="side" class:cz={cols.collapsed.left}>
-    <PanelHead {cols} name="left" title="Stuffs" />
-    <div class="sbar">
-      <input type="search" placeholder="Lien Dofusbook…" bind:value={link} onkeydown={(e) => e.key === "Enter" && add()} />
-      <button class="bmini" onclick={add} disabled={busy}>{busy ? "…" : "Ajouter"}</button>
-    </div>
+  <SideList {cols} name="left" title="Stuffs">
+    {#snippet bar()}
+      <input class="link" type="search" placeholder="Lien Dofusbook…" bind:value={link} onkeydown={(e) => e.key === "Enter" && add()} />
+      <button class="mini" onclick={add} disabled={busy}>{busy ? "…" : "Ajouter"}</button>
+    {/snippet}
     {#if err}<div class="bad err">{err}</div>{/if}
     {#each builds as b, i (b.id)}
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-      <div class="irow" class:first={i === 0} class:sel={b.id === sel} onclick={() => renaming !== b.id && select(b.id)}>
+      <div class="irow brow" class:first={i === 0} class:sel={b.id === sel} onclick={() => renaming !== b.id && select(b.id)}>
         {#if renaming === b.id}
           <input class="rn" bind:value={draft} onclick={(e) => e.stopPropagation()} onkeydown={(e) => { if (e.key === "Enter") rename(b); if (e.key === "Escape") renaming = null; }} onblur={() => rename(b)} />
         {:else}
           <span class="nm"><b>{b.name}</b><br /><span class="mut">niv. {b.level} · {Object.keys(b.slots).length} objets</span></span>
-          <button class="bmini" title="Renommer" onclick={(e) => { e.stopPropagation(); renaming = b.id; draft = b.name; }}>✎</button>
-          <button class="bmini" title="Supprimer" onclick={(e) => { e.stopPropagation(); del(b); }}>✕</button>
+          <button class="mini" title="Renommer" onclick={(e) => { e.stopPropagation(); renaming = b.id; draft = b.name; }}>✎</button>
+          <ConfirmButton mini label="✕" confirmLabel="Supprimer ?" title="Supprimer ce stuff" onconfirm={() => del(b)} />
         {/if}
       </div>
     {:else}
       <div class="mut empty">Collez un lien Dofusbook ci-dessus pour charger un stuff.</div>
     {/each}
-  </aside>
+  </SideList>
   <Grip {cols} name="left" dir={1} />
 
   <main class="main">
@@ -304,7 +296,7 @@
     {:else}
       <div class="bar">
         <div class="ttl"><b>{build.name}</b> <span class="mut">niv. {build.level}</span>
-          <button class="mini" title="Recharger depuis Dofusbook" onclick={() => refresh(build!)}>↻</button>
+          <button class="ghost" title="Recharger depuis Dofusbook" onclick={() => refresh(build!)}>↻</button>
           <a class="mut" href={build.url} target="_blank" rel="noreferrer">Dofusbook</a>
           <button class="scan" onclick={openScanList} disabled={!toScan.length} title="Ouvre une petite fenêtre flottante avec les objets à scanner à l'HDV">À scanner ({toScan.length})</button></div>
       </div>
@@ -356,7 +348,7 @@
                 <div class="st">
                   <span class="lab">{FM_STATS[code].label}</span>
                   <span class="fm">+</span><input class="tg" inputmode="numeric" value={v} onchange={(e) => setFm(code, e.currentTarget.value)} />
-                  <button class="mini" title="Retirer" onclick={() => setFm(code, "0")}>✕</button>
+                  <button class="ghost" title="Retirer" onclick={() => setFm(code, "0")}>✕</button>
                 </div>
               {:else}
                 <div class="mut small">Aucune forgemagie dans ce stuff.</div>
@@ -394,7 +386,7 @@
               <div class="fh">Combinaison la moins chère</div>
               <div class="mut small">Renseignez des minimums dans les cases « min » des stats, puis lancez la recherche parmi les lots scannés.</div>
               {#if solving}
-                <div class="prog" role="progressbar" aria-valuenow={Math.round(progress * 100)} aria-valuemin="0" aria-valuemax="100"><div class="fill" style:width="{Math.round(progress * 100)}%"></div></div>
+                <div class="prog"><ProgressBar value={progress} height={6} speed={0.1} /></div>
                 <div class="small mut">Calcul… {Math.round(progress * 100)} %</div>
                 <button onclick={cancel}>Annuler</button>
               {:else}
@@ -432,28 +424,20 @@
   .grid { flex: 1; min-height: 0; display: grid; font-family: var(--font); }
   .main { min-height: 0; display: flex; flex-direction: column; padding: 8px 10px 0; min-width: 0; }
   .main > :global(.wrap) { flex: 1; }
-  /* builds list: same look as the HDV item list */
-  .side { overflow: auto; min-height: 0; min-width: 0; background: var(--panel); border-right: 1px solid var(--line); font-family: var(--font); }
-  .side .sbar { display: flex; gap: 6px; padding: 6px 10px; position: sticky; top: 30px; z-index: 3; background: var(--panel); }
-  .side .sbar input { flex: 1; min-width: 0; padding: 3px 6px; }
-  .side .irow { display: flex; align-items: center; gap: 4px; padding: 6px 10px; border-bottom: 1px solid var(--line); cursor: pointer; }
-  .side .irow:hover { background: var(--bg); }
-  .side .irow.sel { outline: 1px solid var(--acc); outline-offset: -1px; position: relative; z-index: 2; }
-  .side .irow.first { border-top: 1px solid var(--line); }
-  .side .empty { padding: 6px 10px; }
-  .side .err { padding: 0 10px 6px; }
-  .bmini { padding: 2px 7px; font-size: 11px; }
-  .bmini:disabled { opacity: 0.35; cursor: default; }
+  /* builds list (SideList, same look as the HDV item list) */
+  .link { flex: 1; min-width: 0; padding: 3px 6px; }
+  .irow.brow { display: flex; align-items: center; gap: 4px; }
+  .err { padding: 0 10px 6px; }
   .err { font-size: 12px; margin-bottom: 6px; }
   .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .rn { flex: 1; min-width: 0; }
-  .mini { border: 0; background: none; padding: 0 4px; color: var(--mut); }
-  .mini:hover { color: var(--fg); }
+  /* icon buttons without a frame */
+  .ghost { border: 0; background: none; padding: 0 4px; color: var(--mut); }
+  .ghost:hover { color: var(--fg); }
   .pad { padding: 20px; }
   .bar { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; padding: 6px 10px; margin-bottom: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
   .ttl { flex: 1; min-width: 220px; }
-  .prog { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin: 6px 0 2px; }
-  .prog .fill { height: 100%; background: var(--acc); transition: width 0.1s linear; }
+  .prog { margin: 6px 0 2px; line-height: 0; }
   .scan { margin-left: 10px; padding: 2px 8px; font-size: 12px; }
   .ttl a { margin-left: 8px; font-size: 12px; }
   .price { white-space: nowrap; }
@@ -526,6 +510,4 @@
   .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin: 0 3px 0 8px; }
   .dot.fresh { background: var(--ok); }
   .dot.stale { background: var(--bad); }
-  .good { color: var(--ok); }
-  .bad { color: var(--bad); }
 </style>

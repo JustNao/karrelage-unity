@@ -1,9 +1,11 @@
 <script lang="ts">
-  import { kamas } from "../api";
+  import { kamas, pct, signedKamas } from "../fmt";
   import { benefit } from "../craft";
   import { isLegendary, levelOf } from "../companion";
   import { isSenile, neuronsOf } from "../mounts";
   import { unitPrice } from "../price";
+  import { useSort } from "../sort.svelte";
+  import SortTable from "./SortTable.svelte";
 
   /** Familier / montilier / monture lots as a table (same look as the Crafting tab tables). `neurons` + `neuroneUnit` = mount extraction. */
   let {
@@ -27,7 +29,6 @@
   } = $props();
 
   const mount = $derived(neurons != null);
-  const sgn = (n: number) => (n > 0 ? "+" : "") + kamas(n);
 
   /** Per lot: price, level and, for mounts, the profit of extracting it (senile lots give 1 resource). */
   const rows = $derived(
@@ -46,78 +47,57 @@
   );
 
   type SortKey = "level" | "status" | "price" | "n" | "sale" | "profit" | "pct";
-  let sort = $state<SortKey | null>(null); // null = the order of the list
-  let desc = $state(false);
-  const setSort = (k: SortKey) => {
-    if (sort === k) desc = !desc;
-    else { sort = k; desc = k === "status" || k === "profit" || k === "pct"; }
-  };
-  const arrow = (k: SortKey) => (sort === k ? (desc ? " ▾" : " ▴") : "");
-  const sorted = $derived.by(() => {
-    const k = sort;
-    if (!k) return rows;
-    return [...rows].sort((a, b) => {
-      const x = a[k], y = b[k];
-      const bad = (v: number | null) => v == null || !Number.isFinite(v);
-      if (bad(x) && bad(y)) return 0;
-      if (bad(x)) return 1; // unknown values always last
-      if (bad(y)) return -1;
-      return desc ? (y as number) - (x as number) : (x as number) - (y as number);
-    });
-  });
+  const sort = useSort<SortKey>(null, false, (k) => k === "status" || k === "profit" || k === "pct"); // no column = the order of the list
+  const columns = $derived<{ key: SortKey; label: string; num?: boolean }[]>([
+    { key: "level", label: "Niveau", num: true },
+    { key: "status", label: "Statut" },
+    { key: "price", label: "Prix", num: true },
+    ...(mount
+      ? ([
+          { key: "n", label: resource, num: true },
+          { key: "sale", label: `Valeur des ${resource.toLowerCase()}`, num: true },
+          { key: "profit", label: "Bénéfice", num: true },
+          { key: "pct", label: "Rentabilité", num: true },
+        ] as const)
+      : []),
+  ]);
 </script>
 
-<table>
-  <thead>
-    <tr>
-      <th class="n"><button onclick={() => setSort("level")}>Niveau{arrow("level")}</button></th>
-      <th><button onclick={() => setSort("status")}>Statut{arrow("status")}</button></th>
-      <th class="n"><button onclick={() => setSort("price")}>Prix{arrow("price")}</button></th>
+<div class="ctable">
+  <SortTable
+    {columns}
+    rows={sort.apply(rows)}
+    {sort}
+    key={(r) => r.key}
+    rowProps={(r) => ({ id: `lot-${r.key}`, class: [picked === r.key && "picked", faded(r.row) && "faded", (r.profit ?? 0) > 0 && "hot"].filter(Boolean).join(" "), onclick: () => onpick?.(r.key) })}
+  >
+    {#snippet row(r)}
+      <td class="n"><b>{r.level ?? "?"}</b></td>
+      <td>
+        {#if r.legendary}<span class="tag leg">★ Légendaire</span>{/if}
+        {#if r.senile}<span class="tag mut">Sénile</span>{/if}
+        {#if (r.profit ?? 0) > 0}<span class="tag good" title="Extraire cette monture rapporte plus que son prix d'achat">⚠ Rentable en {resource.toLowerCase()}</span>{/if}
+      </td>
+      <td class="n">{Number.isFinite(r.price) ? kamas(r.price) : "—"}</td>
       {#if mount}
-        <th class="n"><button onclick={() => setSort("n")}>{resource}{arrow("n")}</button></th>
-        <th class="n"><button onclick={() => setSort("sale")}>Valeur des {resource.toLowerCase()}{arrow("sale")}</button></th>
-        <th class="n"><button onclick={() => setSort("profit")}>Bénéfice{arrow("profit")}</button></th>
-        <th class="n"><button onclick={() => setSort("pct")}>Rentabilité{arrow("pct")}</button></th>
+        <td class="n">{r.n}</td>
+        <td class="n">{r.sale != null ? kamas(r.sale) : "—"}</td>
+        <td class="n" class:good={(r.profit ?? 0) > 0} class:bad={(r.profit ?? 0) < 0}>{r.profit != null ? signedKamas(r.profit) : "—"}</td>
+        <td class="n" class:good={(r.pct ?? 0) > 0} class:bad={(r.pct ?? 0) < 0}><b>{r.pct != null ? pct(r.pct) : "—"}</b></td>
       {/if}
-    </tr>
-  </thead>
-  <tbody>
-    {#each sorted as r (r.key)}
-      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-      <tr id="lot-{r.key}" class:picked={picked === r.key} class:faded={faded(r.row)} class:hot={(r.profit ?? 0) > 0} onclick={() => onpick?.(r.key)}>
-        <td class="n"><b>{r.level ?? "?"}</b></td>
-        <td>
-          {#if r.legendary}<span class="tag leg">★ Légendaire</span>{/if}
-          {#if r.senile}<span class="tag mut">Sénile</span>{/if}
-          {#if (r.profit ?? 0) > 0}<span class="tag good" title="Extraire cette monture rapporte plus que son prix d'achat">⚠ Rentable en {resource.toLowerCase()}</span>{/if}
-        </td>
-        <td class="n">{Number.isFinite(r.price) ? kamas(r.price) : "—"}</td>
-        {#if mount}
-          <td class="n">{r.n}</td>
-          <td class="n">{r.sale != null ? kamas(r.sale) : "—"}</td>
-          <td class="n" class:good={(r.profit ?? 0) > 0} class:bad={(r.profit ?? 0) < 0}>{r.profit != null ? sgn(r.profit) : "—"}</td>
-          <td class="n" class:good={(r.pct ?? 0) > 0} class:bad={(r.pct ?? 0) < 0}><b>{r.pct != null ? (r.pct > 0 ? "+" : "") + r.pct.toFixed(1) + " %" : "—"}</b></td>
-        {/if}
-      </tr>
-    {:else}
-      <tr><td colspan={mount ? 7 : 3} class="mut">Aucun lot ne correspond au filtre</td></tr>
-    {/each}
-  </tbody>
-</table>
+    {/snippet}
+    {#snippet empty()}Aucun lot ne correspond au filtre{/snippet}
+  </SortTable>
+</div>
 
 <style>
-  table { width: 100%; border-collapse: collapse; font-size: 12px; font-family: var(--font); }
-  th { text-align: left; font-weight: 400; color: var(--mut); padding: 2px 6px; position: sticky; top: 0; background: var(--bg); }
-  th button { border: 0; background: none; color: inherit; font: inherit; padding: 0; cursor: pointer; }
-  td { padding: 4px 6px; border-top: 1px solid var(--line); }
-  tbody tr { cursor: pointer; transition: opacity 0.25s; }
-  tbody tr:hover { background: var(--panel); }
-  tr.picked { outline: 1px solid var(--acc); outline-offset: -1px; }
-  tr.faded { opacity: 0.2; }
-  tr.hot { background: color-mix(in srgb, var(--ok, #4caf50) 8%, transparent); }
-  .n { text-align: right; white-space: nowrap; }
+  /* lot rows are clickable (jump to the lot); the hot (profitable) tint is lighter than in the Crafting tables */
+  .ctable :global(tbody tr) { cursor: pointer; transition: opacity 0.25s; }
+  .ctable :global(tbody tr:hover) { background: var(--panel); }
+  .ctable :global(tr.picked) { outline: 1px solid var(--acc); outline-offset: -1px; }
+  .ctable :global(tr.faded) { opacity: 0.2; }
+  .ctable :global(tr.hot) { background: color-mix(in srgb, var(--ok) 8%, transparent); }
+  .ctable :global(tr.hot td) { background: none; }
   .tag { margin-right: 8px; white-space: nowrap; }
   .leg { color: var(--acc); }
-  .good { color: var(--good, #4caf50); }
-  .bad { color: var(--bad, #e05555); }
 </style>

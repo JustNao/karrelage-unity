@@ -1,6 +1,6 @@
 <script lang="ts">
   import Grip from "../../lib/components/Grip.svelte";
-  import PanelHead from "../../lib/components/PanelHead.svelte";
+  import SideList from "../../lib/components/SideList.svelte";
   import { Columns } from "../../lib/columns.svelte";
   import { subs } from "./subs";
 
@@ -10,15 +10,14 @@
 </script>
 
 <div class="view cgrid" class:anim={!cols.dragging} style:grid-template-columns="{cols.px("list")}px 5px 1fr">
-  <div class="ilist" class:cz={cols.collapsed.list}>
-    <PanelHead {cols} name="list" title="Crafting" />
+  <SideList {cols} name="list" title="Crafting">
     {#each subs as s, i (s.id)}
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
       <div class="irow" class:first={i === 0} class:sel={sel?.id === s.id} onclick={() => (selId = s.id)}>
         <b>{s.title}</b><br /><span class="mut">{s.description}</span>
       </div>
     {/each}
-  </div>
+  </SideList>
   <Grip {cols} name="list" dir={1} />
   <div class="body">
     {#if sel}<sel.component />{/if}
@@ -27,10 +26,5 @@
 
 <style>
   .view { flex: 1; min-height: 0; display: grid; font-family: var(--font); }
-  .ilist { overflow: auto; background: var(--panel); border-right: 1px solid var(--line); }
-  .ilist div { padding: 6px 10px; border-bottom: 1px solid var(--line); cursor: pointer; }
-  .ilist .irow:hover { background: var(--bg); }
-  .ilist div.sel { outline: 1px solid var(--acc); outline-offset: -1px; position: relative; z-index: 2; }
-  .ilist div.first { border-top: 1px solid var(--line); }
   .body { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 </style>

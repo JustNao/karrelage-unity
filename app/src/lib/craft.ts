@@ -1,5 +1,6 @@
 /** Craft cost of an item from the stored prices, recursive: an ingredient is bought or crafted, whichever is cheaper. */
-import { AH_TAX, type StoredPrice } from "./transcend";
+import { priceOf, type StoredPrice } from "./price";
+import { AH_TAX } from "./transcend";
 
 export interface Recipes {
   /** result gid -> [[ingredient gid, quantity], ...] */
@@ -26,10 +27,7 @@ export interface CraftResult {
 }
 
 /** Stored price of an item: manual override, then the price read in the auction house, then the weekly average. */
-export const storedPrice = (prices: Map<number, StoredPrice>, gid: number): number | null => {
-  const p = prices.get(gid);
-  return p ? (p.override ?? p.unit ?? p.avg ?? null) : null;
-};
+export const storedPrice = (prices: Map<number, StoredPrice>, gid: number): number | null => priceOf(prices, gid);
 
 export function craftCost(gid: number, r: Recipes, prices: Map<number, StoredPrice>): CraftResult | null {
   if (!r.recipes[gid]) return null;

@@ -15,6 +15,7 @@
 
 <script lang="ts">
   import { analyse, isGoodDeal, type Fit } from "../density";
+  import { fmtCompact as compact } from "../fmt";
 
   /**
    * Price (x) against density (y) of the lots of one item, with a least-squares trend line and a ±2σ band.
@@ -64,7 +65,6 @@
       `L${sx(dom.x1)},${sy(fit.slope * dom.x1 + fit.icpt - 2 * fit.sigma)} L${sx(dom.x0)},${sy(fit.slope * dom.x0 + fit.icpt - 2 * fit.sigma)} Z`,
   );
 
-  const compact = (n: number) => (n >= 1e6 ? +(n / 1e6).toFixed(2) + "M" : n >= 1e3 ? +(n / 1e3).toFixed(1) + "k" : String(Math.round(n)));
   const ticks = $derived.by(() => {
     const raw = (dom.x1 - dom.x0) / 5;
     const mag = 10 ** Math.floor(Math.log10(raw));
