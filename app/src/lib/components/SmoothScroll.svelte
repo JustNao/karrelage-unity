@@ -39,7 +39,10 @@
     ro.observe(scroller);
     ro.observe(inner);
     measure();
-    return () => ro.disconnect();
+    return () => {
+      ro.disconnect();
+      cancelAnimationFrame(frame);
+    };
   });
 
   function down(e: PointerEvent) {

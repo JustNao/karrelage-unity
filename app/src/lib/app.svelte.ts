@@ -31,10 +31,19 @@ class AppState {
     } catch {}
   }
 
+  private poll: ReturnType<typeof setInterval> | undefined;
+
+  /** The status is pushed (`app:status`) at startup and when capture is switched; the connections to Dofus.exe are found
+   *  by the capture threads without an event, so they are polled, only while capture is on. */
+  private apply(s: Status) {
+    this.status = s;
+    if (s.on && !this.poll) this.poll = setInterval(() => getStatus().then((x) => this.apply(x)).catch(() => {}), 3000);
+    else if (!s.on && this.poll) (clearInterval(this.poll), (this.poll = undefined));
+  }
+
   async init() {
-    this.status = await getStatus();
-    await on<Status>("app:status", (s) => (this.status = s));
-    setInterval(async () => (this.status = await getStatus()), 3000);
+    await on<Status>("app:status", (s) => this.apply(s));
+    this.apply(await getStatus());
   }
 }
 

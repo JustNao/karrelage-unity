@@ -32,13 +32,19 @@
   const date = (t: number) => new Date(t * 1000).toLocaleString("fr-FR");
   const num = (n: number | null | undefined) => (n == null ? "?" : n.toLocaleString("fr-FR"));
 
+  /** One check at a time: the 3 s poll (and the button) skip while the previous one is still running. */
+  let checking = false;
   async function refresh() {
+    if (checking) return;
+    checking = true;
     try {
       report = await call<Report>("names", "check");
       running = report.running || running;
       error = "";
     } catch (e) {
       error = String(e);
+    } finally {
+      checking = false;
     }
   }
 

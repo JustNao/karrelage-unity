@@ -304,12 +304,26 @@
   });
 
   // ---- saved transcendance candidates: a snapshot kept across scans (the lot may be sold by the time you come back)
+  /** `row` is a summary of the lot (uid, priced stacks, lock and what the card shows of each effect), not the whole row. */
   interface Saved { key: string; gid: number; itemName: string; savedAt: number; row: any; label: string; value: number; rune: string; buy: number; runeCost: number; sale: number; profit: number }
   const SAVED_KEY = "karrelage.savedCandidates";
-  let saved = $state.raw<Saved[]>([]);
-  try {
-    saved = JSON.parse(localStorage.getItem(SAVED_KEY) ?? "[]");
-  } catch {}
+  const lotSummary = (r: any) => ({
+    uid: r.uid ?? null,
+    gid: r.gid ?? null,
+    locked: !!r.locked,
+    prices: (r.prices ?? []).filter((p: any) => p.price > 0),
+    effects: (r.effects ?? []).map(({ action, text, status, hi, range, group, order, density, stat, known }: any) => ({ action, text, status, hi, range, group, order, density, stat, known })),
+  });
+  const loadSaved = (): Saved[] => {
+    try {
+      const l: Saved[] = JSON.parse(localStorage.getItem(SAVED_KEY) ?? "[]").map((s: Saved) => ({ ...s, row: lotSummary(s.row) })); // older entries kept the full row
+      if (l.length) localStorage.setItem(SAVED_KEY, JSON.stringify(l));
+      return l;
+    } catch {
+      return [];
+    }
+  };
+  let saved = $state.raw<Saved[]>(loadSaved());
   const persistSaved = (l: Saved[]) => {
     saved = l;
     try {
@@ -323,7 +337,7 @@
     if (isSaved(o)) return persistSaved(saved.filter((s) => s.key !== key));
     const t = o.best.target;
     persistSaved([
-      { key, gid: item.gid, itemName: item.name, savedAt: Date.now() / 1000, row: o.row, label: effLabel(t.a), value: t.value, rune: t.rune?.name ?? "?", buy: o.buy, runeCost: t.runeCost ?? 0, sale: t.sale, profit: o.best.profit },
+      { key, gid: item.gid, itemName: item.name, savedAt: Date.now() / 1000, row: lotSummary(o.row), label: effLabel(t.a), value: t.value, rune: t.rune?.name ?? "?", buy: o.buy, runeCost: t.runeCost ?? 0, sale: t.sale, profit: o.best.profit },
       ...saved,
     ]);
   }
@@ -373,29 +387,47 @@
   }
 
   onMount(() => {
-    call<EffectMeta[]>("auction", "effects").then((e) => (picker = e));
-    call<EffectMeta[]>("auction", "effect_meta").then((l) => (meta = Object.fromEntries(l.map((e) => [e.id, e]))));
-    call<Recipes>("auction", "recipes").then((r) => (recipes = r));
-    neuroneGids().then((m) => (neurGids = m)).catch(() => {});
-    foodGids().then((m) => (foodIds = m)).catch(() => {});
-    call<Rune[]>("prices", "runes").then((l) => (runes = l));
-    call<StoredPrice[]>("prices", "list").then((l) => l.forEach((p) => stored.set(p.gid, p)));
-    call<any[]>("auction", "items").then((l) => {
-      l.forEach(put);
+    // Startup snapshots can come back after live events (or a "clear") that are newer than them: each answer is checked
+    // against these counters (bumped on clear and when the tab closes) and never replaces newer data.
+    let itemsEpoch = 0, pricesEpoch = 0, alive = true;
+    const live = <T,>(f: (v: T) => void) => (v: T) => void (alive && f(v));
+    call<EffectMeta[]>("auction", "effects").then(live((e) => (picker = e)));
+    call<EffectMeta[]>("auction", "effect_meta").then(live((l) => (meta = Object.fromEntries(l.map((e) => [e.id, e])))));
+    call<Recipes>("auction", "recipes").then(live((r) => (recipes = r)));
+    neuroneGids().then(live((m) => (neurGids = m))).catch(() => {});
+    foodGids().then(live((m) => (foodIds = m))).catch(() => {});
+    call<Rune[]>("prices", "runes").then(live((l) => (runes = l)));
+    const pe = pricesEpoch;
+    call<StoredPrice[]>("prices", "list").then(live((l) => {
+      if (pe !== pricesEpoch) return;
+      for (const p of l) if (!stored.has(p.gid)) stored.set(p.gid, p); // a price event already received is newer
+    }));
+    const ie = itemsEpoch;
+    call<any[]>("auction", "items").then(live((l) => {
+      if (ie !== itemsEpoch) return;
+      for (const i of l) {
+        const old = items.get(i.gid);
+        if (!old || old.updated <= i.updated) put(i); // an item scanned while the list was loading stays
+      }
       if ((selGid === null || !items.has(selGid)) && l.length) selGid = l[0].gid;
       void tick().then(() => document.querySelector(".ilist .irow.sel")?.scrollIntoView({ block: "center" })); // back to the item that was open
-    });
+    }));
     const offs = [
       on("auction:item", showNew),
       on<StoredPrice>("prices:price", (p) => stored.set(p.gid, p)),
       on<StoredPrice[]>("prices:bulk", (l) => l.forEach((p) => stored.set(p.gid, p))), // weekly averages preloaded by the game
-      on("prices:cleared", () => stored.clear()),
+      on("prices:cleared", () => (pricesEpoch++, stored.clear())),
       on("auction:cleared", () => {
+        itemsEpoch++;
         items.clear();
         selGid = null;
       }),
     ];
-    return () => void offs.forEach((o) => o.then((f) => f()));
+    return () => {
+      alive = false;
+      clearTimeout(confirmTimer);
+      offs.forEach((o) => o.then((f) => f()));
+    };
   });
 </script>
 

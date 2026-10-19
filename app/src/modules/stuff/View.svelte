@@ -91,16 +91,24 @@
   const icon = (kind: "item" | "stat", key: string | number) => icons.get(`${kind}:${key}`);
   const val = (c: typeof real, s: number) => c?.totals.get(s) ?? 0;
 
+  /** Request token: only the latest build's data is applied (clicking A then B quickly must not end up with A's items). */
+  let infoReq = 0;
   async function loadInfo(b: Build) {
+    const req = ++infoReq;
     const gids = Object.values(b.slots).map((s) => s.gid);
-    info = await call<Info>("stuff", "item_info", { gids });
-    const got = await call<Record<string, string>>("stuff", "icons", { item: Object.values(b.slots).map((s) => s.picture), stat: STAT_ICON_CODES });
-    for (const [k, v] of Object.entries(got)) icons.set(k, v);
+    const got = await call<Info>("stuff", "item_info", { gids });
+    if (req !== infoReq) return;
+    info = got;
+    const pics = await call<Record<string, string>>("stuff", "icons", { item: Object.values(b.slots).map((s) => s.picture), stat: STAT_ICON_CODES });
+    if (req !== infoReq) return;
+    // only the current build's icons are kept (they are data URLs: the map would otherwise grow with every build opened)
+    for (const k of [...icons.keys()]) if (k.startsWith("item:") && !(k in pics)) icons.delete(k);
+    for (const [k, v] of Object.entries(pics)) icons.set(k, v);
   }
 
   async function select(id: string) {
     sel = id; result = null;
-    try { await loadInfo(builds.find((b) => b.id === id)!); } catch (e) { err = String(e); }
+    try { await loadInfo(builds.find((b) => b.id === id)!); } catch (e) { if (sel === id) err = String(e); }
   }
 
   async function add() {
@@ -136,7 +144,7 @@
     try {
       const fresh = await call<Build>("stuff", "refresh", { id: b.id });
       builds = builds.map((x) => (x.id === b.id ? fresh : x));
-      await loadInfo(fresh);
+      if (sel === b.id) await loadInfo(fresh); // another build opened meanwhile: its data stays
     } catch (e) { err = String(e); }
   };
 
@@ -190,7 +198,7 @@
       }
     };
     worker.onerror = (e) => { err = e.message || "erreur du calcul"; stop(); };
-    worker.postMessage(JSON.parse(JSON.stringify({ build: { ...build!, ignored: [...ignored] }, info, lots, targets: build!.targets })));
+    worker.postMessage({ build: { ...$state.snapshot(build!), ignored: [...ignored] }, info, lots, targets: $state.snapshot(build!.targets) });
   }
   function stop() { worker?.terminate(); worker = null; solving = false; }
   function cancel() { cancelled = true; stop(); }
@@ -206,7 +214,8 @@
 
   onMount(() => {
     const tick = setInterval(() => (now = Date.now() / 1000), 15000);
-    call<Build[]>("stuff", "list").then((l) => { builds = l; if (l[0]) select(l[0].id); });
+    let alive = true;
+    call<Build[]>("stuff", "list").then((l) => { if (!alive) return; builds = l; if (l[0]) select(l[0].id); });
     call<Recipes>("auction", "recipes").then((r) => (recipes = r));
     call<any[]>("auction", "items").then((l) => l.forEach((e) => auction.set(e.gid, e)));
     call<StoredPrice[]>("prices", "list").then((l) => l.forEach((p) => prices.set(p.gid, p)));
@@ -217,7 +226,13 @@
       on<StoredPrice[]>("prices:bulk", (l) => l.forEach((p) => prices.set(p.gid, p))),
       on("prices:cleared", () => prices.clear()),
     ];
-    return () => { clearInterval(tick); offs.forEach((o) => o.then((f) => f())); };
+    return () => {
+      alive = false;
+      clearInterval(tick);
+      infoReq++; // a pending item_info / icons answer is dropped
+      stop(); // the solver must not keep running (and patch the build) once the tab is gone
+      offs.forEach((o) => o.then((f) => f()));
+    };
   });
 </script>
 
