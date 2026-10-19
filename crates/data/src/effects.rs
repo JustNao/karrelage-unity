@@ -41,7 +41,7 @@ fn spaced(n: i64) -> String {
     let s = n.abs().to_string();
     let mut out = String::new();
     for (i, c) in s.chars().enumerate() {
-        if i > 0 && (s.len() - i) % 3 == 0 {
+        if i > 0 && (s.len() - i).is_multiple_of(3) {
             out.push(' ');
         }
         out.push(c);
@@ -81,8 +81,12 @@ impl Data {
         let val = |i: usize| params.get(i - 1).filter(|v| !v.is_null());
         let out = cond_re().replace_all(tpl, |c: &regex::Captures| {
             let b: usize = c[2].parse().unwrap();
-            let keep = !matches!(val(b), None) && val(b).and_then(Value::as_i64) != Some(0);
-            if keep { c[3].to_string() } else { String::new() }
+            let keep = val(b).is_some() && val(b).and_then(Value::as_i64) != Some(0);
+            if keep {
+                c[3].to_string()
+            } else {
+                String::new()
+            }
         });
         let out = hole_re().replace_all(&out, |c: &regex::Captures| match val(c[1].parse().unwrap()) {
             None => String::new(),
@@ -117,7 +121,9 @@ impl Data {
     /// {id, label, group, order, density, filterable} for one effect (None when it has no label).
     pub fn effect_entry(&self, a: i64) -> Option<Value> {
         let (e, label) = (self.effects.get(&a)?, self.effect_label(a)?);
-        Some(json!({"id": a, "label": label, "group": e.group, "order": e.order, "density": e.density, "stat": self.stat_of(a), "filterable": self.is_filterable(a)}))
+        Some(
+            json!({"id": a, "label": label, "group": e.group, "order": e.order, "density": e.density, "stat": self.stat_of(a), "filterable": self.is_filterable(a)}),
+        )
     }
 
     /// Every labelled effect, so the UI can group/label anything it meets in a lot.

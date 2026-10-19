@@ -6,13 +6,14 @@ use crate::prices::AVG_PRICES;
 use crate::{Ctx, Interest, Message, Module};
 use anyhow::{anyhow, Result};
 use loutil_proto::{Kind, MessageDescriptor};
+use parking_lot::Mutex;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 /// Where Ankama installs the game; only file sizes are looked at.
 fn game_dir() -> Option<PathBuf> {
@@ -30,6 +31,12 @@ pub struct NamesTab {
     active: AtomicBool,
     running: Arc<AtomicBool>,
     seen: Mutex<BTreeMap<String, u64>>,
+}
+
+impl Default for NamesTab {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl NamesTab {
@@ -133,11 +140,7 @@ fn spawn_pipeline(root: PathBuf, mode: &'static str, emit: Arc<dyn Fn(&str, Valu
             _ => {}
         }
         cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-        }
+        crate::sys::no_window(&mut cmd);
         let ok = match cmd.spawn() {
             Ok(mut child) => {
                 let mut readers = vec![];
@@ -179,7 +182,7 @@ impl Module for NamesTab {
 
     fn on_message(&self, m: &Message, _ctx: &Ctx) {
         if let Some(t) = &m.type_name {
-            *self.seen.lock().unwrap().entry(t.clone()).or_default() += 1;
+            *self.seen.lock().entry(t.clone()).or_default() += 1;
         }
     }
 
@@ -190,12 +193,12 @@ impl Module for NamesTab {
                 let on = args.get("on").and_then(Value::as_bool).unwrap_or(false);
                 self.active.store(on, Ordering::Relaxed);
                 if !on {
-                    self.seen.lock().unwrap().clear();
+                    self.seen.lock().clear();
                 }
                 Ok(json!({"active": on}))
             }
             "reset" => {
-                self.seen.lock().unwrap().clear();
+                self.seen.lock().clear();
                 Ok(json!({}))
             }
             "check" => {
@@ -203,7 +206,7 @@ impl Module for NamesTab {
                 let game = game_check(ctx);
                 let named = ctx.proto.named();
                 let stale: Vec<&str> = named.iter().filter(|(obf, ..)| ctx.proto.message(obf).is_none()).map(|(o, ..)| o.as_str()).collect();
-                let seen = self.seen.lock().unwrap();
+                let seen = self.seen.lock();
                 let unknown: Vec<(&String, &u64)> = seen.iter().filter(|(t, _)| ctx.proto.message(t).is_none()).collect();
                 let unnamed = seen.keys().filter(|t| ctx.proto.message(t).is_some() && ctx.proto.message_name(t).1.is_none()).count();
                 let total: u64 = seen.values().sum();
@@ -228,7 +231,8 @@ impl Module for NamesTab {
             }
             // args: {mode: "names" | "full" | "repack"}; runs pipeline/update_names.py, streaming its output as names:log events
             "compute" => {
-                let root = repo_root().ok_or_else(|| anyhow!("disponible seulement depuis le dépôt de développement (pipeline/update_names.py introuvable)"))?;
+                let root =
+                    repo_root().ok_or_else(|| anyhow!("disponible seulement depuis le dépôt de développement (pipeline/update_names.py introuvable)"))?;
                 if self.running.swap(true, Ordering::SeqCst) {
                     return Err(anyhow!("un calcul est déjà en cours"));
                 }

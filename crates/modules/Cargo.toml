@@ -8,9 +8,13 @@ description = "Feature modules (packets inspector, auction house) and the hub th
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+parking_lot = "0.12"
 loutil-core = { path = "../core" }
 loutil-data = { path = "../data" }
 loutil-proto = { path = "../proto" }
 ureq = "2"
 sha2 = "0.11.1"
 zip = { version = "9.0.5", default-features = false, features = ["deflate"] }
+
+[lints]
+workspace = true

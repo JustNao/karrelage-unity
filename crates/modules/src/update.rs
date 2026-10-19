@@ -3,14 +3,14 @@
 //! pack when newer) and ask for a restart. Progress is streamed as `update:progress` events.
 use crate::{Ctx, Interest, Message, Module};
 use anyhow::{anyhow, bail, Context, Result};
+use parking_lot::Mutex;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::io::{Cursor, Read, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::sync::Arc;
 
 /// Where the published pack lives (raw files of the repository). Override with KARRELAGE_PACK_URL (tests, forks).
 const DEFAULT_BASE: &str = "https://raw.githubusercontent.com/JustNao/karrelage-unity/main/dist";
@@ -33,6 +33,12 @@ pub struct Update {
     busy: Arc<AtomicBool>,
 }
 
+impl Default for Update {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Update {
     pub fn new() -> Self {
         Self { remote: Mutex::new(None), busy: Arc::new(AtomicBool::new(false)) }
@@ -40,7 +46,7 @@ impl Update {
 }
 
 fn agent() -> ureq::Agent {
-    ureq::AgentBuilder::new().timeout_connect(Duration::from_secs(8)).timeout_read(Duration::from_secs(20)).build()
+    crate::sys::http().build()
 }
 
 pub fn fetch_remote(base: &str) -> Result<Remote> {
@@ -52,7 +58,7 @@ pub fn fetch_remote(base: &str) -> Result<Remote> {
 /// `progress(phase, done, total)` with phase = "download" | "extract" | "done".
 pub fn install_pack(base: &str, remote: &Remote, dir: &Path, progress: &dyn Fn(&str, u64, u64)) -> Result<()> {
     let resp = agent().get(&format!("{base}/{}", remote.file)).call().context("téléchargement du pack")?;
-    let total = resp.header("Content-Length").and_then(|v| v.parse().ok()).unwrap_or(remote.size);
+    let total = resp.header("Content-Length").and_then(|v| v.parse().ok()).unwrap_or(remote.size).min(remote.size.max(1));
     let mut reader = resp.into_reader();
     let (mut bytes, mut hasher, mut buf) = (Vec::with_capacity(total as usize), Sha256::new(), [0u8; 64 * 1024]);
     let mut last_pct = u64::MAX;
@@ -60,6 +66,9 @@ pub fn install_pack(base: &str, remote: &Remote, dir: &Path, progress: &dyn Fn(&
         let n = reader.read(&mut buf)?;
         if n == 0 {
             break;
+        }
+        if bytes.len() + n > remote.size as usize {
+            bail!("pack plus gros que prévu ({} octets annoncés)", remote.size);
         }
         bytes.extend_from_slice(&buf[..n]);
         hasher.update(&buf[..n]);
@@ -69,7 +78,7 @@ pub fn install_pack(base: &str, remote: &Remote, dir: &Path, progress: &dyn Fn(&
             progress("download", bytes.len() as u64, total);
         }
     }
-    let digest: String = hasher.finalize().iter().map(|b| format!("{b:02x}")).collect();
+    let digest = loutil_core::wire::hex(&hasher.finalize());
     if bytes.len() as u64 != remote.size || !digest.eq_ignore_ascii_case(&remote.sha256) {
         bail!("le fichier téléchargé est corrompu (taille ou somme de contrôle incorrecte)");
     }
@@ -123,14 +132,14 @@ impl Module for Update {
                     Ok(r) => {
                         let available = r.generated > local;
                         let out = json!({"available": available, "local": local, "remote": r.generated, "size": r.size});
-                        *self.remote.lock().unwrap() = Some(r);
+                        *self.remote.lock() = Some(r);
                         out
                     }
                     Err(e) => json!({"available": false, "local": local, "error": format!("{e:#}")}),
                 })
             }
             "install" => {
-                let remote = self.remote.lock().unwrap().clone().ok_or_else(|| anyhow!("aucune mise à jour connue : vérifiez d'abord"))?;
+                let remote = self.remote.lock().clone().ok_or_else(|| anyhow!("aucune mise à jour connue : vérifiez d'abord"))?;
                 if self.busy.swap(true, Ordering::SeqCst) {
                     return Err(anyhow!("une mise à jour est déjà en cours"));
                 }
@@ -188,7 +197,7 @@ mod tests {
     }
 
     fn sha(b: &[u8]) -> String {
-        Sha256::digest(b).iter().map(|x| format!("{x:02x}")).collect()
+        loutil_core::wire::hex(&Sha256::digest(b))
     }
 
     #[test]
@@ -204,9 +213,9 @@ mod tests {
         std::fs::create_dir_all(dir.join("datapack")).unwrap();
         std::fs::write(dir.join("datapack/old.json"), "x").unwrap(); // replaced wholesale
         let phases = Mutex::new(vec![]);
-        install_pack(&base, &remote, &dir, &|p, _, _| phases.lock().unwrap().push(p.to_string())).unwrap();
+        install_pack(&base, &remote, &dir, &|p, _, _| phases.lock().push(p.to_string())).unwrap();
         assert!(dir.join("datapack/protocol.desc").exists() && !dir.join("datapack/old.json").exists() && !dir.join("datapack.new").exists());
-        let p = phases.lock().unwrap();
+        let p = phases.lock();
         assert!(p.contains(&"download".to_string()) && p.contains(&"extract".to_string()) && p.last().unwrap() == "done");
     }
 

@@ -6,8 +6,12 @@ pub mod auction;
 pub mod names;
 pub mod packets;
 pub mod prices;
+pub mod store;
 pub mod stuff;
+pub(crate) mod sys;
 pub mod update;
+
+pub use store::{flush_all, load_json, save_json, Persist};
 
 use anyhow::{anyhow, Result};
 use loutil_core::wire::{self, Envelope};
@@ -16,7 +20,7 @@ use loutil_data::Data;
 use loutil_proto::{DynamicMessage, Proto};
 use serde_json::Value;
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
@@ -71,6 +75,11 @@ impl Ctx {
         self.emit.clone()
     }
 
+    /// Owned handle to the log, for background threads.
+    pub fn logger(&self) -> Arc<dyn Fn(String) + Send + Sync> {
+        self.log.clone()
+    }
+
     pub fn log(&self, line: impl Into<String>) {
         (self.log)(line.into());
     }
@@ -100,7 +109,14 @@ pub trait Module: Send + Sync {
 
 /// Every module of the app. Register new ones here.
 pub fn all() -> Vec<Box<dyn Module>> {
-    vec![Box::new(packets::Packets::new()), Box::new(auction::Auction::new()), Box::new(prices::Prices::new()), Box::new(stuff::Stuff::new()), Box::new(names::NamesTab::new()), Box::new(update::Update::new())]
+    vec![
+        Box::new(packets::Packets::new()),
+        Box::new(auction::Auction::new()),
+        Box::new(prices::Prices::new()),
+        Box::new(stuff::Stuff::new()),
+        Box::new(names::NamesTab::new()),
+        Box::new(update::Update::new()),
+    ]
 }
 
 pub struct Hub {
@@ -110,13 +126,7 @@ pub struct Hub {
 }
 
 impl Hub {
-    pub fn new(
-        data: Arc<Data>,
-        proto: Arc<Proto>,
-        dir: PathBuf,
-        emit: Arc<dyn Fn(&str, Value) + Send + Sync>,
-        log: Arc<dyn Fn(String) + Send + Sync>,
-    ) -> Self {
+    pub fn new(data: Arc<Data>, proto: Arc<Proto>, dir: PathBuf, emit: Arc<dyn Fn(&str, Value) + Send + Sync>, log: Arc<dyn Fn(String) + Send + Sync>) -> Self {
         let hub = Hub { ctx: Ctx { data, proto, dir, emit, log }, modules: all(), seq: AtomicU64::new(0) };
         for m in &hub.modules {
             m.init(&hub.ctx);
@@ -165,19 +175,4 @@ impl Hub {
     pub fn module_ids(&self) -> Vec<&'static str> {
         self.modules.iter().map(|m| m.id()).collect()
     }
-}
-
-pub fn load_json(path: &Path) -> Option<Value> {
-    serde_json::from_slice(&std::fs::read(path).ok()?).ok()
-}
-
-/// Atomic write (tmp + rename) so a crash never leaves a half-written store.
-pub fn save_json(path: &Path, v: &Value) -> Result<()> {
-    if let Some(p) = path.parent() {
-        std::fs::create_dir_all(p)?;
-    }
-    let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, serde_json::to_vec(v)?)?;
-    std::fs::rename(&tmp, path)?;
-    Ok(())
 }

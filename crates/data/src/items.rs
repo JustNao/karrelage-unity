@@ -12,6 +12,8 @@ pub const LOT_SIZES: [i64; 4] = [1, 10, 100, 1000];
 pub const INFO_EFFECTS: [(i64, &str); 2] = [(985, "modified_by"), (988, "crafted_by")];
 /// "Empêche les futures forgemagies" -> shield flag.
 pub const LOCK_EFFECT: i64 = 2825;
+/// Lock (2825) and the other transcendance-rune markers: effects of a rune item that are not the effect it adds.
+pub const RUNE_MARKER_EFFECTS: [i64; 3] = [LOCK_EFFECT, 2826, 2827];
 /// "Change l'élément de frappe": only a marker, the lot already carries the new element's hit (added) and the old one (removed).
 pub const ELEMENT_CHANGE_EFFECT: i64 = 700;
 
@@ -100,7 +102,7 @@ impl Data {
 
     /// Annotate effects vs the item's default effects: added (not a default), above (over default max), normal; plus removed.
     pub fn compare_effects(&self, mut effs: Vec<Effect>, gid: Option<i64>) -> Vec<Effect> {
-        let known_item = gid.map_or(false, |g| self.items.contains_key(&g));
+        let known_item = gid.is_some_and(|g| self.items.contains_key(&g));
         let defaults = self.default_ranges(gid);
         let mut present = std::collections::HashSet::new();
         for e in &mut effs {
@@ -112,7 +114,7 @@ impl Data {
                 "normal"
             } else if d.is_none() {
                 "added"
-            } else if e.hi.map_or(false, |h| h > dmax.unwrap()) {
+            } else if e.hi.is_some_and(|h| h > dmax.unwrap()) {
                 "above"
             } else {
                 "normal"
@@ -198,7 +200,21 @@ mod tests {
     use super::*;
 
     fn eff(action: i64, params: Vec<Value>) -> Effect {
-        Effect { action, text: String::new(), params, raw: Value::Null, known: true, hi: None, str: None, group: String::new(), order: 0, density: 0.0, stat: 0, status: None, range: None }
+        Effect {
+            action,
+            text: String::new(),
+            params,
+            raw: Value::Null,
+            known: true,
+            hi: None,
+            str: None,
+            group: String::new(),
+            order: 0,
+            density: 0.0,
+            stat: 0,
+            status: None,
+            range: None,
+        }
     }
 
     /// Needs the generated data pack; skipped otherwise.
@@ -216,6 +232,7 @@ mod tests {
         close(d.item_density(&[eff(125, vec![5.into()]), eff(153, vec![10.into()])]), 0.0);
         close(d.item_density(&[eff(100, vec![8.into(), 10.into()])]), 9.0); // 8 à 10 dommages Neutre: mean 9, rate 1
         close(d.item_density(&[eff(981, vec![])]), 0.0); // flag without value
-        close(d.item_density(&[eff(176, vec![30.into()]), eff(125, vec![5.into()])]), 1.0); // prospection is ignored
+        close(d.item_density(&[eff(176, vec![30.into()]), eff(125, vec![5.into()])]), 1.0);
+        // prospection is ignored
     }
 }

@@ -14,3 +14,10 @@ serde_json = { version = "1", features = ["preserve_order"] }
 [profile.release]
 lto = "thin"
 strip = true
+
+# style lints the code base deliberately does not follow (CI runs clippy with -D warnings)
+[workspace.lints.clippy]
+type_complexity = "allow"
+nonminimal_bool = "allow"
+result_unit_err = "allow"
+should_implement_trait = "allow"

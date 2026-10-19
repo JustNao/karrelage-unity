@@ -142,7 +142,7 @@
   }
 
   onMount(() => {
-    const offs: Promise<() => void>[] = [on("packets:packet", add), on("packets:batch", add)];
+    const offs: Promise<() => void>[] = [on("packets:batch", add)];
     // the backend only records while this tab is open, and drops its buffer when it closes
     call("packets", "set_active", { on: true })
       .then(() => call<any[]>("packets", "list"))

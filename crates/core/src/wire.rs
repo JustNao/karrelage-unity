@@ -69,7 +69,7 @@ pub fn looks_like_message(b: &[u8]) -> bool {
 }
 
 fn is_text(b: &[u8]) -> bool {
-    std::str::from_utf8(b).map_or(false, |s| s.chars().all(|c| !c.is_control() || matches!(c, '\n' | '\r' | '\t')))
+    std::str::from_utf8(b).is_ok_and(|s| s.chars().all(|c| !c.is_control() || matches!(c, '\n' | '\r' | '\t')))
 }
 
 /// Best-effort heuristic tree `{field_no: value | [values]}` for messages without a schema.
@@ -110,55 +110,87 @@ pub fn to_obj(data: &[u8], depth: u32) -> Value {
 }
 
 pub fn hex(b: &[u8]) -> String {
-    b.iter().map(|x| format!("{x:02x}")).collect()
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut s = String::with_capacity(b.len() * 2);
+    for x in b {
+        s.push(DIGITS[(x >> 4) as usize] as char);
+        s.push(DIGITS[(x & 15) as usize] as char);
+    }
+    s
 }
 
 /// Largest frame we accept; anything bigger means we are out of sync.
 pub const MAX_FRAME: u64 = 16 << 20;
 
-/// Pop complete varint-length-prefixed frames out of `buf`. `Err(())` = stream is out of sync (buf cleared).
-pub fn unframe(buf: &mut Vec<u8>) -> Result<Vec<Vec<u8>>, ()> {
-    let mut out = Vec::new();
-    loop {
-        let r = match read_varint(buf, 0) {
-            Ok(r) => r,
-            Err(()) => {
-                buf.clear();
-                return Err(());
-            }
-        };
-        let Some((len, pos)) = r else { return Ok(out) };
+/// Pop complete varint-length-prefixed frames out of `buf`. The flag is `false` when the stream is out of sync
+/// (the frames read before the bad length are still returned, the rest of `buf` is cleared).
+pub fn unframe(buf: &mut Vec<u8>) -> (Vec<Vec<u8>>, bool) {
+    let (mut out, mut at) = (Vec::new(), 0usize);
+    let ok = loop {
+        let Ok(r) = read_varint(buf, at) else { break false };
+        let Some((len, pos)) = r else { break true };
         if len > MAX_FRAME {
-            buf.clear();
-            return Err(());
+            break false;
         }
         let end = pos + len as usize; // len <= MAX_FRAME here
         if end > buf.len() {
-            return Ok(out);
+            break true;
         }
         out.push(buf[pos..end].to_vec());
-        buf.drain(..end);
+        at = end;
+    };
+    if ok {
+        buf.drain(..at);
+    } else {
+        buf.clear();
     }
+    (out, ok)
 }
 
-/// For streams joined mid-way: offset where `need` consecutive frames all parse as protobuf.
-pub fn find_sync(buf: &[u8], need: usize) -> Option<usize> {
-    for start in 0..buf.len().min(4096) {
-        let (mut pos, mut ok) = (start, 0);
+/// Result of [`find_sync`].
+#[derive(Debug, PartialEq, Eq)]
+pub enum SyncPoint {
+    /// `need` consecutive frames parse as protobuf from this offset.
+    At(usize),
+    /// Not found yet; no frame can start before this offset (those bytes can be dropped).
+    Pending(usize),
+}
+
+/// For streams joined mid-way: offset where `need` consecutive frames all parse as protobuf. Starts whose chain is
+/// cut by the end of `buf` stay undecided (they may succeed once more bytes arrive); everything before the first
+/// undecided start is reported as droppable.
+pub fn find_sync(buf: &[u8], need: usize) -> SyncPoint {
+    let mut undecided = None;
+    for start in 0..buf.len() {
+        let (mut pos, mut ok, mut cut) = (start, 0, false);
         while ok < need {
-            let Ok(Some((ln, p))) = read_varint(buf, pos) else { break };
-            let Some(end) = usize::try_from(ln).ok().and_then(|l| p.checked_add(l)) else { break };
-            if ln == 0 || end > buf.len() || !looks_like_message(&buf[p..end]) {
+            let r = read_varint(buf, pos);
+            let Ok(Some((ln, p))) = r else {
+                cut = matches!(r, Ok(None));
+                break;
+            };
+            if ln == 0 || ln > MAX_FRAME {
+                break;
+            }
+            let end = p + ln as usize;
+            if end > buf.len() {
+                cut = true;
+                break;
+            }
+            if !looks_like_message(&buf[p..end]) {
                 break;
             }
             pos = end;
             ok += 1;
         }
         if ok >= need {
-            return Some(start);
+            return SyncPoint::At(start);
+        }
+        if cut && undecided.is_none() {
+            undecided = Some(start);
         }
     }
-    None
+    SyncPoint::Pending(undecided.unwrap_or(buf.len()))
 }
 
 #[derive(Debug, Clone)]
@@ -172,7 +204,7 @@ pub struct Envelope {
 /// Decode the GameMessage wrapper: oneof {1: Request, 2: Response, 3: Event} carrying a `google.protobuf.Any`.
 pub fn parse_envelope(payload: &[u8]) -> Option<Envelope> {
     for f in decode_fields(payload)? {
-        if !matches!(f.no, 1 | 2 | 3) || f.wt != 2 {
+        if !matches!(f.no, 1..=3) || f.wt != 2 {
             continue;
         }
         let kind = ["request", "response", "event"][f.no as usize - 1];
@@ -216,13 +248,23 @@ mod tests {
     fn find_sync_survives_garbage_lengths() {
         // 0xff.. varints decode to huge lengths; must not overflow
         let junk = [0xffu8, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x7f];
-        assert_eq!(find_sync(&junk, 3), None);
+        assert!(matches!(find_sync(&junk, 3), SyncPoint::Pending(_)));
     }
 
     #[test]
     fn unframe_partial() {
         let mut b = vec![3, 1, 2, 3, 5, 9];
-        assert_eq!(unframe(&mut b).unwrap(), vec![vec![1, 2, 3]]);
+        assert_eq!(unframe(&mut b), (vec![vec![1, 2, 3]], true));
         assert_eq!(b, vec![5, 9]);
+    }
+
+    #[test]
+    fn find_sync_past_a_large_partial_frame() {
+        // joined inside a 10 KB frame: the next frames start far beyond the first 4 KB
+        let mut b = vec![0u8; 10_000];
+        for _ in 0..3 {
+            b.extend_from_slice(&[2, 0x08, 0x01]);
+        }
+        assert_eq!(find_sync(&b, 3), SyncPoint::At(10_000));
     }
 }
