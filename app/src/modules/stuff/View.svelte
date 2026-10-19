@@ -59,6 +59,7 @@
     Object.fromEntries(slotIds.map((s) => [s, slotPrices(build!.slots[s].gid, lotsOf(s), build!.chosen[s], recipes, prices)])),
   );
   const craft = $derived(sumSlots(slotIds, ignored, (s) => perSlot[s].craft));
+  const estSlots = $derived(slotIds.filter((s) => !ignored.has(s) && perSlot[s].estimated));
   const first = $derived(sumSlots(slotIds, ignored, (s) => perSlot[s].first));
   const picked = $derived(sumSlots(slotIds, ignored, (s) => perSlot[s].chosen));
   const names = (l: string[]) => l.map((s) => SLOT_TITLES[s]).join(", ");
@@ -182,7 +183,7 @@
     {#if s.icon && icon("stat", s.icon)}<img src={icon("stat", s.icon)} alt="" />{:else}<span class="ph"></span>{/if}
     <span class="lab">{s.label}</span>
     <b class:bad={anyChosen && v < m} class:good={anyChosen && v >= m} title={anyChosen ? `Max théorique : ${m}` : ""}>{v}</b>
-    {#if fm}<span class="fm" title="Forgemagie">+{fm}</span>{/if}
+    <span class="fm" title="Forgemagie">{fm ? `+${fm}` : ""}</span>
     {#if anyChosen && v !== m}<span class="mut">/ {m}</span>{/if}
     <button class="pf" title="Viser le maximum atteignable avec les objets ({m})" onclick={() => setTarget(s.stat, String(m))}>jet perf</button>
     <input class="tg" inputmode="numeric" placeholder="min" value={build?.targets[s.stat] ?? ""} onchange={(e) => setTarget(s.stat, e.currentTarget.value)} title="Valeur minimale voulue pour la recherche de la combinaison la moins chère" />
@@ -239,17 +240,6 @@
         <div class="ttl"><b>{build.name}</b> <span class="mut">niv. {build.level}</span>
           <button class="mini" title="Recharger depuis Dofusbook" onclick={() => refresh(build!)}>↻</button>
           <a class="mut" href={build.url} target="_blank" rel="noreferrer">Dofusbook</a></div>
-        <div class="price" title={craft.missingSlots.length ? `Sans prix : ${names(craft.missingSlots)}` : ""}>
-          <span class="mut">Craft</span> <b>{kamas(craft.total)}</b>
-          {#if craft.missingSlots.length}<span class="bad">{craft.missingSlots.length} sans prix</span>{/if}</div>
-        <div class="price" title={first.missingSlots.length ? `Jamais scanné : ${names(first.missingSlots)}` : ""}>
-          <span class="mut">Premier jet</span> <b>{kamas(first.total)}</b>
-          {#if first.missingSlots.length}<span class="bad">{first.missingSlots.length} sans lot</span>{/if}</div>
-        {#if anyChosen}
-          <div class="price" title={picked.missingSlots.length ? `Pas de lot choisi : ${names(picked.missingSlots)}` : ""}>
-            <span class="mut">Sélection</span> <b>{kamas(picked.total)}</b>
-            {#if picked.missingSlots.length}<span class="mut">{picked.missingSlots.length} non choisi</span>{/if}</div>
-        {/if}
       </div>
 
       <SmoothScroll>
@@ -272,6 +262,32 @@
             <div class="row">{#each SLOT_LAYOUT.bottom.filter((s) => build?.slots[s]) as s}{@render slot(s)}{/each}</div>
             <div class="legend mut"><span class="dot fresh"></span> scanné il y a moins de 30 min <span class="dot stale"></span> à scanner · € = ignoré dans le prix</div>
 
+            <div class="box prices">
+              <div class="fh">Prix</div>
+              <div class="price" title={craft.missingSlots.length ? `Sans prix : ${names(craft.missingSlots)}` : ""}>
+          <span class="mut">Craft</span> <b>{kamas(craft.total)}</b>
+          {#if craft.missingSlots.length}<span class="bad">{craft.missingSlots.length} sans prix</span>{/if}
+          {#if estSlots.length}<span class="mut" title="Objets non craftables au prix moyen : {names(estSlots)}">dont {estSlots.length} estimé{estSlots.length > 1 ? "s" : ""}</span>{/if}</div>
+              <div class="price" title={first.missingSlots.length ? `Jamais scanné : ${names(first.missingSlots)}` : ""}>
+          <span class="mut">Premier jet</span> <b>{kamas(first.total)}</b>
+          {#if first.missingSlots.length}<span class="bad">{first.missingSlots.length} sans lot</span>{/if}</div>
+              {#if anyChosen}
+                <div class="price" title={picked.missingSlots.length ? `Pas de lot choisi : ${names(picked.missingSlots)}` : ""}>
+            <span class="mut">Sélection</span> <b>{kamas(picked.total)}</b>
+            {#if picked.missingSlots.length}<span class="mut">{picked.missingSlots.length} non choisi</span>{/if}</div>
+        {/if}
+              <hr />
+              <div class="fh">Combinaison la moins chère</div>
+              <div class="mut small">Renseignez des minimums dans les cases « min » des stats, puis lancez la recherche parmi les lots scannés.</div>
+              <button onclick={run} disabled={solving || !Object.keys(build.targets).length}>{solving ? "Calcul…" : "Rechercher"}</button>
+              {#if result === "none"}<div class="bad small">Aucune combinaison ne satisfait ces minimums avec les lots scannés.</div>
+              {:else if result}
+                <div class="small">Coût : <b>{kamas(result.cost)}</b>{#if result.approx} <span class="mut">(recherche limitée, résultat approché)</span>{/if}</div>
+                <div class="small mut">{Object.keys(result.picks).length} emplacement(s) choisis{#if result.fixedSlots.length} · gardés tels quels : {names(result.fixedSlots)}{/if}</div>
+                <button onclick={apply}>Appliquer</button>
+              {/if}
+                        </div>
+
             {#if picker}
               <div class="picker">
                 <div class="ph2"><b>{SLOT_TITLES[picker]}</b> — {build.slots[picker].name} <button class="mini" onclick={() => (picker = null)}>✕</button></div>
@@ -289,7 +305,10 @@
 
           <section class="stats">
             <div class="box">{#each PANELS.damage as s (s.stat)}{@render statRow(s)}{/each}</div>
-            <div class="box">{#each PANELS.resist as s (s.stat)}{@render statRow(s)}{/each}</div>
+            <div class="box two">
+              <div>{#each PANELS.resist.filter((s) => !s.label.startsWith("%")) as s (s.stat)}{@render statRow(s)}{/each}</div>
+              <div>{#each PANELS.resist.filter((s) => s.label.startsWith("%")) as s (s.stat)}{@render statRow(s)}{/each}</div>
+            </div>
             {#if real && real.unmapped.size}
               <div class="box mut small">Autres effets : {[...real.unmapped].map(([s, v]) => `${v} (#${s})`).join(", ")}</div>
             {/if}
@@ -309,17 +328,6 @@
                 {#each fmFree as [code, f] (code)}<option value={code}>{f.label}</option>{/each}
               </select>
               <div class="mut small">Les bonus s'ajoutent aux stats (en bleu) ; modifiables.</div>
-            </div>
-            <div class="box">
-              <div class="fh">Combinaison la moins chère</div>
-              <div class="mut small">Renseignez des minimums dans les cases « min » des stats, puis lancez la recherche parmi les lots scannés.</div>
-              <button onclick={run} disabled={solving || !Object.keys(build.targets).length}>{solving ? "Calcul…" : "Rechercher"}</button>
-              {#if result === "none"}<div class="bad small">Aucune combinaison ne satisfait ces minimums avec les lots scannés.</div>
-              {:else if result}
-                <div class="small">Coût : <b>{kamas(result.cost)}</b>{#if result.approx} <span class="mut">(recherche limitée, résultat approché)</span>{/if}</div>
-                <div class="small mut">{Object.keys(result.picks).length} emplacement(s) choisis{#if result.fixedSlots.length} · gardés tels quels : {names(result.fixedSlots)}{/if}</div>
-                <button onclick={apply}>Appliquer</button>
-              {/if}
             </div>
           </section>
         </div>
@@ -347,18 +355,22 @@
   .ttl a { margin-left: 8px; font-size: 12px; }
   .price { white-space: nowrap; }
   .price .bad { font-size: 11px; margin-left: 4px; }
-  .sheet { display: grid; grid-template-columns: 300px max-content 300px; justify-content: center; gap: 14px; align-items: start; padding-bottom: 12px; }
+  .sheet { display: grid; grid-template-columns: 300px max-content 580px; justify-content: center; gap: 14px; align-items: start; padding-bottom: 12px; }
   .stats { display: flex; flex-direction: column; gap: 8px; }
   .box { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
   .st { display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 12px; }
-  .st img, .st .ph { width: 16px; height: 16px; flex: none; }
+  .st img, .st .ph { width: 21px; height: 21px; flex: none; }
   .st .lab { flex: 1; color: var(--mut); }
   .st b { min-width: 34px; text-align: right; }
   .st.hp b { font-size: 14px; }
-  .fm { color: #4aa3ff; font-size: 11px; }
-  .pf { padding: 0 4px; font-size: 10px; color: var(--mut); line-height: 16px; }
+  .fm { color: #4aa3ff; font-size: 12px; min-width: 26px; text-align: left; flex: none; }
+  .pf { padding: 0 4px; font: inherit; color: var(--mut); line-height: 18px; }
   .pf:hover { color: var(--fg); }
-  .tg { width: 44px; padding: 1px 4px; font-size: 11px; text-align: right; }
+  .tg { width: 44px; padding: 1px 4px; font: inherit; text-align: right; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+  .prices { width: 100%; }
+  .prices .price { margin: 2px 0; }
+  .prices hr { border: 0; border-top: 1px solid var(--line); margin: 8px 0; }
   .small { font-size: 12px; margin: 4px 0; }
   .center { display: flex; flex-direction: column; align-items: center; gap: 10px; }
   .doll { display: flex; gap: 14px; align-items: stretch; width: 100%; justify-content: center; }
@@ -366,7 +378,7 @@
   .char { width: 190px; min-height: 300px; display: flex; flex-direction: column; align-items: center; justify-content: center; border: 1px dashed var(--line); border-radius: 10px; }
   .lvl { font: 600 16px var(--font); }
   .row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
-  .slot { position: relative; width: 56px; height: 56px; }
+  .slot { position: relative; width: 73px; height: 73px; }
   .slot.empty { visibility: hidden; }
   .slot .ic { width: 100%; height: 100%; padding: 2px; display: flex; align-items: center; justify-content: center; border-width: 2px; border-radius: 8px; background: var(--panel); font-size: 10px; }
   .slot.fresh .ic { border-color: var(--ok); }

@@ -9,7 +9,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 const API: &str = "https://www.dofusbook.net/api/stuffs/dofus/public";
-const ITEM_ICON: &str = "https://static.ankama.com/dofus/www/game/items/200";
+const ITEM_ICON: &str = "https://www.dofusbook.net/static/dist/items"; // <picture>-100.webp (also has the recent items Ankama's CDN lacks)
 const STAT_ICON: &str = "https://www.dofusbook.net/assets/img/elements";
 const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36";
 
@@ -157,12 +157,12 @@ fn icon(ctx: &Ctx, kind: &str, key: &str) -> Result<String> {
     if key.is_empty() || !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
         bail!("clé d'icône invalide");
     }
-    let (dir, url) = match kind {
-        "item" => ("items", format!("{ITEM_ICON}/{key}.png")),
-        "stat" => ("stats", format!("{STAT_ICON}/{key}.png")),
+    let (dir, ext, url) = match kind {
+        "item" => ("items", "webp", format!("{ITEM_ICON}/{key}-100.webp")),
+        "stat" => ("stats", "png", format!("{STAT_ICON}/{key}.png")),
         _ => bail!("type d'icône inconnu"),
     };
-    let file = ctx.module_dir("stuff").join("icons").join(dir).join(format!("{key}.png"));
+    let file = ctx.module_dir("stuff").join("icons").join(dir).join(format!("{key}.{ext}"));
     let bytes = match std::fs::read(&file) {
         Ok(b) => b,
         Err(_) => {
@@ -174,7 +174,7 @@ fn icon(ctx: &Ctx, kind: &str, key: &str) -> Result<String> {
             b
         }
     };
-    Ok(format!("data:image/png;base64,{}", base64(&bytes)))
+    Ok(format!("data:image/{};base64,{}", if ext == "webp" { "webp" } else { "png" }, base64(&bytes)))
 }
 
 fn effect_json(ctx: &Ctx, e: &loutil_data::DefaultEffect) -> Value {
@@ -362,7 +362,8 @@ mod tests {
         let data = std::sync::Arc::new(loutil_data::Data::load(&pack, "fr").unwrap());
         let proto = std::sync::Arc::new(loutil_proto::Proto::load(&pack, dir.join("o.json")).unwrap());
         let hub = crate::Hub::new(data, proto, dir, std::sync::Arc::new(|_, _| {}), std::sync::Arc::new(|_| {}));
-        assert!(icon(&hub.ctx, "item", "9272").unwrap().starts_with("data:image/png;base64,iVBOR"));
+        assert!(icon(&hub.ctx, "item", "9272").unwrap().starts_with("data:image/webp;base64,"));
+        assert!(icon(&hub.ctx, "item", "17657").is_ok());
         assert!(icon(&hub.ctx, "stat", "vi").unwrap().len() > 100);
     }
 
