@@ -12,6 +12,8 @@
   } from "../../lib/stuff";
 
   const cols = new Columns("karrelage.cols.stuff", { left: 230 });
+  let collapsed = $state((() => { try { return localStorage.getItem("karrelage.stuff.collapsed") === "1"; } catch { return false; } })());
+  $effect(() => { try { localStorage.setItem("karrelage.stuff.collapsed", collapsed ? "1" : "0"); } catch {} });
 
   let builds = $state<Build[]>([]);
   let sel = $state<string | null>(null);
@@ -219,9 +221,10 @@
   {/if}
 {/snippet}
 
-<div class="grid" style:grid-template-columns="{cols.w.left}px 5px 1fr">
-  <aside class="side">
-    <div class="fh">Stuffs</div>
+<div class="grid" style:grid-template-columns="{collapsed ? 34 : cols.w.left}px 5px 1fr">
+  <aside class="side" class:collapsed>
+    <div class="sh"><div class="fh">{collapsed ? "" : "Stuffs"}</div><button class="mini tgl" title={collapsed ? "Afficher la liste des stuffs" : "Masquer la liste des stuffs"} onclick={() => (collapsed = !collapsed)}>{collapsed ? "»" : "«"}</button></div>
+    {#if !collapsed}
     <div class="add">
       <input placeholder="Lien Dofusbook…" bind:value={link} onkeydown={(e) => e.key === "Enter" && add()} />
       <button onclick={add} disabled={busy}>{busy ? "…" : "Ajouter"}</button>
@@ -242,8 +245,9 @@
         <div class="mut">Collez un lien Dofusbook ci-dessus pour charger un stuff.</div>
       {/each}
     </SmoothScroll>
+    {/if}
   </aside>
-  <div class="grip" role="separator" onpointerdown={(e) => cols.drag("left", 1, e)}></div>
+  <div class="grip" role="separator" onpointerdown={(e) => !collapsed && cols.drag("left", 1, e)} style:cursor={collapsed ? "default" : null}></div>
 
   <main class="main">
     {#if !build}
@@ -362,6 +366,10 @@
   .grid { flex: 1; min-height: 0; display: grid; font-family: var(--font); }
   .side, .main { min-height: 0; display: flex; flex-direction: column; padding: 8px 10px 0; min-width: 0; }
   .side > :global(.wrap), .main > :global(.wrap) { flex: 1; }
+  .sh { display: flex; align-items: center; justify-content: space-between; }
+  .sh .fh { margin: 0 0 8px; }
+  .tgl { font-size: 16px; margin-bottom: 8px; }
+  .side.collapsed { padding: 8px 2px 0; align-items: center; }
   .add { display: flex; gap: 6px; margin-bottom: 8px; }
   .add input { flex: 1; min-width: 0; }
   .err { font-size: 12px; margin-bottom: 6px; }
