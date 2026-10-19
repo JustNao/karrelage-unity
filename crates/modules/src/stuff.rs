@@ -20,7 +20,7 @@ const SLOTS: [&str; 17] = ["ar", "bo", "am", "ce", "br", "ch", "ca", "a1", "a2",
 /// Stat icons downloaded ahead of time (Dofusbook element codes), reusable by other tabs.
 const STAT_CODES: &[&str] = &[
     "vi", "sa", "fo", "in", "ch", "ag", "pa", "pm", "po", "ic", "ii", "cc", "pp", "ta", "fu", "so", "pi", "pu", "sp", "at", "dm", "da", "dw", "dc", "dp", "dt",
-    "df", "dnf", "dtf", "def", "dff", "daf", "rpa", "rp", "rc", "rap", "rn", "rt", "re", "rf", "ra", "rnp", "rtp", "rep", "rfp", "rap",
+    "df", "dnf", "dtf", "def", "dff", "daf", "rpa", "rp", "rc", "rap", "rn", "rt", "re", "rf", "ra", "rnp", "rtp", "rep", "rfp", "rap", "pd",
 ];
 
 pub struct Stuff {

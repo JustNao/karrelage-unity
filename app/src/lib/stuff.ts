@@ -51,7 +51,7 @@ export const PANELS = {
   /** Vitality: not listed (the PdV row stands for it), kept so its effects stay known and labelled. */
   hp: [r(11, "Vitalité", "vi")],
   carac: [r(12, "Sagesse", "sa"), r(10, "Force", "fo"), r(15, "Intelligence", "in"), r(13, "Chance", "ch"), r(14, "Agilité", "ag"), r(25, "Puissance", "pu")],
-  secondary: [r(78, "Fuite", "fu"), r(79, "Tacle", "ta"), r(27, "Esq. PA", "rpa"), r(28, "Esq. PM", "rp"), r(82, "Ret. PA", "rap"), r(83, "Ret. PM", "rp"), r(40, "Pods", "")],
+  secondary: [r(78, "Fuite", "fu"), r(79, "Tacle", "ta"), r(27, "Esq. PA", "rpa"), r(28, "Esq. PM", "rp"), r(82, "Ret. PA", "rap"), r(83, "Ret. PM", "rp"), r(40, "Pods", "pd")],
   damage: [r(92, "Do Neutre", "dnf"), r(88, "Do Terre", "dtf"), r(89, "Do Feu", "dff"), r(90, "Do Eau", "def"), r(91, "Do Air", "daf"), r(16, "Dommages", "dm"), r(86, "Do Critique", "dc"), r(84, "Do Poussée", "dp"),
     r(31, "% Do Armes", "dw"), r(98, "% Do Sorts", "sp"), r(125, "% Do Mêlée", "da"), r(120, "% Do Dist", "da")],
   resist: [r(58, "Ré Neutre", "rn"), r(54, "Ré Terre", "rt"), r(55, "Ré Feu", "rf"), r(56, "Ré Eau", "re"), r(57, "Ré Air", "ra"), r(87, "Ré Critique", "rc"), r(85, "Ré Poussée", "rp"),
