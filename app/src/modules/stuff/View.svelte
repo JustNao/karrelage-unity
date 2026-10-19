@@ -378,9 +378,9 @@
   .price { white-space: nowrap; }
   .price .bad { font-size: 11px; margin-left: 4px; }
   .sheetwrap { container-type: inline-size; }
-  .sheet { display: grid; grid-template-columns: 460px max-content 620px; justify-content: center; gap: 14px; align-items: start; padding-bottom: 12px; }
+  .sheet { display: grid; grid-template-columns: 460px max-content 620px; justify-content: safe center; gap: 14px; align-items: start; padding-bottom: 12px; }
   /* medium: stats + build on top, damage and resistances on one row, prices and forgemagie at the bottom */
-  @container (max-width: 1499px) {
+  @container (max-width: 1719px) {
     .sheet { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "left build" "dmg res" "prices fmb"; justify-content: stretch; }
     .stats.right, .center { display: contents; }
     .left { grid-area: left; }
