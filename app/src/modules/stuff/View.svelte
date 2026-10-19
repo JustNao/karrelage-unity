@@ -391,6 +391,7 @@
               {#if result === "none"}<div class="bad small">Aucune combinaison ne satisfait ces minimums avec les lots scannés.</div>
               {:else if result}
                 <div class="small">Coût : <b>{kamas(result.cost)}</b>{#if result.approx} <span class="mut">(recherche limitée, résultat approché)</span>{/if}</div>
+                {#if result.missingFm?.length}<div class="small warn">Forgemagie non portée par les lots : {result.missingFm.join(", ")} (comptée comme appliquée à part).</div>{/if}
                 <div class="small mut">{Object.keys(result.picks).length} emplacement(s) choisis{#if result.fixedSlots.length} · gardés tels quels : {names(result.fixedSlots)}{/if}</div>
                 <button onclick={apply}>Appliquer</button>
               {/if}
@@ -440,6 +441,7 @@
   .ttl { flex: 1; min-width: 220px; }
   .prog { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin: 6px 0 2px; }
   .prog .fill { height: 100%; background: var(--acc); transition: width 0.1s linear; }
+  .warn { color: var(--warn); }
   .scan { margin-left: 10px; padding: 2px 8px; font-size: 12px; }
   .ttl a { margin-left: 8px; font-size: 12px; }
   .price { white-space: nowrap; }
