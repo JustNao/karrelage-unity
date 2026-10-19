@@ -17,6 +17,7 @@
     onpin,
     versus = null,
     companion = false,
+    flags = true,
   }: {
     row: any;
     collapsible?: boolean;
@@ -30,6 +31,8 @@
     /** Familier / montilier: only the level and the legendary status are shown (no stat flags, no pin, no transcendance). */
     companion?: boolean;
     versus?: { pin: any; name: string; unitPrice: (r: any) => number } | null;
+    /** Perfection flags (damage / resistances / characteristics) and the transcendance shield in the header. */
+    flags?: boolean;
   } = $props();
 
   const level = $derived(companion ? levelOf(row) : null);
@@ -97,7 +100,7 @@
     {#if companion}
       <span class="flag on" title="Niveau (xp totale {level != null ? xpOfLevel(level).toLocaleString('fr-FR') : '?'})">{level != null ? "Niveau " + level : "Niveau ?"}</span>
       <span class="flag" class:on={legendary}>★ Statut légendaire</span>
-    {:else}
+    {:else if flags}
     <span class="flag" class:on={perfect.damage} title="Tous les effets de dommages de base à leur maximum">★ Dommages parfaits</span>
     <span class="flag" class:on={perfect.resist} title="Toutes les résistances de base à leur maximum">★ Résistances parfaites</span>
     <span class="flag" class:on={perfect.main} title="Caractéristiques principales au maximum (à 3 près pour force/intelligence/agilité/chance/sagesse, 10 pour la vitalité)">★ Caractéristiques parfaites</span>

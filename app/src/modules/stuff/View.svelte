@@ -400,7 +400,7 @@
                   {#each tableRows as r (r.slot)}
                     <div class="lrow">
                       <div class="lh"><span class="mut">{SLOT_TITLES[r.slot]}</span> <b>{r.name}</b></div>
-                      <ItemCard row={r.lot} collapsible open={openLots.has(r.slot)} ontoggle={() => toggleLot(r.slot)} />
+                      <ItemCard row={r.lot} flags={false} collapsible open={openLots.has(r.slot)} ontoggle={() => toggleLot(r.slot)} />
                     </div>
                   {/each}
                 </div>
