@@ -65,7 +65,9 @@ def main():
     chars = {r["id"]: {k: r.get(k) for k in ("id", "keyword", "nameId", "order", "categoryId")} for r in rows("characteristics")}
     types = {r["id"]: {k: r.get(k) for k in ("id", "nameId", "superTypeId", "categoryId")} for r in rows("itemtypes")}
     # legendary item passives (effect 1175 carries the spell id): only their names are needed
-    spells = {r["id"]: {"id": r["id"], "nameId": r["nameId"]} for r in rows("spells") if r.get("typeId") == LEGENDARY_SPELL_TYPE and "nameId" in r}
+    # ... plus every spell an item's effect 1175 points to (the special effect of a Dofus: "Rouge Vermeil" for the Dofus Vulbis)
+    referenced = {e["max"] for i in items.values() for e in i.get("effects", []) if e["a"] == 1175}
+    spells = {r["id"]: {"id": r["id"], "nameId": r["nameId"]} for r in rows("spells") if (r.get("typeId") == LEGENDARY_SPELL_TYPE or r.get("id") in referenced) and "nameId" in r}
     # crafting recipes: result item -> list of recipes, each a list of [ingredient gid, quantity]
     recipes = {}
     for r in rows("recipes"):

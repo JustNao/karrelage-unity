@@ -25,7 +25,9 @@
 
   const cols = new Columns("karrelage.cols.items", { list: 280, filter: 470 }); // resizable: list | listing (flexible) | filter
   let items = new SvelteMap<number, any>();
-  let selGid = $state<number | null>(null);
+  const SEL_KEY = "karrelage.auction.sel"; // the open item is restored when the tab is opened again
+  let selGid = $state<number | null>((() => { try { return JSON.parse(localStorage.getItem(SEL_KEY) ?? "null"); } catch { return null; } })());
+  $effect(() => { try { localStorage.setItem(SEL_KEY, JSON.stringify(selGid)); } catch {} });
   let picker = $state<EffectMeta[]>([]); // effects found on level 150-200 equipment (what the picker offers)
   let meta = $state<Record<number, EffectMeta>>({}); // every labelled effect (labels/groups of whatever shows up in a lot)
   let filters = $state<Record<number, Filter[]>>({}); // gid -> filters
@@ -142,8 +144,11 @@
   const pickable = $derived(picker.filter((e) => isWeapon || e.group !== "weapon"));
 
   /** Filter rows grouped like the in-game characteristics panel. */
-  const groups = $derived(
-    sections(effectRows.map((x) => ({ ...x, group: meta[x.a]?.group ?? "other", order: meta[x.a]?.order ?? 9999, label: effLabel(x.a) }))),
+  const groups = $derived([
+    // the effects the user added come first, in their own section
+    ...(effectRows.some((x) => x.def == null) ? [{ key: "added", label: "Effets ajoutés", items: effectRows.filter((x) => x.def == null).map((x) => ({ ...x, label: effLabel(x.a) })) }] : []),
+    ...sections(effectRows.filter((x) => x.def != null).map((x) => ({ ...x, group: meta[x.a]?.group ?? "other", order: meta[x.a]?.order ?? 9999, label: effLabel(x.a) }))),
+  ]
   );
 
   const rows = $derived.by(() => {
@@ -359,7 +364,8 @@
     call<StoredPrice[]>("prices", "list").then((l) => l.forEach((p) => stored.set(p.gid, p)));
     call<any[]>("auction", "items").then((l) => {
       l.forEach(put);
-      if (selGid === null && l.length) selGid = l[0].gid;
+      if ((selGid === null || !items.has(selGid)) && l.length) selGid = l[0].gid;
+      void tick().then(() => document.querySelector(".ilist .irow.sel")?.scrollIntoView({ block: "center" })); // back to the item that was open
     });
     const offs = [
       on("auction:item", showNew),
@@ -660,7 +666,8 @@
   .arrow.desc { transform: rotate(180deg); }
   .head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
   .head .fh { margin: 0; flex: 1; }
-  .filter { overflow: auto; background: var(--panel); border-left: 1px solid var(--line); padding: 10px; font-family: var(--font); font-size: 12px; }
+  .filter :global(.phead) { padding-left: 0; padding-right: 0; }
+  .filter { overflow: auto; background: var(--panel); border-left: 1px solid var(--line); padding: 0 10px 10px; font-family: var(--font); font-size: 12px; }
   .filter .pinned { margin-bottom: 12px; }
   .filter .ghead { display: flex; align-items: center; justify-content: flex-start; gap: 10px; }
   .ghead { margin: 12px 0 2px; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--mut); }

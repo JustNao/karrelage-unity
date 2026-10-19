@@ -197,20 +197,20 @@ export function sumSlots(slots: string[], ignored: Set<string>, pick: (slot: str
 // ---- solver -----------------------------------------------------------------------------------------------------------
 
 export interface Cand { slot: string; gid: number; uid: number; price: number; stats: Totals }
-export interface SolveResult { picks: Record<string, number>; cost: number; totals: Totals; approx: boolean; nodes: number; fixedSlots: string[]; /** forgemagie the chosen lots could not carry (soft expectation): "+1 PM", ... */ missingFm?: string[] }
+export interface SolveResult { picks: Record<string, number>; cost: number; totals: Totals; approx: boolean; nodes: number; fixedSlots: string[]; }
 
 /** Cheapest lot combination whose stat totals reach `targets` (stat -> minimum). One lot per free slot; ignored slots and slots without any scanned
  *  lot keep their current item (chosen lot, else theoretical maximum) at no cost. Set bonuses are tracked incrementally. Returns null when infeasible. */
-export function solve(b: Build, info: Info, lotsOf: (slot: string) => Lot[], targets: Record<string, number>, nodeLimit = 4_000_000, progress?: (fraction: number) => void, enforceFm = true): SolveResult | null {
+export function solve(b: Build, info: Info, lotsOf: (slot: string) => Lot[], targets: Record<string, number>, nodeLimit = 4_000_000, progress?: (fraction: number) => void): SolveResult | null {
   const tgt = Object.entries(targets).map(([s, v]) => [+s, v] as const).filter(([, v]) => Number.isFinite(v) && v > 0);
   // the build's forgemagie is expected on the items: each fm stat looks for that much exo (added, or forged over the base max) among the chosen lots
-  if (enforceFm) for (const [code, v] of Object.entries(b.fm ?? {})) { const stat = FM_STATS[code]?.stat; if (stat != null && v > 0) tgt.push([EXO_BASE + stat, v] as const); }
+  for (const [code, v] of Object.entries(b.fm ?? {})) { const stat = FM_STATS[code]?.stat; if (stat != null && v > 0) tgt.push([EXO_BASE + stat, v] as const); }
   const stats = tgt.map(([s]) => s);
   const slots = Object.keys(b.slots);
   const ignored = new Set(b.ignored);
   const fixedSlots: string[] = [];
   const free: { slot: string; cands: Cand[] }[] = [];
-  const base: Totals = fixedStats(b, !enforceFm); // not enforced: the forgemagie is taken as applied from outside
+  const base: Totals = fixedStats(b, false);
   const baseGids: number[] = [];
   const fixedSet: Totals = new Map();
 

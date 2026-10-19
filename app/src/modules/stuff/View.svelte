@@ -167,18 +167,17 @@
     worker = new Worker(new URL("../../lib/stuffWorker.ts", import.meta.url), { type: "module" });
     worker.onmessage = (e: MessageEvent<{ progress?: number; done?: SolveResult | null }>) => {
       if (e.data.progress != null) progress = e.data.progress;
-      else if ("done" in e.data) { result = e.data.done ?? "none"; stop(); }
+      else if ("done" in e.data) {
+        result = e.data.done ?? "none";
+        if (result !== "none") patch({ chosen: { ...build!.chosen, ...result.picks } }); // the combination found is applied right away
+        stop();
+      }
     };
     worker.onerror = (e) => { err = e.message || "erreur du calcul"; stop(); };
     worker.postMessage(JSON.parse(JSON.stringify({ build: { ...build!, ignored: [...ignored] }, info, lots, targets: build!.targets })));
   }
   function stop() { worker?.terminate(); worker = null; solving = false; }
   function cancel() { cancelled = true; stop(); }
-  const apply = () => {
-    if (!result || result === "none") return;
-    patch({ chosen: { ...build!.chosen, ...result.picks } });
-    result = null;
-  };
 
   const lotLine = (l: Lot) =>
     l.effects
@@ -391,9 +390,7 @@
               {#if result === "none"}<div class="bad small">Aucune combinaison ne satisfait ces minimums avec les lots scannés.</div>
               {:else if result}
                 <div class="small">Coût : <b>{kamas(result.cost)}</b>{#if result.approx} <span class="mut">(recherche limitée, résultat approché)</span>{/if}</div>
-                {#if result.missingFm?.length}<div class="small warn">Forgemagie non portée par les lots : {result.missingFm.join(", ")} (comptée comme appliquée à part).</div>{/if}
                 <div class="small mut">{Object.keys(result.picks).length} emplacement(s) choisis{#if result.fixedSlots.length} · gardés tels quels : {names(result.fixedSlots)}{/if}</div>
-                <button onclick={apply}>Appliquer</button>
               {/if}
                                       {#if tableRows.length}
                 <div class="fh tt">{result && result !== "none" ? "Combinaison trouvée" : "Lots choisis"}</div>
@@ -441,7 +438,6 @@
   .ttl { flex: 1; min-width: 220px; }
   .prog { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin: 6px 0 2px; }
   .prog .fill { height: 100%; background: var(--acc); transition: width 0.1s linear; }
-  .warn { color: var(--warn); }
   .scan { margin-left: 10px; padding: 2px 8px; font-size: 12px; }
   .ttl a { margin-left: 8px; font-size: 12px; }
   .price { white-space: nowrap; }
