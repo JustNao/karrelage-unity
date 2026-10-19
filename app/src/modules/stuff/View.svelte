@@ -185,6 +185,19 @@
       .slice(0, 6)
       .map((e: any) => `${e.hi ?? ""} ${STAT_LABEL.get(e.stat) ?? e.text}`)
       .join(" · ");
+  /** Every effect of a lot, exos (effects added on the item) in blue-ish "+". */
+  const lotFull = (l: Lot) =>
+    l.effects
+      .filter((e: any) => e.status !== "removed" && e.group && e.group !== "weapon" && e.group !== "other")
+      .map((e: any) => `${e.status === "added" ? "exo " : ""}${e.hi ?? ""} ${STAT_LABEL.get(e.stat) ?? e.text}`)
+      .join(" · ");
+  const rowsOf = (map: Record<string, number | null | undefined>) =>
+    slotIds.flatMap((s) => {
+      const lot = map[s] != null ? lotsOf(s).find((l) => l.uid === map[s]) : null;
+      return lot ? [{ slot: s, name: build!.slots[s].name, price: lotUnit(lot)!, line: lotFull(lot) }] : [];
+    });
+  /** The lots of the combination found, else the lots chosen in the build. */
+  const tableRows = $derived(build ? rowsOf(result && result !== "none" ? result.picks : build.chosen) : []);
   const cheapest = (slot: string) => [...lotsOf(slot)].filter((l) => lotUnit(l) != null).sort((a, b) => lotUnit(a)! - lotUnit(b)!).slice(0, 40);
 
   onMount(() => {
@@ -315,40 +328,6 @@
               </div>
             {/if}
             </div>
-            <div class="box prices">
-              <div class="fh">Prix</div>
-              <div class="price" title={craft.missingSlots.length ? `Sans prix : ${names(craft.missingSlots)}` : ""}>
-          <span class="mut">Craft</span> <b>{kamas(craft.total)}</b>
-          {#if craft.missingSlots.length}<span class="bad">{craft.missingSlots.length} sans prix</span>{/if}
-          {#if estSlots.length}<span class="mut" title="Objets non craftables au prix moyen : {names(estSlots)}">dont {estSlots.length} estimé{estSlots.length > 1 ? "s" : ""}</span>{/if}</div>
-              <div class="price" title={first.missingSlots.length ? `Jamais scanné : ${names(first.missingSlots)}` : ""}>
-          <span class="mut">Premier jet</span> <b>{kamas(first.total)}</b>
-          {#if first.missingSlots.length}<span class="bad">{first.missingSlots.length} sans lot</span>{/if}</div>
-              {#if anyChosen}
-                <div class="price" title={picked.missingSlots.length ? `Pas de lot choisi : ${names(picked.missingSlots)}` : ""}>
-            <span class="mut">Sélection</span> <b>{kamas(picked.total)}</b>
-            {#if picked.missingSlots.length}<span class="mut">{picked.missingSlots.length} non choisi</span>{/if}</div>
-        {/if}
-              <label class="small"><input type="checkbox" bind:checked={noDofus} /> Sans les Dofus (hors trophées) dans le prix</label>
-              <hr />
-              <div class="fh">Combinaison la moins chère</div>
-              <div class="mut small">Renseignez des minimums dans les cases « min » des stats, puis lancez la recherche parmi les lots scannés. La forgemagie du stuff est cherchée sous forme d'exo sur les objets.</div>
-              {#if solving}
-                <div class="prog" role="progressbar" aria-valuenow={Math.round(progress * 100)} aria-valuemin="0" aria-valuemax="100"><div class="fill" style:width="{Math.round(progress * 100)}%"></div></div>
-                <div class="small mut">Calcul… {Math.round(progress * 100)} %</div>
-                <button onclick={cancel}>Annuler</button>
-              {:else}
-                <button onclick={run} disabled={!Object.keys(build.targets).length}>Rechercher</button>
-                {#if cancelled}<span class="small mut">Calcul annulé.</span>{/if}
-              {/if}
-              {#if result === "none"}<div class="bad small">Aucune combinaison ne satisfait ces minimums avec les lots scannés{#if fmRows.length} (la forgemagie du stuff doit être portée par des objets : exo {fmRows.map(([c, v]) => `+${v} ${FM_STATS[c].label}`).join(", ")}){/if}.</div>
-              {:else if result}
-                <div class="small">Coût : <b>{kamas(result.cost)}</b>{#if result.approx} <span class="mut">(recherche limitée, résultat approché)</span>{/if}</div>
-                <div class="small mut">{Object.keys(result.picks).length} emplacement(s) choisis{#if result.fixedSlots.length} · gardés tels quels : {names(result.fixedSlots)}{/if}</div>
-                <button onclick={apply}>Appliquer</button>
-              {/if}
-                        </div>
-
           </section>
 
           <section class="stats right">
@@ -381,7 +360,57 @@
             {/if}
             </div>
           </section>
-        </div></div>
+        </div>
+          <hr class="split" />
+          <section class="bottom">
+            <div class="box prices">
+              <div class="fh">Prix</div>
+              <div class="price" title={craft.missingSlots.length ? `Sans prix : ${names(craft.missingSlots)}` : ""}>
+          <span class="mut">Craft</span> <b>{kamas(craft.total)}</b>
+          {#if craft.missingSlots.length}<span class="bad">{craft.missingSlots.length} sans prix</span>{/if}
+          {#if estSlots.length}<span class="mut" title="Objets non craftables au prix moyen : {names(estSlots)}">dont {estSlots.length} estimé{estSlots.length > 1 ? "s" : ""}</span>{/if}</div>
+              <div class="price" title={first.missingSlots.length ? `Jamais scanné : ${names(first.missingSlots)}` : ""}>
+          <span class="mut">Premier jet</span> <b>{kamas(first.total)}</b>
+          {#if first.missingSlots.length}<span class="bad">{first.missingSlots.length} sans lot</span>{/if}</div>
+              {#if anyChosen}
+                <div class="price" title={picked.missingSlots.length ? `Pas de lot choisi : ${names(picked.missingSlots)}` : ""}>
+            <span class="mut">Sélection</span> <b>{kamas(picked.total)}</b>
+            {#if picked.missingSlots.length}<span class="mut">{picked.missingSlots.length} non choisi</span>{/if}</div>
+        {/if}
+              <label class="small"><input type="checkbox" bind:checked={noDofus} /> Sans les Dofus (hors trophées) dans le prix</label>
+            </div>
+            <div class="box solver">
+              <div class="fh">Combinaison la moins chère</div>
+              <div class="mut small">Renseignez des minimums dans les cases « min » des stats, puis lancez la recherche parmi les lots scannés. La forgemagie du stuff est cherchée sous forme d'exo sur les objets.</div>
+              {#if solving}
+                <div class="prog" role="progressbar" aria-valuenow={Math.round(progress * 100)} aria-valuemin="0" aria-valuemax="100"><div class="fill" style:width="{Math.round(progress * 100)}%"></div></div>
+                <div class="small mut">Calcul… {Math.round(progress * 100)} %</div>
+                <button onclick={cancel}>Annuler</button>
+              {:else}
+                <button onclick={run} disabled={!Object.keys(build.targets).length}>Rechercher</button>
+                {#if cancelled}<span class="small mut">Calcul annulé.</span>{/if}
+              {/if}
+              {#if result === "none"}<div class="bad small">Aucune combinaison ne satisfait ces minimums avec les lots scannés{#if fmRows.length} (la forgemagie du stuff doit être portée par des objets : exo {fmRows.map(([c, v]) => `+${v} ${FM_STATS[c].label}`).join(", ")}){/if}.</div>
+              {:else if result}
+                <div class="small">Coût : <b>{kamas(result.cost)}</b>{#if result.approx} <span class="mut">(recherche limitée, résultat approché)</span>{/if}</div>
+                <div class="small mut">{Object.keys(result.picks).length} emplacement(s) choisis{#if result.fixedSlots.length} · gardés tels quels : {names(result.fixedSlots)}{/if}</div>
+                <button onclick={apply}>Appliquer</button>
+              {/if}
+                                      {#if tableRows.length}
+                <div class="fh tt">{result && result !== "none" ? "Combinaison trouvée" : "Lots choisis"}</div>
+                <table class="lots">
+                  <thead><tr><th>Emplacement</th><th>Objet</th><th class="n">Prix</th><th>Effets</th></tr></thead>
+                  <tbody>
+                    {#each tableRows as r (r.slot)}
+                      <tr><td class="mut">{SLOT_TITLES[r.slot]}</td><td><b>{r.name}</b></td><td class="n">{kamas(r.price)}</td><td class="fx">{r.line}</td></tr>
+                    {/each}
+                  </tbody>
+                  <tfoot><tr><td colspan="2">Total</td><td class="n"><b>{kamas(tableRows.reduce((s, r) => s + r.price, 0))}</b></td><td></td></tr></tfoot>
+                </table>
+              {/if}
+            </div>
+          </section>
+        </div>
       </SmoothScroll>
     {/if}
   </main>
@@ -421,11 +450,10 @@
   .sheet { display: grid; grid-template-columns: 460px max-content 620px; justify-content: safe center; gap: 14px; align-items: start; padding-bottom: 12px; }
   /* medium: stats + build on top, damage and resistances on one row, prices and forgemagie at the bottom */
   @container (max-width: 1719px) {
-    .sheet { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "left build" "dmg res" "prices fmb"; justify-content: stretch; }
+    .sheet { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "left build" "dmg res" "fmb fmb"; justify-content: stretch; }
     .stats.right, .center { display: contents; }
     .left { grid-area: left; }
     .build { grid-area: build; }
-    .prices { grid-area: prices; }
     .fmb { grid-area: fmb; }
     .dmg { grid-area: dmg; }
     .res { grid-area: res; }
@@ -435,7 +463,7 @@
   }
   /* narrow: everything stacked */
   @container (max-width: 920px) {
-    .sheet { grid-template-columns: minmax(0, 1fr); grid-template-areas: "left" "build" "dmg" "res" "prices" "fmb"; }
+    .sheet { grid-template-columns: minmax(0, 1fr); grid-template-areas: "left" "build" "dmg" "res" "fmb"; }
   }
   .stats { display: flex; flex-direction: column; gap: 8px; }
   .box { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
@@ -454,9 +482,17 @@
   .tg { width: 44px; height: 22px; padding: 0 4px; font: inherit; text-align: right; }
   .two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 12px; }
   .two > div { min-width: 0; }
-  .prices { width: 100%; }
+  .split { border: 0; border-top: 1px solid var(--line); margin: 6px 0 12px; }
+  .bottom { display: grid; grid-template-columns: minmax(260px, 320px) minmax(0, 1fr); gap: 14px; align-items: start; padding-bottom: 16px; }
+  .lots { width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 12px; }
+  .lots th { text-align: left; font-weight: 400; color: var(--mut); padding: 2px 6px; }
+  .lots td { padding: 4px 6px; border-top: 1px solid var(--line); vertical-align: top; }
+  .lots tfoot td { border-top: 2px solid var(--line); }
+  .lots .n { text-align: right; white-space: nowrap; }
+  .lots .fx { color: var(--mut); }
+  .tt { margin-top: 12px; }
+  @container (max-width: 920px) { .bottom { grid-template-columns: minmax(0, 1fr); } }
   .prices .price { margin: 2px 0; }
-  .prices hr { border: 0; border-top: 1px solid var(--line); margin: 8px 0; }
   .small { font-size: 12px; margin: 4px 0; }
   .center { display: flex; flex-direction: column; align-items: center; gap: 10px; }
   .build { display: flex; flex-direction: column; align-items: center; gap: 10px; min-width: 0; }
