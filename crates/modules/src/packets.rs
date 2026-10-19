@@ -6,7 +6,7 @@ use loutil_proto::DynamicMessage;
 use serde_json::{json, Map, Value};
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
 const RING: usize = 5000;
 
@@ -88,7 +88,7 @@ impl Module for Packets {
         let entry = Entry { rec: self.record(m), msg: m.decoded.clone() };
         let out = Self::render(&entry, ctx);
         {
-            let mut ring = self.ring.lock().unwrap();
+            let mut ring = self.ring.lock();
             if ring.len() == RING {
                 ring.pop_front();
             }
@@ -101,7 +101,7 @@ impl Module for Packets {
         match method {
             "list" => {
                 let since = args.get("since").and_then(Value::as_u64).unwrap_or(0);
-                let ring = self.ring.lock().unwrap();
+                let ring = self.ring.lock();
                 Ok(Value::Array(ring.iter().filter(|e| e.rec["id"].as_u64().unwrap_or(0) > since).map(|e| Self::render(e, ctx)).collect()))
             }
             // the inspector tab opened (on: true) or closed: closing drops everything buffered
@@ -109,15 +109,15 @@ impl Module for Packets {
                 let on = args.get("on").and_then(Value::as_bool).unwrap_or(false);
                 self.active.store(on, Ordering::Relaxed);
                 if !on {
-                    *self.ring.lock().unwrap() = VecDeque::new();
+                    *self.ring.lock() = VecDeque::new();
                 }
                 Ok(json!({"active": on}))
             }
             "clear" => {
-                self.ring.lock().unwrap().clear();
+                self.ring.lock().clear();
                 Ok(json!({"buffered": 0}))
             }
-            "buffered" => Ok(json!(self.ring.lock().unwrap().len())),
+            "buffered" => Ok(json!(self.ring.lock().len())),
             // confirm/edit a decoded name; persisted in the user overrides file
             "rename" => {
                 let msg = args.get("msg").and_then(Value::as_str).ok_or_else(|| anyhow!("msg required"))?;

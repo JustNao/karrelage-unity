@@ -64,7 +64,8 @@ impl Capture {
         if devices.is_empty() {
             anyhow::bail!("no usable network adapter found");
         }
-        self.stop.store(false, Ordering::SeqCst);
+        // a fresh flag per run: threads of a previous run that have not noticed their stop yet must not resume
+        self.stop = Arc::new(AtomicBool::new(false));
         *self.state.lock().unwrap_or_else(|e| e.into_inner()) = State::default();
 
         for dev in devices {
@@ -75,12 +76,14 @@ impl Capture {
                     while !stop.load(Ordering::Relaxed) {
                         match h.next() {
                             Next::Packet(p) => {
-                                if let Some(pkt) = parse_packet(p, link) {
-                                    // a bad packet must never kill the sniff thread
-                                    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| handle(&state, &on_msg, pkt)));
-                                    if r.is_err() {
-                                        on_log("internal error while handling a packet (ignored)".into());
+                                // a bad packet must never kill the sniff thread
+                                let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                    if let Some(pkt) = parse_packet(p, link) {
+                                        handle(&state, &on_msg, pkt);
                                     }
+                                }));
+                                if r.is_err() {
+                                    on_log("internal error while handling a packet (ignored)".into());
                                 }
                             }
                             Next::Timeout => {}
@@ -182,7 +185,7 @@ fn parse_packet(p: &[u8], datalink: i32) -> Option<Pkt<'_>> {
     let (src, dst, tcp) = match ethertype {
         0x0800 => {
             let ihl = (*ip.first()? & 0x0F) as usize * 4;
-            if *ip.get(9)? != 6 {
+            if ihl < 20 || ip.len() < 20 || ip[9] != 6 {
                 return None;
             }
             let total = u16::from_be_bytes([ip[2], ip[3]]) as usize;
@@ -192,7 +195,7 @@ fn parse_packet(p: &[u8], datalink: i32) -> Option<Pkt<'_>> {
             (IpAddr::from(s), IpAddr::from(d), ip.get(ihl..end)?)
         }
         0x86dd => {
-            if *ip.get(6)? != 6 {
+            if ip.len() < 40 || ip[6] != 6 {
                 return None;
             }
             let plen = u16::from_be_bytes([ip[4], ip[5]]) as usize;
@@ -203,6 +206,9 @@ fn parse_packet(p: &[u8], datalink: i32) -> Option<Pkt<'_>> {
         _ => return None,
     };
     let doff = (*tcp.get(12)? >> 4) as usize * 4;
+    if tcp.len() < 20 || doff < 20 {
+        return None;
+    }
     Some(Pkt {
         src,
         dst,
@@ -231,5 +237,34 @@ fn handle(state: &Mutex<State>, on_msg: &Arc<dyn Fn(RawMessage) + Send + Sync>, 
     };
     for (srv, dir, payload) in frames {
         on_msg(RawMessage { t: now(), srv, dir, payload });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ipv4_tcp(tcp: &[u8]) -> Vec<u8> {
+        let mut p = vec![0u8; 14];
+        p[12] = 0x08; // IPv4 ethertype
+        let total = (20 + tcp.len()) as u16;
+        let mut ip = vec![0x45, 0, (total >> 8) as u8, total as u8, 0, 0, 0, 0, 64, 6, 0, 0, 10, 0, 0, 1, 10, 0, 0, 2];
+        ip.extend_from_slice(tcp);
+        p.extend(ip);
+        p
+    }
+
+    #[test]
+    fn truncated_headers_are_ignored() {
+        // 13 TCP bytes: enough for the data offset, not for the flags byte
+        assert!(parse_packet(&ipv4_tcp(&[0u8; 13]), 1).is_none());
+        // data offset < 20
+        let mut tcp = vec![0u8; 20];
+        tcp[12] = 0x20;
+        assert!(parse_packet(&ipv4_tcp(&tcp), 1).is_none());
+        // a valid header with a payload
+        tcp[12] = 0x50;
+        tcp.extend_from_slice(&[1, 2, 3]);
+        assert_eq!(parse_packet(&ipv4_tcp(&tcp), 1).unwrap().payload, &[1, 2, 3]);
     }
 }

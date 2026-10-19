@@ -8,7 +8,7 @@ pub use prost_reflect::{DynamicMessage, Kind, MessageDescriptor, ReflectMessage,
 use prost_reflect::{DescriptorPool, MapKey};
 use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};
-use std::sync::RwLock;
+use parking_lot::RwLock;
 
 pub use names::Names;
 
@@ -38,7 +38,7 @@ impl Proto {
 
     /// (obfuscated type, clear name, confidence) of every named message.
     pub fn named(&self) -> Vec<(String, String, Option<String>)> {
-        self.names.read().unwrap().entries()
+        self.names.read().entries()
     }
 
     pub fn decode(&self, type_name: &str, bytes: &[u8]) -> Option<DynamicMessage> {
@@ -47,21 +47,21 @@ impl Proto {
 
     /// (clear name or the obfuscated type name, confidence)
     pub fn message_name(&self, type_name: &str) -> (String, Option<String>) {
-        self.names.read().unwrap().message_name(type_name)
+        self.names.read().message_name(type_name)
     }
 
     pub fn mapped_count(&self) -> usize {
-        self.names.read().unwrap().len()
+        self.names.read().len()
     }
 
     /// Obfuscated type name for a clear message name (first match), if known in this build.
     pub fn obf_for_clear(&self, clear: &str) -> Option<String> {
-        self.names.read().unwrap().obf_for_clear(clear)
+        self.names.read().obf_for_clear(clear)
     }
 
     /// Persist a confirmed name (`field = None` -> the message itself). Empty `name` removes it.
     pub fn set_override(&self, msg: &str, field: Option<&str>, name: &str) -> Result<()> {
-        let mut n = self.names.write().unwrap();
+        let mut n = self.names.write();
         n.set_override(msg, field, name);
         let tmp = self.override_path.with_extension("tmp");
         if let Some(p) = self.override_path.parent() {
@@ -73,12 +73,12 @@ impl Proto {
     }
 
     pub fn overrides(&self) -> Value {
-        self.names.read().unwrap().overrides().clone()
+        self.names.read().overrides().clone()
     }
 
     /// Decoded message as JSON with clear field names plus `__t` (message name) and `__f` (label -> obfuscated field).
     pub fn to_json(&self, m: &DynamicMessage) -> Value {
-        let names = self.names.read().unwrap();
+        let names = self.names.read();
         rename(&names, m)
     }
 }

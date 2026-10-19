@@ -8,6 +8,7 @@ description = "Feature modules (packets inspector, auction house) and the hub th
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+parking_lot = "0.12"
 loutil-core = { path = "../core" }
 loutil-data = { path = "../data" }
 loutil-proto = { path = "../proto" }

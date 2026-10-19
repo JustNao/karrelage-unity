@@ -2,6 +2,17 @@
 use serde_json::{json, Map, Value};
 use std::collections::{HashMap, HashSet};
 
+/// `v` as an object, replacing anything else by `{}` (never panics on malformed JSON).
+fn obj(v: &mut Value) -> &mut Map<String, Value> {
+    if !v.is_object() {
+        *v = json!({});
+    }
+    match v {
+        Value::Object(m) => m,
+        _ => unreachable!(),
+    }
+}
+
 pub struct Names {
     base: Value,
     overrides: Value,
@@ -10,7 +21,10 @@ pub struct Names {
 }
 
 impl Names {
-    pub fn new(base: Value, overrides: Value) -> Self {
+    pub fn new(base: Value, mut overrides: Value) -> Self {
+        // a hand-edited overrides.json may hold anything: keep only well-formed entries
+        let ok: Map<String, Value> = overrides.as_object_mut().map(std::mem::take).unwrap_or_default().into_iter().filter(|(_, v)| v.is_object()).collect();
+        let overrides = Value::Object(ok);
         let mut n = Names { base, overrides, merged: HashMap::new() };
         n.rebuild();
         n
@@ -20,12 +34,12 @@ impl Names {
         let mut m: HashMap<String, Value> = self.base.as_object().cloned().unwrap_or_default().into_iter().collect();
         for (k, ov) in self.overrides.as_object().into_iter().flatten() {
             let e = m.entry(k.clone()).or_insert_with(|| json!({"fields": {}}));
-            let e = e.as_object_mut().unwrap();
+            let e = obj(e);
             if let Some(name) = ov.get("name").and_then(Value::as_str).filter(|s| !s.is_empty()) {
                 e.insert("name".into(), name.into());
                 e.insert("conf".into(), "manual".into());
             }
-            let fields = e.entry("fields").or_insert_with(|| json!({})).as_object_mut().unwrap();
+            let fields = obj(e.entry("fields").or_insert_with(|| json!({})));
             for (fk, fv) in ov.get("fields").and_then(Value::as_object).into_iter().flatten() {
                 fields.insert(fk.clone(), json!({"name": fv, "exact": true, "manual": true}));
             }
@@ -82,11 +96,11 @@ impl Names {
 
     /// Persist-ready edit of the overrides document.
     pub fn set_override(&mut self, msg: &str, field: Option<&str>, name: &str) {
-        let ov = self.overrides.as_object_mut().unwrap();
-        let e = ov.entry(msg).or_insert_with(|| json!({})).as_object_mut().unwrap();
+        let ov = obj(&mut self.overrides);
+        let e = obj(ov.entry(msg).or_insert_with(|| json!({})));
         match field {
             Some(f) => {
-                let fields = e.entry("fields").or_insert_with(|| json!({})).as_object_mut().unwrap();
+                let fields = obj(e.entry("fields").or_insert_with(|| json!({})));
                 if name.is_empty() {
                     fields.remove(f);
                 } else {
@@ -104,8 +118,25 @@ impl Names {
             e.remove("fields");
         }
         if e.is_empty() {
-            ov.remove(msg);
+            obj(&mut self.overrides).remove(msg);
         }
         self.rebuild();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn malformed_overrides_never_panic() {
+        for bad in [json!([]), json!(null), json!({"a": "x", "b": {"fields": 3}})] {
+            let mut n = Names::new(json!({"a": "not an object", "c": {"name": "C"}}), bad);
+            n.set_override("a", Some("f"), "F");
+            n.set_override("b", None, "B");
+            assert_eq!(n.message_name("b").0, "B");
+            assert_eq!(n.field_label("a", "f"), "F");
+            assert_eq!(n.message_name("c").0, "C");
+        }
     }
 }

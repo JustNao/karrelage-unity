@@ -6,7 +6,7 @@ use anyhow::{anyhow, Result};
 use loutil_proto::util::{int, messages};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
 /// `itemtypes.categoryId` -> label shown in the UI.
 fn category_name(id: Option<i64>) -> &'static str {
@@ -39,7 +39,7 @@ impl Prices {
     }
 
     fn save(&self, ctx: &Ctx) {
-        let s = self.store.lock().unwrap();
+        let s = self.store.lock();
         let obj: serde_json::Map<String, Value> = s.iter().map(|(k, v)| (k.to_string(), v.clone())).collect();
         if let Err(e) = save_json(&Self::path(ctx), &Value::Object(obj)) {
             ctx.log(format!("prices: cannot save: {e}"));
@@ -63,7 +63,7 @@ impl Prices {
         let (Some(msg), Some(b)) = (m.decoded.as_ref(), ctx.data.bindings.get("avg_prices")) else { return };
         let field = |k: &str| b[k].as_str().unwrap_or_default();
         let mut changed = vec![];
-        let mut s = self.store.lock().unwrap();
+        let mut s = self.store.lock();
         for e in messages(msg, field("items")) {
             let (gid, price) = (int(&e, field("gid")), int(&e, field("price")));
             if price <= 0 || !ctx.data.items.contains_key(&gid) {
@@ -95,7 +95,7 @@ impl Module for Prices {
 
     fn init(&self, ctx: &Ctx) {
         if let Some(Value::Object(saved)) = load_json(&Self::path(ctx)) {
-            let mut s = self.store.lock().unwrap();
+            let mut s = self.store.lock();
             for (k, mut v) in saved {
                 if let Ok(gid) = k.parse::<i64>() {
                     Self::describe(ctx, gid, &mut v);
@@ -127,7 +127,7 @@ impl Module for Prices {
         if !unit.is_finite() {
             return; // nobody is selling it: keep the previous price
         }
-        let mut s = self.store.lock().unwrap();
+        let mut s = self.store.lock();
         let ent = s.entry(gid).or_insert_with(|| json!({"gid": gid, "override": null}));
         ent["unit"] = json!(unit.round() as i64);
         ent["updated"] = json!(m.raw.t);
@@ -140,7 +140,7 @@ impl Module for Prices {
 
     fn call(&self, method: &str, args: Value, ctx: &Ctx) -> Result<Value> {
         match method {
-            "list" => Ok(Value::Array(self.store.lock().unwrap().values().cloned().collect())),
+            "list" => Ok(Value::Array(self.store.lock().values().cloned().collect())),
             // Rune de transcendance items: [{gid, name, a, value}] (the effect a rune adds to an item)
             "runes" => {
                 let mut v: Vec<Value> = ctx
@@ -210,7 +210,7 @@ impl Module for Prices {
             "set_override" => {
                 let gid = args["gid"].as_i64().ok_or_else(|| anyhow!("prices: gid required"))?;
                 let value = args["value"].as_f64().filter(|v| *v >= 0.0).map(|v| v.round() as i64);
-                let mut s = self.store.lock().unwrap();
+                let mut s = self.store.lock();
                 let ent = s.get_mut(&gid).ok_or_else(|| anyhow!("prices: unknown item {gid}"))?;
                 ent["override"] = json!(value);
                 let ent = ent.clone();
@@ -220,7 +220,7 @@ impl Module for Prices {
                 Ok(ent)
             }
             "forget" => {
-                self.store.lock().unwrap().clear();
+                self.store.lock().clear();
                 self.save(ctx);
                 ctx.emit("prices", "cleared", json!({}));
                 Ok(json!({"ok": true}))

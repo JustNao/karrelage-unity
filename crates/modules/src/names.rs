@@ -12,7 +12,8 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 /// Where Ankama installs the game; only file sizes are looked at.
 fn game_dir() -> Option<PathBuf> {
@@ -179,7 +180,7 @@ impl Module for NamesTab {
 
     fn on_message(&self, m: &Message, _ctx: &Ctx) {
         if let Some(t) = &m.type_name {
-            *self.seen.lock().unwrap().entry(t.clone()).or_default() += 1;
+            *self.seen.lock().entry(t.clone()).or_default() += 1;
         }
     }
 
@@ -190,12 +191,12 @@ impl Module for NamesTab {
                 let on = args.get("on").and_then(Value::as_bool).unwrap_or(false);
                 self.active.store(on, Ordering::Relaxed);
                 if !on {
-                    self.seen.lock().unwrap().clear();
+                    self.seen.lock().clear();
                 }
                 Ok(json!({"active": on}))
             }
             "reset" => {
-                self.seen.lock().unwrap().clear();
+                self.seen.lock().clear();
                 Ok(json!({}))
             }
             "check" => {
@@ -203,7 +204,7 @@ impl Module for NamesTab {
                 let game = game_check(ctx);
                 let named = ctx.proto.named();
                 let stale: Vec<&str> = named.iter().filter(|(obf, ..)| ctx.proto.message(obf).is_none()).map(|(o, ..)| o.as_str()).collect();
-                let seen = self.seen.lock().unwrap();
+                let seen = self.seen.lock();
                 let unknown: Vec<(&String, &u64)> = seen.iter().filter(|(t, _)| ctx.proto.message(t).is_none()).collect();
                 let unnamed = seen.keys().filter(|t| ctx.proto.message(t).is_some() && ctx.proto.message_name(t).1.is_none()).count();
                 let total: u64 = seen.values().sum();

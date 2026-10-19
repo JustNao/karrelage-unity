@@ -5,7 +5,7 @@ use crate::{load_json, save_json, Ctx, Interest, Module};
 use anyhow::{anyhow, bail, Context, Result};
 use serde_json::{json, Map, Value};
 use std::path::PathBuf;
-use std::sync::Mutex;
+use parking_lot::Mutex;
 use std::time::Duration;
 
 const API: &str = "https://www.dofusbook.net/api/stuffs/dofus/public";
@@ -35,7 +35,7 @@ impl Stuff {
     }
 
     fn save(&self, ctx: &Ctx) {
-        let b = self.builds.lock().unwrap();
+        let b = self.builds.lock();
         if let Err(e) = save_json(&Self::path(ctx), &Value::Array(b.clone())) {
             ctx.log(format!("stuff: cannot save: {e}"));
         }
@@ -193,14 +193,14 @@ impl Module for Stuff {
 
     fn init(&self, ctx: &Ctx) {
         if let Some(Value::Array(saved)) = load_json(&Self::path(ctx)) {
-            *self.builds.lock().unwrap() = saved;
+            *self.builds.lock() = saved;
         }
     }
 
     fn call(&self, method: &str, args: Value, ctx: &Ctx) -> Result<Value> {
         let id_arg = || args["id"].as_str().map(str::to_owned).ok_or_else(|| anyhow!("stuff: id requis"));
         match method {
-            "list" => Ok(Value::Array(self.builds.lock().unwrap().clone())),
+            "list" => Ok(Value::Array(self.builds.lock().clone())),
             // args: {url}
             "import" => {
                 let url = args["url"].as_str().unwrap_or_default();
@@ -215,7 +215,7 @@ impl Module for Stuff {
                 b["chosen"] = json!({});
                 b["ignored"] = json!([]);
                 b["owned"] = json!([]);
-                self.builds.lock().unwrap().push(b.clone());
+                self.builds.lock().push(b.clone());
                 self.save(ctx);
                 Ok(b)
             }
@@ -226,7 +226,7 @@ impl Module for Stuff {
                 if name.is_empty() {
                     bail!("nom vide");
                 }
-                let mut bs = self.builds.lock().unwrap();
+                let mut bs = self.builds.lock();
                 let b = bs.iter_mut().find(|b| b["id"] == id).ok_or_else(|| anyhow!("stuff inconnu"))?;
                 b["name"] = json!(name);
                 drop(bs);
@@ -235,7 +235,7 @@ impl Module for Stuff {
             }
             "delete" => {
                 let id = id_arg()?;
-                self.builds.lock().unwrap().retain(|b| b["id"] != id);
+                self.builds.lock().retain(|b| b["id"] != id);
                 self.save(ctx);
                 Ok(json!({"ok": true}))
             }
@@ -243,11 +243,11 @@ impl Module for Stuff {
             "refresh" => {
                 let id = id_arg()?;
                 let db_id = {
-                    let bs = self.builds.lock().unwrap();
+                    let bs = self.builds.lock();
                     bs.iter().find(|b| b["id"] == id).and_then(|b| b["dofusbook_id"].as_i64()).ok_or_else(|| anyhow!("stuff inconnu"))?
                 };
                 let fresh = trim_build(&fetch_build(db_id)?)?;
-                let mut bs = self.builds.lock().unwrap();
+                let mut bs = self.builds.lock();
                 let b = bs.iter_mut().find(|b| b["id"] == id).ok_or_else(|| anyhow!("stuff inconnu"))?;
                 for (k, v) in fresh.as_object().into_iter().flatten() {
                     b[k.as_str()] = v.clone();
@@ -261,7 +261,7 @@ impl Module for Stuff {
             // args: {id, patch: {targets?, chosen?, ignored?}}
             "save_state" => {
                 let id = id_arg()?;
-                let mut bs = self.builds.lock().unwrap();
+                let mut bs = self.builds.lock();
                 let b = bs.iter_mut().find(|b| b["id"] == id).ok_or_else(|| anyhow!("stuff inconnu"))?;
                 for k in ["targets", "chosen", "ignored", "owned", "fm"] {
                     if let Some(v) = args["patch"].get(k) {

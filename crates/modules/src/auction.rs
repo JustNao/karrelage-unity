@@ -9,7 +9,8 @@ use loutil_proto::{DynamicMessage, Kind, PbValue, ReflectMessage};
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use std::collections::BTreeMap;
-use std::sync::{Mutex, OnceLock};
+use parking_lot::Mutex;
+use std::sync::OnceLock;
 
 /// Clear name pinned in pipeline overrides (work/overrides.json) for the AH listing event.
 pub const AH_LIST: &str = "ExchangeTypesItemsExchangerDescriptionForUserEvent";
@@ -57,7 +58,7 @@ impl Auction {
     }
 
     fn save(&self, ctx: &Ctx) {
-        let s = self.store.lock().unwrap();
+        let s = self.store.lock();
         let live: Map<String, Value> = s.iter().filter(|(_, v)| v["demo"] != json!(true)).map(|(k, v)| (k.clone(), v.clone())).collect();
         if let Err(e) = save_json(&Self::store_path(ctx), &Value::Object(live)) {
             ctx.log(format!("auction: cannot save store: {e}"));
@@ -87,7 +88,7 @@ impl Auction {
             "companion": ctx.data.is_companion(Some(gid)), "feedable": ctx.data.is_feedable(Some(gid)), "level": rows[0]["level"], "icon": rows[0]["icon"], "updated": m.raw.t, "lots": rows.len(),
             "min_price": mins.iter().min(), "rows": rows, "defaults": f["defaults"], "demo": m.raw.srv == "demo",
         });
-        self.store.lock().unwrap().insert(gid.to_string(), ent.clone());
+        self.store.lock().insert(gid.to_string(), ent.clone());
         self.save(ctx);
         ctx.emit("auction", "item", ent);
     }
@@ -217,7 +218,7 @@ impl Module for Auction {
 
     fn init(&self, ctx: &Ctx) {
         if let Some(Value::Object(saved)) = load_json(&Self::store_path(ctx)) {
-            let mut s = self.store.lock().unwrap();
+            let mut s = self.store.lock();
             for (k, mut v) in saved {
                 if !v["gid"].as_i64().is_some_and(|g| ctx.data.is_equipment(g)) {
                     continue; // stored before the HDV tab was limited to equipment
@@ -271,12 +272,12 @@ impl Module for Auction {
 
     fn call(&self, method: &str, _args: Value, ctx: &Ctx) -> Result<Value> {
         match method {
-            "items" => Ok(Value::Array(self.store.lock().unwrap().values().cloned().collect())),
+            "items" => Ok(Value::Array(self.store.lock().values().cloned().collect())),
             "effects" => Ok(ctx.data.filterable_effects()),
             "recipes" => Ok(ctx.data.recipes_json()),
             "effect_meta" => Ok(ctx.data.effect_meta()),
             "clear" => {
-                self.store.lock().unwrap().clear();
+                self.store.lock().clear();
                 self.save(ctx);
                 ctx.emit("auction", "cleared", json!({}));
                 Ok(json!({"ok": true}))
@@ -355,7 +356,7 @@ mod tests {
         let proto = Arc::new(Proto::load(&pack, tmp).unwrap());
         let events = Arc::new(Mutex::new(vec![]));
         let ev = events.clone();
-        let emit: Arc<dyn Fn(&str, Value) + Send + Sync> = Arc::new(move |n, v| ev.lock().unwrap().push((n.to_string(), v)));
+        let emit: Arc<dyn Fn(&str, Value) + Send + Sync> = Arc::new(move |n, v| ev.lock().push((n.to_string(), v)));
         let dir = std::env::temp_dir().join("loutil-golden");
         let _ = std::fs::remove_dir_all(&dir);
         let hub = crate::Hub::new(data, proto, dir, emit, Arc::new(|_| {}));
@@ -365,7 +366,7 @@ mod tests {
         hub.handle(RawMessage { t: 1.0, srv: "demo".into(), dir: "S->C", payload });
 
         let mut expected: Value = serde_json::from_slice(&std::fs::read(root.join("fixtures/ah_demo.expected.json")).unwrap()).unwrap();
-        let events = events.lock().unwrap();
+        let events = events.lock();
         let (_, pkt) = events.iter().find(|(n, _)| n == "packets:packet").expect("packet event");
         assert_eq!(pkt["name"], expected["name"]);
         let mut got = pkt["fmt"].clone();
