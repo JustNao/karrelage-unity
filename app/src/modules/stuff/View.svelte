@@ -256,8 +256,8 @@
       </div>
 
       <SmoothScroll>
-        <div class="sheet">
-          <section class="stats">
+        <div class="sheetwrap"><div class="sheet">
+          <section class="stats left">
             <div class="box">
               <div class="st hp"><b>{real?.hp}</b><span class="fm"></span>{#if icon("stat", "pv")}<img src={icon("stat", "pv")} alt="" />{:else}<span class="ph"></span>{/if}<span class="lab">PdV</span></div>
               {#each PANELS.main as s (s.stat)}{@render statRow(s)}{/each}
@@ -320,19 +320,16 @@
             {/if}
           </section>
 
-          <section class="stats">
-            <div class="box two">
+          <section class="stats right">
+            <div class="box two dmg">
               <div>{#each PANELS.damage.slice(0, 6) as s (s.stat)}{@render statRow(s)}{/each}</div>
               <div>{#each PANELS.damage.slice(6) as s (s.stat)}{@render statRow(s)}{/each}</div>
             </div>
-            <div class="box two">
+            <div class="box two res">
               <div>{#each PANELS.resist.filter((s) => !s.label.startsWith("%")) as s (s.stat)}{@render statRow(s)}{/each}</div>
               <div>{#each PANELS.resist.filter((s) => s.label.startsWith("%")) as s (s.stat)}{@render statRow(s)}{/each}</div>
             </div>
-            {#if real && real.unmapped.size}
-              <div class="box mut small">Autres effets : {[...real.unmapped].map(([s, v]) => `${v} (#${s})`).join(", ")}</div>
-            {/if}
-            <div class="box">
+            <div class="box fmb">
               <div class="fh">Forgemagie</div>
               {#each fmRows as [code, v] (code)}
                 <div class="st">
@@ -348,9 +345,12 @@
                 {#each fmFree as [code, f] (code)}<option value={code}>{f.label}</option>{/each}
               </select>
               <div class="mut small">Les bonus s'ajoutent aux stats (en bleu) ; modifiables.</div>
+              {#if real && real.unmapped.size}
+              <div class="mut small">Autres effets : {[...real.unmapped].map(([s, v]) => `${v} (#${s})`).join(", ")}</div>
+            {/if}
             </div>
           </section>
-        </div>
+        </div></div>
       </SmoothScroll>
     {/if}
   </main>
@@ -375,7 +375,25 @@
   .ttl a { margin-left: 8px; font-size: 12px; }
   .price { white-space: nowrap; }
   .price .bad { font-size: 11px; margin-left: 4px; }
+  .sheetwrap { container-type: inline-size; }
   .sheet { display: grid; grid-template-columns: 460px max-content 620px; justify-content: center; gap: 14px; align-items: start; padding-bottom: 12px; }
+  /* medium (Dofusbook layout): stats left, build and forgemagie right, damage / resistances full width below */
+  @container (max-width: 1499px) {
+    .sheet { grid-template-columns: minmax(0, 460px) minmax(0, 1fr); grid-template-areas: "left center" "left fmb" "dmg dmg" "res res"; justify-content: stretch; }
+    .stats.right { display: contents; }
+    .left { grid-area: left; }
+    .center { grid-area: center; }
+    .fmb { grid-area: fmb; }
+    .dmg { grid-area: dmg; }
+    .res { grid-area: res; }
+  }
+  /* narrow: everything stacked */
+  @container (max-width: 920px) {
+    .sheet { grid-template-columns: minmax(0, 1fr); grid-template-areas: "left" "center" "fmb" "dmg" "res"; }
+  }
+  @container (max-width: 640px) {
+    .two { grid-template-columns: minmax(0, 1fr); }
+  }
   .stats { display: flex; flex-direction: column; gap: 8px; }
   .box { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
   .st { display: flex; align-items: center; gap: 4px; padding: 2px 0; font-size: 12px; }
