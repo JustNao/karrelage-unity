@@ -230,7 +230,8 @@ export function solve(b: Build, info: Info, lotsOf: (slot: string) => Lot[], tar
 
   const resolveFixed = (slot: string) => {
     const gid = b.slots[slot].gid;
-    const lot = lotsOf(slot).find((l) => l.uid === b.chosen[slot]);
+    // counted off the price: perfect roll (max level for a familiar / mount), whatever lot was chosen; otherwise keep the chosen lot
+    const lot = ignored.has(slot) ? undefined : lotsOf(slot).find((l) => l.uid === b.chosen[slot]);
     for (const [s, v] of lot ? lotStats(lot) : itemStats(info.items[gid] ?? { effects: [] } as any)) add(base, s, v);
     baseGids.push(gid);
     fixedSlots.push(slot);

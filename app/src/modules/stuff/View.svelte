@@ -54,7 +54,8 @@
   const resolveWith = (real: boolean): Resolved[] =>
     slotIds.map((slot) => {
       const gid = build!.slots[slot].gid;
-      const lot = real ? chosenLot(slot) : null;
+      // an item counted off the price is taken at its perfect roll (max level for a familiar / mount): the theoretical maximum
+      const lot = real && !ignored.has(slot) ? chosenLot(slot) : null;
       return { slot, gid, lot, stats: lot ? lotStats(lot) : itemStats(info.items[gid] ?? ({ effects: [] } as any)) };
     });
   const real = $derived(build ? compute(build, info, resolveWith(true)) : null);
@@ -179,7 +180,7 @@
 
   const rowsOf = (map: Record<string, number | null | undefined>) =>
     slotIds.flatMap((s) => {
-      if (noDofus && dofusSlots.includes(s)) return []; // "sans les Dofus": not part of the output either
+      if (ignored.has(s)) return []; // counted off the price (€ or "sans les Dofus"): perfect roll, not a lot of the output
       const lot = map[s] != null ? lotsOf(s).find((l) => l.uid === map[s]) : null;
       return lot ? [{ slot: s, name: build!.slots[s].name, picture: build!.slots[s].picture, price: lotUnit(lot)!, lot }] : [];
     });
