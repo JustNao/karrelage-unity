@@ -192,7 +192,7 @@ export interface SolveResult { picks: Record<string, number>; cost: number; tota
 
 /** Cheapest lot combination whose stat totals reach `targets` (stat -> minimum). One lot per free slot; ignored slots and slots without any scanned
  *  lot keep their current item (chosen lot, else theoretical maximum) at no cost. Set bonuses are tracked incrementally. Returns null when infeasible. */
-export function solve(b: Build, info: Info, lotsOf: (slot: string) => Lot[], targets: Record<string, number>, nodeLimit = 4_000_000): SolveResult | null {
+export function solve(b: Build, info: Info, lotsOf: (slot: string) => Lot[], targets: Record<string, number>, nodeLimit = 4_000_000, progress?: (fraction: number) => void): SolveResult | null {
   const tgt = Object.entries(targets).map(([s, v]) => [+s, v] as const).filter(([, v]) => Number.isFinite(v) && v > 0);
   const stats = tgt.map(([s]) => s);
   const slots = Object.keys(b.slots);
@@ -272,8 +272,10 @@ export function solve(b: Build, info: Info, lotsOf: (slot: string) => Lot[], tar
   const counts = new Map(baseCounts);
   const cur = startTotals.slice();
   const chosen: Cand[] = [];
+  let rootDone = 0; // share of the first slot's lots already explored
   const dfs = (k: number, cost: number) => {
     if (nodes++ > nodeLimit) { approx = true; return; }
+    if (progress && nodes % 20000 === 0) progress(Math.min(1, Math.max(nodes / nodeLimit, rootDone)));
     if (best && cost + minCost[k] >= best.cost) return;
     for (let i = 0; i < stats.length; i++) {
       if (cur[i] + suffixMax[i][k] + maxBonus[i] < need[i]) return;
@@ -283,7 +285,8 @@ export function solve(b: Build, info: Info, lotsOf: (slot: string) => Lot[], tar
       if (cur.every((v, i) => v >= need[i])) best = { cost, picks: chosen.slice() };
       return;
     }
-    for (const c of free[k].cands) {
+    for (const [ci, c] of free[k].cands.entries()) {
+      if (k === 0) rootDone = ci / free[0].cands.length;
       if (best && cost + c.price + minCost[k + 1] >= best.cost) break; // sorted by price
       const sid = setOf(c.gid);
       const n0 = sid != null ? counts.get(sid) ?? 0 : 0;

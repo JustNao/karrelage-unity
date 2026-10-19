@@ -32,6 +32,9 @@
   let picker = $state<string | null>(null);
   let result = $state<SolveResult | null | "none">(null);
   let solving = $state(false);
+  let progress = $state(0);
+  let cancelled = $state(false);
+  let worker: Worker | null = null;
   let now = $state(Date.now() / 1000);
 
   const build = $derived(builds.find((b) => b.id === sel) ?? null);
@@ -156,13 +159,20 @@
   const fmRows = $derived(Object.entries(build?.fm ?? {}).filter(([c, v]) => v && FM_STATS[c]));
   const fmFree = $derived(Object.entries(FM_STATS).filter(([c]) => !build?.fm?.[c]));
 
+  /** The search runs in a worker (the UI stays responsive), reports its progress and can be cancelled. */
   function run() {
-    solving = true; result = null;
-    setTimeout(() => {
-      try { result = solve({ ...build!, ignored: [...ignored] }, info, lotsOf, build!.targets) ?? "none"; } catch (e) { err = String(e); }
-      solving = false;
-    }, 20);
+    solving = true; cancelled = false; progress = 0; result = null;
+    const lots = Object.fromEntries(slotIds.map((s) => [s, lotsOf(s).map((l) => ({ uid: l.uid, gid: l.gid, prices: l.prices, effects: l.effects }))]));
+    worker = new Worker(new URL("../../lib/stuffWorker.ts", import.meta.url), { type: "module" });
+    worker.onmessage = (e: MessageEvent<{ progress?: number; done?: SolveResult | null }>) => {
+      if (e.data.progress != null) progress = e.data.progress;
+      else if ("done" in e.data) { result = e.data.done ?? "none"; stop(); }
+    };
+    worker.onerror = (e) => { err = e.message || "erreur du calcul"; stop(); };
+    worker.postMessage(JSON.parse(JSON.stringify({ build: { ...build!, ignored: [...ignored] }, info, lots, targets: build!.targets })));
   }
+  function stop() { worker?.terminate(); worker = null; solving = false; }
+  function cancel() { cancelled = true; stop(); }
   const apply = () => {
     if (!result || result === "none") return;
     patch({ chosen: { ...build!.chosen, ...result.picks } });
@@ -323,7 +333,14 @@
               <hr />
               <div class="fh">Combinaison la moins chère</div>
               <div class="mut small">Renseignez des minimums dans les cases « min » des stats, puis lancez la recherche parmi les lots scannés.</div>
-              <button onclick={run} disabled={solving || !Object.keys(build.targets).length}>{solving ? "Calcul…" : "Rechercher"}</button>
+              {#if solving}
+                <div class="prog" role="progressbar" aria-valuenow={Math.round(progress * 100)} aria-valuemin="0" aria-valuemax="100"><div class="fill" style:width="{Math.round(progress * 100)}%"></div></div>
+                <div class="small mut">Calcul… {Math.round(progress * 100)} %</div>
+                <button onclick={cancel}>Annuler</button>
+              {:else}
+                <button onclick={run} disabled={!Object.keys(build.targets).length}>Rechercher</button>
+                {#if cancelled}<span class="small mut">Calcul annulé.</span>{/if}
+              {/if}
               {#if result === "none"}<div class="bad small">Aucune combinaison ne satisfait ces minimums avec les lots scannés.</div>
               {:else if result}
                 <div class="small">Coût : <b>{kamas(result.cost)}</b>{#if result.approx} <span class="mut">(recherche limitée, résultat approché)</span>{/if}</div>
@@ -394,6 +411,8 @@
   .pad { padding: 20px; }
   .bar { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; padding: 6px 10px; margin-bottom: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
   .ttl { flex: 1; min-width: 220px; }
+  .prog { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin: 6px 0 2px; }
+  .prog .fill { height: 100%; background: var(--acc); transition: width 0.1s linear; }
   .scan { margin-left: 10px; padding: 2px 8px; font-size: 12px; }
   .ttl a { margin-left: 8px; font-size: 12px; }
   .price { white-space: nowrap; }
