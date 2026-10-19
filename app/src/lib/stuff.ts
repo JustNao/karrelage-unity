@@ -58,6 +58,8 @@ export const PANELS = {
     r(37, "%Ré Neutre", "rnp"), r(33, "%Ré Terre", "rtp"), r(34, "%Ré Feu", "rfp"), r(35, "%Ré Eau", "rep"), r(36, "%Ré Air", "rap"), r(124, "%Ré Mêlée", "rc"), r(121, "%Ré Dist", "rc"), r(142, "%Ré Armes", "rc")],
 };
 export const STAT_ICON_CODES = [...new Set([...Object.values(PANELS).flat().map((x) => x.icon).filter(Boolean), "pv"])];
+/** Characteristic id -> Dofusbook icon code (stats without an icon are left out). */
+export const STAT_ICON = new Map<number, string>(Object.values(PANELS).flat().filter((x) => x.icon).map((x) => [x.stat, x.icon]));
 export const STAT_LABEL = new Map<number, string>(Object.values(PANELS).flat().map((x) => [x.stat, x.label]));
 
 /** Dofusbook characteristic codes -> stat id (base / scroll). */
