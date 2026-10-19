@@ -647,7 +647,7 @@
   .ilist .sbar { display: flex; gap: 6px; padding: 6px 10px; cursor: default; position: sticky; top: 36px; z-index: 2; background: var(--panel); }
   .sbar .danger { color: var(--bad); border-color: var(--bad); }
   .sbar input { flex: 1; min-width: 0; padding: 3px 6px; }
-  .thead { display: flex; width: 100%; align-items: center; gap: 6px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: var(--bg); color: inherit; padding: 5px 10px; font: 600 11px var(--font); letter-spacing: 0.04em; text-transform: uppercase; text-align: left; position: sticky; top: 36px; z-index: 1; }
+  .thead { display: flex; width: 100%; align-items: center; gap: 6px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: var(--bg); color: inherit; padding: 5px 10px; font: 600 11px var(--font); letter-spacing: 0.04em; text-transform: uppercase; text-align: left; position: sticky; top: 72px; z-index: 1; }
   .chev { display: inline-block; transition: transform 0.2s; }
   .chev.shut { transform: rotate(-90deg); }
   .ilist div { padding: 6px 10px; border-bottom: 1px solid var(--line); cursor: pointer; font-family: var(--font); }
