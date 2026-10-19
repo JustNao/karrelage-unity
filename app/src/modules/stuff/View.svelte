@@ -68,7 +68,11 @@
   /** Slots left out of the prices: the ones marked with "€", plus the Dofus when the toggle is on (they still count in stats). */
   const DOFUS_TYPE = 23; // itemtypes: Dofus (trophées 151 and prysmaradites share the same slots and stay priced)
   const dofusSlots = $derived(DOFUS.filter((s) => info.items[build?.slots[s]?.gid ?? -1]?.type_id === DOFUS_TYPE));
-  const ignored = $derived(new Set([...(build?.ignored ?? []), ...(noDofus ? dofusSlots : [])]));
+  const owned = $derived(new Set(build?.owned ?? []));
+  /** Slots not bought: owned items, items marked "€", and the Dofus when the toggle is on. All count at their perfect roll. */
+  const ignored = $derived(new Set([...(build?.ignored ?? []), ...(build?.owned ?? []), ...(noDofus ? dofusSlots : [])]));
+  /** The search needs a scanned listing for every item that is bought. */
+  const unscanned = $derived(slotIds.filter((s) => !ignored.has(s) && !fresh(s)));
   const perSlot = $derived(
     Object.fromEntries(slotIds.map((s) => [s, slotPrices(build!.slots[s].gid, lotsOf(s), build!.chosen[s], recipes, prices)])),
   );
@@ -79,7 +83,7 @@
   const names = (l: string[]) => l.map((s) => SLOT_TITLES[s]).join(", ");
 
   /** Items of the build not scanned in the last hour (red border), one entry per item. */
-  const toScan = $derived([...new Map(slotIds.filter((s) => !fresh(s)).map((s) => [build!.slots[s].gid, { gid: build!.slots[s].gid, name: build!.slots[s].name, group: s === "fa" || s === "mo" ? "companion" : "equip" } as ScanItem])).values()]);
+  const toScan = $derived([...new Map(slotIds.filter((s) => !ignored.has(s) && !fresh(s)).map((s) => [build!.slots[s].gid, { gid: build!.slots[s].gid, name: build!.slots[s].name, group: s === "fa" || s === "mo" ? "companion" : "equip" } as ScanItem])).values()]);
   async function openScanList() {
     try { localStorage.setItem(SCAN_LIST_KEY, JSON.stringify(toScan)); } catch {}
     const open = await WebviewWindow.getByLabel("scanlist");
@@ -114,7 +118,7 @@
     busy = false;
   }
 
-  const patch = (p: Partial<Pick<Build, "targets" | "chosen" | "ignored" | "fm">>) => {
+  const patch = (p: Partial<Pick<Build, "targets" | "chosen" | "ignored" | "owned" | "fm">>) => {
     if (!build) return;
     Object.assign(build, p);
     call("stuff", "save_state", { id: build.id, patch: p }).catch((e) => (err = String(e)));
@@ -139,7 +143,8 @@
     } catch (e) { err = String(e); }
   };
 
-  const toggleIgnore = (slot: string) => patch({ ignored: ignored.has(slot) ? build!.ignored.filter((s) => s !== slot) : [...build!.ignored, slot] });
+  const toggleIgnore = (slot: string) => patch({ ignored: build!.ignored.includes(slot) ? build!.ignored.filter((s) => s !== slot) : [...build!.ignored, slot] });
+  const toggleOwned = (slot: string) => { const o = build!.owned ?? []; patch({ owned: o.includes(slot) ? o.filter((s) => s !== slot) : [...o, slot] }); result = null; };
   const setTarget = (stat: number, v: string) => {
     const t = { ...build!.targets };
     const n = parseInt(v, 10);
@@ -229,11 +234,12 @@
   {#if build?.slots[id]}
     {@const sl = build.slots[id]}
     {@const lot = chosenLot(id)}
-    <div class="slot" class:fresh={fresh(id)} class:stale={!fresh(id)} class:ign={ignored.has(id)}>
+    <div class="slot" class:fresh={!owned.has(id) && fresh(id)} class:stale={!owned.has(id) && !fresh(id)} class:own={owned.has(id)} class:ign={ignored.has(id)}>
       <div class="ic" title="{sl.name} — {SLOT_TITLES[id]}{lot ? ` (lot à ${kamas(lotUnit(lot)!)})` : ''}">
         {#if icon("item", sl.picture)}<img src={icon("item", sl.picture)} alt={sl.name} />{:else}<span class="mut">{SLOT_TITLES[id]}</span>{/if}
       </div>
-      <button class="ig" class:on={ignored.has(id)} title={ignored.has(id) ? "Remettre dans le prix" : "Ignorer dans le prix (compte toujours dans les stats)"} onclick={() => toggleIgnore(id)}>€</button>
+      <button class="ig" class:on={ignored.has(id) && !owned.has(id)} title={ignored.has(id) ? "Remettre dans le prix" : "Ignorer dans le prix (compte toujours dans les stats)"} onclick={() => toggleIgnore(id)} disabled={owned.has(id)}>€</button>
+      <button class="ow" class:on={owned.has(id)} title={owned.has(id) ? "Je ne possède plus cet objet" : "Je possède déjà cet objet (jet parfait, pas acheté)"} onclick={() => toggleOwned(id)}>✕</button>
     </div>
   {:else}
     <div class="slot empty"></div>
@@ -365,7 +371,8 @@
                 <div class="small mut">Calcul… {Math.round(progress * 100)} %</div>
                 <button onclick={cancel}>Annuler</button>
               {:else}
-                <button onclick={run} disabled={!Object.keys(build.targets).length}>Rechercher</button>
+                <button onclick={run} disabled={!Object.keys(build.targets).length || unscanned.length > 0}>Rechercher</button>
+                {#if unscanned.length}<div class="small bad">À scanner d'abord (ou à désactiver avec € / ✕) : {names(unscanned)}.</div>{/if}
                 {#if cancelled}<span class="small mut">Calcul annulé.</span>{/if}
               {/if}
               {#if result === "none"}<div class="bad small">Aucune combinaison ne satisfait ces minimums avec les lots scannés.</div>
@@ -484,8 +491,12 @@
   .slot.fresh .ic { border-color: var(--ok); }
   .slot.stale .ic { border-color: var(--bad); }
   .slot.ign .ic { opacity: 0.55; }
+  .slot.own .ic { border-color: var(--mut); }
   .slot img { max-width: 100%; max-height: 100%; }
   .ig { position: absolute; right: -4px; bottom: -4px; width: 18px; height: 18px; padding: 0; border-radius: 9px; font-size: 10px; line-height: 1; color: var(--mut); }
+  .ow { position: absolute; left: -4px; bottom: -4px; width: 18px; height: 18px; padding: 0; border-radius: 9px; font-size: 10px; line-height: 1; color: var(--mut); }
+  .ow.on { background: var(--mut); color: #000; border-color: var(--mut); }
+  .ig:disabled { opacity: 0.35; cursor: default; }
   .ig.on { background: var(--warn); color: #000; border-color: var(--warn); }
   .legend { font-size: 11px; }
   .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin: 0 3px 0 8px; }

@@ -214,6 +214,7 @@ impl Module for Stuff {
                 b["targets"] = json!({});
                 b["chosen"] = json!({});
                 b["ignored"] = json!([]);
+                b["owned"] = json!([]);
                 self.builds.lock().unwrap().push(b.clone());
                 self.save(ctx);
                 Ok(b)
@@ -262,7 +263,7 @@ impl Module for Stuff {
                 let id = id_arg()?;
                 let mut bs = self.builds.lock().unwrap();
                 let b = bs.iter_mut().find(|b| b["id"] == id).ok_or_else(|| anyhow!("stuff inconnu"))?;
-                for k in ["targets", "chosen", "ignored", "fm"] {
+                for k in ["targets", "chosen", "ignored", "owned", "fm"] {
                     if let Some(v) = args["patch"].get(k) {
                         b[k] = v.clone();
                     }

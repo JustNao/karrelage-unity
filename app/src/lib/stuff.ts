@@ -20,6 +20,8 @@ export interface Build {
   targets: Record<string, number>;
   /** slot -> uid of the chosen auction lot */
   chosen: Record<string, number | null>;
+  /** slots the user already owns (taken at their perfect roll, not bought) */
+  owned?: string[];
   /** slots left out of the price (they still count in stats) */
   ignored: string[];
 }
