@@ -62,15 +62,9 @@
   const max = $derived(build ? compute(build, info, resolveWith(false)) : null);
   const anyChosen = $derived(!!build && slotIds.some((s) => chosenLot(s)));
 
-  const DOFUS = ["d1", "d2", "d3", "d4", "d5", "d6"];
-  let noDofus = $state((() => { try { return localStorage.getItem("karrelage.stuff.noDofus") === "1"; } catch { return false; } })());
-  $effect(() => { try { localStorage.setItem("karrelage.stuff.noDofus", noDofus ? "1" : "0"); } catch {} });
-  /** Slots left out of the prices: the ones marked with "€", plus the Dofus when the toggle is on (they still count in stats). */
-  const DOFUS_TYPE = 23; // itemtypes: Dofus (trophées 151 and prysmaradites share the same slots and stay priced)
-  const dofusSlots = $derived(DOFUS.filter((s) => info.items[build?.slots[s]?.gid ?? -1]?.type_id === DOFUS_TYPE));
   const owned = $derived(new Set(build?.owned ?? []));
-  /** Slots not bought: owned items, items marked "€", and the Dofus when the toggle is on. All count at their perfect roll. */
-  const ignored = $derived(new Set([...(build?.ignored ?? []), ...(build?.owned ?? []), ...(noDofus ? dofusSlots : [])]));
+  /** Slots not bought: the items the user already owns, counted at their perfect roll. */
+  const ignored = $derived(owned);
   /** The search needs a scanned listing for every item that is bought. */
   const unscanned = $derived(slotIds.filter((s) => !ignored.has(s) && !fresh(s)));
   const perSlot = $derived(
@@ -143,7 +137,6 @@
     } catch (e) { err = String(e); }
   };
 
-  const toggleIgnore = (slot: string) => patch({ ignored: build!.ignored.includes(slot) ? build!.ignored.filter((s) => s !== slot) : [...build!.ignored, slot] });
   const toggleOwned = (slot: string) => { const o = build!.owned ?? []; patch({ owned: o.includes(slot) ? o.filter((s) => s !== slot) : [...o, slot] }); result = null; };
   const setTarget = (stat: number, v: string) => {
     const t = { ...build!.targets };
@@ -185,7 +178,7 @@
 
   const rowsOf = (map: Record<string, number | null | undefined>) =>
     slotIds.flatMap((s) => {
-      if (ignored.has(s)) return []; // counted off the price (€ or "sans les Dofus"): perfect roll, not a lot of the output
+      if (ignored.has(s)) return []; // owned: perfect roll, not a lot of the output
       const lot = map[s] != null ? lotsOf(s).find((l) => l.uid === map[s]) : null;
       return lot ? [{ slot: s, name: build!.slots[s].name, picture: build!.slots[s].picture, price: lotUnit(lot)!, lot }] : [];
     });
@@ -238,7 +231,6 @@
       <div class="ic" title="{sl.name} — {SLOT_TITLES[id]}{lot ? ` (lot à ${kamas(lotUnit(lot)!)})` : ''}">
         {#if icon("item", sl.picture)}<img src={icon("item", sl.picture)} alt={sl.name} />{:else}<span class="mut">{SLOT_TITLES[id]}</span>{/if}
       </div>
-      <button class="ig" class:on={ignored.has(id) && !owned.has(id)} title={ignored.has(id) ? "Remettre dans le prix" : "Ignorer dans le prix (compte toujours dans les stats)"} onclick={() => toggleIgnore(id)} disabled={owned.has(id)}>€</button>
       <button class="ow" class:on={owned.has(id)} title={owned.has(id) ? "Je ne possède plus cet objet" : "Je possède déjà cet objet (jet parfait, pas acheté)"} onclick={() => toggleOwned(id)}>✕</button>
     </div>
   {:else}
@@ -309,7 +301,7 @@
               <div class="col">{#each SLOT_LAYOUT.right as s}{@render slot(s)}{/each}</div>
             </div>
             <div class="row">{#each SLOT_LAYOUT.bottom.filter((s) => build?.slots[s]) as s}{@render slot(s)}{/each}</div>
-            <div class="legend mut"><span class="dot fresh"></span> scanné il y a moins d'1 h <span class="dot stale"></span> à scanner · € = ignoré dans le prix</div>
+            <div class="legend mut"><span class="dot fresh"></span> scanné il y a moins d'1 h <span class="dot stale"></span> à scanner · ✕ = je possède déjà l'objet</div>
 
             </div>
           </section>
@@ -361,8 +353,7 @@
             <span class="mut">Sélection</span> <b>{kamas(picked.total)}</b>
             {#if picked.missingSlots.length}<span class="mut">{picked.missingSlots.length} non choisi</span>{/if}</div>
         {/if}
-              <label class="small"><input type="checkbox" bind:checked={noDofus} /> Sans les Dofus (hors trophées) dans le prix</label>
-            </div>
+                          </div>
             <div class="box solver">
               <div class="fh">Combinaison la moins chère</div>
               <div class="mut small">Renseignez des minimums dans les cases « min » des stats, puis lancez la recherche parmi les lots scannés.</div>
@@ -372,7 +363,7 @@
                 <button onclick={cancel}>Annuler</button>
               {:else}
                 <button onclick={run} disabled={!Object.keys(build.targets).length || unscanned.length > 0}>Rechercher</button>
-                {#if unscanned.length}<div class="small bad">À scanner d'abord (ou à désactiver avec € / ✕) : {names(unscanned)}.</div>{/if}
+                {#if unscanned.length}<div class="small bad">À scanner d'abord (ou à marquer comme possédé avec ✕) : {names(unscanned)}.</div>{/if}
                 {#if cancelled}<span class="small mut">Calcul annulé.</span>{/if}
               {/if}
               {#if result === "none"}<div class="bad small">Aucune combinaison ne satisfait ces minimums avec les lots scannés.</div>
@@ -493,11 +484,8 @@
   .slot.ign .ic { opacity: 0.55; }
   .slot.own .ic { border-color: var(--mut); }
   .slot img { max-width: 100%; max-height: 100%; }
-  .ig { position: absolute; right: -4px; bottom: -4px; width: 18px; height: 18px; padding: 0; border-radius: 9px; font-size: 10px; line-height: 1; color: var(--mut); }
   .ow { position: absolute; left: -4px; bottom: -4px; width: 18px; height: 18px; padding: 0; border-radius: 9px; font-size: 10px; line-height: 1; color: var(--mut); }
   .ow.on { background: var(--mut); color: #000; border-color: var(--mut); }
-  .ig:disabled { opacity: 0.35; cursor: default; }
-  .ig.on { background: var(--warn); color: #000; border-color: var(--warn); }
   .legend { font-size: 11px; }
   .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin: 0 3px 0 8px; }
   .dot.fresh { background: var(--ok); }
