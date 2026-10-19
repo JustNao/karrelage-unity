@@ -26,6 +26,28 @@ pub const AVG_PRICES: &str = "ObjectAveragePricesEvent";
 /// itemtypes id of "Rune de transcendance".
 const RUNE_TYPE: i64 = 211;
 
+/// A price read in the auction house is forgotten after this long (seconds); the weekly average and manual overrides stay.
+const UNIT_MAX_AGE: f64 = 2.0 * 86400.0;
+
+fn now() -> f64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f64())
+}
+
+/// Drop the AH-read price of every entry older than `UNIT_MAX_AGE`, then the entries left with no price at all.
+fn expire(s: &mut BTreeMap<i64, Value>, now: f64) -> bool {
+    let mut changed = false;
+    for e in s.values_mut() {
+        if !e["unit"].is_null() && e["updated"].as_f64().is_some_and(|t| now - t > UNIT_MAX_AGE) {
+            e["unit"] = Value::Null;
+            e["updated"] = Value::Null;
+            changed = true;
+        }
+    }
+    let before = s.len();
+    s.retain(|_, e| !e["unit"].is_null() || !e["override"].is_null() || !e["avg"].is_null());
+    changed || s.len() != before
+}
+
 pub struct Prices {
     /// gid -> {gid, name, type_id, type, category, unit, updated, override}
     store: Arc<Mutex<BTreeMap<i64, Value>>>,
@@ -140,6 +162,10 @@ impl Module for Prices {
                     s.insert(gid, v);
                 }
             }
+            if expire(&mut s, now()) {
+                drop(s);
+                self.save();
+            }
         }
     }
 
@@ -178,7 +204,16 @@ impl Module for Prices {
 
     fn call(&self, method: &str, args: Value, ctx: &Ctx) -> Result<Value> {
         match method {
-            "list" => Ok(Value::Array(self.store.lock().values().cloned().collect())),
+            "list" => {
+                let mut s = self.store.lock();
+                let changed = expire(&mut s, now());
+                let out = Value::Array(s.values().cloned().collect());
+                drop(s);
+                if changed {
+                    self.save();
+                }
+                Ok(out)
+            }
             // Rune de transcendance items: [{gid, name, a, value}] (the effect a rune adds to an item)
             "runes" => Ok(self
                 .runes
