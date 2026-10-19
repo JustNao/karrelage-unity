@@ -10,3 +10,6 @@ serde_json.workspace = true
 parking_lot = "0.12"
 prost = "0.13"
 prost-reflect = "0.14"
+
+[lints]
+workspace = true

@@ -3,9 +3,9 @@ use crate::{Ctx, Interest, Message, Module};
 use anyhow::{anyhow, Result};
 use loutil_core::wire;
 use loutil_proto::DynamicMessage;
+use parking_lot::Mutex;
 use serde_json::{json, Map, Value};
 use std::collections::VecDeque;
-use parking_lot::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -32,6 +32,12 @@ pub struct Packets {
     active: AtomicBool,
     /// rendered packets not sent to the UI yet
     outbox: Arc<Mutex<Vec<Value>>>,
+}
+
+impl Default for Packets {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Packets {

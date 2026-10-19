@@ -2,13 +2,13 @@
 //! category / type, with a manual override that wins over the captured price.
 use crate::auction::AH_LIST;
 use crate::{Ctx, Interest, Message, Module, Persist};
-use loutil_data::items::RUNE_MARKER_EFFECTS;
 use anyhow::{anyhow, Result};
+use loutil_data::items::RUNE_MARKER_EFFECTS;
 use loutil_proto::util::{int, messages};
+use parking_lot::Mutex;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, OnceLock};
-use parking_lot::Mutex;
 
 /// `itemtypes.categoryId` -> label shown in the UI.
 fn category_name(id: Option<i64>) -> &'static str {
@@ -56,6 +56,12 @@ fn norm_name(s: &str) -> String {
             }
         })
         .collect()
+}
+
+impl Default for Prices {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Prices {
@@ -123,9 +129,8 @@ impl Module for Prices {
 
     fn init(&self, ctx: &Ctx) {
         let store = self.store.clone();
-        let (persist, saved) = Persist::open(Self::path(ctx), ctx.logger(), move || {
-            Value::Object(store.lock().iter().map(|(k, v)| (k.to_string(), v.clone())).collect())
-        });
+        let (persist, saved) =
+            Persist::open(Self::path(ctx), ctx.logger(), move || Value::Object(store.lock().iter().map(|(k, v)| (k.to_string(), v.clone())).collect()));
         let _ = self.persist.set(persist);
         if let Some(Value::Object(saved)) = saved {
             let mut s = self.store.lock();

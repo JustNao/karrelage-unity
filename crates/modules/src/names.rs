@@ -6,13 +6,13 @@ use crate::prices::AVG_PRICES;
 use crate::{Ctx, Interest, Message, Module};
 use anyhow::{anyhow, Result};
 use loutil_proto::{Kind, MessageDescriptor};
+use parking_lot::Mutex;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use parking_lot::Mutex;
 use std::sync::Arc;
 
 /// Where Ankama installs the game; only file sizes are looked at.
@@ -31,6 +31,12 @@ pub struct NamesTab {
     active: AtomicBool,
     running: Arc<AtomicBool>,
     seen: Mutex<BTreeMap<String, u64>>,
+}
+
+impl Default for NamesTab {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl NamesTab {
@@ -225,7 +231,8 @@ impl Module for NamesTab {
             }
             // args: {mode: "names" | "full" | "repack"}; runs pipeline/update_names.py, streaming its output as names:log events
             "compute" => {
-                let root = repo_root().ok_or_else(|| anyhow!("disponible seulement depuis le dépôt de développement (pipeline/update_names.py introuvable)"))?;
+                let root =
+                    repo_root().ok_or_else(|| anyhow!("disponible seulement depuis le dépôt de développement (pipeline/update_names.py introuvable)"))?;
                 if self.running.swap(true, Ordering::SeqCst) {
                     return Err(anyhow!("un calcul est déjà en cours"));
                 }

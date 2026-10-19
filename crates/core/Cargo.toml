@@ -11,3 +11,6 @@ serde_json.workspace = true
 libloading = "0.8"
 sysinfo = "0.33"
 netstat2 = "0.11"
+
+[lints]
+workspace = true

@@ -30,14 +30,7 @@ pub struct Capture {
 
 impl Capture {
     pub fn new(process: &str, on_message: Arc<dyn Fn(RawMessage) + Send + Sync>, on_log: Arc<dyn Fn(String) + Send + Sync>) -> Self {
-        Self {
-            process: process.to_lowercase(),
-            on_message,
-            on_log,
-            state: Default::default(),
-            stop: Arc::new(AtomicBool::new(false)),
-            running: false,
-        }
+        Self { process: process.to_lowercase(), on_message, on_log, state: Default::default(), stop: Arc::new(AtomicBool::new(false)), running: false }
     }
 
     pub fn running(&self) -> bool {
@@ -122,12 +115,8 @@ fn refresh_loop(state: Arc<Mutex<State>>, stop: Arc<AtomicBool>, process: String
     let mut sys = sysinfo::System::new();
     while !stop.load(Ordering::Relaxed) {
         sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
-        let pids: HashSet<u32> = sys
-            .processes()
-            .iter()
-            .filter(|(_, p)| p.name().to_string_lossy().to_lowercase() == process)
-            .map(|(pid, _)| pid.as_u32())
-            .collect();
+        let pids: HashSet<u32> =
+            sys.processes().iter().filter(|(_, p)| p.name().to_string_lossy().to_lowercase() == process).map(|(pid, _)| pid.as_u32()).collect();
         let mut found: HashMap<ConnKey, String> = HashMap::new();
         if !pids.is_empty() {
             if let Ok(socks) = get_sockets_info(AddressFamilyFlags::IPV4 | AddressFamilyFlags::IPV6, ProtocolFlags::TCP) {

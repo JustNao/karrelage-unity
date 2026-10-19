@@ -7,8 +7,8 @@ pub mod names;
 pub mod packets;
 pub mod prices;
 pub mod store;
-pub(crate) mod sys;
 pub mod stuff;
+pub(crate) mod sys;
 pub mod update;
 
 pub use store::{flush_all, load_json, save_json, Persist};
@@ -109,7 +109,14 @@ pub trait Module: Send + Sync {
 
 /// Every module of the app. Register new ones here.
 pub fn all() -> Vec<Box<dyn Module>> {
-    vec![Box::new(packets::Packets::new()), Box::new(auction::Auction::new()), Box::new(prices::Prices::new()), Box::new(stuff::Stuff::new()), Box::new(names::NamesTab::new()), Box::new(update::Update::new())]
+    vec![
+        Box::new(packets::Packets::new()),
+        Box::new(auction::Auction::new()),
+        Box::new(prices::Prices::new()),
+        Box::new(stuff::Stuff::new()),
+        Box::new(names::NamesTab::new()),
+        Box::new(update::Update::new()),
+    ]
 }
 
 pub struct Hub {
@@ -119,13 +126,7 @@ pub struct Hub {
 }
 
 impl Hub {
-    pub fn new(
-        data: Arc<Data>,
-        proto: Arc<Proto>,
-        dir: PathBuf,
-        emit: Arc<dyn Fn(&str, Value) + Send + Sync>,
-        log: Arc<dyn Fn(String) + Send + Sync>,
-    ) -> Self {
+    pub fn new(data: Arc<Data>, proto: Arc<Proto>, dir: PathBuf, emit: Arc<dyn Fn(&str, Value) + Send + Sync>, log: Arc<dyn Fn(String) + Send + Sync>) -> Self {
         let hub = Hub { ctx: Ctx { data, proto, dir, emit, log }, modules: all(), seq: AtomicU64::new(0) };
         for m in &hub.modules {
             m.init(&hub.ctx);

@@ -16,3 +16,6 @@ loutil-core = { path = "../../crates/core" }
 loutil-data = { path = "../../crates/data" }
 loutil-proto = { path = "../../crates/proto" }
 loutil-modules = { path = "../../crates/modules" }
+
+[lints]
+workspace = true

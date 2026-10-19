@@ -4,11 +4,11 @@ pub mod names;
 pub mod util;
 
 use anyhow::{Context, Result};
-pub use prost_reflect::{DynamicMessage, Kind, MessageDescriptor, ReflectMessage, Value as PbValue};
+use parking_lot::{Mutex, RwLock};
 use prost_reflect::{DescriptorPool, MapKey};
+pub use prost_reflect::{DynamicMessage, Kind, MessageDescriptor, ReflectMessage, Value as PbValue};
 use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};
-use parking_lot::{Mutex, RwLock};
 
 pub use names::Names;
 

@@ -6,10 +6,10 @@ use loutil_data::items::{info_key, Effect, ELEMENT_CHANGE_EFFECT, LOCK_EFFECT, L
 use loutil_data::Data;
 use loutil_proto::util::{as_i64, int, int_list, messages, oneof_value};
 use loutil_proto::{DynamicMessage, Kind, PbValue, ReflectMessage};
+use parking_lot::Mutex;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use std::collections::BTreeMap;
-use parking_lot::Mutex;
 use std::sync::{Arc, OnceLock};
 
 /// Clear name pinned in pipeline overrides (work/overrides.json) for the AH listing event.
@@ -47,6 +47,12 @@ pub struct Auction {
     effects: OnceLock<Value>,
     recipes: OnceLock<Value>,
     effect_meta: OnceLock<Value>,
+}
+
+impl Default for Auction {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Auction {
@@ -87,11 +93,7 @@ impl Auction {
         if !ctx.data.is_equipment(gid) {
             return; // resources / consumables only feed the stored prices
         }
-        let mins: Vec<i64> = rows
-            .iter()
-            .filter_map(|r| r["prices"].get(0).and_then(|p| p["price"].as_i64()))
-            .filter(|p| *p > 0)
-            .collect();
+        let mins: Vec<i64> = rows.iter().filter_map(|r| r["prices"].get(0).and_then(|p| p["price"].as_i64())).filter(|p| *p > 0).collect();
         let ent = json!({
             "gid": gid,
             "name": if f["title"].is_null() { rows[0]["name"].clone() } else { f["title"].clone() },
@@ -119,13 +121,7 @@ fn raw_json(v: &PbValue) -> Value {
 /// ObjectEffect message -> annotated-later Effect.
 fn parse_effect(data: &Data, b: &ObjectEffect, e: &DynamicMessage) -> Effect {
     let acts: Vec<i64> = b.action.iter().map(|n| int(e, n)).collect();
-    let action = acts
-        .iter()
-        .find(|a| data.effects.contains_key(a))
-        .or_else(|| acts.iter().find(|a| **a != 0))
-        .or(acts.first())
-        .copied()
-        .unwrap_or(0);
+    let action = acts.iter().find(|a| data.effects.contains_key(a)).or_else(|| acts.iter().find(|a| **a != 0)).or(acts.first()).copied().unwrap_or(0);
     let (mut params, mut raw): (Vec<Value>, Value) = (vec![], Value::Null);
     if let Some((_, v, _)) = oneof_value(e, &b.oneof) {
         match &v {
@@ -194,12 +190,11 @@ fn format_ah_list(data: &Data, b: &Bindings, msg: &DynamicMessage) -> Value {
         let prices = int_list(&it, &b.ah_item.prices);
         let info = gid.and_then(|g| data.items.get(&g));
         let effs: Vec<Effect> = messages(&it, &b.ah_item.effects).iter().map(|e| parse_effect(data, &b.object_effect, e)).collect();
-        let meta: Map<String, Value> = effs
-            .iter()
-            .filter_map(|e| info_key(e.action).map(|k| (k.to_string(), e.str.clone().map_or(Value::Null, Value::from))))
-            .collect();
+        let meta: Map<String, Value> =
+            effs.iter().filter_map(|e| info_key(e.action).map(|k| (k.to_string(), e.str.clone().map_or(Value::Null, Value::from)))).collect();
         let locked = effs.iter().any(|e| e.action == LOCK_EFFECT);
-        let stats: Vec<Effect> = effs.into_iter().filter(|e| info_key(e.action).is_none() && e.action != LOCK_EFFECT && e.action != ELEMENT_CHANGE_EFFECT).collect();
+        let stats: Vec<Effect> =
+            effs.into_iter().filter(|e| info_key(e.action).is_none() && e.action != LOCK_EFFECT && e.action != ELEMENT_CHANGE_EFFECT).collect();
         let density = (data.item_density(&stats) * 1000.0).round() / 1000.0;
         rows.push(json!({
             "uid": uid, "gid": gid, "ints": ints,
@@ -353,6 +348,7 @@ mod tests {
         let hub = crate::Hub::new(data, proto, dir, Arc::new(|_, _| {}), Arc::new(|_| {}));
         let items = hub.call("auction", "items", Value::Null).unwrap();
         assert_eq!(items[0]["rows"][0]["density"], json!(0.0)); // +5 vitalité (1.0) and -10 vitalité (-1.0)
+
         // effects stored without a group get the pack's (the UI's perfect-roll flags depend on it)
         assert_eq!(items[0]["rows"][0]["effects"][0]["group"], json!("stats"));
         assert_eq!(items[0]["rows"][0]["effects"][0]["density"], json!(0.2f32 as f64));

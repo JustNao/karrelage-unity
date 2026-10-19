@@ -69,7 +69,7 @@ pub fn looks_like_message(b: &[u8]) -> bool {
 }
 
 fn is_text(b: &[u8]) -> bool {
-    std::str::from_utf8(b).map_or(false, |s| s.chars().all(|c| !c.is_control() || matches!(c, '\n' | '\r' | '\t')))
+    std::str::from_utf8(b).is_ok_and(|s| s.chars().all(|c| !c.is_control() || matches!(c, '\n' | '\r' | '\t')))
 }
 
 /// Best-effort heuristic tree `{field_no: value | [values]}` for messages without a schema.
@@ -204,7 +204,7 @@ pub struct Envelope {
 /// Decode the GameMessage wrapper: oneof {1: Request, 2: Response, 3: Event} carrying a `google.protobuf.Any`.
 pub fn parse_envelope(payload: &[u8]) -> Option<Envelope> {
     for f in decode_fields(payload)? {
-        if !matches!(f.no, 1 | 2 | 3) || f.wt != 2 {
+        if !matches!(f.no, 1..=3) || f.wt != 2 {
             continue;
         }
         let kind = ["request", "response", "event"][f.no as usize - 1];

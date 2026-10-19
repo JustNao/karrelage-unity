@@ -114,7 +114,7 @@ impl Names {
                 e.remove("name");
             }
         }
-        if e.get("fields").and_then(Value::as_object).map_or(false, Map::is_empty) {
+        if e.get("fields").and_then(Value::as_object).is_some_and(Map::is_empty) {
             e.remove("fields");
         }
         if e.is_empty() {

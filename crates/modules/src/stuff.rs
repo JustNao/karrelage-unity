@@ -5,10 +5,10 @@ use crate::store::write_atomic;
 use crate::sys::{http, no_window, unix_millis, unix_secs};
 use crate::{Ctx, Interest, Module, Persist};
 use anyhow::{anyhow, bail, Context, Result};
+use parking_lot::Mutex;
 use serde_json::{json, Map, Value};
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
-use parking_lot::Mutex;
 
 const API: &str = "https://www.dofusbook.net/api/stuffs/dofus/public";
 const ITEM_ICON: &str = "https://www.dofusbook.net/static/dist/items"; // <picture>-100.webp (also has the recent items Ankama's CDN lacks)
@@ -19,13 +19,19 @@ const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (
 const SLOTS: [&str; 17] = ["ar", "bo", "am", "ce", "br", "ch", "ca", "a1", "a2", "d1", "d2", "d3", "d4", "d5", "d6", "fa", "mo"];
 /// Stat icons downloaded ahead of time (Dofusbook element codes), reusable by other tabs.
 const STAT_CODES: &[&str] = &[
-    "vi", "sa", "fo", "in", "ch", "ag", "pa", "pm", "po", "ic", "ii", "cc", "pp", "ta", "fu", "so", "pi", "pu", "sp", "at", "dm", "da", "dw", "dc", "dp", "dt", "df", "dnf", "dtf",
-    "def", "dff", "daf", "rpa", "rp", "rc", "rap", "rn", "rt", "re", "rf", "ra", "rnp", "rtp", "rep", "rfp", "rap",
+    "vi", "sa", "fo", "in", "ch", "ag", "pa", "pm", "po", "ic", "ii", "cc", "pp", "ta", "fu", "so", "pi", "pu", "sp", "at", "dm", "da", "dw", "dc", "dp", "dt",
+    "df", "dnf", "dtf", "def", "dff", "daf", "rpa", "rp", "rc", "rap", "rn", "rt", "re", "rf", "ra", "rnp", "rtp", "rep", "rfp", "rap",
 ];
 
 pub struct Stuff {
     builds: Arc<Mutex<Vec<Value>>>,
     persist: OnceLock<Persist>,
+}
+
+impl Default for Stuff {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Stuff {

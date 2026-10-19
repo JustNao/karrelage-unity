@@ -181,11 +181,11 @@ impl Data {
     }
 
     pub fn is_feedable(&self, gid: Option<i64>) -> bool {
-        gid.and_then(|g| self.items.get(&g)).map_or(false, |i| FEEDABLE_TYPES.contains(&i.type_id))
+        gid.and_then(|g| self.items.get(&g)).is_some_and(|i| FEEDABLE_TYPES.contains(&i.type_id))
     }
 
     pub fn is_companion(&self, gid: Option<i64>) -> bool {
-        gid.and_then(|g| self.items.get(&g)).map_or(false, |i| COMPANION_TYPES.contains(&i.type_id))
+        gid.and_then(|g| self.items.get(&g)).is_some_and(|i| COMPANION_TYPES.contains(&i.type_id))
     }
 
     pub fn type_name(&self, tid: Option<i64>) -> String {
@@ -218,6 +218,7 @@ mod tests {
         // classification + density (effectPowerRate) from the pack
         assert_eq!((d.effects[&111].group.as_str(), d.effects[&111].density), ("main", 100.0)); // PA
         assert_eq!((d.effects[&128].group.as_str(), d.effects[&128].density), ("main", 90.0)); // PM
+
         // legendary passive: the spell id param is rendered as the passive's name
         if d.spells.contains_key(&11352) {
             assert_eq!(d.render_effect(effects::LEGENDARY_EFFECT, &[11352.into(), 11352.into()]).0, "Appétit de Crocobur");

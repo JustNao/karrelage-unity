@@ -3,13 +3,13 @@
 //! pack when newer) and ask for a restart. Progress is streamed as `update:progress` events.
 use crate::{Ctx, Interest, Message, Module};
 use anyhow::{anyhow, bail, Context, Result};
+use parking_lot::Mutex;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::io::{Cursor, Read, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use parking_lot::Mutex;
 use std::sync::Arc;
 
 /// Where the published pack lives (raw files of the repository). Override with KARRELAGE_PACK_URL (tests, forks).
@@ -31,6 +31,12 @@ pub struct Remote {
 pub struct Update {
     remote: Mutex<Option<Remote>>,
     busy: Arc<AtomicBool>,
+}
+
+impl Default for Update {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Update {

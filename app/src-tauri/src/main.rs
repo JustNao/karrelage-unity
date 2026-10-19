@@ -5,10 +5,10 @@ use loutil_core::{capture::Capture, pcap::Pcap};
 use loutil_data::{read_manifest, Data};
 use loutil_modules::Hub;
 use loutil_proto::Proto;
+use parking_lot::Mutex;
 use serde_json::{json, Value};
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
-use parking_lot::Mutex;
 use std::sync::{Arc, OnceLock};
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -39,7 +39,8 @@ fn pick_pack(app: &AppHandle, user_dir: &Path) -> Option<PathBuf> {
 
 fn build_core(app: &AppHandle, log: Arc<Mutex<VecDeque<String>>>) -> anyhow::Result<Core> {
     let user_dir = app.path().app_data_dir()?;
-    let pack = pick_pack(app, &user_dir).ok_or_else(|| anyhow::anyhow!("no data pack found (run pipeline/export_pack.py, or drop one in {}\\datapack)", user_dir.display()))?;
+    let pack = pick_pack(app, &user_dir)
+        .ok_or_else(|| anyhow::anyhow!("no data pack found (run pipeline/export_pack.py, or drop one in {}\\datapack)", user_dir.display()))?;
     let data = Arc::new(Data::load(&pack, LANG)?);
     let proto = Arc::new(Proto::load(&pack, user_dir.join("overrides.json"))?);
 
