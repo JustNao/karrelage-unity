@@ -259,7 +259,7 @@
         <div class="sheet">
           <section class="stats">
             <div class="box">
-              <div class="st hp">{#if icon("stat", "pv")}<img src={icon("stat", "pv")} alt="" />{:else}<span class="ph"></span>{/if}<span class="lab">PdV</span><b>{real?.hp}</b></div>
+              <div class="st hp"><b>{real?.hp}</b><span class="fm"></span>{#if icon("stat", "pv")}<img src={icon("stat", "pv")} alt="" />{:else}<span class="ph"></span>{/if}<span class="lab">PdV</span></div>
               {#each PANELS.main as s (s.stat)}{@render statRow(s)}{/each}
             </div>
             <div class="box">
@@ -372,15 +372,15 @@
   .ttl a { margin-left: 8px; font-size: 12px; }
   .price { white-space: nowrap; }
   .price .bad { font-size: 11px; margin-left: 4px; }
-  .sheet { display: grid; grid-template-columns: 480px max-content 560px; justify-content: center; gap: 14px; align-items: start; padding-bottom: 12px; }
+  .sheet { display: grid; grid-template-columns: 460px max-content 620px; justify-content: center; gap: 14px; align-items: start; padding-bottom: 12px; }
   .stats { display: flex; flex-direction: column; gap: 8px; }
   .box { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
-  .st { display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 12px; }
+  .st { display: flex; align-items: center; gap: 4px; padding: 2px 0; font-size: 12px; }
   .st img, .st .ph { width: 21px; height: 21px; flex: none; }
   .st .lab { flex: 1; color: var(--mut); }
-  .st b { min-width: 44px; text-align: right; }
+  .st b { min-width: 36px; text-align: right; }
   .st.hp b { font-size: 14px; }
-  .fm { color: #4aa3ff; font-size: 12px; min-width: 26px; text-align: left; flex: none; }
+  .fm { color: #4aa3ff; font-size: 12px; min-width: 20px; text-align: left; flex: none; }
   .pf { height: 22px; padding: 0 6px; font: inherit; color: var(--mut); }
   .pf:hover { color: var(--fg); }
   .fmsel { width: 100%; margin-top: 4px; }
@@ -389,7 +389,8 @@
   .c4 { min-width: 44px; text-align: right; flex: none; }
   .st.hd { font-size: 12px; }
   .tg { width: 44px; height: 22px; padding: 0 4px; font: inherit; text-align: right; }
-  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+  .two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 12px; }
+  .two > div { min-width: 0; }
   .prices { width: 100%; }
   .prices .price { margin: 2px 0; }
   .prices hr { border: 0; border-top: 1px solid var(--line); margin: 8px 0; }
