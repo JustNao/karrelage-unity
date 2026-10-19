@@ -332,7 +332,7 @@
               <label class="small"><input type="checkbox" bind:checked={noDofus} /> Sans les Dofus (hors trophées) dans le prix</label>
               <hr />
               <div class="fh">Combinaison la moins chère</div>
-              <div class="mut small">Renseignez des minimums dans les cases « min » des stats, puis lancez la recherche parmi les lots scannés.</div>
+              <div class="mut small">Renseignez des minimums dans les cases « min » des stats, puis lancez la recherche parmi les lots scannés. La forgemagie du stuff est cherchée sous forme d'exo sur les objets.</div>
               {#if solving}
                 <div class="prog" role="progressbar" aria-valuenow={Math.round(progress * 100)} aria-valuemin="0" aria-valuemax="100"><div class="fill" style:width="{Math.round(progress * 100)}%"></div></div>
                 <div class="small mut">Calcul… {Math.round(progress * 100)} %</div>
@@ -341,7 +341,7 @@
                 <button onclick={run} disabled={!Object.keys(build.targets).length}>Rechercher</button>
                 {#if cancelled}<span class="small mut">Calcul annulé.</span>{/if}
               {/if}
-              {#if result === "none"}<div class="bad small">Aucune combinaison ne satisfait ces minimums avec les lots scannés.</div>
+              {#if result === "none"}<div class="bad small">Aucune combinaison ne satisfait ces minimums avec les lots scannés{#if fmRows.length} (la forgemagie du stuff doit être portée par des objets : exo {fmRows.map(([c, v]) => `+${v} ${FM_STATS[c].label}`).join(", ")}){/if}.</div>
               {:else if result}
                 <div class="small">Coût : <b>{kamas(result.cost)}</b>{#if result.approx} <span class="mut">(recherche limitée, résultat approché)</span>{/if}</div>
                 <div class="small mut">{Object.keys(result.picks).length} emplacement(s) choisis{#if result.fixedSlots.length} · gardés tels quels : {names(result.fixedSlots)}{/if}</div>

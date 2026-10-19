@@ -82,6 +82,10 @@ export const lotUnit = (lot: Lot): number | null => {
   return v.length ? Math.min(...v) : null;
 };
 
+/** Pseudo-stat ids (EXO_BASE + stat) holding the part of a lot's stat that is an exo (effect added on the item): the build's forgemagie
+ *  (e.g. +1 PA / +1 PM) is then looked for on the items themselves. */
+export const EXO_BASE = 100000;
+
 /** Stat totals of a lot (removed effects don't count). */
 export function lotStats(lot: Lot): Totals {
   const m: Totals = new Map();
@@ -89,6 +93,7 @@ export function lotStats(lot: Lot): Totals {
     if (e.status === "removed" || !countable(e.group)) continue;
     const v = Number(e.hi ?? (Array.isArray(e.params) ? e.params[0] : 0)) || 0;
     add(m, e.stat, negative(e) ? -v : v);
+    if (e.status === "added" && !negative(e)) add(m, EXO_BASE + e.stat, v);
   }
   return m;
 }
@@ -119,11 +124,11 @@ export function setCounts(info: Info, gids: number[]): Map<number, number> {
 export interface Resolved { slot: string; gid: number; lot: Lot | null; stats: Totals }
 
 /** Everything that adds to the characteristics apart from the items: base, scrolls, exo, level. */
-export function fixedStats(b: Build): Totals {
+export function fixedStats(b: Build, withFm = true): Totals {
   const m: Totals = new Map();
   for (const [stat, v] of Object.entries(BASE_STATS)) add(m, +stat, v);
   for (const [code, stat] of CARAC) add(m, stat, (b.carac[`base_${code}`] ?? 0) + (b.carac[`scroll_${code}`] ?? 0));
-  for (const [code, v] of Object.entries(b.fm ?? {})) { const stat = FM_STATS[code]?.stat; if (stat != null && v) add(m, stat, v); }
+  if (withFm) for (const [code, v] of Object.entries(b.fm ?? {})) { const stat = FM_STATS[code]?.stat; if (stat != null && v) add(m, stat, v); }
   return m;
 }
 
@@ -131,10 +136,12 @@ export interface Computed { totals: Totals; items: Totals; fixed: Totals; hp: nu
 
 /** Panel values from the resolved slots. `lines` = per-slot item stats (lot when chosen, else the theoretical maximum). */
 export function compute(b: Build, info: Info, resolved: Resolved[]): Computed {
-  const fixed = fixedStats(b);
+  const fixed = fixedStats(b, false);
   const items: Totals = new Map();
   for (const x of resolved) for (const [s, v] of x.stats) add(items, s, v);
   for (const [s, v] of setStats(info.sets, setCounts(info, resolved.map((x) => x.gid)))) add(items, s, v);
+  // forgemagie: free unless the chosen lots already carry that exo themselves (then it is inside their stats)
+  for (const [code, v] of Object.entries(b.fm ?? {})) { const stat = FM_STATS[code]?.stat; if (stat != null && v) add(fixed, stat, Math.max(0, v - (items.get(EXO_BASE + stat) ?? 0))); }
   const totals: Totals = new Map(fixed);
   for (const [s, v] of items) add(totals, s, v);
   const sa = totals.get(12) ?? 0, ag = totals.get(14) ?? 0;
@@ -145,7 +152,7 @@ export function compute(b: Build, info: Info, resolved: Resolved[]): Computed {
   add(totals, 40, 5 * (totals.get(10) ?? 0));
   add(totals, 48, Math.floor((totals.get(13) ?? 0) / 10)); // prospection: 1 per 10 chance
   const known = new Set(Object.values(PANELS).flat().map((x) => x.stat));
-  const unmapped: Totals = new Map([...items].filter(([s, v]) => s > 0 && !known.has(s) && v !== 0));
+  const unmapped: Totals = new Map([...items].filter(([s, v]) => s > 0 && s < EXO_BASE && !known.has(s) && v !== 0));
   return { totals, items, fixed, hp: 50 + 5 * b.level + (totals.get(11) ?? 0), unmapped };
 }
 
@@ -194,12 +201,14 @@ export interface SolveResult { picks: Record<string, number>; cost: number; tota
  *  lot keep their current item (chosen lot, else theoretical maximum) at no cost. Set bonuses are tracked incrementally. Returns null when infeasible. */
 export function solve(b: Build, info: Info, lotsOf: (slot: string) => Lot[], targets: Record<string, number>, nodeLimit = 4_000_000, progress?: (fraction: number) => void): SolveResult | null {
   const tgt = Object.entries(targets).map(([s, v]) => [+s, v] as const).filter(([, v]) => Number.isFinite(v) && v > 0);
+  // the build's forgemagie must be carried by the items: each fm stat needs that much exo among the chosen lots
+  for (const [code, v] of Object.entries(b.fm ?? {})) { const stat = FM_STATS[code]?.stat; if (stat != null && v > 0) tgt.push([EXO_BASE + stat, v] as const); }
   const stats = tgt.map(([s]) => s);
   const slots = Object.keys(b.slots);
   const ignored = new Set(b.ignored);
   const fixedSlots: string[] = [];
   const free: { slot: string; cands: Cand[] }[] = [];
-  const base: Totals = fixedStats(b);
+  const base: Totals = fixedStats(b, false);
   const baseGids: number[] = [];
   const fixedSet: Totals = new Map();
 
