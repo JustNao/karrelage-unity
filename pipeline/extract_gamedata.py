@@ -71,7 +71,23 @@ def main():
     for r in rows("recipes"):
         if "resultId" in r:
             recipes.setdefault(r["resultId"], []).append([[i, q] for i, q in zip(r["ingredientIds"], r["quantities"])])
-    for n, d in (("items", items), ("effects", effects), ("characteristics", chars), ("itemtypes", types), ("spells", spells), ("recipes", recipes)):
+    # item sets: bonuses per piece count (effects[i] = bonus when i+1 pieces are worn), effect = {a: action id, min, max} like item defaults
+    sets = {}
+    srows, sby = rows("itemsets", with_refs=True)
+    for r in srows:
+        if r.get("_class") != "ItemSetData" or "items" not in r:
+            continue
+        bonus = []
+        for lvl in r.get("effects", []):
+            lst = []
+            for ref in lvl.get("values", []):
+                e = sby.get(ref["rid"])
+                if e and "actionId" in e:
+                    n, sd = e.get("diceNum", 0), e.get("diceSide", 0)
+                    lst.append({"a": e["actionId"], "min": min(n, sd or n), "max": max(n, sd or n)})
+            bonus.append(lst)
+        sets[r["id"]] = {"id": r["id"], "nameId": r.get("nameId"), "items": r["items"], "effects": bonus}
+    for n, d in (("items", items), ("effects", effects), ("characteristics", chars), ("itemtypes", types), ("spells", spells), ("recipes", recipes), ("itemsets", sets)):
         (OUT / f"{n}.json").write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
         print(n, len(d))
 

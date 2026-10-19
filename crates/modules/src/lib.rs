@@ -6,6 +6,7 @@ pub mod auction;
 pub mod names;
 pub mod packets;
 pub mod prices;
+pub mod stuff;
 pub mod update;
 
 use anyhow::{anyhow, Result};
@@ -99,7 +100,7 @@ pub trait Module: Send + Sync {
 
 /// Every module of the app. Register new ones here.
 pub fn all() -> Vec<Box<dyn Module>> {
-    vec![Box::new(packets::Packets::new()), Box::new(auction::Auction::new()), Box::new(prices::Prices::new()), Box::new(names::NamesTab::new()), Box::new(update::Update::new())]
+    vec![Box::new(packets::Packets::new()), Box::new(auction::Auction::new()), Box::new(prices::Prices::new()), Box::new(stuff::Stuff::new()), Box::new(names::NamesTab::new()), Box::new(update::Update::new())]
 }
 
 pub struct Hub {

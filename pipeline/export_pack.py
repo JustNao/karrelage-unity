@@ -21,7 +21,7 @@ dump("names.json", schema.mapping())
 ids = set()
 items = {}
 for k, v in gd.items.items():
-    items[k] = {"nameId": v["nameId"], "typeId": v["typeId"], "level": v["level"], "iconId": v["iconId"],
+    items[k] = {"nameId": v["nameId"], "typeId": v["typeId"], "level": v["level"], "iconId": v["iconId"], "setId": v.get("itemSetId"),
                 "effects": [{"a": e["a"], "min": e["min"], "max": e["max"]} for e in v.get("effects", [])]}
     ids.add(v["nameId"])
 # Effect classification, following the in-game characteristics panel:
@@ -63,6 +63,8 @@ spells = {k: {"nameId": v["nameId"]} for k, v in gd.spells.items()}
 ids.update(v["nameId"] for v in spells.values())
 dump("spells.json", spells)
 dump("recipes.json", {k: v for k, v in gd.recipes.items() if k in items})
+dump("itemsets.json", {k: v for k, v in gd.itemsets.items() if any(i in items for i in v["items"])})
+ids.update(v["nameId"] for v in gd.itemsets.values() if v.get("nameId"))
 dump("items.json", items); dump("effects.json", effects); dump("itemtypes.json", types)
 
 for lang in ("fr", "en"):

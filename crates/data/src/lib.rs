@@ -38,7 +38,20 @@ pub struct Item {
     pub type_id: i64,
     pub level: i64,
     pub icon_id: i64,
+    /// Item set (panoplie) the item belongs to, if any (absent in older packs).
+    #[serde(default)]
+    pub set_id: Option<i64>,
     pub effects: Vec<DefaultEffect>,
+}
+
+/// Item set: `effects[i]` = the bonus granted when `i + 1` of its pieces are worn.
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ItemSet {
+    #[serde(default)]
+    pub name_id: Option<i64>,
+    pub items: Vec<i64>,
+    pub effects: Vec<Vec<DefaultEffect>>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -94,6 +107,8 @@ pub struct Data {
     pub spells: HashMap<i64, SpellRow>,
     /// Crafting recipes: result gid -> recipes, each a list of (ingredient gid, quantity) (absent in older packs).
     pub recipes: HashMap<i64, Vec<Vec<(i64, i64)>>>,
+    /// Item sets (panoplies): set id -> pieces and bonuses per piece count (absent in older packs).
+    pub itemsets: HashMap<i64, ItemSet>,
     pub strings: HashMap<i64, String>,
     /// Build-specific obfuscated names per role (bindings.json), see pipeline/bindings.json.
     pub bindings: Value,
@@ -128,6 +143,7 @@ impl Data {
             itemtypes,
             spells: read_map(dir, "spells.json").unwrap_or_default(),
             recipes: read_map(dir, "recipes.json").unwrap_or_default(),
+            itemsets: read_map(dir, "itemsets.json").unwrap_or_default(),
             equipment_effects,
             bindings: serde_json::from_slice(&std::fs::read(dir.join("bindings.json"))?)?,
             dir: dir.to_path_buf(),
