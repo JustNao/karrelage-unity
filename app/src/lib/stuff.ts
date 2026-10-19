@@ -82,7 +82,7 @@ export const lotUnit = (lot: Lot): number | null => {
   return v.length ? Math.min(...v) : null;
 };
 
-/** Pseudo-stat ids (EXO_BASE + stat) holding the part of a lot's stat that is an exo (effect added on the item): the build's forgemagie
+/** Pseudo-stat ids (EXO_BASE + stat) holding the part of a lot's stat that is an exo (effect added on the item, or forged over its base maximum): the build's forgemagie
  *  (e.g. +1 PA / +1 PM) is then looked for on the items themselves. */
 export const EXO_BASE = 100000;
 
@@ -93,7 +93,9 @@ export function lotStats(lot: Lot): Totals {
     if (e.status === "removed" || !countable(e.group)) continue;
     const v = Number(e.hi ?? (Array.isArray(e.params) ? e.params[0] : 0)) || 0;
     add(m, e.stat, negative(e) ? -v : v);
-    if (e.status === "added" && !negative(e)) add(m, EXO_BASE + e.stat, v);
+    // exo = what the lot carries beyond its natural effects: a whole added effect, or the part of an effect forgemagé over its base maximum
+    const exo = e.status === "added" ? v : e.status === "above" && e.range ? Math.max(0, v - e.range[1]) : 0;
+    if (exo > 0 && !negative(e)) add(m, EXO_BASE + e.stat, exo);
   }
   return m;
 }

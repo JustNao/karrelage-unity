@@ -379,7 +379,7 @@
             </div>
             <div class="box solver">
               <div class="fh">Combinaison la moins chère</div>
-              <div class="mut small">Renseignez des minimums dans les cases « min » des stats, puis lancez la recherche parmi les lots scannés. La forgemagie du stuff est cherchée sous forme d'exo sur les objets.</div>
+              <div class="mut small">Renseignez des minimums dans les cases « min » des stats, puis lancez la recherche parmi les lots scannés.</div>
               {#if solving}
                 <div class="prog" role="progressbar" aria-valuenow={Math.round(progress * 100)} aria-valuemin="0" aria-valuemax="100"><div class="fill" style:width="{Math.round(progress * 100)}%"></div></div>
                 <div class="small mut">Calcul… {Math.round(progress * 100)} %</div>
