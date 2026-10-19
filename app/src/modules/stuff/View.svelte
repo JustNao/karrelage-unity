@@ -228,7 +228,8 @@
     {@const sl = build.slots[id]}
     {@const lot = chosenLot(id)}
     <div class="slot" class:fresh={!owned.has(id) && fresh(id)} class:stale={!owned.has(id) && !fresh(id)} class:own={owned.has(id)} class:ign={ignored.has(id)}>
-      <div class="ic" title="{sl.name} — {SLOT_TITLES[id]}{lot ? ` (lot à ${kamas(lotUnit(lot)!)})` : ''}">
+      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+      <div class="ic" title="{sl.name} — {SLOT_TITLES[id]}{lot ? ` (lot à ${kamas(lotUnit(lot)!)})` : ''}" onclick={() => toggleOwned(id)}>
         {#if icon("item", sl.picture)}<img src={icon("item", sl.picture)} alt={sl.name} />{:else}<span class="mut">{SLOT_TITLES[id]}</span>{/if}
       </div>
       <button class="ow" class:on={owned.has(id)} title={owned.has(id) ? "Je ne possède plus cet objet" : "Je possède déjà cet objet (jet parfait, pas acheté)"} onclick={() => toggleOwned(id)}>✕</button>
@@ -478,7 +479,7 @@
   .row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
   .slot { position: relative; width: 73px; height: 73px; }
   .slot.empty { visibility: hidden; }
-  .slot .ic { box-sizing: border-box; border: 2px solid var(--line); width: 100%; height: 100%; padding: 2px; display: flex; align-items: center; justify-content: center; border-width: 2px; border-radius: 8px; background: var(--panel); font-size: 10px; }
+  .slot .ic { cursor: pointer; box-sizing: border-box; border: 2px solid var(--line); width: 100%; height: 100%; padding: 2px; display: flex; align-items: center; justify-content: center; border-width: 2px; border-radius: 8px; background: var(--panel); font-size: 10px; }
   .slot.fresh .ic { border-color: var(--ok); }
   .slot.stale .ic { border-color: var(--bad); }
   .slot.ign .ic { opacity: 0.55; }
