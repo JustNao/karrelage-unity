@@ -30,7 +30,6 @@
   let icons = new SvelteMap<string, string>();
   let auction = new SvelteMap<number, any>();
   let prices = new SvelteMap<number, StoredPrice>();
-  let picker = $state<string | null>(null);
   let result = $state<SolveResult | null | "none">(null);
   let solving = $state(false);
   let progress = $state(0);
@@ -98,7 +97,7 @@
   }
 
   async function select(id: string) {
-    sel = id; picker = null; result = null;
+    sel = id; result = null;
     try { await loadInfo(builds.find((b) => b.id === id)!); } catch (e) { err = String(e); }
   }
 
@@ -139,7 +138,6 @@
     } catch (e) { err = String(e); }
   };
 
-  const pick = (slot: string, uid: number | null) => { patch({ chosen: { ...build!.chosen, [slot]: uid } }); picker = null; result = null; };
   const toggleIgnore = (slot: string) => patch({ ignored: ignored.has(slot) ? build!.ignored.filter((s) => s !== slot) : [...build!.ignored, slot] });
   const setTarget = (stat: number, v: string) => {
     const t = { ...build!.targets };
@@ -179,12 +177,6 @@
   function stop() { worker?.terminate(); worker = null; solving = false; }
   function cancel() { cancelled = true; stop(); }
 
-  const lotLine = (l: Lot) =>
-    l.effects
-      .filter((e: any) => e.status !== "removed" && e.group && e.group !== "weapon" && e.group !== "other")
-      .slice(0, 6)
-      .map((e: any) => `${e.hi ?? ""} ${STAT_LABEL.get(e.stat) ?? e.text}`)
-      .join(" · ");
   const rowsOf = (map: Record<string, number | null | undefined>) =>
     slotIds.flatMap((s) => {
       if (noDofus && dofusSlots.includes(s)) return []; // "sans les Dofus": not part of the output either
@@ -193,7 +185,6 @@
     });
   /** The lots of the combination found, else the lots chosen in the build. */
   const tableRows = $derived(build ? rowsOf(result && result !== "none" ? result.picks : build.chosen) : []);
-  const cheapest = (slot: string) => [...lotsOf(slot)].filter((l) => lotUnit(l) != null).sort((a, b) => lotUnit(a)! - lotUnit(b)!).slice(0, 40);
 
   onMount(() => {
     const tick = setInterval(() => (now = Date.now() / 1000), 15000);
@@ -238,11 +229,10 @@
     {@const sl = build.slots[id]}
     {@const lot = chosenLot(id)}
     <div class="slot" class:fresh={fresh(id)} class:stale={!fresh(id)} class:ign={ignored.has(id)}>
-      <button class="ic" title="{sl.name} — {SLOT_TITLES[id]}{lot ? ` (lot à ${kamas(lotUnit(lot)!)})` : ''}" onclick={() => (picker = picker === id ? null : id)}>
+      <div class="ic" title="{sl.name} — {SLOT_TITLES[id]}{lot ? ` (lot à ${kamas(lotUnit(lot)!)})` : ''}">
         {#if icon("item", sl.picture)}<img src={icon("item", sl.picture)} alt={sl.name} />{:else}<span class="mut">{SLOT_TITLES[id]}</span>{/if}
-      </button>
+      </div>
       <button class="ig" class:on={ignored.has(id)} title={ignored.has(id) ? "Remettre dans le prix" : "Ignorer dans le prix (compte toujours dans les stats)"} onclick={() => toggleIgnore(id)}>€</button>
-      {#if lot}<span class="tag">lot</span>{/if}
     </div>
   {:else}
     <div class="slot empty"></div>
@@ -314,19 +304,6 @@
             <div class="row">{#each SLOT_LAYOUT.bottom.filter((s) => build?.slots[s]) as s}{@render slot(s)}{/each}</div>
             <div class="legend mut"><span class="dot fresh"></span> scanné il y a moins d'1 h <span class="dot stale"></span> à scanner · € = ignoré dans le prix</div>
 
-            {#if picker}
-              <div class="picker">
-                <div class="ph2"><b>{SLOT_TITLES[picker]}</b> — {build.slots[picker].name} <button class="mini" onclick={() => (picker = null)}>✕</button></div>
-                {#if !lotsOf(picker).length}
-                  <div class="mut">Aucun lot scanné : ouvrez l'objet à l'hôtel de vente.</div>
-                {:else}
-                  <button class="lotb" class:on={build.chosen[picker] == null} onclick={() => pick(picker!, null)}>Max théorique (aucun lot choisi)</button>
-                  {#each cheapest(picker) as l (l.uid)}
-                    <button class="lotb" class:on={build.chosen[picker] === l.uid} onclick={() => pick(picker!, l.uid)}><b>{kamas(lotUnit(l)!)}</b> <span class="mut">{lotLine(l)}</span></button>
-                  {/each}
-                {/if}
-              </div>
-            {/if}
             </div>
           </section>
 
@@ -502,21 +479,17 @@
   .row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
   .slot { position: relative; width: 73px; height: 73px; }
   .slot.empty { visibility: hidden; }
-  .slot .ic { width: 100%; height: 100%; padding: 2px; display: flex; align-items: center; justify-content: center; border-width: 2px; border-radius: 8px; background: var(--panel); font-size: 10px; }
+  .slot .ic { box-sizing: border-box; border: 2px solid var(--line); width: 100%; height: 100%; padding: 2px; display: flex; align-items: center; justify-content: center; border-width: 2px; border-radius: 8px; background: var(--panel); font-size: 10px; }
   .slot.fresh .ic { border-color: var(--ok); }
   .slot.stale .ic { border-color: var(--bad); }
   .slot.ign .ic { opacity: 0.55; }
   .slot img { max-width: 100%; max-height: 100%; }
   .ig { position: absolute; right: -4px; bottom: -4px; width: 18px; height: 18px; padding: 0; border-radius: 9px; font-size: 10px; line-height: 1; color: var(--mut); }
   .ig.on { background: var(--warn); color: #000; border-color: var(--warn); }
-  .tag { position: absolute; left: 2px; top: 2px; font-size: 9px; background: var(--acc); color: #000; border-radius: 3px; padding: 0 3px; }
   .legend { font-size: 11px; }
   .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin: 0 3px 0 8px; }
   .dot.fresh { background: var(--ok); }
   .dot.stale { background: var(--bad); }
-  .picker { width: 100%; max-height: 300px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; padding: 6px; display: flex; flex-direction: column; gap: 3px; background: var(--panel); }
-  .lotb { text-align: left; font-size: 12px; padding: 3px 6px; }
-  .lotb.on { border-color: var(--acc); }
   .good { color: var(--ok); }
   .bad { color: var(--bad); }
 </style>
