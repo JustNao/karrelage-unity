@@ -7,7 +7,7 @@
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
   import type { StoredPrice } from "../../lib/transcend";
   import {
-    FRESH_SECS, PANELS, SLOT_LAYOUT, SLOT_TITLES, STAT_ICON_CODES, STAT_LABEL, compute, itemStats, lotStats, lotUnit, slotPrices, solve, sumSlots,
+    FM_STATS, FRESH_SECS, PANELS, SLOT_LAYOUT, SLOT_TITLES, STAT_ICON_CODES, STAT_LABEL, compute, fmOf, itemStats, lotStats, lotUnit, slotPrices, solve, sumSlots,
     type Build, type Info, type Lot, type Resolved, type SolveResult, type StatRow,
   } from "../../lib/stuff";
 
@@ -90,7 +90,7 @@
     busy = false;
   }
 
-  const patch = (p: Partial<Pick<Build, "targets" | "chosen" | "ignored">>) => {
+  const patch = (p: Partial<Pick<Build, "targets" | "chosen" | "ignored" | "fm">>) => {
     if (!build) return;
     Object.assign(build, p);
     call("stuff", "save_state", { id: build.id, patch: p }).catch((e) => (err = String(e)));
@@ -124,6 +124,17 @@
     patch({ targets: t });
     result = null;
   };
+
+  const setFm = (code: string, v: string) => {
+    const fm = { ...build!.fm };
+    const n = parseInt(v, 10);
+    if (Number.isFinite(n) && n !== 0) fm[code] = n; else delete fm[code];
+    patch({ fm });
+    result = null;
+  };
+  let fmAdd = $state("");
+  const fmRows = $derived(Object.entries(build?.fm ?? {}).filter(([c, v]) => v && FM_STATS[c]));
+  const fmFree = $derived(Object.entries(FM_STATS).filter(([c]) => !build?.fm?.[c]));
 
   function run() {
     solving = true; result = null;
@@ -166,11 +177,14 @@
 {#snippet statRow(s: StatRow)}
   {@const v = val(real, s.stat)}
   {@const m = val(max, s.stat)}
+  {@const fm = build ? fmOf(build, s.stat) : 0}
   <div class="st">
     {#if s.icon && icon("stat", s.icon)}<img src={icon("stat", s.icon)} alt="" />{:else}<span class="ph"></span>{/if}
     <span class="lab">{s.label}</span>
     <b class:bad={anyChosen && v < m} class:good={anyChosen && v >= m} title={anyChosen ? `Max théorique : ${m}` : ""}>{v}</b>
+    {#if fm}<span class="fm" title="Forgemagie">+{fm}</span>{/if}
     {#if anyChosen && v !== m}<span class="mut">/ {m}</span>{/if}
+    <button class="pf" title="Viser le maximum atteignable avec les objets ({m})" onclick={() => setTarget(s.stat, String(m))}>jet perf</button>
     <input class="tg" inputmode="numeric" placeholder="min" value={build?.targets[s.stat] ?? ""} onchange={(e) => setTarget(s.stat, e.currentTarget.value)} title="Valeur minimale voulue pour la recherche de la combinaison la moins chère" />
   </div>
 {/snippet}
@@ -255,7 +269,7 @@
               <div class="char"><div class="lvl">Niveau {build.level}</div><div class="mut">classe {build.class}</div></div>
               <div class="col">{#each SLOT_LAYOUT.right as s}{@render slot(s)}{/each}</div>
             </div>
-            <div class="row">{#each SLOT_LAYOUT.bottom as s}{@render slot(s)}{/each}</div>
+            <div class="row">{#each SLOT_LAYOUT.bottom.filter((s) => build?.slots[s]) as s}{@render slot(s)}{/each}</div>
             <div class="legend mut"><span class="dot fresh"></span> scanné il y a moins de 30 min <span class="dot stale"></span> à scanner · € = ignoré dans le prix</div>
 
             {#if picker}
@@ -279,6 +293,23 @@
             {#if real && real.unmapped.size}
               <div class="box mut small">Autres effets : {[...real.unmapped].map(([s, v]) => `${v} (#${s})`).join(", ")}</div>
             {/if}
+            <div class="box">
+              <div class="fh">Forgemagie</div>
+              {#each fmRows as [code, v] (code)}
+                <div class="st">
+                  <span class="lab">{FM_STATS[code].label}</span>
+                  <span class="fm">+</span><input class="tg" inputmode="numeric" value={v} onchange={(e) => setFm(code, e.currentTarget.value)} />
+                  <button class="mini" title="Retirer" onclick={() => setFm(code, "0")}>✕</button>
+                </div>
+              {:else}
+                <div class="mut small">Aucune forgemagie dans ce stuff.</div>
+              {/each}
+              <select bind:value={fmAdd} onchange={() => { if (fmAdd) { setFm(fmAdd, "1"); fmAdd = ""; } }}>
+                <option value="">+ Ajouter une stat…</option>
+                {#each fmFree as [code, f] (code)}<option value={code}>{f.label}</option>{/each}
+              </select>
+              <div class="mut small">Les bonus s'ajoutent aux stats (en bleu) ; modifiables.</div>
+            </div>
             <div class="box">
               <div class="fh">Combinaison la moins chère</div>
               <div class="mut small">Renseignez des minimums dans les cases « min » des stats, puis lancez la recherche parmi les lots scannés.</div>
@@ -316,7 +347,7 @@
   .ttl a { margin-left: 8px; font-size: 12px; }
   .price { white-space: nowrap; }
   .price .bad { font-size: 11px; margin-left: 4px; }
-  .sheet { display: grid; grid-template-columns: 250px minmax(360px, 1fr) 260px; gap: 10px; align-items: start; padding-bottom: 12px; }
+  .sheet { display: grid; grid-template-columns: 300px max-content 300px; justify-content: center; gap: 14px; align-items: start; padding-bottom: 12px; }
   .stats { display: flex; flex-direction: column; gap: 8px; }
   .box { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
   .st { display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 12px; }
@@ -324,12 +355,15 @@
   .st .lab { flex: 1; color: var(--mut); }
   .st b { min-width: 34px; text-align: right; }
   .st.hp b { font-size: 14px; }
+  .fm { color: #4aa3ff; font-size: 11px; }
+  .pf { padding: 0 4px; font-size: 10px; color: var(--mut); line-height: 16px; }
+  .pf:hover { color: var(--fg); }
   .tg { width: 44px; padding: 1px 4px; font-size: 11px; text-align: right; }
   .small { font-size: 12px; margin: 4px 0; }
   .center { display: flex; flex-direction: column; align-items: center; gap: 10px; }
   .doll { display: flex; gap: 14px; align-items: stretch; width: 100%; justify-content: center; }
   .col { display: flex; flex-direction: column; gap: 8px; }
-  .char { flex: 1; max-width: 220px; min-height: 300px; display: flex; flex-direction: column; align-items: center; justify-content: center; border: 1px dashed var(--line); border-radius: 10px; }
+  .char { width: 190px; min-height: 300px; display: flex; flex-direction: column; align-items: center; justify-content: center; border: 1px dashed var(--line); border-radius: 10px; }
   .lvl { font: 600 16px var(--font); }
   .row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
   .slot { position: relative; width: 56px; height: 56px; }

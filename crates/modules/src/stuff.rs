@@ -262,7 +262,7 @@ impl Module for Stuff {
                 let id = id_arg()?;
                 let mut bs = self.builds.lock().unwrap();
                 let b = bs.iter_mut().find(|b| b["id"] == id).ok_or_else(|| anyhow!("stuff inconnu"))?;
-                for k in ["targets", "chosen", "ignored"] {
+                for k in ["targets", "chosen", "ignored", "fm"] {
                     if let Some(v) = args["patch"].get(k) {
                         b[k] = v.clone();
                     }

@@ -24,8 +24,8 @@ export interface Info { items: Record<string, ItemInfo>; sets: Record<string, Se
 /** Layout of the slots around the character (screenshot): left column, right column, bottom row. */
 export const SLOT_LAYOUT = {
   left: ["ar", "bo", "am", "ce", "br"],
-  right: ["ch", "ca", "a1", "a2", "mo"],
-  bottom: ["fa", "d1", "d2", "d3", "d4", "d5", "d6"],
+  right: ["ch", "ca", "a1", "a2", "fa"],
+  bottom: ["mo", "d1", "d2", "d3", "d4", "d5", "d6"],
 };
 export const SLOT_TITLES: Record<string, string> = {
   ar: "Arme", bo: "Bouclier", am: "Amulette", ce: "Ceinture", br: "Bottes", ch: "Coiffe", ca: "Cape", a1: "Anneau 1", a2: "Anneau 2",
@@ -53,6 +53,22 @@ export const STAT_LABEL = new Map<number, string>(Object.values(PANELS).flat().m
 const CARAC: [string, number][] = [["vi", 11], ["sa", 12], ["fo", 10], ["in", 15], ["ch", 13], ["ag", 14]];
 /** Base values every character has at level 100+. */
 export const BASE_STATS: Record<number, number> = { 1: 7, 23: 3, 48: 100, 26: 1, 40: 1000 };
+
+/** Forgemagie / exo codes of Dofusbook's `fmGlobal` -> game characteristic id. */
+export const FM_STATS: Record<string, { stat: number; label: string }> = {
+  pa: { stat: 1, label: "PA" }, pm: { stat: 23, label: "PM" }, po: { stat: 19, label: "PO" }, vi: { stat: 11, label: "Vitalité" }, sa: { stat: 12, label: "Sagesse" },
+  fo: { stat: 10, label: "Force" }, in: { stat: 15, label: "Intelligence" }, ch: { stat: 13, label: "Chance" }, ag: { stat: 14, label: "Agilité" }, pu: { stat: 25, label: "Puissance" },
+  ii: { stat: 44, label: "Initiative" }, cc: { stat: 18, label: "Critique" }, ic: { stat: 26, label: "Invocations" }, so: { stat: 49, label: "Soin" }, pp: { stat: 48, label: "Prospection" },
+  fu: { stat: 78, label: "Fuite" }, ta: { stat: 79, label: "Tacle" }, dmg: { stat: 16, label: "Dommages" }, dnf: { stat: 92, label: "Do Neutre" }, dtf: { stat: 88, label: "Do Terre" },
+  dff: { stat: 89, label: "Do Feu" }, def: { stat: 90, label: "Do Eau" }, daf: { stat: 91, label: "Do Air" }, dc: { stat: 86, label: "Do Critique" }, dp: { stat: 84, label: "Do Poussée" },
+  dw: { stat: 31, label: "% Do Armes" }, ds: { stat: 98, label: "% Do Sorts" }, dm: { stat: 125, label: "% Do Mêlée" }, dd: { stat: 120, label: "% Do Dist" },
+  rn: { stat: 58, label: "Ré Neutre" }, rt: { stat: 54, label: "Ré Terre" }, rf: { stat: 55, label: "Ré Feu" }, re: { stat: 56, label: "Ré Eau" }, ra: { stat: 57, label: "Ré Air" },
+  rnp: { stat: 37, label: "%Ré Neutre" }, rtp: { stat: 33, label: "%Ré Terre" }, rfp: { stat: 34, label: "%Ré Feu" }, rep: { stat: 35, label: "%Ré Eau" }, rap: { stat: 36, label: "%Ré Air" },
+  rc: { stat: 87, label: "Ré Critique" }, rp: { stat: 85, label: "Ré Poussée" }, rm: { stat: 124, label: "%Ré Mêlée" }, rd: { stat: 121, label: "%Ré Dist" }, rw: { stat: 142, label: "%Ré Armes" },
+  epa: { stat: 27, label: "Esq. PA" }, epm: { stat: 28, label: "Esq. PM" }, rpa: { stat: 82, label: "Ret. PA" }, rpm: { stat: 83, label: "Ret. PM" },
+};
+/** Forgemagie bonus a build gives to one stat (shown as a blue "+X"). */
+export const fmOf = (b: Build, stat: number) => Object.entries(b.fm ?? {}).reduce((n, [c, v]) => n + (FM_STATS[c]?.stat === stat ? v : 0), 0);
 
 export type Totals = Map<number, number>;
 const add = (m: Totals, stat: number, v: number) => m.set(stat, (m.get(stat) ?? 0) + v);
@@ -107,7 +123,7 @@ export function fixedStats(b: Build): Totals {
   const m: Totals = new Map();
   for (const [stat, v] of Object.entries(BASE_STATS)) add(m, +stat, v);
   for (const [code, stat] of CARAC) add(m, stat, (b.carac[`base_${code}`] ?? 0) + (b.carac[`scroll_${code}`] ?? 0));
-  add(m, 1, b.fm.pa ?? 0); add(m, 23, b.fm.pm ?? 0); add(m, 19, b.fm.po ?? 0);
+  for (const [code, v] of Object.entries(b.fm ?? {})) { const stat = FM_STATS[code]?.stat; if (stat != null && v) add(m, stat, v); }
   return m;
 }
 
@@ -139,13 +155,12 @@ export const realPrice = (prices: Map<number, StoredPrice>, gid: number): number
   const p = prices.get(gid);
   return p ? (p.override ?? p.unit ?? null) : null;
 };
-const realOnly = (prices: Map<number, StoredPrice>) => new Map([...prices].map(([g, p]) => [g, { ...p, avg: null }]));
 
 export interface SlotPrice { craft: number | null; first: number | null; chosen: number | null; missing: string[]; scanned: boolean }
 
 export function slotPrices(gid: number, lots: Lot[], chosenUid: number | null | undefined, recipes: Recipes, prices: Map<number, StoredPrice>): SlotPrice {
-  const real = realOnly(prices);
-  const c = craftCost(gid, recipes, real);
+  // craft cost needs no scan of the item: ingredients use override > AH price > weekly average (only items themselves never get estimated prices)
+  const c = craftCost(gid, recipes, prices);
   const units = lots.map(lotUnit).filter((x): x is number => x != null);
   const ch = chosenUid != null ? lots.find((l) => l.uid === chosenUid) : null;
   return { craft: c?.cost ?? null, first: units.length ? Math.min(...units) : null, chosen: ch ? lotUnit(ch) : null, missing: c?.missing ?? [], scanned: lots.length > 0 };
