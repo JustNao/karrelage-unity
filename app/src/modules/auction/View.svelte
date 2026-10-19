@@ -644,7 +644,7 @@
   .craft details { margin-top: 2px; font-size: 12px; }
   .craft summary { cursor: pointer; }
   .craft ul { margin: 2px 0; padding-left: 18px; }
-  .ilist .sbar { display: flex; gap: 6px; padding: 6px 10px; cursor: default; position: sticky; top: 0; z-index: 2; background: var(--panel); }
+  .ilist .sbar { display: flex; gap: 6px; padding: 6px 10px; cursor: default; position: sticky; top: 36px; z-index: 2; background: var(--panel); }
   .sbar .danger { color: var(--bad); border-color: var(--bad); }
   .sbar input { flex: 1; min-width: 0; padding: 3px 6px; }
   .thead { display: flex; width: 100%; align-items: center; gap: 6px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: var(--bg); color: inherit; padding: 5px 10px; font: 600 11px var(--font); letter-spacing: 0.04em; text-transform: uppercase; text-align: left; position: sticky; top: 36px; z-index: 1; }

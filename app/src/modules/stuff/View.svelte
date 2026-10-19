@@ -224,26 +224,25 @@
 <div class="grid cgrid" class:anim={!cols.dragging} style:grid-template-columns="{cols.px("left")}px 5px 1fr">
   <aside class="side" class:cz={cols.collapsed.left}>
     <PanelHead {cols} name="left" title="Stuffs" />
-    <div class="add">
-      <input placeholder="Lien Dofusbook…" bind:value={link} onkeydown={(e) => e.key === "Enter" && add()} />
-      <button onclick={add} disabled={busy}>{busy ? "…" : "Ajouter"}</button>
+    <div class="sbar">
+      <input type="search" placeholder="Lien Dofusbook…" bind:value={link} onkeydown={(e) => e.key === "Enter" && add()} />
+      <button class="bmini" onclick={add} disabled={busy}>{busy ? "…" : "Ajouter"}</button>
     </div>
     {#if err}<div class="bad err">{err}</div>{/if}
-    <SmoothScroll>
-      {#each builds as b (b.id)}
-        <div class="bi" class:on={b.id === sel}>
-          {#if renaming === b.id}
-            <input class="rn" bind:value={draft} onkeydown={(e) => { if (e.key === "Enter") rename(b); if (e.key === "Escape") renaming = null; }} onblur={() => rename(b)} />
-          {:else}
-            <button class="nm" onclick={() => select(b.id)}>{b.name}</button>
-            <button class="mini" title="Renommer" onclick={() => { renaming = b.id; draft = b.name; }}>✎</button>
-            <button class="mini" title="Supprimer" onclick={() => del(b)}>✕</button>
-          {/if}
-        </div>
-      {:else}
-        <div class="mut">Collez un lien Dofusbook ci-dessus pour charger un stuff.</div>
-      {/each}
-    </SmoothScroll>
+    {#each builds as b (b.id)}
+      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+      <div class="irow" class:sel={b.id === sel} onclick={() => renaming !== b.id && select(b.id)}>
+        {#if renaming === b.id}
+          <input class="rn" bind:value={draft} onclick={(e) => e.stopPropagation()} onkeydown={(e) => { if (e.key === "Enter") rename(b); if (e.key === "Escape") renaming = null; }} onblur={() => rename(b)} />
+        {:else}
+          <span class="nm"><b>{b.name}</b><br /><span class="mut">niv. {b.level} · {Object.keys(b.slots).length} objets</span></span>
+          <button class="bmini" title="Renommer" onclick={(e) => { e.stopPropagation(); renaming = b.id; draft = b.name; }}>✎</button>
+          <button class="bmini" title="Supprimer" onclick={(e) => { e.stopPropagation(); del(b); }}>✕</button>
+        {/if}
+      </div>
+    {:else}
+      <div class="mut empty">Collez un lien Dofusbook ci-dessus pour charger un stuff.</div>
+    {/each}
   </aside>
   <Grip {cols} name="left" dir={1} />
 
@@ -362,14 +361,21 @@
 
 <style>
   .grid { flex: 1; min-height: 0; display: grid; font-family: var(--font); }
-  .side, .main { min-height: 0; display: flex; flex-direction: column; padding: 8px 10px 0; min-width: 0; }
-  .side > :global(.wrap), .main > :global(.wrap) { flex: 1; }
-  .add { display: flex; gap: 6px; margin-bottom: 8px; }
-  .add input { flex: 1; min-width: 0; }
+  .main { min-height: 0; display: flex; flex-direction: column; padding: 8px 10px 0; min-width: 0; }
+  .main > :global(.wrap) { flex: 1; }
+  /* builds list: same look as the HDV item list */
+  .side { overflow: auto; min-height: 0; min-width: 0; background: var(--panel); border-right: 1px solid var(--line); font-family: var(--font); }
+  .side .sbar { display: flex; gap: 6px; padding: 6px 10px; position: sticky; top: 36px; z-index: 2; background: var(--panel); }
+  .side .sbar input { flex: 1; min-width: 0; padding: 3px 6px; }
+  .side .irow { display: flex; align-items: center; gap: 4px; padding: 6px 10px; border-bottom: 1px solid var(--line); cursor: pointer; }
+  .side .irow:hover { background: var(--bg); }
+  .side .irow.sel { outline: 1px solid var(--acc); }
+  .side .empty { padding: 6px 10px; }
+  .side .err { padding: 0 10px 6px; }
+  .bmini { padding: 2px 7px; font-size: 11px; }
+  .bmini:disabled { opacity: 0.35; cursor: default; }
   .err { font-size: 12px; margin-bottom: 6px; }
-  .bi { display: flex; align-items: center; gap: 2px; padding: 3px 4px; border: 1px solid transparent; border-radius: 6px; }
-  .bi.on { background: var(--panel); border-color: var(--line); }
-  .nm { flex: 1; text-align: left; border: 0; background: none; padding: 2px 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .rn { flex: 1; min-width: 0; }
   .mini { border: 0; background: none; padding: 0 4px; color: var(--mut); }
   .mini:hover { color: var(--fg); }
