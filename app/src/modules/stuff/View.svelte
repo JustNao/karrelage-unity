@@ -388,7 +388,7 @@
                 <button onclick={run} disabled={!Object.keys(build.targets).length}>Rechercher</button>
                 {#if cancelled}<span class="small mut">Calcul annulé.</span>{/if}
               {/if}
-              {#if result === "none"}<div class="bad small">Aucune combinaison ne satisfait ces minimums avec les lots scannés{#if fmRows.length} (la forgemagie du stuff doit être portée par des objets : exo {fmRows.map(([c, v]) => `+${v} ${FM_STATS[c].label}`).join(", ")}){/if}.</div>
+              {#if result === "none"}<div class="bad small">Aucune combinaison ne satisfait ces minimums avec les lots scannés.</div>
               {:else if result}
                 <div class="small">Coût : <b>{kamas(result.cost)}</b>{#if result.approx} <span class="mut">(recherche limitée, résultat approché)</span>{/if}</div>
                 <div class="small mut">{Object.keys(result.picks).length} emplacement(s) choisis{#if result.fixedSlots.length} · gardés tels quels : {names(result.fixedSlots)}{/if}</div>
