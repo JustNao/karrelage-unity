@@ -30,7 +30,7 @@
   .ilist { overflow: auto; background: var(--panel); border-right: 1px solid var(--line); }
   .ilist div { padding: 6px 10px; border-bottom: 1px solid var(--line); cursor: pointer; }
   .ilist .irow:hover { background: var(--bg); }
-  .ilist div.sel { outline: 1px solid var(--acc); position: relative; z-index: 2; }
+  .ilist div.sel { outline: 1px solid var(--acc); outline-offset: -1px; position: relative; z-index: 2; }
   .ilist div.first { border-top: 1px solid var(--line); }
   .body { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 </style>

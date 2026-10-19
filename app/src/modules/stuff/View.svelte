@@ -369,7 +369,7 @@
   .side .sbar input { flex: 1; min-width: 0; padding: 3px 6px; }
   .side .irow { display: flex; align-items: center; gap: 4px; padding: 6px 10px; border-bottom: 1px solid var(--line); cursor: pointer; }
   .side .irow:hover { background: var(--bg); }
-  .side .irow.sel { outline: 1px solid var(--acc); position: relative; z-index: 2; }
+  .side .irow.sel { outline: 1px solid var(--acc); outline-offset: -1px; position: relative; z-index: 2; }
   .side .irow.first { border-top: 1px solid var(--line); }
   .side .empty { padding: 6px 10px; }
   .side .err { padding: 0 10px 6px; }
@@ -412,8 +412,7 @@
   .st img, .st .ph { width: 21px; height: 21px; flex: none; }
   .st .lab { flex: 1; color: var(--mut); }
   .st b { min-width: 36px; text-align: right; }
-  .st.hp b { font-size: 14px; }
-  .fm { color: #4aa3ff; font-size: 12px; min-width: 20px; text-align: left; flex: none; }
+    .fm { color: #4aa3ff; font-size: 12px; min-width: 20px; text-align: left; flex: none; }
   .pf { height: 22px; padding: 0 6px; font: inherit; color: var(--mut); }
   .pf:hover { color: var(--fg); }
   .fmsel { width: 100%; margin-top: 4px; }

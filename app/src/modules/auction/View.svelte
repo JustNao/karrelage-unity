@@ -652,7 +652,7 @@
   .chev.shut { transform: rotate(-90deg); }
   .ilist div { padding: 6px 10px; border-bottom: 1px solid var(--line); cursor: pointer; font-family: var(--font); }
   .ilist .irow:hover { background: var(--bg); }
-  .ilist div.sel { outline: 1px solid var(--acc); position: relative; z-index: 2; }
+  .ilist div.sel { outline: 1px solid var(--acc); outline-offset: -1px; position: relative; z-index: 2; }
   .ilist .empty { cursor: default; }
   .view > :global(.wrap) { font-family: var(--font); }
   .sort { display: inline-flex; gap: 6px; align-items: center; }
