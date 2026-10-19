@@ -222,6 +222,10 @@ mod tests {
         if d.spells.contains_key(&11352) {
             assert_eq!(d.render_effect(effects::LEGENDARY_EFFECT, &[11352.into(), 11352.into()]).0, "Appétit de Crocobur");
         }
+        // Dofus passive: the spell id is rendered as the name of the special effect
+        if d.spells.contains_key(&8396) {
+            assert_eq!(d.render_effect(effects::LEGENDARY_EFFECT, &[8396.into(), 8396.into()]).0, "Rouge Vermeil");
+        }
         assert_eq!(d.effects[&118].group, "stats");
         assert_eq!(d.effects[&210].group, "resist");
         assert_eq!(d.stat_of(118), d.stat_of(157), "+Force and -Force are one stat");

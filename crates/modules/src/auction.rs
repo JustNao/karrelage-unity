@@ -231,6 +231,10 @@ impl Module for Auction {
                 // group/order/density, and recompute the lot density from them (the formula may have changed).
                 if let Some(rows) = v.get_mut("rows").and_then(Value::as_array_mut) {
                     for e in rows.iter_mut().flat_map(|r| r["effects"].as_array_mut()).flatten() {
+                        // the stored text was rendered with the pack of the time (e.g. a Dofus passive shown as a spell id)
+                        if let (Some(action), Some(params)) = (e["action"].as_i64(), e["params"].as_array()) {
+                            e["text"] = json!(ctx.data.render_effect(action, params).0);
+                        }
                         if let Some(row) = e["action"].as_i64().and_then(|a| ctx.data.effects.get(&a)) {
                             e["group"] = json!(row.group);
                             e["order"] = json!(row.order);
