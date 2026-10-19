@@ -188,7 +188,7 @@
   const rowsOf = (map: Record<string, number | null | undefined>) =>
     slotIds.flatMap((s) => {
       const lot = map[s] != null ? lotsOf(s).find((l) => l.uid === map[s]) : null;
-      return lot ? [{ slot: s, name: build!.slots[s].name, price: lotUnit(lot)!, lot }] : [];
+      return lot ? [{ slot: s, name: build!.slots[s].name, picture: build!.slots[s].picture, price: lotUnit(lot)!, lot }] : [];
     });
   /** The lots of the combination found, else the lots chosen in the build. */
   const tableRows = $derived(build ? rowsOf(result && result !== "none" ? result.picks : build.chosen) : []);
@@ -398,6 +398,7 @@
                 <div class="lotlist">
                   {#each tableRows as r (r.slot)}
                     <div class="lrow">
+                      {#if icon("item", r.picture)}<img class="lic" src={icon("item", r.picture)} alt="" />{/if}
                       <div class="lh"><span class="mut">{SLOT_TITLES[r.slot]}</span> <b>{r.name}</b></div>
                       <ItemCard row={r.lot} flags={false} />
                     </div>
@@ -482,7 +483,9 @@
   .split { border: 0; border-top: 1px solid var(--line); margin: 6px 0 12px; }
   .bottom { display: grid; grid-template-columns: minmax(260px, 320px) minmax(0, 1fr); gap: 14px; align-items: start; padding-bottom: 16px; }
   .lotlist { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 8px; margin-top: 6px; }
-  .lh { font-size: 12px; margin-bottom: 2px; }
+  .lrow { position: relative; }
+  .lic { position: absolute; top: 4px; right: 6px; width: 40px; height: 40px; z-index: 1; pointer-events: none; }
+  .lh { font-size: 12px; margin-bottom: 2px; padding-right: 48px; }
   .tot { margin-top: 8px; text-align: right; }
   .tt { margin-top: 12px; }
   @container (max-width: 920px) { .bottom { grid-template-columns: minmax(0, 1fr); } }
