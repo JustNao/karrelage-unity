@@ -62,6 +62,9 @@
   const max = $derived(build ? compute(build, info, resolveWith(false)) : null);
   const anyChosen = $derived(!!build && slotIds.some((s) => chosenLot(s)));
 
+  const DOFUS_SLOTS = ["d1", "d2", "d3", "d4", "d5", "d6"];
+  const DOFUS_TYPE = 23; // itemtypes: Dofus (trophées 151 and prysmaradites share the slots and are not touched)
+  const dofusSlots = $derived(DOFUS_SLOTS.filter((s) => info.items[build?.slots[s]?.gid ?? -1]?.type_id === DOFUS_TYPE));
   const owned = $derived(new Set(build?.owned ?? []));
   /** Slots not bought: the items the user already owns, counted at their perfect roll. */
   const ignored = $derived(owned);
@@ -137,6 +140,9 @@
     } catch (e) { err = String(e); }
   };
 
+  /** "Sans les Dofus": marks every Dofus slot as owned (same as clicking each one), or unmarks them all. */
+  const allDofusOwned = $derived(dofusSlots.length > 0 && dofusSlots.every((s) => owned.has(s)));
+  const setDofusOwned = (on: boolean) => { const rest = (build!.owned ?? []).filter((s) => !dofusSlots.includes(s)); patch({ owned: on ? [...rest, ...dofusSlots] : rest }); result = null; };
   const toggleOwned = (slot: string) => { const o = build!.owned ?? []; patch({ owned: o.includes(slot) ? o.filter((s) => s !== slot) : [...o, slot] }); result = null; };
   const setTarget = (stat: number, v: string) => {
     const t = { ...build!.targets };
@@ -354,6 +360,7 @@
             <span class="mut">Sélection</span> <b>{kamas(picked.total)}</b>
             {#if picked.missingSlots.length}<span class="mut">{picked.missingSlots.length} non choisi</span>{/if}</div>
         {/if}
+              <label class="small"><input type="checkbox" checked={allDofusOwned} disabled={!dofusSlots.length} onchange={(e) => setDofusOwned(e.currentTarget.checked)} /> Sans les Dofus (hors trophées) dans le prix</label>
                           </div>
             <div class="box solver">
               <div class="fh">Combinaison la moins chère</div>
