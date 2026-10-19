@@ -187,6 +187,7 @@
       .join(" · ");
   const rowsOf = (map: Record<string, number | null | undefined>) =>
     slotIds.flatMap((s) => {
+      if (noDofus && dofusSlots.includes(s)) return []; // "sans les Dofus": not part of the output either
       const lot = map[s] != null ? lotsOf(s).find((l) => l.uid === map[s]) : null;
       return lot ? [{ slot: s, name: build!.slots[s].name, picture: build!.slots[s].picture, price: lotUnit(lot)!, lot }] : [];
     });
