@@ -3,7 +3,7 @@
 import { craftCost, type Recipes } from "./craft";
 import type { StoredPrice } from "./transcend";
 
-export const FRESH_SECS = 30 * 60;
+export const FRESH_SECS = 60 * 60; // an item scanned less than 1 h ago counts as fresh
 
 export interface SlotRef { db_id: number; gid: number; picture: number; name: string; level: number }
 export interface Build {

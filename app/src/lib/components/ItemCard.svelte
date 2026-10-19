@@ -37,7 +37,7 @@
 
   const level = $derived(companion ? levelOf(row) : null);
   const legendary = $derived(companion && isLegendary(row));
-  const effects = $derived(sortEffects<any>(row.effects.filter((e: any) => !HIDDEN_EFFECTS.has(e.action)))); // new first, then stats/main, damage, resistances, utility
+  const effects = $derived(sortEffects<any>(row.effects.filter((e: any) => !HIDDEN_EFFECTS.has(e.action) && !/^Exp[ée]rience\s*:/i.test(e.text ?? "")))); // new first, then stats/main, damage, resistances, utility
   const perfect = $derived(perfection(row.effects));
   const shown = $derived(open ? effects : effects.filter((e: any) => e.status === "added" || e.status === "above"));
   // the weapon's own effects (hits, -PA, pushback...) are not stats: listed apart, plain, without range

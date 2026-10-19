@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { SvelteMap, SvelteSet } from "svelte/reactivity";
+  import { SvelteMap } from "svelte/reactivity";
   import { call, kamas, on } from "../../lib/api";
   import Grip from "../../lib/components/Grip.svelte";
   import PanelHead from "../../lib/components/PanelHead.svelte";
@@ -78,7 +78,7 @@
   const picked = $derived(sumSlots(slotIds, ignored, (s) => perSlot[s].chosen));
   const names = (l: string[]) => l.map((s) => SLOT_TITLES[s]).join(", ");
 
-  /** Items of the build not scanned in the last 30 minutes (red border), one entry per item. */
+  /** Items of the build not scanned in the last hour (red border), one entry per item. */
   const toScan = $derived([...new Map(slotIds.filter((s) => !fresh(s)).map((s) => [build!.slots[s].gid, { gid: build!.slots[s].gid, name: build!.slots[s].name, group: s === "fa" || s === "mo" ? "companion" : "equip" } as ScanItem])).values()]);
   async function openScanList() {
     try { localStorage.setItem(SCAN_LIST_KEY, JSON.stringify(toScan)); } catch {}
@@ -185,9 +185,6 @@
       .slice(0, 6)
       .map((e: any) => `${e.hi ?? ""} ${STAT_LABEL.get(e.stat) ?? e.text}`)
       .join(" · ");
-  /** Lots whose effects are unfolded in the list under the build (like the HDV: folded = only exo / above-max effects). */
-  let openLots = new SvelteSet<string>();
-  const toggleLot = (slot: string) => (openLots.has(slot) ? openLots.delete(slot) : openLots.add(slot));
   const rowsOf = (map: Record<string, number | null | undefined>) =>
     slotIds.flatMap((s) => {
       const lot = map[s] != null ? lotsOf(s).find((l) => l.uid === map[s]) : null;
@@ -309,7 +306,7 @@
               <div class="col">{#each SLOT_LAYOUT.right as s}{@render slot(s)}{/each}</div>
             </div>
             <div class="row">{#each SLOT_LAYOUT.bottom.filter((s) => build?.slots[s]) as s}{@render slot(s)}{/each}</div>
-            <div class="legend mut"><span class="dot fresh"></span> scanné il y a moins de 30 min <span class="dot stale"></span> à scanner · € = ignoré dans le prix</div>
+            <div class="legend mut"><span class="dot fresh"></span> scanné il y a moins d'1 h <span class="dot stale"></span> à scanner · € = ignoré dans le prix</div>
 
             {#if picker}
               <div class="picker">
@@ -398,7 +395,7 @@
                   {#each tableRows as r (r.slot)}
                     <div class="lrow">
                       <div class="lh"><span class="mut">{SLOT_TITLES[r.slot]}</span> <b>{r.name}</b></div>
-                      <ItemCard row={r.lot} flags={false} collapsible open={openLots.has(r.slot)} ontoggle={() => toggleLot(r.slot)} />
+                      <ItemCard row={r.lot} flags={false} />
                     </div>
                   {/each}
                 </div>
