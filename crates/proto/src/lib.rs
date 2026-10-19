@@ -8,7 +8,7 @@ pub use prost_reflect::{DynamicMessage, Kind, MessageDescriptor, ReflectMessage,
 use prost_reflect::{DescriptorPool, MapKey};
 use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 
 pub use names::Names;
 
@@ -16,6 +16,8 @@ pub struct Proto {
     pool: DescriptorPool,
     names: RwLock<Names>,
     override_path: PathBuf,
+    /// serialises override writes, so the file always ends with the latest edit (taken before `names`)
+    saving: Mutex<()>,
 }
 
 impl Proto {
@@ -24,7 +26,7 @@ impl Proto {
         let pool = DescriptorPool::decode(std::fs::read(dir.join("protocol.desc")).context("protocol.desc")?.as_slice())?;
         let base: Value = serde_json::from_slice(&std::fs::read(dir.join("names.json")).context("names.json")?)?;
         let overrides: Value = std::fs::read(&override_path).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_else(|| json!({}));
-        Ok(Self { pool, names: RwLock::new(Names::new(base, overrides)), override_path })
+        Ok(Self { pool, names: RwLock::new(Names::new(base, overrides)), override_path, saving: Mutex::new(()) })
     }
 
     pub fn message(&self, type_name: &str) -> Option<MessageDescriptor> {
@@ -61,13 +63,21 @@ impl Proto {
 
     /// Persist a confirmed name (`field = None` -> the message itself). Empty `name` removes it.
     pub fn set_override(&self, msg: &str, field: Option<&str>, name: &str) -> Result<()> {
-        let mut n = self.names.write();
-        n.set_override(msg, field, name);
-        let tmp = self.override_path.with_extension("tmp");
+        let _saving = self.saving.lock();
+        // the names lock is held only for the edit: every captured packet needs it for its name
+        let bytes = {
+            let mut n = self.names.write();
+            n.set_override(msg, field, name);
+            serde_json::to_vec_pretty(n.overrides())?
+        };
         if let Some(p) = self.override_path.parent() {
             std::fs::create_dir_all(p)?;
         }
-        std::fs::write(&tmp, serde_json::to_vec_pretty(n.overrides())?)?;
+        let tmp = self.override_path.with_extension("tmp");
+        let mut f = std::fs::File::create(&tmp)?;
+        std::io::Write::write_all(&mut f, &bytes)?;
+        f.sync_all()?;
+        drop(f);
         std::fs::rename(&tmp, &self.override_path)?;
         Ok(())
     }

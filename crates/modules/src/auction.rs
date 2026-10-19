@@ -1,6 +1,6 @@
 //! Auction house: renders the AH item-list message (prices per lot size, effects vs the item's defaults)
 //! and keeps the latest listing per item. Port of formatters.format_ah_list + webapp.update_store.
-use crate::{load_json, save_json, Ctx, Interest, Message, Module};
+use crate::{Ctx, Interest, Message, Module, Persist};
 use anyhow::{anyhow, Result};
 use loutil_data::items::{info_key, Effect, ELEMENT_CHANGE_EFFECT, LOCK_EFFECT, LOT_SIZES};
 use loutil_data::Data;
@@ -10,7 +10,7 @@ use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use std::collections::BTreeMap;
 use parking_lot::Mutex;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 /// Clear name pinned in pipeline overrides (work/overrides.json) for the AH listing event.
 pub const AH_LIST: &str = "ExchangeTypesItemsExchangerDescriptionForUserEvent";
@@ -41,12 +41,24 @@ struct ObjectEffect {
 
 pub struct Auction {
     bind: OnceLock<Option<Bindings>>,
-    store: Mutex<BTreeMap<String, Value>>,
+    store: Arc<Mutex<BTreeMap<String, Value>>>,
+    persist: OnceLock<Persist>,
+    /// pack-derived answers, constant once the pack is loaded
+    effects: OnceLock<Value>,
+    recipes: OnceLock<Value>,
+    effect_meta: OnceLock<Value>,
 }
 
 impl Auction {
     pub fn new() -> Self {
-        Self { bind: OnceLock::new(), store: Mutex::new(BTreeMap::new()) }
+        Self {
+            bind: OnceLock::new(),
+            store: Default::default(),
+            persist: OnceLock::new(),
+            effects: OnceLock::new(),
+            recipes: OnceLock::new(),
+            effect_meta: OnceLock::new(),
+        }
     }
 
     fn bindings(&self, ctx: &Ctx) -> Option<&Bindings> {
@@ -57,11 +69,10 @@ impl Auction {
         ctx.module_dir("auction").join("items.json")
     }
 
-    fn save(&self, ctx: &Ctx) {
-        let s = self.store.lock();
-        let live: Map<String, Value> = s.iter().filter(|(_, v)| v["demo"] != json!(true)).map(|(k, v)| (k.clone(), v.clone())).collect();
-        if let Err(e) = save_json(&Self::store_path(ctx), &Value::Object(live)) {
-            ctx.log(format!("auction: cannot save store: {e}"));
+    /// Written in the background (see `Persist`).
+    fn save(&self) {
+        if let Some(p) = self.persist.get() {
+            p.touch();
         }
     }
 
@@ -89,7 +100,7 @@ impl Auction {
             "min_price": mins.iter().min(), "rows": rows, "defaults": f["defaults"], "demo": m.raw.srv == "demo",
         });
         self.store.lock().insert(gid.to_string(), ent.clone());
-        self.save(ctx);
+        self.save();
         ctx.emit("auction", "item", ent);
     }
 }
@@ -217,7 +228,13 @@ impl Module for Auction {
     }
 
     fn init(&self, ctx: &Ctx) {
-        if let Some(Value::Object(saved)) = load_json(&Self::store_path(ctx)) {
+        let store = self.store.clone();
+        let (persist, saved) = Persist::open(Self::store_path(ctx), ctx.logger(), move || {
+            let s = store.lock();
+            Value::Object(s.iter().filter(|(_, v)| v["demo"] != json!(true)).map(|(k, v)| (k.clone(), v.clone())).collect())
+        });
+        let _ = self.persist.set(persist);
+        if let Some(Value::Object(saved)) = saved {
             let mut s = self.store.lock();
             for (k, mut v) in saved {
                 if !v["gid"].as_i64().is_some_and(|g| ctx.data.is_equipment(g)) {
@@ -273,12 +290,12 @@ impl Module for Auction {
     fn call(&self, method: &str, _args: Value, ctx: &Ctx) -> Result<Value> {
         match method {
             "items" => Ok(Value::Array(self.store.lock().values().cloned().collect())),
-            "effects" => Ok(ctx.data.filterable_effects()),
-            "recipes" => Ok(ctx.data.recipes_json()),
-            "effect_meta" => Ok(ctx.data.effect_meta()),
+            "effects" => Ok(self.effects.get_or_init(|| ctx.data.filterable_effects()).clone()),
+            "recipes" => Ok(self.recipes.get_or_init(|| ctx.data.recipes_json()).clone()),
+            "effect_meta" => Ok(self.effect_meta.get_or_init(|| ctx.data.effect_meta()).clone()),
             "clear" => {
                 self.store.lock().clear();
-                self.save(ctx);
+                self.save();
                 ctx.emit("auction", "cleared", json!({}));
                 Ok(json!({"ok": true}))
             }
@@ -367,7 +384,8 @@ mod tests {
 
         let mut expected: Value = serde_json::from_slice(&std::fs::read(root.join("fixtures/ah_demo.expected.json")).unwrap()).unwrap();
         let events = events.lock();
-        let (_, pkt) = events.iter().find(|(n, _)| n == "packets:packet").expect("packet event");
+        let list = hub.call("packets", "list", Value::Null).unwrap();
+        let pkt = &list[0];
         assert_eq!(pkt["name"], expected["name"]);
         let mut got = pkt["fmt"].clone();
         strip_keys(&mut got, &["group", "order", "density", "stat"]); // added after the python reference was written

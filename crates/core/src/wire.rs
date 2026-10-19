@@ -110,7 +110,13 @@ pub fn to_obj(data: &[u8], depth: u32) -> Value {
 }
 
 pub fn hex(b: &[u8]) -> String {
-    b.iter().map(|x| format!("{x:02x}")).collect()
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut s = String::with_capacity(b.len() * 2);
+    for x in b {
+        s.push(DIGITS[(x >> 4) as usize] as char);
+        s.push(DIGITS[(x & 15) as usize] as char);
+    }
+    s
 }
 
 /// Largest frame we accept; anything bigger means we are out of sync.

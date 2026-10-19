@@ -6,8 +6,12 @@ pub mod auction;
 pub mod names;
 pub mod packets;
 pub mod prices;
+pub mod store;
+pub(crate) mod sys;
 pub mod stuff;
 pub mod update;
+
+pub use store::{flush_all, load_json, save_json, Persist};
 
 use anyhow::{anyhow, Result};
 use loutil_core::wire::{self, Envelope};
@@ -16,7 +20,7 @@ use loutil_data::Data;
 use loutil_proto::{DynamicMessage, Proto};
 use serde_json::Value;
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
@@ -69,6 +73,11 @@ impl Ctx {
     /// Owned handle to the event emitter, for background threads ("<module>:<event>" names).
     pub fn emitter(&self) -> Arc<dyn Fn(&str, Value) + Send + Sync> {
         self.emit.clone()
+    }
+
+    /// Owned handle to the log, for background threads.
+    pub fn logger(&self) -> Arc<dyn Fn(String) + Send + Sync> {
+        self.log.clone()
     }
 
     pub fn log(&self, line: impl Into<String>) {
@@ -165,19 +174,4 @@ impl Hub {
     pub fn module_ids(&self) -> Vec<&'static str> {
         self.modules.iter().map(|m| m.id()).collect()
     }
-}
-
-pub fn load_json(path: &Path) -> Option<Value> {
-    serde_json::from_slice(&std::fs::read(path).ok()?).ok()
-}
-
-/// Atomic write (tmp + rename) so a crash never leaves a half-written store.
-pub fn save_json(path: &Path, v: &Value) -> Result<()> {
-    if let Some(p) = path.parent() {
-        std::fs::create_dir_all(p)?;
-    }
-    let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, serde_json::to_vec(v)?)?;
-    std::fs::rename(&tmp, path)?;
-    Ok(())
 }

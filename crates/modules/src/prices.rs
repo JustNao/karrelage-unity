@@ -1,11 +1,13 @@
 //! Stored prices: the cheapest per-unit price seen for every item opened in the auction house, grouped by item
 //! category / type, with a manual override that wins over the captured price.
 use crate::auction::AH_LIST;
-use crate::{load_json, save_json, Ctx, Interest, Message, Module};
+use crate::{Ctx, Interest, Message, Module, Persist};
+use loutil_data::items::RUNE_MARKER_EFFECTS;
 use anyhow::{anyhow, Result};
 use loutil_proto::util::{int, messages};
 use serde_json::{json, Value};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
+use std::sync::{Arc, OnceLock};
 use parking_lot::Mutex;
 
 /// `itemtypes.categoryId` -> label shown in the UI.
@@ -26,23 +28,49 @@ const RUNE_TYPE: i64 = 211;
 
 pub struct Prices {
     /// gid -> {gid, name, type_id, type, category, unit, updated, override}
-    store: Mutex<BTreeMap<i64, Value>>,
+    store: Arc<Mutex<BTreeMap<i64, Value>>>,
+    persist: OnceLock<Persist>,
+    /// pack-derived answers, constant once the pack is loaded
+    runes: OnceLock<Value>,
+    craft_runes: OnceLock<Value>,
+    by_name: OnceLock<HashMap<String, i64>>,
+}
+
+/// Case / nbsp / apostrophe / accent insensitive item name, for `gids_by_name`.
+fn norm_name(s: &str) -> String {
+    s.replace('\u{a0}', " ")
+        .replace('\u{2019}', "'")
+        .trim()
+        .to_lowercase()
+        .chars()
+        .flat_map(|c| -> Vec<char> {
+            match c {
+                'é' | 'è' | 'ê' | 'ë' => vec!['e'],
+                'à' | 'â' | 'ä' => vec!['a'],
+                'î' | 'ï' => vec!['i'],
+                'ô' | 'ö' => vec!['o'],
+                'ù' | 'û' | 'ü' => vec!['u'],
+                'ç' => vec!['c'],
+                'œ' => vec!['o', 'e'],
+                c => vec![c],
+            }
+        })
+        .collect()
 }
 
 impl Prices {
     pub fn new() -> Self {
-        Self { store: Mutex::new(BTreeMap::new()) }
+        Self { store: Default::default(), persist: OnceLock::new(), runes: OnceLock::new(), craft_runes: OnceLock::new(), by_name: OnceLock::new() }
     }
 
     fn path(ctx: &Ctx) -> std::path::PathBuf {
         ctx.module_dir("prices").join("prices.json")
     }
 
-    fn save(&self, ctx: &Ctx) {
-        let s = self.store.lock();
-        let obj: serde_json::Map<String, Value> = s.iter().map(|(k, v)| (k.to_string(), v.clone())).collect();
-        if let Err(e) = save_json(&Self::path(ctx), &Value::Object(obj)) {
-            ctx.log(format!("prices: cannot save: {e}"));
+    /// Written in the background (see `Persist`).
+    fn save(&self) {
+        if let Some(p) = self.persist.get() {
+            p.touch();
         }
     }
 
@@ -79,7 +107,7 @@ impl Prices {
         if changed.is_empty() {
             return;
         }
-        self.save(ctx);
+        self.save();
         ctx.emit("prices", "bulk", Value::Array(changed));
     }
 }
@@ -94,7 +122,12 @@ impl Module for Prices {
     }
 
     fn init(&self, ctx: &Ctx) {
-        if let Some(Value::Object(saved)) = load_json(&Self::path(ctx)) {
+        let store = self.store.clone();
+        let (persist, saved) = Persist::open(Self::path(ctx), ctx.logger(), move || {
+            Value::Object(store.lock().iter().map(|(k, v)| (k.to_string(), v.clone())).collect())
+        });
+        let _ = self.persist.set(persist);
+        if let Some(Value::Object(saved)) = saved {
             let mut s = self.store.lock();
             for (k, mut v) in saved {
                 if let Ok(gid) = k.parse::<i64>() {
@@ -134,7 +167,7 @@ impl Module for Prices {
         Self::describe(ctx, gid, ent);
         let ent = ent.clone();
         drop(s);
-        self.save(ctx);
+        self.save();
         ctx.emit("prices", "price", ent);
     }
 
@@ -142,65 +175,54 @@ impl Module for Prices {
         match method {
             "list" => Ok(Value::Array(self.store.lock().values().cloned().collect())),
             // Rune de transcendance items: [{gid, name, a, value}] (the effect a rune adds to an item)
-            "runes" => {
-                let mut v: Vec<Value> = ctx
-                    .data
-                    .items
-                    .iter()
-                    .filter(|(_, i)| i.type_id == RUNE_TYPE)
-                    .filter_map(|(g, i)| {
-                        let e = i.effects.iter().find(|e| ![2825, 2826, 2827].contains(&e.a))?;
-                        Some(json!({"gid": g, "name": ctx.data.item_name(*g), "a": e.a, "value": e.max}))
-                    })
-                    .collect();
-                v.sort_by_key(|x| x["gid"].as_i64());
-                Ok(Value::Array(v))
-            }
+            "runes" => Ok(self
+                .runes
+                .get_or_init(|| {
+                    let mut v: Vec<Value> = ctx
+                        .data
+                        .items
+                        .iter()
+                        .filter(|(_, i)| i.type_id == RUNE_TYPE)
+                        .filter_map(|(g, i)| {
+                            let e = i.effects.iter().find(|e| !RUNE_MARKER_EFFECTS.contains(&e.a))?;
+                            Some(json!({"gid": g, "name": ctx.data.item_name(*g), "a": e.a, "value": e.max}))
+                        })
+                        .collect();
+                    v.sort_by_key(|x| x["gid"].as_i64());
+                    Value::Array(v)
+                })
+                .clone()),
             // Every craftable rune (forgemagie type 78 and transcendance type 211): [{gid, name, effect}]
-            "craft_runes" => {
-                let mut v: Vec<Value> = ctx
-                    .data
-                    .items
-                    .iter()
-                    .filter(|(g, i)| (i.type_id == 78 || i.type_id == RUNE_TYPE) && ctx.data.recipes.contains_key(g))
-                    .map(|(g, i)| {
-                        // the effect the rune grants, rendered like in game ("+10 Force")
-                        let effect = i.effects.iter().find(|e| ![2825, 2826, 2827].contains(&e.a)).map(|e| ctx.data.render_effect(e.a, &[json!(e.max)]).0);
-                        json!({"gid": g, "name": ctx.data.item_name(*g), "effect": effect})
-                    })
-                    .collect();
-                v.sort_by_key(|x| x["gid"].as_i64());
-                Ok(Value::Array(v))
-            }
+            "craft_runes" => Ok(self
+                .craft_runes
+                .get_or_init(|| {
+                    let mut v: Vec<Value> = ctx
+                        .data
+                        .items
+                        .iter()
+                        .filter(|(g, i)| (i.type_id == 78 || i.type_id == RUNE_TYPE) && ctx.data.recipes.contains_key(g))
+                        .map(|(g, i)| {
+                            // the effect the rune grants, rendered like in game ("+10 Force")
+                            let effect = i.effects.iter().find(|e| !RUNE_MARKER_EFFECTS.contains(&e.a)).map(|e| ctx.data.render_effect(e.a, &[json!(e.max)]).0);
+                            json!({"gid": g, "name": ctx.data.item_name(*g), "effect": effect})
+                        })
+                        .collect();
+                    v.sort_by_key(|x| x["gid"].as_i64());
+                    Value::Array(v)
+                })
+                .clone()),
             // args: {names: [string]} -> {name: gid} (case / nbsp / apostrophe insensitive; lowest gid wins on duplicates)
             "gids_by_name" => {
-                let norm = |s: &str| -> String {
-                    s.replace('\u{a0}', " ")
-                        .replace('\u{2019}', "'")
-                        .trim()
-                        .to_lowercase()
-                        .chars()
-                        .flat_map(|c| -> Vec<char> {
-                            match c {
-                                'é' | 'è' | 'ê' | 'ë' => vec!['e'],
-                                'à' | 'â' | 'ä' => vec!['a'],
-                                'î' | 'ï' => vec!['i'],
-                                'ô' | 'ö' => vec!['o'],
-                                'ù' | 'û' | 'ü' => vec!['u'],
-                                'ç' => vec!['c'],
-                                'œ' => vec!['o', 'e'],
-                                c => vec![c],
-                            }
-                        })
-                        .collect()
-                };
-                let mut by: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
-                for g in ctx.data.items.keys() {
-                    by.entry(norm(&ctx.data.item_name(*g))).and_modify(|x| *x = (*x).min(*g)).or_insert(*g);
-                }
+                let by = self.by_name.get_or_init(|| {
+                    let mut by: HashMap<String, i64> = HashMap::new();
+                    for g in ctx.data.items.keys() {
+                        by.entry(norm_name(&ctx.data.item_name(*g))).and_modify(|x| *x = (*x).min(*g)).or_insert(*g);
+                    }
+                    by
+                });
                 let mut out = serde_json::Map::new();
                 for n in args["names"].as_array().into_iter().flatten().filter_map(Value::as_str) {
-                    if let Some(g) = by.get(&norm(n)) {
+                    if let Some(g) = by.get(&norm_name(n)) {
                         out.insert(n.to_string(), json!(g));
                     }
                 }
@@ -215,13 +237,13 @@ impl Module for Prices {
                 ent["override"] = json!(value);
                 let ent = ent.clone();
                 drop(s);
-                self.save(ctx);
+                self.save();
                 ctx.emit("prices", "price", ent.clone());
                 Ok(ent)
             }
             "forget" => {
                 self.store.lock().clear();
-                self.save(ctx);
+                self.save();
                 ctx.emit("prices", "cleared", json!({}));
                 Ok(json!({"ok": true}))
             }

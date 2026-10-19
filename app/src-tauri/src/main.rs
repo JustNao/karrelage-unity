@@ -8,7 +8,8 @@ use loutil_proto::Proto;
 use serde_json::{json, Value};
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock};
+use parking_lot::Mutex;
+use std::sync::{Arc, OnceLock};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 const LANG: &str = "fr";
@@ -45,7 +46,7 @@ fn build_core(app: &AppHandle, log: Arc<Mutex<VecDeque<String>>>) -> anyhow::Res
     let log_fn: Arc<dyn Fn(String) + Send + Sync> = {
         let (app, log) = (app.clone(), log);
         Arc::new(move |line| {
-            let mut l = log.lock().unwrap();
+            let mut l = log.lock();
             if l.len() == 50 {
                 l.pop_front();
             }
@@ -72,11 +73,11 @@ fn core(s: &AppState) -> Result<&Core, String> {
 }
 
 fn status_of(s: &AppState) -> Value {
-    let log: Vec<String> = s.log.lock().unwrap().iter().rev().take(5).rev().cloned().collect();
+    let log: Vec<String> = s.log.lock().iter().rev().take(5).rev().cloned().collect();
     let npcap = Pcap::load().err().map(|e| e.to_string());
     match s.core.get() {
         Some(c) => {
-            let cap = c.capture.lock().unwrap();
+            let cap = c.capture.lock();
             json!({
                 "ready": true, "on": cap.running(), "tracking": cap.tracking(), "npcapError": npcap, "log": log,
                 "modules": c.hub.module_ids(), "pack": c.pack.display().to_string(),
@@ -93,25 +94,35 @@ fn status(s: State<AppState>) -> Value {
     status_of(&s)
 }
 
-/// async: runs off the UI thread, so a slow call (e.g. the GitHub update check) does not freeze the window.
-#[tauri::command]
-async fn module_call(s: State<'_, AppState>, module: String, method: String, args: Option<Value>) -> Result<Value, String> {
-    core(&s)?.hub.call(&module, &method, args.unwrap_or(Value::Null)).map_err(|e| e.to_string())
+/// Run blocking work (module calls do disk and network IO: Dofusbook import, icon downloads, update check) on the
+/// blocking pool, so it ties up neither the UI thread nor an async worker.
+async fn blocking<T: Send + 'static>(app: AppHandle, f: impl FnOnce(&AppState) -> Result<T, String> + Send + 'static) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(move || f(&app.state::<AppState>())).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn capture_set(app: AppHandle, s: State<AppState>, on: bool) -> Result<Value, String> {
-    let c = core(&s)?;
-    {
-        let mut cap = c.capture.lock().unwrap();
-        if on {
-            cap.start().map_err(|e| e.to_string())?;
-        } else {
-            cap.stop();
+async fn module_call(app: AppHandle, module: String, method: String, args: Option<Value>) -> Result<Value, String> {
+    blocking(app, move |s| core(s)?.hub.call(&module, &method, args.unwrap_or(Value::Null)).map_err(|e| e.to_string())).await
+}
+
+/// Starting a capture loads wpcap.dll and opens every adapter: kept off the UI thread too.
+#[tauri::command]
+async fn capture_set(app: AppHandle, on: bool) -> Result<Value, String> {
+    let handle = app.clone();
+    let st = blocking(app, move |s| {
+        let c = core(s)?;
+        {
+            let mut cap = c.capture.lock();
+            if on {
+                cap.start().map_err(|e| e.to_string())?;
+            } else {
+                cap.stop();
+            }
         }
-    }
-    let st = status_of(&s);
-    let _ = app.emit("app:status", st.clone());
+        Ok(status_of(s))
+    })
+    .await?;
+    let _ = handle.emit("app:status", st.clone());
     Ok(st)
 }
 
@@ -137,6 +148,7 @@ fn show_main(app: &AppHandle) {
 /// Relaunch the app (after a data pack update).
 #[tauri::command]
 fn restart_app(app: AppHandle) {
+    loutil_modules::flush_all();
     app.restart()
 }
 
@@ -184,6 +196,12 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![status, module_call, capture_set, splash_done, restart_app])
-        .run(tauri::generate_context!())
-        .expect("error while running Karrelage");
+        .build(tauri::generate_context!())
+        .expect("error while running Karrelage")
+        .run(|_, e| {
+            // stores are written in the background: write what is pending before the process ends
+            if let tauri::RunEvent::Exit = e {
+                loutil_modules::flush_all();
+            }
+        });
 }

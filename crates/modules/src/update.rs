@@ -11,7 +11,6 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use parking_lot::Mutex;
 use std::sync::Arc;
-use std::time::Duration;
 
 /// Where the published pack lives (raw files of the repository). Override with KARRELAGE_PACK_URL (tests, forks).
 const DEFAULT_BASE: &str = "https://raw.githubusercontent.com/JustNao/karrelage-unity/main/dist";
@@ -41,7 +40,7 @@ impl Update {
 }
 
 fn agent() -> ureq::Agent {
-    ureq::AgentBuilder::new().timeout_connect(Duration::from_secs(8)).timeout_read(Duration::from_secs(20)).build()
+    crate::sys::http().build()
 }
 
 pub fn fetch_remote(base: &str) -> Result<Remote> {
@@ -73,7 +72,7 @@ pub fn install_pack(base: &str, remote: &Remote, dir: &Path, progress: &dyn Fn(&
             progress("download", bytes.len() as u64, total);
         }
     }
-    let digest: String = hasher.finalize().iter().map(|b| format!("{b:02x}")).collect();
+    let digest = loutil_core::wire::hex(&hasher.finalize());
     if bytes.len() as u64 != remote.size || !digest.eq_ignore_ascii_case(&remote.sha256) {
         bail!("le fichier téléchargé est corrompu (taille ou somme de contrôle incorrecte)");
     }
@@ -192,7 +191,7 @@ mod tests {
     }
 
     fn sha(b: &[u8]) -> String {
-        Sha256::digest(b).iter().map(|x| format!("{x:02x}")).collect()
+        loutil_core::wire::hex(&Sha256::digest(b))
     }
 
     #[test]

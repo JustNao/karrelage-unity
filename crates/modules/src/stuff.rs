@@ -1,12 +1,14 @@
 //! Stuff: equipment builds imported from Dofusbook links. The build (slots -> game item ids, base characteristics, scrolls,
 //! exo bonuses) is stored locally; item / stat icons are downloaded once and cached on disk (the webview CSP forbids remote
 //! images, so they are handed to the UI as `data:` URLs). Item stats and set bonuses come from the data pack, not from Dofusbook.
-use crate::{load_json, save_json, Ctx, Interest, Module};
+use crate::store::write_atomic;
+use crate::sys::{http, no_window, unix_millis, unix_secs};
+use crate::{Ctx, Interest, Module, Persist};
 use anyhow::{anyhow, bail, Context, Result};
 use serde_json::{json, Map, Value};
 use std::path::PathBuf;
+use std::sync::{Arc, OnceLock};
 use parking_lot::Mutex;
-use std::time::Duration;
 
 const API: &str = "https://www.dofusbook.net/api/stuffs/dofus/public";
 const ITEM_ICON: &str = "https://www.dofusbook.net/static/dist/items"; // <picture>-100.webp (also has the recent items Ankama's CDN lacks)
@@ -22,28 +24,30 @@ const STAT_CODES: &[&str] = &[
 ];
 
 pub struct Stuff {
-    builds: Mutex<Vec<Value>>,
+    builds: Arc<Mutex<Vec<Value>>>,
+    persist: OnceLock<Persist>,
 }
 
 impl Stuff {
     pub fn new() -> Self {
-        Self { builds: Mutex::new(vec![]) }
+        Self { builds: Default::default(), persist: OnceLock::new() }
     }
 
     fn path(ctx: &Ctx) -> PathBuf {
         ctx.module_dir("stuff").join("builds.json")
     }
 
-    fn save(&self, ctx: &Ctx) {
-        let b = self.builds.lock();
-        if let Err(e) = save_json(&Self::path(ctx), &Value::Array(b.clone())) {
-            ctx.log(format!("stuff: cannot save: {e}"));
+    /// Builds change only on user actions: written right away (outside the lock).
+    fn save(&self) {
+        if let Some(p) = self.persist.get() {
+            p.touch();
+            p.flush();
         }
     }
 }
 
 fn agent(redirects: u32) -> ureq::Agent {
-    ureq::AgentBuilder::new().redirects(redirects).timeout_connect(Duration::from_secs(8)).timeout_read(Duration::from_secs(20)).user_agent(UA).build()
+    http().redirects(redirects).user_agent(UA).build()
 }
 
 /// Dofusbook build id from a link: `.../equipement/17833105-db/objets`, `17833105-slug`, a bare id, or a `d-bk.net/fr/d/<short>` short link.
@@ -94,8 +98,7 @@ fn get_bytes(url: &str) -> Result<Vec<u8>> {
                 cmd.args(["-H", &format!("Referer: {referer}")]);
             }
             cmd.arg(url);
-            #[cfg(windows)]
-            std::os::windows::process::CommandExt::creation_flags(&mut cmd, 0x08000000); // CREATE_NO_WINDOW
+            no_window(&mut cmd);
             let out = cmd.output().context("curl introuvable")?;
             if !out.status.success() {
                 bail!("accès refusé par Dofusbook ({})", String::from_utf8_lossy(&out.stderr).trim());
@@ -167,10 +170,7 @@ fn icon(ctx: &Ctx, kind: &str, key: &str) -> Result<String> {
         Ok(b) => b,
         Err(_) => {
             let b = get_bytes(&url).map_err(|e| anyhow!("icône {kind}/{key}: {e}"))?;
-            if let Some(p) = file.parent() {
-                std::fs::create_dir_all(p)?;
-            }
-            std::fs::write(&file, &b)?;
+            write_atomic(&file, &b)?; // a crash mid-write must not cache a truncated icon forever
             b
         }
     };
@@ -192,7 +192,10 @@ impl Module for Stuff {
     }
 
     fn init(&self, ctx: &Ctx) {
-        if let Some(Value::Array(saved)) = load_json(&Self::path(ctx)) {
+        let builds = self.builds.clone();
+        let (persist, saved) = Persist::open(Self::path(ctx), ctx.logger(), move || Value::Array(builds.lock().clone()));
+        let _ = self.persist.set(persist);
+        if let Some(Value::Array(saved)) = saved {
             *self.builds.lock() = saved;
         }
     }
@@ -207,16 +210,16 @@ impl Module for Stuff {
                 let db_id = parse_id(url)?;
                 let mut b = trim_build(&fetch_build(db_id)?)?;
                 let name = b["dofusbook_name"].as_str().unwrap_or("Stuff").to_string();
-                b["id"] = json!(format!("{db_id}-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0)));
+                b["id"] = json!(format!("{db_id}-{}", unix_millis()));
                 b["name"] = json!(name);
                 b["url"] = json!(format!("https://www.dofusbook.net/fr/equipement/{db_id}-db/objets"));
-                b["fetched"] = json!(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0));
+                b["fetched"] = json!(unix_secs());
                 b["targets"] = json!({});
                 b["chosen"] = json!({});
                 b["ignored"] = json!([]);
                 b["owned"] = json!([]);
                 self.builds.lock().push(b.clone());
-                self.save(ctx);
+                self.save();
                 Ok(b)
             }
             // args: {id, name}
@@ -230,13 +233,13 @@ impl Module for Stuff {
                 let b = bs.iter_mut().find(|b| b["id"] == id).ok_or_else(|| anyhow!("stuff inconnu"))?;
                 b["name"] = json!(name);
                 drop(bs);
-                self.save(ctx);
+                self.save();
                 Ok(json!({"ok": true}))
             }
             "delete" => {
                 let id = id_arg()?;
                 self.builds.lock().retain(|b| b["id"] != id);
-                self.save(ctx);
+                self.save();
                 Ok(json!({"ok": true}))
             }
             // re-download the build from Dofusbook, keeping name / targets / choices
@@ -252,10 +255,10 @@ impl Module for Stuff {
                 for (k, v) in fresh.as_object().into_iter().flatten() {
                     b[k.as_str()] = v.clone();
                 }
-                b["fetched"] = json!(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0));
+                b["fetched"] = json!(unix_secs());
                 let out = b.clone();
                 drop(bs);
-                self.save(ctx);
+                self.save();
                 Ok(out)
             }
             // args: {id, patch: {targets?, chosen?, ignored?}}
@@ -269,7 +272,7 @@ impl Module for Stuff {
                     }
                 }
                 drop(bs);
-                self.save(ctx);
+                self.save();
                 Ok(json!({"ok": true}))
             }
             // args: {gids: [..]} -> {items: {gid: {...}}, sets: {setId: {...}}}: stats and sets from the data pack

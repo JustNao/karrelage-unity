@@ -12,6 +12,8 @@ pub const LOT_SIZES: [i64; 4] = [1, 10, 100, 1000];
 pub const INFO_EFFECTS: [(i64, &str); 2] = [(985, "modified_by"), (988, "crafted_by")];
 /// "Empêche les futures forgemagies" -> shield flag.
 pub const LOCK_EFFECT: i64 = 2825;
+/// Lock (2825) and the other transcendance-rune markers: effects of a rune item that are not the effect it adds.
+pub const RUNE_MARKER_EFFECTS: [i64; 3] = [LOCK_EFFECT, 2826, 2827];
 /// "Change l'élément de frappe": only a marker, the lot already carries the new element's hit (added) and the old one (removed).
 pub const ELEMENT_CHANGE_EFFECT: i64 = 700;
 

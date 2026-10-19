@@ -5,16 +5,24 @@ use loutil_core::wire;
 use loutil_proto::DynamicMessage;
 use serde_json::{json, Map, Value};
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, Ordering};
 use parking_lot::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
 
 const RING: usize = 5000;
+/// Bytes of raw payload kept per packet for the hex view.
+const HEX_BYTES: usize = 4096;
+/// New packets are sent to the UI in batches (one event per tick instead of one per packet).
+const BATCH_EVERY: Duration = Duration::from_millis(100);
 
 /// A buffered packet: the record without its decoded tree, plus the message, so names can be re-applied
 /// (a rename must show up in already captured packets).
 struct Entry {
     rec: Map<String, Value>,
     msg: Option<DynamicMessage>,
+    /// start of the raw payload, rendered as hex only when the packet is opened (`hex` call)
+    raw: Vec<u8>,
 }
 
 /// Raw traffic is only kept while the inspector tab is open (`active`): the app runs all the time, so nothing
@@ -22,11 +30,13 @@ struct Entry {
 pub struct Packets {
     ring: Mutex<VecDeque<Entry>>,
     active: AtomicBool,
+    /// rendered packets not sent to the UI yet
+    outbox: Arc<Mutex<Vec<Value>>>,
 }
 
 impl Packets {
     pub fn new() -> Self {
-        Self { ring: Mutex::new(VecDeque::new()), active: AtomicBool::new(false) }
+        Self { ring: Mutex::new(VecDeque::new()), active: AtomicBool::new(false), outbox: Default::default() }
     }
 
     fn record(&self, m: &Message) -> Map<String, Value> {
@@ -54,7 +64,6 @@ impl Packets {
                 r.insert("unparsed".into(), wire::hex(&m.raw.payload[..m.raw.payload.len().min(64)]).into());
             }
         }
-        r.insert("hex".into(), wire::hex(&m.raw.payload[..m.raw.payload.len().min(4096)]).into());
         r
     }
 
@@ -84,8 +93,20 @@ impl Module for Packets {
         self.active.load(Ordering::Relaxed)
     }
 
+    fn init(&self, ctx: &Ctx) {
+        let (outbox, emit) = (self.outbox.clone(), ctx.emitter());
+        std::thread::spawn(move || loop {
+            std::thread::sleep(BATCH_EVERY);
+            let batch = std::mem::take(&mut *outbox.lock());
+            if !batch.is_empty() {
+                emit("packets:batch", Value::Array(batch));
+            }
+        });
+    }
+
     fn on_message(&self, m: &Message, ctx: &Ctx) {
-        let entry = Entry { rec: self.record(m), msg: m.decoded.clone() };
+        let raw = m.raw.payload[..m.raw.payload.len().min(HEX_BYTES)].to_vec();
+        let entry = Entry { rec: self.record(m), msg: m.decoded.clone(), raw };
         let out = Self::render(&entry, ctx);
         {
             let mut ring = self.ring.lock();
@@ -94,7 +115,7 @@ impl Module for Packets {
             }
             ring.push_back(entry);
         }
-        ctx.emit("packets", "packet", out);
+        self.outbox.lock().push(out);
     }
 
     fn call(&self, method: &str, args: Value, ctx: &Ctx) -> Result<Value> {
@@ -110,6 +131,7 @@ impl Module for Packets {
                 self.active.store(on, Ordering::Relaxed);
                 if !on {
                     *self.ring.lock() = VecDeque::new();
+                    self.outbox.lock().clear();
                 }
                 Ok(json!({"active": on}))
             }
@@ -118,6 +140,12 @@ impl Module for Packets {
                 Ok(json!({"buffered": 0}))
             }
             "buffered" => Ok(json!(self.ring.lock().len())),
+            // args: {id} -> hex of the start of that packet's payload
+            "hex" => {
+                let id = args.get("id").and_then(Value::as_u64).unwrap_or(0);
+                let ring = self.ring.lock();
+                Ok(ring.iter().find(|e| e.rec["id"].as_u64() == Some(id)).map_or(Value::Null, |e| json!(wire::hex(&e.raw))))
+            }
             // confirm/edit a decoded name; persisted in the user overrides file
             "rename" => {
                 let msg = args.get("msg").and_then(Value::as_str).ok_or_else(|| anyhow!("msg required"))?;

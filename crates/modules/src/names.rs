@@ -134,11 +134,7 @@ fn spawn_pipeline(root: PathBuf, mode: &'static str, emit: Arc<dyn Fn(&str, Valu
             _ => {}
         }
         cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-        }
+        crate::sys::no_window(&mut cmd);
         let ok = match cmd.spawn() {
             Ok(mut child) => {
                 let mut readers = vec![];

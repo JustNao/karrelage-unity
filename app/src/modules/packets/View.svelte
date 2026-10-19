@@ -58,13 +58,24 @@
   });
   const current = $derived(packets.find((p) => p.id === sel));
 
-  function add(p: any) {
-    packets = packets.length >= MAXROWS * 2 ? [...packets.slice(MAXROWS), p] : [...packets, p];
+  // the backend sends new packets in batches (~10 per second at most)
+  function addMany(l: any[]) {
+    const all = packets.concat(l);
+    packets = all.length > MAXROWS * 2 ? all.slice(-MAXROWS) : all;
     if (follow) tick().then(() => listEl && (listEl.scrollTop = listEl.scrollHeight));
   }
 
+  // hex of the selected packet, fetched on demand (not shipped with every packet)
+  let hex = $state("");
+  $effect(() => {
+    const id = sel;
+    hex = "";
+    if (id == null) return;
+    call<string | null>("packets", "hex", { id }).then((h) => sel === id && (hex = (h ?? "").replace(/(..)/g, "$1 ")));
+  });
+
   onMount(() => {
-    const offs: Promise<() => void>[] = [on("packets:packet", add)];
+    const offs: Promise<() => void>[] = [on("packets:batch", addMany)];
     // the backend only records while this tab is open, and drops its buffer when it closes
     call("packets", "set_active", { on: true }).then(() => call<any[]>("packets", "list")).then((l) => (packets = l));
     return () => {
@@ -170,7 +181,7 @@
       <h3>{current.decoded ? "Décodé (noms associés ; « a (x|y?) » = candidats ambigus)" : "Sans schéma"}</h3>
       <pre><JsonTree v={current.decoded ?? current.body ?? current.unparsed} onrename={renameField} /></pre>
       <h3>Hexadécimal brut</h3>
-      <pre class="mut">{(current.hex ?? "").replace(/(..)/g, "$1 ")}</pre>
+      <pre class="mut">{hex}</pre>
     {/if}
   </div>
 </div>
