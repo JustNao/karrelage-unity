@@ -321,7 +321,10 @@
           </section>
 
           <section class="stats">
-            <div class="box">{#each PANELS.damage as s (s.stat)}{@render statRow(s)}{/each}</div>
+            <div class="box two">
+              <div>{#each PANELS.damage.slice(0, 6) as s (s.stat)}{@render statRow(s)}{/each}</div>
+              <div>{#each PANELS.damage.slice(6) as s (s.stat)}{@render statRow(s)}{/each}</div>
+            </div>
             <div class="box two">
               <div>{#each PANELS.resist.filter((s) => !s.label.startsWith("%")) as s (s.stat)}{@render statRow(s)}{/each}</div>
               <div>{#each PANELS.resist.filter((s) => s.label.startsWith("%")) as s (s.stat)}{@render statRow(s)}{/each}</div>
