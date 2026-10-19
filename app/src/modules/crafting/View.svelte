@@ -1,4 +1,6 @@
 <script lang="ts">
+  import Grip from "../../lib/components/Grip.svelte";
+  import PanelHead from "../../lib/components/PanelHead.svelte";
   import { Columns } from "../../lib/columns.svelte";
   import { subs } from "./subs";
 
@@ -7,8 +9,9 @@
   const sel = $derived(subs.find((s) => s.id === selId) ?? subs[0]);
 </script>
 
-<div class="view" style:grid-template-columns="{cols.w.list}px 5px 1fr">
-  <div class="ilist">
+<div class="view cgrid" class:anim={!cols.dragging} style:grid-template-columns="{cols.px("list")}px 5px 1fr">
+  <div class="ilist" class:cz={cols.collapsed.list}>
+    <PanelHead {cols} name="list" title="Crafting" />
     {#each subs as s (s.id)}
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
       <div class="irow" class:sel={sel?.id === s.id} onclick={() => (selId = s.id)}>
@@ -16,7 +19,7 @@
       </div>
     {/each}
   </div>
-  <div class="grip" role="separator" aria-orientation="vertical" onpointerdown={(e) => cols.drag("list", 1, e)}></div>
+  <Grip {cols} name="list" dir={1} />
   <div class="body">
     {#if sel}<sel.component />{/if}
   </div>

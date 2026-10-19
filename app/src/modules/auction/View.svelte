@@ -2,6 +2,8 @@
   import { onMount, tick } from "svelte";
   import { SvelteMap, SvelteSet } from "svelte/reactivity";
   import { app } from "../../lib/app.svelte";
+  import Grip from "../../lib/components/Grip.svelte";
+  import PanelHead from "../../lib/components/PanelHead.svelte";
   import { Columns } from "../../lib/columns.svelte";
   import { ago, call, kamas, on } from "../../lib/api";
   import { flip } from "svelte/animate";
@@ -373,8 +375,9 @@
   });
 </script>
 
-<div class="view" style:grid-template-columns="{cols.w.list}px 5px 1fr 5px {cols.w.filter}px">
-  <div class="ilist">
+<div class="view cgrid" class:anim={!cols.dragging} style:grid-template-columns="{cols.px("list")}px 5px 1fr 5px {cols.px("filter")}px">
+  <div class="ilist" class:cz={cols.collapsed.list}>
+    <PanelHead {cols} name="list" title="Objets" />
     <div class="sbar">
       <input type="search" placeholder="Rechercher un objet…" bind:value={search} />
       <button class="mini" class:danger={confirmClear} onclick={forget} onblur={() => (confirmClear = false)} title="Oublier tous les objets enregistrés">{confirmClear ? "Confirmer" : "Nettoyer"}</button>
@@ -399,7 +402,7 @@
     {/each}
   </div>
 
-  <div class="grip" role="separator" aria-orientation="vertical" onpointerdown={(e) => cols.drag("list", 1, e)}></div>
+  <Grip {cols} name="list" dir={1} />
 
   <SmoothScroll toTop>
     {#if item}
@@ -565,9 +568,10 @@
     {/if}
   </SmoothScroll>
 
-  <div class="grip" role="separator" aria-orientation="vertical" onpointerdown={(e) => cols.drag("filter", -1, e)}></div>
+  <Grip {cols} name="filter" dir={-1} />
 
-  <div class="filter">
+  <div class="filter" class:cz={cols.collapsed.filter}>
+    <PanelHead {cols} name="filter" title="Filtres" dir={-1} />
     {#if pin}
       <div class="pinned">
         <div class="fh">Objet épinglé <span class="mut">· {pin.item.name}{pin.item.level != null ? " niv. " + pin.item.level : ""}</span></div>

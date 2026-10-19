@@ -10,6 +10,22 @@
  */
 export class Columns<K extends string> {
   w = $state() as Record<K, number>;
+  /** Panels folded away with their grip button (remembered too). */
+  collapsed = $state({}) as Record<string, boolean>;
+  /** True while a grip is being dragged (the grid only animates collapsing, not resizing). */
+  dragging = $state(false);
+
+  /** Width to put in grid-template-columns: a thin strip (just the unfold button) when the panel is collapsed. */
+  px(name: K) {
+    return this.collapsed[name] ? 34 : this.w[name];
+  }
+
+  toggle(name: K) {
+    this.collapsed[name] = !this.collapsed[name];
+    try {
+      localStorage.setItem(this.key + ".collapsed", JSON.stringify(this.collapsed));
+    } catch {}
+  }
 
   constructor(
     private key: string,
@@ -20,14 +36,18 @@ export class Columns<K extends string> {
     this.w = { ...defaults };
     try {
       Object.assign(this.w, JSON.parse(localStorage.getItem(key) ?? "{}"));
+      Object.assign(this.collapsed, JSON.parse(localStorage.getItem(key + ".collapsed") ?? "{}"));
     } catch {}
   }
 
   drag(name: K, dir: 1 | -1, e: PointerEvent) {
+    if (this.collapsed[name]) return;
+    this.dragging = true;
     const x0 = e.clientX;
     const w0 = this.w[name];
     const move = (ev: PointerEvent) => (this.w[name] = Math.min(this.max, Math.max(this.min, w0 + dir * (ev.clientX - x0))));
     const up = () => {
+      this.dragging = false;
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       try {

@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import { call, kamas, on } from "../../lib/api";
+  import Grip from "../../lib/components/Grip.svelte";
+  import PanelHead from "../../lib/components/PanelHead.svelte";
   import { Columns } from "../../lib/columns.svelte";
   import ItemCard from "../../lib/components/ItemCard.svelte";
   import JsonTree from "../../lib/components/JsonTree.svelte";
@@ -109,8 +111,9 @@
   <button onclick={clear}>Vider</button>
   <span class="mut">{visible.length} affichés / {packets.length} en mémoire</span>
 </div>
-<div class="grid" style:grid-template-columns={`${cols.w.types}px 5px 1fr 5px ${current?.fmt ? cols.w.fmt + "px 5px " : ""}${cols.w.detail}px`}>
-  <div class="types">
+<div class="grid cgrid" class:anim={!cols.dragging} style:grid-template-columns={`${cols.px("types")}px 5px 1fr 5px ${current?.fmt ? cols.w.fmt + "px 5px " : ""}${cols.px("detail")}px`}>
+  <div class="types" class:cz={cols.collapsed.types}>
+    <PanelHead {cols} name="types" title="Types" />
     {#each typeStats as [k, c] (k)}
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
       <div class:hid={hidden.has(k)} class:sel={onlyType === k} title="clic : seulement celui-ci · maj+clic : masquer" onclick={(e) => clickType(k, e)}>
@@ -118,7 +121,7 @@
       </div>
     {/each}
   </div>
-  <div class="grip" role="separator" aria-orientation="vertical" onpointerdown={(e) => cols.drag("types", 1, e)}></div>
+  <Grip {cols} name="types" dir={1} />
   <div class="list" bind:this={listEl}>
     <table>
       <tbody>
@@ -134,7 +137,7 @@
       </tbody>
     </table>
   </div>
-  <div class="grip" role="separator" aria-orientation="vertical" onpointerdown={(e) => cols.drag(current?.fmt ? "fmt" : "detail", -1, e)}></div>
+  <Grip {cols} name={current?.fmt ? "fmt" : "detail"} dir={-1} />
   {#if current?.fmt}
     <div class="fmt">
       {#if current.fmt.kind === "auction_items"}
@@ -147,8 +150,9 @@
       {/if}
     </div>
   {/if}
-  {#if current?.fmt}<div class="grip" role="separator" aria-orientation="vertical" onpointerdown={(e) => cols.drag("detail", -1, e)}></div>{/if}
-  <div class="detail">
+  {#if current?.fmt}<Grip {cols} name="detail" dir={-1} />{/if}
+  <div class="detail" class:cz={cols.collapsed.detail}>
+    <PanelHead {cols} name="detail" title="Détail" dir={-1} />
     {#if !current}
       <span class="mut">Sélectionnez un paquet.</span>
     {:else}
