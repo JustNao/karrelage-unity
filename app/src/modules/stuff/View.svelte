@@ -75,7 +75,7 @@
   const names = (l: string[]) => l.map((s) => SLOT_TITLES[s]).join(", ");
 
   /** Items of the build not scanned in the last 30 minutes (red border), one entry per item. */
-  const toScan = $derived([...new Map(slotIds.filter((s) => !fresh(s)).map((s) => [build!.slots[s].gid, { gid: build!.slots[s].gid, name: build!.slots[s].name } as ScanItem])).values()]);
+  const toScan = $derived([...new Map(slotIds.filter((s) => !fresh(s)).map((s) => [build!.slots[s].gid, { gid: build!.slots[s].gid, name: build!.slots[s].name, group: s === "fa" || s === "mo" ? "companion" : "equip" } as ScanItem])).values()]);
   async function openScanList() {
     try { localStorage.setItem(SCAN_LIST_KEY, JSON.stringify(toScan)); } catch {}
     const open = await WebviewWindow.getByLabel("scanlist");
