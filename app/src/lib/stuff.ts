@@ -85,6 +85,8 @@ export const lotUnit = (lot: Lot): number | null => {
 /** Pseudo-stat ids (EXO_BASE + stat) holding the part of a lot's stat that is an exo (effect added on the item, or forged over its base maximum): the build's forgemagie
  *  (e.g. +1 PA / +1 PM) is then looked for on the items themselves. */
 export const EXO_BASE = 100000;
+/** Key of the PdV target in `Build.targets` (hit points are derived from vitality, not a characteristic of the table). */
+export const HP_STAT = 9000;
 
 /** Stat totals of a lot (removed effects don't count). */
 export function lotStats(lot: Lot): Totals {
@@ -202,7 +204,10 @@ export interface SolveResult { picks: Record<string, number>; cost: number; tota
 /** Cheapest lot combination whose stat totals reach `targets` (stat -> minimum). One lot per free slot; ignored slots and slots without any scanned
  *  lot keep their current item (chosen lot, else theoretical maximum) at no cost. Set bonuses are tracked incrementally. Returns null when infeasible. */
 export function solve(b: Build, info: Info, lotsOf: (slot: string) => Lot[], targets: Record<string, number>, nodeLimit = 4_000_000, progress?: (fraction: number) => void): SolveResult | null {
-  const tgt = Object.entries(targets).map(([s, v]) => [+s, v] as const).filter(([, v]) => Number.isFinite(v) && v > 0);
+  // a PdV target is a vitality target: hp = 50 + 5 x level + vitality
+  const wanted: Record<string, number> = { ...targets };
+  if (wanted[HP_STAT] > 0) { const vit = wanted[HP_STAT] - 50 - 5 * b.level; wanted[11] = Math.max(wanted[11] ?? 0, vit); delete wanted[HP_STAT]; }
+  const tgt = Object.entries(wanted).map(([s, v]) => [+s, v] as const).filter(([, v]) => Number.isFinite(v) && v > 0);
   // the build's forgemagie is expected on the items: each fm stat looks for that much exo (added, or forged over the base max) among the chosen lots
   for (const [code, v] of Object.entries(b.fm ?? {})) { const stat = FM_STATS[code]?.stat; if (stat != null && v > 0) tgt.push([EXO_BASE + stat, v] as const); }
   const stats = tgt.map(([s]) => s);

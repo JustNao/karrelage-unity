@@ -12,7 +12,7 @@
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
   import type { StoredPrice } from "../../lib/transcend";
   import {
-    CARAC, FM_STATS, FRESH_SECS, PANELS, SLOT_LAYOUT, SLOT_TITLES, STAT_ICON_CODES, STAT_LABEL, compute, fmOf, itemStats, lotStats, lotUnit, slotPrices, solve, sumSlots,
+    CARAC, FM_STATS, FRESH_SECS, HP_STAT, PANELS, SLOT_LAYOUT, SLOT_TITLES, STAT_ICON_CODES, STAT_LABEL, compute, fmOf, itemStats, lotStats, lotUnit, slotPrices, solve, sumSlots,
     type Build, type Info, type Lot, type Resolved, type SolveResult, type StatRow,
   } from "../../lib/stuff";
 
@@ -288,7 +288,10 @@
         <div class="sheetwrap"><div class="sheet">
           <section class="stats left">
             <div class="box">
-              <div class="st hp"><b>{real?.hp}</b><span class="fm"></span>{#if icon("stat", "pv")}<img src={icon("stat", "pv")} alt="" />{:else}<span class="ph"></span>{/if}<span class="lab">PdV</span></div>
+              <div class="st hp"><b>{real?.hp}</b><span class="fm"></span>{#if icon("stat", "pv")}<img src={icon("stat", "pv")} alt="" />{:else}<span class="ph"></span>{/if}<span class="lab">PdV</span>
+                <button class="pf" title="Viser le maximum atteignable avec les objets ({max?.hp})" onclick={() => setTarget(HP_STAT, String(max?.hp ?? 0))}>Max</button>
+                <input class="tg" inputmode="numeric" placeholder="min" value={build.targets[HP_STAT] ?? ""} onchange={(e) => setTarget(HP_STAT, e.currentTarget.value)} title="PdV minimum voulu pour la recherche de la combinaison la moins chère" />
+              </div>
               {#each PANELS.main as s (s.stat)}{@render statRow(s)}{/each}
             </div>
             <div class="box">
