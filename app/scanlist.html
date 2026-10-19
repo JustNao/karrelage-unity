@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <title>À scanner</title>
+    <!-- frameless, slightly transparent, always-on-top window opened by the Stuff tab (src/modules/stuff/View.svelte) -->
+    <style>
+      html, body, #app { margin: 0; height: 100%; background: transparent !important; overflow: hidden; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/scanlist.ts"></script>
+  </body>
+</html>

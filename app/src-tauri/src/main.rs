@@ -177,6 +177,12 @@ fn main() {
             });
             Ok(())
         })
+        // the floating scan list window must not keep the app alive once the main window is gone
+        .on_window_event(|w, e| {
+            if w.label() == "main" && matches!(e, tauri::WindowEvent::Destroyed) {
+                w.app_handle().exit(0);
+            }
+        })
         .invoke_handler(tauri::generate_handler![status, module_call, capture_set, splash_done, restart_app])
         .run(tauri::generate_context!())
         .expect("error while running Karrelage");

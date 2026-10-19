@@ -4,7 +4,9 @@
   import { call, kamas, on } from "../../lib/api";
   import Grip from "../../lib/components/Grip.svelte";
   import PanelHead from "../../lib/components/PanelHead.svelte";
+  import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
   import { Columns } from "../../lib/columns.svelte";
+  import { SCAN_LIST_KEY, type ScanItem } from "../../lib/scanlist";
   import type { Recipes } from "../../lib/craft";
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
   import type { StoredPrice } from "../../lib/transcend";
@@ -72,6 +74,14 @@
   const picked = $derived(sumSlots(slotIds, ignored, (s) => perSlot[s].chosen));
   const names = (l: string[]) => l.map((s) => SLOT_TITLES[s]).join(", ");
 
+  /** Items of the build not scanned in the last 30 minutes (red border), one entry per item. */
+  const toScan = $derived([...new Map(slotIds.filter((s) => !fresh(s)).map((s) => [build!.slots[s].gid, { gid: build!.slots[s].gid, name: build!.slots[s].name } as ScanItem])).values()]);
+  async function openScanList() {
+    try { localStorage.setItem(SCAN_LIST_KEY, JSON.stringify(toScan)); } catch {}
+    const open = await WebviewWindow.getByLabel("scanlist");
+    if (open) { await open.setFocus(); return; } // it picks the new list up through the storage event
+    new WebviewWindow("scanlist", { url: "scanlist.html", title: "À scanner", width: 280, height: 380, decorations: false, transparent: true, shadow: false, alwaysOnTop: true, skipTaskbar: true, resizable: false });
+  }
   const caracCode = (stat: number) => CARAC.find(([, st]) => st === stat)?.[0];
   const icon = (kind: "item" | "stat", key: string | number) => icons.get(`${kind}:${key}`);
   const val = (c: typeof real, s: number) => c?.totals.get(s) ?? 0;
@@ -253,7 +263,8 @@
       <div class="bar">
         <div class="ttl"><b>{build.name}</b> <span class="mut">niv. {build.level}</span>
           <button class="mini" title="Recharger depuis Dofusbook" onclick={() => refresh(build!)}>↻</button>
-          <a class="mut" href={build.url} target="_blank" rel="noreferrer">Dofusbook</a></div>
+          <a class="mut" href={build.url} target="_blank" rel="noreferrer">Dofusbook</a>
+          <button class="scan" onclick={openScanList} disabled={!toScan.length} title="Ouvre une petite fenêtre flottante avec les objets à scanner à l'HDV">À scanner ({toScan.length})</button></div>
       </div>
 
       <SmoothScroll>
@@ -383,6 +394,7 @@
   .pad { padding: 20px; }
   .bar { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; padding: 6px 10px; margin-bottom: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
   .ttl { flex: 1; min-width: 220px; }
+  .scan { margin-left: 10px; padding: 2px 8px; font-size: 12px; }
   .ttl a { margin-left: 8px; font-size: 12px; }
   .price { white-space: nowrap; }
   .price .bad { font-size: 11px; margin-left: 4px; }
