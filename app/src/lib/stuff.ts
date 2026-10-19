@@ -46,11 +46,11 @@ export const PANELS = {
   resist: [r(58, "Ré Neutre", "rn"), r(54, "Ré Terre", "rt"), r(55, "Ré Feu", "rf"), r(56, "Ré Eau", "re"), r(57, "Ré Air", "ra"), r(87, "Ré Critique", "rc"), r(85, "Ré Poussée", "rp"),
     r(37, "%Ré Neutre", "rnp"), r(33, "%Ré Terre", "rtp"), r(34, "%Ré Feu", "rfp"), r(35, "%Ré Eau", "rep"), r(36, "%Ré Air", "rap"), r(124, "%Ré Mêlée", "rc"), r(121, "%Ré Dist", "rc"), r(142, "%Ré Armes", "rc")],
 };
-export const STAT_ICON_CODES = [...new Set(Object.values(PANELS).flat().map((x) => x.icon).filter(Boolean))];
+export const STAT_ICON_CODES = [...new Set([...Object.values(PANELS).flat().map((x) => x.icon).filter(Boolean), "pv"])];
 export const STAT_LABEL = new Map<number, string>(Object.values(PANELS).flat().map((x) => [x.stat, x.label]));
 
 /** Dofusbook characteristic codes -> stat id (base / scroll). */
-const CARAC: [string, number][] = [["vi", 11], ["sa", 12], ["fo", 10], ["in", 15], ["ch", 13], ["ag", 14]];
+export const CARAC: [string, number][] = [["vi", 11], ["sa", 12], ["fo", 10], ["in", 15], ["ch", 13], ["ag", 14]];
 /** Base values every character has at level 100+. */
 export const BASE_STATS: Record<number, number> = { 1: 7, 23: 3, 48: 100, 26: 1, 40: 1000 };
 
@@ -143,6 +143,7 @@ export function compute(b: Build, info: Info, resolved: Resolved[]): Computed {
   for (const s of [27, 28, 82, 83]) add(totals, s, Math.floor(sa / 10));
   for (const s of [78, 79]) add(totals, s, Math.floor(ag / 10));
   add(totals, 40, 5 * (totals.get(10) ?? 0));
+  add(totals, 48, Math.floor((totals.get(13) ?? 0) / 10)); // prospection: 1 per 10 chance
   const known = new Set(Object.values(PANELS).flat().map((x) => x.stat));
   const unmapped: Totals = new Map([...items].filter(([s, v]) => s > 0 && !known.has(s) && v !== 0));
   return { totals, items, fixed, hp: 50 + 5 * b.level + (totals.get(11) ?? 0), unmapped };

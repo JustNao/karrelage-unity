@@ -7,7 +7,7 @@
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
   import type { StoredPrice } from "../../lib/transcend";
   import {
-    FM_STATS, FRESH_SECS, PANELS, SLOT_LAYOUT, SLOT_TITLES, STAT_ICON_CODES, STAT_LABEL, compute, fmOf, itemStats, lotStats, lotUnit, slotPrices, solve, sumSlots,
+    CARAC, FM_STATS, FRESH_SECS, PANELS, SLOT_LAYOUT, SLOT_TITLES, STAT_ICON_CODES, STAT_LABEL, compute, fmOf, itemStats, lotStats, lotUnit, slotPrices, solve, sumSlots,
     type Build, type Info, type Lot, type Resolved, type SolveResult, type StatRow,
   } from "../../lib/stuff";
 
@@ -54,7 +54,11 @@
   const max = $derived(build ? compute(build, info, resolveWith(false)) : null);
   const anyChosen = $derived(!!build && slotIds.some((s) => chosenLot(s)));
 
-  const ignored = $derived(new Set(build?.ignored ?? []));
+  const DOFUS = ["d1", "d2", "d3", "d4", "d5", "d6"];
+  let noDofus = $state((() => { try { return localStorage.getItem("karrelage.stuff.noDofus") === "1"; } catch { return false; } })());
+  $effect(() => { try { localStorage.setItem("karrelage.stuff.noDofus", noDofus ? "1" : "0"); } catch {} });
+  /** Slots left out of the prices: the ones marked with "€", plus the Dofus when the toggle is on (they still count in stats). */
+  const ignored = $derived(new Set([...(build?.ignored ?? []), ...(noDofus ? DOFUS : [])]));
   const perSlot = $derived(
     Object.fromEntries(slotIds.map((s) => [s, slotPrices(build!.slots[s].gid, lotsOf(s), build!.chosen[s], recipes, prices)])),
   );
@@ -64,6 +68,7 @@
   const picked = $derived(sumSlots(slotIds, ignored, (s) => perSlot[s].chosen));
   const names = (l: string[]) => l.map((s) => SLOT_TITLES[s]).join(", ");
 
+  const caracCode = (stat: number) => CARAC.find(([, st]) => st === stat)?.[0];
   const icon = (kind: "item" | "stat", key: string | number) => icons.get(`${kind}:${key}`);
   const val = (c: typeof real, s: number) => c?.totals.get(s) ?? 0;
 
@@ -140,7 +145,7 @@
   function run() {
     solving = true; result = null;
     setTimeout(() => {
-      try { result = solve(build!, info, lotsOf, build!.targets) ?? "none"; } catch (e) { err = String(e); }
+      try { result = solve({ ...build!, ignored: [...ignored] }, info, lotsOf, build!.targets) ?? "none"; } catch (e) { err = String(e); }
       solving = false;
     }, 20);
   }
@@ -180,13 +185,19 @@
   {@const m = val(max, s.stat)}
   {@const fm = build ? fmOf(build, s.stat) : 0}
   <div class="st">
-    {#if s.icon && icon("stat", s.icon)}<img src={icon("stat", s.icon)} alt="" />{:else}<span class="ph"></span>{/if}
-    <span class="lab">{s.label}</span>
     <b class:bad={anyChosen && v < m} class:good={anyChosen && v >= m} title={anyChosen ? `Max théorique : ${m}` : ""}>{v}</b>
     <span class="fm" title="Forgemagie">{fm ? `+${fm}` : ""}</span>
+    {#if s.icon && icon("stat", s.icon)}<img src={icon("stat", s.icon)} alt="" />{:else}<span class="ph"></span>{/if}
+    <span class="lab">{s.label}</span>
     {#if anyChosen && v !== m}<span class="mut">/ {m}</span>{/if}
     <button class="pf" title="Viser le maximum atteignable avec les objets ({m})" onclick={() => setTarget(s.stat, String(m))}>jet perf</button>
     <input class="tg" inputmode="numeric" placeholder="min" value={build?.targets[s.stat] ?? ""} onchange={(e) => setTarget(s.stat, e.currentTarget.value)} title="Valeur minimale voulue pour la recherche de la combinaison la moins chère" />
+    {#if caracCode(s.stat)}
+      {@const code = caracCode(s.stat)!}
+      <span class="c4">{[10, 15, 13, 14].includes(s.stat) ? v + val(real, 25) : ""}</span>
+      <span class="c4">{build?.carac[`base_${code}`] ?? 0}</span>
+      <span class="c4">{build?.carac[`scroll_${code}`] ?? 0}</span>
+    {/if}
   </div>
 {/snippet}
 
@@ -246,10 +257,13 @@
         <div class="sheet">
           <section class="stats">
             <div class="box">
-              <div class="st hp"><span class="lab">PdV</span><b>{real?.hp}</b></div>
+              <div class="st hp">{#if icon("stat", "pv")}<img src={icon("stat", "pv")} alt="" />{:else}<span class="ph"></span>{/if}<span class="lab">PdV</span><b>{real?.hp}</b></div>
               {#each PANELS.main as s (s.stat)}{@render statRow(s)}{/each}
             </div>
-            <div class="box">{#each PANELS.carac as s (s.stat)}{@render statRow(s)}{/each}</div>
+            <div class="box">
+              <div class="st hd"><span class="lab"></span><span class="tgw"></span><span class="c4 mut">+⚡</span><span class="c4 mut">Base</span><span class="c4 mut">Parcho</span></div>
+              {#each PANELS.carac as s (s.stat)}{@render statRow(s)}{/each}
+            </div>
             <div class="box">{#each PANELS.secondary as s (s.stat)}{@render statRow(s)}{/each}</div>
           </section>
 
@@ -276,6 +290,7 @@
             <span class="mut">Sélection</span> <b>{kamas(picked.total)}</b>
             {#if picked.missingSlots.length}<span class="mut">{picked.missingSlots.length} non choisi</span>{/if}</div>
         {/if}
+              <label class="small"><input type="checkbox" bind:checked={noDofus} /> Sans les Dofus dans le prix</label>
               <hr />
               <div class="fh">Combinaison la moins chère</div>
               <div class="mut small">Renseignez des minimums dans les cases « min » des stats, puis lancez la recherche parmi les lots scannés.</div>
@@ -323,7 +338,7 @@
               {:else}
                 <div class="mut small">Aucune forgemagie dans ce stuff.</div>
               {/each}
-              <select bind:value={fmAdd} onchange={() => { if (fmAdd) { setFm(fmAdd, "1"); fmAdd = ""; } }}>
+              <select class="fmsel" bind:value={fmAdd} onchange={() => { if (fmAdd) { setFm(fmAdd, "1"); fmAdd = ""; } }}>
                 <option value="">+ Ajouter une stat…</option>
                 {#each fmFree as [code, f] (code)}<option value={code}>{f.label}</option>{/each}
               </select>
@@ -342,7 +357,7 @@
   .side > :global(.wrap), .main > :global(.wrap) { flex: 1; }
   .add { display: flex; gap: 6px; margin-bottom: 8px; }
   .add input { flex: 1; min-width: 0; }
-  .err { font-size: 12px; margin-bottom: 6px; }
+  .err { font-size: 14px; margin-bottom: 6px; }
   .bi { display: flex; align-items: center; gap: 2px; padding: 3px 4px; border: 1px solid transparent; border-radius: 6px; }
   .bi.on { background: var(--panel); border-color: var(--line); }
   .nm { flex: 1; text-align: left; border: 0; background: none; padding: 2px 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -352,26 +367,31 @@
   .pad { padding: 20px; }
   .bar { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; padding: 6px 10px; margin-bottom: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
   .ttl { flex: 1; min-width: 220px; }
-  .ttl a { margin-left: 8px; font-size: 12px; }
+  .ttl a { margin-left: 8px; font-size: 14px; }
   .price { white-space: nowrap; }
   .price .bad { font-size: 11px; margin-left: 4px; }
-  .sheet { display: grid; grid-template-columns: 300px max-content 580px; justify-content: center; gap: 14px; align-items: start; padding-bottom: 12px; }
+  .sheet { display: grid; grid-template-columns: 480px max-content 560px; justify-content: center; gap: 14px; align-items: start; padding-bottom: 12px; }
   .stats { display: flex; flex-direction: column; gap: 8px; }
   .box { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
-  .st { display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 12px; }
+  .st { display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 14px; }
   .st img, .st .ph { width: 21px; height: 21px; flex: none; }
   .st .lab { flex: 1; color: var(--mut); }
-  .st b { min-width: 34px; text-align: right; }
+  .st b { min-width: 44px; text-align: right; }
   .st.hp b { font-size: 14px; }
-  .fm { color: #4aa3ff; font-size: 12px; min-width: 26px; text-align: left; flex: none; }
+  .fm { color: #4aa3ff; font-size: 14px; min-width: 26px; text-align: left; flex: none; }
   .pf { padding: 0 4px; font: inherit; color: var(--mut); line-height: 18px; }
   .pf:hover { color: var(--fg); }
+  .fmsel { width: 100%; margin-top: 4px; }
+  .st .lab { white-space: nowrap; }
+  .tgw { width: 44px; flex: none; }
+  .c4 { min-width: 44px; text-align: right; flex: none; }
+  .st.hd { font-size: 14px; }
   .tg { width: 44px; padding: 1px 4px; font: inherit; text-align: right; }
   .two { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
   .prices { width: 100%; }
   .prices .price { margin: 2px 0; }
   .prices hr { border: 0; border-top: 1px solid var(--line); margin: 8px 0; }
-  .small { font-size: 12px; margin: 4px 0; }
+  .small { font-size: 14px; margin: 4px 0; }
   .center { display: flex; flex-direction: column; align-items: center; gap: 10px; }
   .doll { display: flex; gap: 14px; align-items: stretch; width: 100%; justify-content: center; }
   .col { display: flex; flex-direction: column; gap: 8px; }
@@ -393,7 +413,7 @@
   .dot.fresh { background: var(--ok); }
   .dot.stale { background: var(--bad); }
   .picker { width: 100%; max-height: 300px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; padding: 6px; display: flex; flex-direction: column; gap: 3px; background: var(--panel); }
-  .lotb { text-align: left; font-size: 12px; padding: 3px 6px; }
+  .lotb { text-align: left; font-size: 14px; padding: 3px 6px; }
   .lotb.on { border-color: var(--acc); }
   .good { color: var(--ok); }
   .bad { color: var(--bad); }
