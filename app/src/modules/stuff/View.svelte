@@ -270,6 +270,7 @@
           </section>
 
           <section class="center">
+            <div class="build">
             <div class="doll">
               <div class="col">{#each SLOT_LAYOUT.left as s}{@render slot(s)}{/each}</div>
               <div class="char"><div class="lvl">Niveau {build.level}</div><div class="mut">classe {build.class}</div></div>
@@ -278,6 +279,20 @@
             <div class="row">{#each SLOT_LAYOUT.bottom.filter((s) => build?.slots[s]) as s}{@render slot(s)}{/each}</div>
             <div class="legend mut"><span class="dot fresh"></span> scanné il y a moins de 30 min <span class="dot stale"></span> à scanner · € = ignoré dans le prix</div>
 
+            {#if picker}
+              <div class="picker">
+                <div class="ph2"><b>{SLOT_TITLES[picker]}</b> — {build.slots[picker].name} <button class="mini" onclick={() => (picker = null)}>✕</button></div>
+                {#if !lotsOf(picker).length}
+                  <div class="mut">Aucun lot scanné : ouvrez l'objet à l'hôtel de vente.</div>
+                {:else}
+                  <button class="lotb" class:on={build.chosen[picker] == null} onclick={() => pick(picker!, null)}>Max théorique (aucun lot choisi)</button>
+                  {#each cheapest(picker) as l (l.uid)}
+                    <button class="lotb" class:on={build.chosen[picker] === l.uid} onclick={() => pick(picker!, l.uid)}><b>{kamas(lotUnit(l)!)}</b> <span class="mut">{lotLine(l)}</span></button>
+                  {/each}
+                {/if}
+              </div>
+            {/if}
+            </div>
             <div class="box prices">
               <div class="fh">Prix</div>
               <div class="price" title={craft.missingSlots.length ? `Sans prix : ${names(craft.missingSlots)}` : ""}>
@@ -305,19 +320,6 @@
               {/if}
                         </div>
 
-            {#if picker}
-              <div class="picker">
-                <div class="ph2"><b>{SLOT_TITLES[picker]}</b> — {build.slots[picker].name} <button class="mini" onclick={() => (picker = null)}>✕</button></div>
-                {#if !lotsOf(picker).length}
-                  <div class="mut">Aucun lot scanné : ouvrez l'objet à l'hôtel de vente.</div>
-                {:else}
-                  <button class="lotb" class:on={build.chosen[picker] == null} onclick={() => pick(picker!, null)}>Max théorique (aucun lot choisi)</button>
-                  {#each cheapest(picker) as l (l.uid)}
-                    <button class="lotb" class:on={build.chosen[picker] === l.uid} onclick={() => pick(picker!, l.uid)}><b>{kamas(lotUnit(l)!)}</b> <span class="mut">{lotLine(l)}</span></button>
-                  {/each}
-                {/if}
-              </div>
-            {/if}
           </section>
 
           <section class="stats right">
@@ -377,22 +379,23 @@
   .price .bad { font-size: 11px; margin-left: 4px; }
   .sheetwrap { container-type: inline-size; }
   .sheet { display: grid; grid-template-columns: 460px max-content 620px; justify-content: center; gap: 14px; align-items: start; padding-bottom: 12px; }
-  /* medium (Dofusbook layout): stats left, build and forgemagie right, damage / resistances full width below */
+  /* medium: stats + build on top, damage and resistances on one row, prices and forgemagie at the bottom */
   @container (max-width: 1499px) {
-    .sheet { grid-template-columns: minmax(0, 460px) minmax(0, 1fr); grid-template-areas: "left center" "left fmb" "dmg dmg" "res res"; justify-content: stretch; }
-    .stats.right { display: contents; }
+    .sheet { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "left build" "dmg res" "prices fmb"; justify-content: stretch; }
+    .stats.right, .center { display: contents; }
     .left { grid-area: left; }
-    .center { grid-area: center; }
+    .build { grid-area: build; }
+    .prices { grid-area: prices; }
     .fmb { grid-area: fmb; }
     .dmg { grid-area: dmg; }
     .res { grid-area: res; }
   }
+  @container (max-width: 1099px) {
+    .two { grid-template-columns: minmax(0, 1fr); }
+  }
   /* narrow: everything stacked */
   @container (max-width: 920px) {
-    .sheet { grid-template-columns: minmax(0, 1fr); grid-template-areas: "left" "center" "fmb" "dmg" "res"; }
-  }
-  @container (max-width: 640px) {
-    .two { grid-template-columns: minmax(0, 1fr); }
+    .sheet { grid-template-columns: minmax(0, 1fr); grid-template-areas: "left" "build" "dmg" "res" "prices" "fmb"; }
   }
   .stats { display: flex; flex-direction: column; gap: 8px; }
   .box { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
@@ -417,6 +420,7 @@
   .prices hr { border: 0; border-top: 1px solid var(--line); margin: 8px 0; }
   .small { font-size: 12px; margin: 4px 0; }
   .center { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .build { display: flex; flex-direction: column; align-items: center; gap: 10px; min-width: 0; }
   .doll { display: flex; gap: 14px; align-items: stretch; width: 100%; justify-content: center; }
   .col { display: flex; flex-direction: column; gap: 8px; }
   .char { width: 190px; min-height: 300px; display: flex; flex-direction: column; align-items: center; justify-content: center; border: 1px dashed var(--line); border-radius: 10px; }
