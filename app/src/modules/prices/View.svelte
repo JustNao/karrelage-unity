@@ -1,33 +1,56 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { SvelteMap, SvelteSet } from "svelte/reactivity";
+  import { SvelteSet } from "svelte/reactivity";
   import { ago, call, kamas, on } from "../../lib/api";
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
 
   interface Price { gid: number; name: string; type_id: number | null; type: string; category: string; unit: number | null; updated?: number | null; avg?: number | null; avg_updated?: number | null; override: number | null }
 
   const CATEGORIES = ["Équipement", "Ressource", "Consommable", "Autre"];
-  let prices = new SvelteMap<number, Price>();
+  const collator = new Intl.Collator("fr");
   let opened = new SvelteSet<string>(); // expanded "category" / "category/type" keys: everything starts collapsed
   let q = $state("");
 
-  const tree = $derived.by(() => {
-    const n = q.trim().toLowerCase();
-    const cats = new Map<string, Map<string, Price[]>>();
-    for (const p of prices.values()) {
-      if (n && !p.name.toLowerCase().includes(n) && !p.type.toLowerCase().includes(n)) continue;
-      if (!cats.has(p.category)) cats.set(p.category, new Map());
-      const types = cats.get(p.category)!;
-      if (!types.has(p.type)) types.set(p.type, []);
-      types.get(p.type)!.push(p);
+  // Prices grouped by category / type as they arrive; only the groups a price lands in (or leaves) are sorted again.
+  const groups = new Map<string, Map<string, Map<number, Price>>>(); // category -> type -> gid -> price
+  const where = new Map<number, [string, string]>(); // gid -> [category, type]
+  const sortedCache = new Map<Map<number, Price>, Price[]>();
+  let version = $state(0);
+  function put(p: Price) {
+    const old = where.get(p.gid);
+    if (old && (old[0] !== p.category || old[1] !== p.type)) {
+      const g = groups.get(old[0])?.get(old[1]);
+      g?.delete(p.gid);
+      if (g) sortedCache.delete(g);
     }
-    return CATEGORIES.filter((c) => cats.has(c)).map((c) => ({
-      name: c,
-      count: [...cats.get(c)!.values()].reduce((a, l) => a + l.length, 0),
-      types: [...cats.get(c)!.entries()]
-        .sort((a, b) => a[0].localeCompare(b[0], "fr"))
-        .map(([type, items]) => ({ type, items: items.sort((a, b) => a.name.localeCompare(b.name, "fr")) })),
-    }));
+    let types = groups.get(p.category);
+    if (!types) groups.set(p.category, (types = new Map()));
+    let g = types.get(p.type);
+    if (!g) types.set(p.type, (g = new Map()));
+    g.set(p.gid, p);
+    sortedCache.delete(g);
+    where.set(p.gid, [p.category, p.type]);
+  }
+  const putAll = (l: Price[]) => (l.forEach(put), version++);
+  const clearAll = () => (groups.clear(), where.clear(), sortedCache.clear(), version++);
+  const sorted = (g: Map<number, Price>) => {
+    let l = sortedCache.get(g);
+    if (!l) sortedCache.set(g, (l = [...g.values()].sort((a, b) => collator.compare(a.name, b.name))));
+    return l;
+  };
+
+  const tree = $derived.by(() => {
+    version;
+    const n = q.trim().toLowerCase();
+    return CATEGORIES.filter((c) => groups.has(c))
+      .map((c) => {
+        const types = [...groups.get(c)!.entries()]
+          .map(([type, g]) => ({ type, items: n && !type.toLowerCase().includes(n) ? sorted(g).filter((p) => p.name.toLowerCase().includes(n)) : sorted(g) }))
+          .filter((t) => t.items.length)
+          .sort((a, b) => collator.compare(a.type, b.type));
+        return { name: c, count: types.reduce((a, t) => a + t.items.length, 0), types };
+      })
+      .filter((c) => c.types.length);
   });
 
   /** Collapsed unless opened; while searching, matches are shown expanded. */
@@ -50,8 +73,8 @@
   }
 
   onMount(() => {
-    call<Price[]>("prices", "list").then((l) => l.forEach((p) => prices.set(p.gid, p)));
-    const offs = [on<Price>("prices:price", (p) => prices.set(p.gid, p)), on<Price[]>("prices:bulk", (l) => l.forEach((p) => prices.set(p.gid, p))), on("prices:cleared", () => prices.clear())];
+    call<Price[]>("prices", "list").then(putAll);
+    const offs = [on<Price>("prices:price", (p) => putAll([p])), on<Price[]>("prices:bulk", putAll), on("prices:cleared", clearAll)];
     return () => void offs.forEach((o) => o.then((f) => f()));
   });
 </script>

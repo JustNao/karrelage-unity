@@ -6,9 +6,18 @@
   import { Columns } from "../../lib/columns.svelte";
   import ItemCard from "../../lib/components/ItemCard.svelte";
   import JsonTree from "../../lib/components/JsonTree.svelte";
+  import VirtualList from "../../lib/components/VirtualList.svelte";
 
   const MAXROWS = 2000;
-  let packets = $state.raw<any[]>([]);
+  /** Packets kept in memory: a ring buffer (the oldest is overwritten), so a packet costs O(1) instead of copying the list. */
+  const CAP = MAXROWS * 2;
+  const ring: any[] = new Array(CAP);
+  let head = 0; // next write position
+  let size = 0;
+  /** Packets per type name, kept up to date as packets come in and fall out of the ring. */
+  const counts = new Map<string, number>();
+  /** Bumped once per batch of arrivals (at most once per frame): everything derived from the ring re-reads it. */
+  let version = $state(0);
   let hidden = $state(new Set<string>());
   let onlyType = $state<string | null>(null);
   let sel = $state<number | null>(null);
@@ -29,45 +38,113 @@
     return d.toTimeString().slice(0, 8) + "." + String(d.getMilliseconds()).padStart(3, "0");
   };
 
+  /** One-line summary of a packet, computed once per packet (packets are never mutated; a rename reloads them). */
+  const summaries = new WeakMap<object, string>();
   function summary(p: any): string {
-    const f = p.fmt;
-    if (f?.kind === "auction_items") {
-      const mins = f.rows.map((r: any) => r.prices[0]?.price).filter((x: number) => x > 0);
-      return `${f.title || "?"} · ${f.rows.length} lots` + (mins.length ? ` · min ${kamas(Math.min(...mins))}` : "");
+    let s = summaries.get(p);
+    if (s === undefined) {
+      const f = p.fmt;
+      if (f?.kind === "auction_items") {
+        const mins = f.rows.map((r: any) => r.prices[0]?.price).filter((x: number) => x > 0);
+        s = `${f.title || "?"} · ${f.rows.length} lots` + (mins.length ? ` · min ${kamas(Math.min(...mins))}` : "");
+      } else {
+        const o = p.decoded ?? p.body ?? p.unparsed;
+        const j = o == null ? "" : JSON.stringify(o, (k, v) => (k.startsWith("__") ? undefined : v));
+        s = j.length > 300 ? j.slice(0, 300) + "…" : j;
+      }
+      summaries.set(p, s);
     }
-    const o = p.decoded ?? p.body ?? p.unparsed;
-    if (o == null) return "";
-    const s = JSON.stringify(o, (k, v) => (k.startsWith("__") ? undefined : v));
-    return s.length > 300 ? s.slice(0, 300) + "…" : s;
+    return s;
+  }
+  /** Lower-cased text the filter box searches in (cached like the summary). */
+  const haystacks = new WeakMap<object, string>();
+  const haystack = (p: any) => {
+    let h = haystacks.get(p);
+    if (h === undefined) haystacks.set(p, (h = (nm(p) + " " + (p.type ?? "") + " " + summary(p)).toLowerCase()));
+    return h;
+  };
+
+  function push(p: any) {
+    if (size === CAP) {
+      const k = nm(ring[head]);
+      const n = (counts.get(k) ?? 1) - 1;
+      if (n > 0) counts.set(k, n);
+      else counts.delete(k);
+    } else size++;
+    ring[head] = p;
+    head = (head + 1) % CAP;
+    counts.set(nm(p), (counts.get(nm(p)) ?? 0) + 1);
+  }
+  function reset(list: any[] = []) {
+    ring.fill(undefined);
+    head = size = 0;
+    counts.clear();
+    for (const p of list.slice(-CAP)) push(p);
+    version++;
   }
 
-  const visible = $derived(
-    packets
-      .filter((p) => {
-        if (hidden.has(nm(p)) || (onlyType && nm(p) !== onlyType)) return false;
-        if ((fdir && p.dir !== fdir) || (fkind && p.kind !== fkind)) return false;
-        const needle = q.trim().toLowerCase();
-        return !needle || (nm(p) + " " + (p.type ?? "") + " " + summary(p)).toLowerCase().includes(needle);
-      })
-      .slice(-MAXROWS),
-  );
-  const typeStats = $derived.by(() => {
-    const m = new Map<string, number>();
-    for (const p of packets) m.set(nm(p), (m.get(nm(p)) ?? 0) + 1);
-    return [...m].sort((a, b) => b[1] - a[1]);
+  /** The ring, oldest first. */
+  const packets = $derived.by(() => {
+    version;
+    const out = new Array(size);
+    const start = (head - size + CAP) % CAP;
+    for (let i = 0; i < size; i++) out[i] = ring[(start + i) % CAP];
+    return out;
   });
-  const current = $derived(packets.find((p) => p.id === sel));
+  const visible = $derived.by(() => {
+    const needle = q.trim().toLowerCase();
+    const out = packets.filter((p) => {
+      if (hidden.has(nm(p)) || (onlyType && nm(p) !== onlyType)) return false;
+      if ((fdir && p.dir !== fdir) || (fkind && p.kind !== fkind)) return false;
+      return !needle || haystack(p).includes(needle);
+    });
+    return out.length > MAXROWS ? out.slice(-MAXROWS) : out;
+  });
+  const typeStats = $derived.by(() => {
+    version;
+    return [...counts].sort((a, b) => b[1] - a[1]);
+  });
+  const current = $derived(sel == null ? undefined : packets.find((p) => p.id === sel));
 
-  function add(p: any) {
-    packets = packets.length >= MAXROWS * 2 ? [...packets.slice(MAXROWS), p] : [...packets, p];
+  /** Hex of the selected packet: sent with it, or fetched on demand when the backend leaves it out. */
+  let hex = $state("");
+  $effect(() => {
+    const c = current;
+    hex = c?.hex ?? "";
+    if (c && c.hex == null) {
+      const id = c.id;
+      call<string>("packets", "hex", { id })
+        .then((h) => current?.id === id && (hex = h ?? ""))
+        .catch(() => {});
+    }
+  });
+
+  // arrivals are queued and applied once per frame: a burst of packets costs one update, not one per packet
+  let queue: any[] = [];
+  let frame = 0;
+  function add(p: any | any[]) {
+    if (Array.isArray(p)) queue.push(...p);
+    else queue.push(p);
+    if (queue.length > CAP) queue = queue.slice(-CAP); // window hidden (no frames): keep only what the ring could hold
+    if (!frame) frame = requestAnimationFrame(flush);
+  }
+  function flush() {
+    frame = 0;
+    const batch = queue;
+    queue = [];
+    for (const p of batch) push(p);
+    version++;
     if (follow) tick().then(() => listEl && (listEl.scrollTop = listEl.scrollHeight));
   }
 
   onMount(() => {
-    const offs: Promise<() => void>[] = [on("packets:packet", add)];
+    const offs: Promise<() => void>[] = [on("packets:packet", add), on("packets:batch", add)];
     // the backend only records while this tab is open, and drops its buffer when it closes
-    call("packets", "set_active", { on: true }).then(() => call<any[]>("packets", "list")).then((l) => (packets = l));
+    call("packets", "set_active", { on: true })
+      .then(() => call<any[]>("packets", "list"))
+      .then((l) => reset(l));
     return () => {
+      cancelAnimationFrame(frame);
       call("packets", "set_active", { on: false });
       offs.forEach((o) => o.then((f) => f()));
     };
@@ -83,12 +160,12 @@
 
   async function clear() {
     await call("packets", "clear");
-    packets = [];
+    reset();
   }
 
   // ---- editable names: the backend re-applies them to its whole buffer, so we just reload it
   async function reload() {
-    packets = await call<any[]>("packets", "list");
+    reset(await call<any[]>("packets", "list"));
   }
   async function renameField(msg: string, field: string, name: string) {
     await call("packets", "rename", { msg, field, name });
@@ -123,19 +200,18 @@
   </div>
   <Grip {cols} name="types" dir={1} />
   <div class="list" bind:this={listEl}>
-    <table>
-      <tbody>
-        {#each visible as p (p.id)}
-          <tr class:sel={sel === p.id} onclick={() => (sel = p.id)}>
-            <td class="t">{fmtT(p.t)}</td>
-            <td class="d {p.dir === 'C->S' ? 'c2s' : 's2c'}">{p.dir === "C->S" ? "→ S" : "← S"}</td>
-            <td class="k">{p.kind ?? ""}</td>
-            <td class="n">{nm(p)}{#if p.name && p.type && p.name !== p.type}<span class="badge {p.conf ?? 'none'}" title="obfusqué : {p.type}">{p.type} · {p.conf ?? "none"}</span>{/if}</td>
-            <td>{summary(p)}</td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
+    <VirtualList items={visible} key={(p) => p.id} estimate={23} overscan={20}>
+      {#snippet row(p)}
+        <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+        <div class="tr" class:sel={sel === p.id} onclick={() => (sel = p.id)}>
+          <div class="td t">{fmtT(p.t)}</div>
+          <div class="td d {p.dir === 'C->S' ? 'c2s' : 's2c'}">{p.dir === "C->S" ? "→ S" : "← S"}</div>
+          <div class="td k">{p.kind ?? ""}</div>
+          <div class="td n">{nm(p)}{#if p.name && p.type && p.name !== p.type}<span class="badge {p.conf ?? 'none'}" title="obfusqué : {p.type}">{p.type} · {p.conf ?? "none"}</span>{/if}</div>
+          <div class="td">{summary(p)}</div>
+        </div>
+      {/snippet}
+    </VirtualList>
   </div>
   <Grip {cols} name={current?.fmt ? "fmt" : "detail"} dir={-1} />
   {#if current?.fmt}
@@ -170,7 +246,7 @@
       <h3>{current.decoded ? "Décodé (noms associés ; « a (x|y?) » = candidats ambigus)" : "Sans schéma"}</h3>
       <pre><JsonTree v={current.decoded ?? current.body ?? current.unparsed} onrename={renameField} /></pre>
       <h3>Hexadécimal brut</h3>
-      <pre class="mut">{(current.hex ?? "").replace(/(..)/g, "$1 ")}</pre>
+      <pre class="mut">{hex.replace(/(..)/g, "$1 ")}</pre>
     {/if}
   </div>
 </div>
@@ -189,15 +265,12 @@
   .types div.hid { opacity: 0.35; text-decoration: line-through; }
   .types span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .list { overflow: auto; }
-  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-  td { padding: 2px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 0; border-bottom: 1px solid var(--line); }
-  td.t { width: 84px; color: var(--mut); max-width: none; }
-  td.d { width: 44px; max-width: none; }
-  td.k { width: 64px; color: var(--mut); max-width: none; }
-  td.n { width: 190px; max-width: none; }
-  tr { cursor: pointer; }
-  tr:hover { background: var(--panel); }
-  tr.sel { background: color-mix(in srgb, var(--acc) 22%, transparent); }
+  /* rows are divs (the list is virtualized): same columns as the former table */
+  .tr { display: grid; grid-template-columns: 84px 44px 64px 190px minmax(0, 1fr); cursor: pointer; border-bottom: 1px solid var(--line); }
+  .td { padding: 2px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .td.t, .td.k { color: var(--mut); }
+  .tr:hover { background: var(--panel); }
+  .tr.sel { background: color-mix(in srgb, var(--acc) 22%, transparent); }
   .c2s { color: var(--c2s); }
   .s2c { color: var(--s2c); }
   .badge { font-size: 10px; padding: 0 5px; border-radius: 8px; margin-left: 6px; border: 1px solid; }

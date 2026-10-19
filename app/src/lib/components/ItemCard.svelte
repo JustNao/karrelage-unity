@@ -1,5 +1,6 @@
 <script lang="ts">
   import { kamasFull } from "../api";
+  import { unitPrice } from "../price";
   import { app } from "../app.svelte";
   import { fmtDelta, pairRows } from "../compare";
   import { isLegendary, levelOf, xpOfLevel } from "../companion";
@@ -30,7 +31,7 @@
     /** The pinned lot to compare with (null = no pin): its stats are mirrored on the right, differences in the middle. */
     /** Familier / montilier: only the level and the legendary status are shown (no stat flags, no pin, no transcendance). */
     companion?: boolean;
-    versus?: { pin: any; name: string; unitPrice: (r: any) => number } | null;
+    versus?: { pin: any; name: string } | null;
     /** Perfection flags (damage / resistances / characteristics) and the transcendance shield in the header. */
     flags?: boolean;
   } = $props();
@@ -51,8 +52,8 @@
   const allPairs = $derived(versus ? pairRows(versus.pin, row) : []);
   // like the plain list: a folded lot only shows its new / above-max stats, the rest comes with the unfolding
   const pairs = $derived(open ? allPairs : allPairs.filter((p: any) => [p.left, p.right].some((x: any) => x && (x.status === "added" || x.status === "above"))));
-  const myPrice = $derived(versus ? versus.unitPrice(row) : Infinity);
-  const pinPrice = $derived(versus ? versus.unitPrice(versus.pin) : Infinity);
+  const myPrice = $derived(versus ? unitPrice(row) : Infinity);
+  const pinPrice = $derived(versus ? unitPrice(versus.pin) : Infinity);
   const priceDelta = $derived(myPrice - pinPrice);
   const hint = (e: any) =>
     `effet ${e.action}` +

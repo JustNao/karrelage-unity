@@ -3,11 +3,11 @@
   import { benefit } from "../craft";
   import { isLegendary, levelOf } from "../companion";
   import { isSenile, neuronsOf } from "../mounts";
+  import { unitPrice } from "../price";
 
   /** Familier / montilier / monture lots as a table (same look as the Crafting tab tables). `neurons` + `neuroneUnit` = mount extraction. */
   let {
     lots,
-    unitPrice,
     neurons = null,
     neuroneUnit = null,
     resource = "Neurones",
@@ -16,7 +16,6 @@
     onpick,
   }: {
     lots: { row: any; key: string | number }[];
-    unitPrice: (r: any) => number;
     /** Resources obtained by extracting this mount (null = not a mount from the tables). */
     neurons?: number | null;
     neuroneUnit?: number | null;

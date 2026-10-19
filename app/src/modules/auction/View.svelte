@@ -11,6 +11,7 @@
   import EffectPicker from "../../lib/components/EffectPicker.svelte";
   import ItemCard from "../../lib/components/ItemCard.svelte";
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
+  import VirtualList from "../../lib/components/VirtualList.svelte";
   import { LEVEL_EFFECT, isLegendary, levelOf, xpOfLevel } from "../../lib/companion";
   import { analyse, isGoodDeal } from "../../lib/density";
   import { feeder, foodGids, levelBase } from "../../lib/familiar";
@@ -19,7 +20,8 @@
   import { storedPrice } from "../../lib/craft";
   import { FLAG_EFFECTS, norm, rangeLabel, sections, type EffectMeta } from "../../lib/effects";
   import { benefit, craftCost, type CraftLine, type Recipes } from "../../lib/craft";
-  import { AH_TAX, targetKey, transcendance, type Rune, type StoredPrice } from "../../lib/transcend";
+  import { AH_TAX, isTranscended, targetKey, transcendance, type Rune, type StoredPrice } from "../../lib/transcend";
+  import { byUnitPrice, lotKeys, unitPrice } from "../../lib/price";
 
   interface Filter { a: number; min: string | number; max: string | number }
 
@@ -28,8 +30,8 @@
   const SEL_KEY = "karrelage.auction.sel"; // the open item is restored when the tab is opened again
   let selGid = $state<number | null>((() => { try { return JSON.parse(localStorage.getItem(SEL_KEY) ?? "null"); } catch { return null; } })());
   $effect(() => { try { localStorage.setItem(SEL_KEY, JSON.stringify(selGid)); } catch {} });
-  let picker = $state<EffectMeta[]>([]); // effects found on level 150-200 equipment (what the picker offers)
-  let meta = $state<Record<number, EffectMeta>>({}); // every labelled effect (labels/groups of whatever shows up in a lot)
+  let picker = $state.raw<EffectMeta[]>([]); // effects found on level 150-200 equipment (what the picker offers)
+  let meta = $state.raw<Record<number, EffectMeta>>({}); // every labelled effect (labels/groups of whatever shows up in a lot)
   let filters = $state<Record<number, Filter[]>>({}); // gid -> filters
   let openSet = new SvelteSet<string | number>(); // lot keys
   let picked = $state<string | number | null>(null); // lot chosen from the graph
@@ -45,8 +47,6 @@
   let pin = $state.raw<{ item: any; row: any } | null>(null);
   const isPin = (r: any) => !!pin && !!item && pin.item.gid === item.gid && pin.row.uid === r.uid;
   const togglePin = (r: any) => (pin = isPin(r) ? null : { item, row: r });
-  /** What a lot is compared with: the pinned lot (never shown against itself). */
-  const versusFor = (r: any) => (pin && !comp && !isPin(r) ? { pin: pin.row, name: pin.item.name, unitPrice } : null);
   const lacksFade = (r: any) => fade !== null && !r.effects.some((e: any) => e.action === fade && e.status !== "removed");
   const toggleFade = (a: number) => (fade = fade === a ? null : a);
   let tab = $state<"listing" | "trans">("listing");
@@ -90,6 +90,9 @@
 
   /** Familier / montilier listing: tracked by level (price follows the xp curve), no stats / pin / transcendance. */
   const comp = $derived(!!item?.companion);
+  /** What a lot is compared with: the pinned lot (never shown against itself). One object per pin, so cards don't re-pair on every render. */
+  const versus = $derived(pin && !comp ? { pin: pin.row, name: pin.item.name } : null);
+  const versusFor = (r: any) => (isPin(r) ? null : versus);
 
   // ---- companions: cheapest way to reach a level, buying a lot and feeding it (resource prices = stored prices)
   let foodIds = $state.raw<Record<string, number>>({});
@@ -117,10 +120,6 @@
     return { target, direct, opts: opts.slice(0, 1), best, deal: !!best && (!direct || best.total < direct.price), saving: best && direct ? direct.price - best.total : null, priced: f.priced };
   });
   const effLabel = (a: number) => meta[a]?.label ?? `effect ${a}`;
-  const unitPrice = (r: any) => {
-    const v = r.prices.filter((p: any) => p.price > 0).map((p: any) => p.price / p.qty);
-    return v.length ? Math.min(...v) : Infinity;
-  };
   /** Craft cost of the open item (recursive, from the stored prices) and what selling it would earn. */
   const craft = $derived(item && !comp ? craftCost(item.gid, recipes, stored) : null);
   const sale = $derived(item ? Math.min(Infinity, ...item.rows.map(unitPrice)) : Infinity);
@@ -128,7 +127,9 @@
   const lotVal = (r: any, a: number) => Math.max(0, ...r.effects.filter((e: any) => e.action === a && e.status !== "removed").map((e: any) => e.hi ?? 0));
   const flist = (gid: number) => filters[gid] ?? [];
 
-  const lotKey = (r: any, i: number) => r.uid ?? `n${i}`;
+  /** Stable key of each lot of the open item (uid, else a content hash): independent of the filters and the sort. */
+  const keyMap = $derived(item ? lotKeys(item.rows) : new Map<any, string>());
+  const keyOf = (r: any) => keyMap.get(r) ?? "";
 
   /** Effects the item has by default (filterable ones only), then the ones the user added himself. */
   const effectRows = $derived.by(() => {
@@ -161,11 +162,9 @@
         const v = lotVal(r, x.a);
         return (x.min === "" || v >= +x.min) && (x.max === "" || v <= +x.max);
       }))
-      .sort((p: any, q: any) => {
-        const a = unitPrice(p), b = unitPrice(q);
-        return a === b ? 0 : a === Infinity ? 1 : b === Infinity ? -1 : (a - b) * sortDir;
-      });
+      .sort(byUnitPrice(sortDir));
   });
+  const rowSet = $derived(new Set(rows));
 
   // dragodindes / muldos / volkornes: extraction into neurones / ambres / cornes (heads-up on lots worth extracting)
   let neurGids = $state.raw<Record<string, number>>({});
@@ -176,11 +175,19 @@
   const extractable = $derived(
     neurons != null && neuroneUnit != null ? rows.filter((r: any) => Number.isFinite(unitPrice(r)) && benefit(neuroneUnit * neuronsOf(r, neurons), unitPrice(r)).profit > 0).length : 0,
   );
-  const lotsOf = (l: any[]) => l.map((r) => ({ row: r, key: lotKey(r, rows.indexOf(r)) }));
+  const lotsOf = (l: any[]) => l.map((r) => ({ row: r, key: keyOf(r) }));
+  /** From this many lots on, the list is virtualized (and not animated). */
+  const VIRTUAL_FROM = 50;
+  let vlist = $state<ReturnType<typeof VirtualList> | null>(null);
+  /** Scroll the lot list to a lot (rendering it first when the list is virtualized). */
+  async function revealLot(id: string | number) {
+    await tick();
+    if (!comp && vlist) return void vlist.scrollToKey(id);
+    document.getElementById(`lot-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
   async function pickLot(id: string | number) {
     picked = id;
-    await tick();
-    document.getElementById(`lot-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    await revealLot(id);
   }
 
 
@@ -241,47 +248,57 @@
   /** Rune focus (Transcendance tab): the graph fades the lots that lack the focused effect (like the highlight). */
   const focusEffect = $derived(tab === "trans" && !comp && focus ? Number(focus.split(":")[0]) : null);
   const mount = $derived(!!mountInfo(item?.name));
+  /** Height of a dot: the lot's density; companions: the total xp of its level (the price follows it). */
+  const yOf = (r: any, companion: boolean) => (companion ? (levelOf(r) != null ? xpOfLevel(levelOf(r)!) : NaN) : r.density);
+  /** Positions only (no fade / focus flags), so highlighting a lot never refits the trend. */
+  const pointRows = $derived(rows.filter((r: any) => Number.isFinite(unitPrice(r)) && Number.isFinite(yOf(r, comp))));
   const points = $derived(
-    rows
-      .map((r: any, i: number) => {
-        const sameRune = cand && (lotKey(r, i) === cand.id || (r.locked && r.effects.some((e: any) => e.status === "added" && e.action === cand!.a && e.hi === cand!.value)));
-        const has = cand ? !!sameRune : focusEffect === null || r.effects.some((e: any) => e.action === focusEffect && e.status !== "removed");
-        return {
-        id: lotKey(r, i),
-        x: unitPrice(r),
-        y: comp ? (levelOf(r) != null ? xpOfLevel(levelOf(r)!) : NaN) : r.density, // companions: total xp of the level (price follows it)
-        label: r.name,
-        added: comp ? isLegendary(r) : !mount && r.effects.some((e: any) => e.status === "added"), // companions: blue dot = legendary; mounts have no EXO
-        missing: !comp && !mount && r.effects.some((e: any) => e.status === "removed"),
-        faded: lacksFade(r) || !has,
-      };
-      })
-      .filter((p: any) => Number.isFinite(p.x) && Number.isFinite(p.y)),
+    pointRows.map((r: any) => ({
+      id: keyOf(r),
+      x: unitPrice(r),
+      y: yOf(r, comp),
+      label: r.name,
+      added: comp ? isLegendary(r) : !mount && r.effects.some((e: any) => e.status === "added"), // companions: blue dot = legendary; mounts have no EXO
+      missing: !comp && !mount && r.effects.some((e: any) => e.status === "removed"),
+    })),
   );
-
-  /** Lots standing out above the price trend per scanned item (all its lots, unfiltered): the green icon in the left list. */
-  const dealCounts = $derived.by(() => {
-    const m = new Map<number, number>();
-    for (const it of items.values()) {
-      const pts = it.rows
-        .map((r: any) => ({ x: unitPrice(r), y: it.companion ? (levelOf(r) != null ? xpOfLevel(levelOf(r)!) : NaN) : r.density }))
-        .filter((p: any) => Number.isFinite(p.x) && Number.isFinite(p.y));
-      if (pts.length < 5) continue;
-      const fit = analyse(pts);
-      const n = pts.filter((_: any, i: number) => isGoodDeal(fit, i, pts.length)).length;
-      if (n) m.set(it.gid, n);
+  const fit = $derived(points.length ? analyse(points) : null);
+  /** Dots drawn faded: lots without the highlighted effect, or (Transcendance tab) not matching the rune focus / candidate. */
+  const fadedIds = $derived.by(() => {
+    const out = new Set<string>();
+    if (fade === null && !cand && focusEffect === null) return out;
+    for (const r of pointRows) {
+      const sameRune = cand && (keyOf(r) === cand.id || (r.locked && r.effects.some((e: any) => e.status === "added" && e.action === cand!.a && e.hi === cand!.value)));
+      const has = cand ? !!sameRune : focusEffect === null || r.effects.some((e: any) => e.action === focusEffect && e.status !== "removed");
+      if (lacksFade(r) || !has) out.add(keyOf(r));
     }
-    return m;
+    return out;
   });
+
+  /** Lots standing out above the price trend per scanned item (all its lots, unfiltered): the green icon in the left list.
+   *  Cached per item object: a scan replaces the item whole, so only the new one is analysed. */
+  const dealCache = new WeakMap<object, number>();
+  function dealCount(it: any): number {
+    let n = dealCache.get(it);
+    if (n === undefined) {
+      const pts = it.rows.map((r: any) => ({ x: unitPrice(r), y: yOf(r, !!it.companion) })).filter((p: any) => Number.isFinite(p.x) && Number.isFinite(p.y));
+      n = 0;
+      if (pts.length >= 5) {
+        const f = analyse(pts);
+        for (let i = 0; i < pts.length; i++) if (isGoodDeal(f, i, pts.length)) n++;
+      }
+      dealCache.set(it, n);
+    }
+    return n;
+  }
 
   /** Lots far above the price trend (same rule as the green dots), best first. */
   const deals = $derived.by(() => {
-    if (points.length === 0) return [];
-    const fit = analyse(points);
-    const byKey = new Map(rows.map((r: any, i: number) => [lotKey(r, i), r]));
-    return points
-      .map((p: any, i: number) => ({ key: p.id, row: byKey.get(p.id), z: fit.z[i], good: isGoodDeal(fit, i, points.length) }))
-      .filter((d: any) => d.good && d.row)
+    if (!fit) return [];
+    const f = fit;
+    return pointRows
+      .map((r: any, i: number) => ({ key: points[i].id, row: r, z: f.z[i], good: isGoodDeal(f, i, points.length) }))
+      .filter((d: any) => d.good)
       .sort((a: any, b: any) => b.z - a.z)
       .slice(0, 6);
   });
@@ -299,7 +316,7 @@
       localStorage.setItem(SAVED_KEY, JSON.stringify(l));
     } catch {}
   };
-  const candKey = (o: any) => `${item.gid}:${o.row.uid ?? o.buy + "-" + o.row.density}`;
+  const candKey = (o: any) => `${item.gid}:${keyOf(o.row)}`;
   const isSaved = (o: any) => saved.some((s) => s.key === candKey(o));
   function toggleSaved(o: any) {
     const key = candKey(o);
@@ -315,7 +332,9 @@
     const it = items.get(sv.gid);
     return it && sv.row.uid != null ? it.rows.some((r: any) => r.uid === sv.row.uid) && it.updated > sv.savedAt : null;
   };
-  const trans = $derived(transcendance(comp ? [] : rows, unitPrice, runes, stored, focus));
+  /** Only computed when read (deriveds are lazy): the Transcendance tab, the deals' "similar item" hint, and the tab count when some lot is transcended. */
+  const trans = $derived(transcendance(comp ? [] : rows, runes, stored, focus));
+  const transCount = $derived(!comp && rows.some(isTranscended) ? trans.opportunities.length : 0);
   const runeName = (n: string) => n;
 
   /** Clicking a dot: unroll the lot and scroll the list down to it (nothing is filtered out). */
@@ -323,8 +342,7 @@
     picked = id;
     openSet.add(id);
     tab = "listing"; // from the Transcendance tab: switch so the lot is rendered
-    await tick();
-    document.getElementById(`lot-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    await revealLot(id);
   }
   /** "Nettoyer" forgets every stored item, after a second click on "Confirmer" (reverts after a few seconds). */
   let confirmClear = $state(false);
@@ -395,10 +413,11 @@
       </button>
       {#if !shut}
         {#each g.items as i (i.gid)}
+          {@const dc = dealCount(i)}
           <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
           <div class="irow" class:sel={selGid === i.gid} onclick={() => (selGid = i.gid)}>
             <b>{i.name}</b> <span class="mut">niv. {i.level ?? "?"}</span>
-            {#if dealCounts.get(i.gid)}<span class="deal-ico" title="{dealCounts.get(i.gid)} {dealCounts.get(i.gid) === 1 ? 'bonne affaire' : 'bonnes affaires'} dans cette liste">●</span>{/if}<br />
+            {#if dc}<span class="deal-ico" title="{dc} {dc === 1 ? 'bonne affaire' : 'bonnes affaires'} dans cette liste">●</span>{/if}<br />
             <span class="mut">{i.lots} lots · {i.min_price ? "min " + kamas(i.min_price) : "—"} · {ago(i.updated)}{i.demo ? " · demo" : ""}</span>
           </div>
         {/each}
@@ -450,11 +469,11 @@
         </div>
       {/if}
       {#if points.length >= 3}
-        <div class="graph"><DensityChart {points} equipment={!comp && !mount} selected={tab === "trans" && cand ? cand.id : picked} onselect={focusLot} /></div>
+        <div class="graph"><DensityChart {points} {fit} faded={fadedIds} equipment={!comp && !mount} selected={tab === "trans" && cand ? cand.id : picked} onselect={focusLot} /></div>
       {/if}
       {#if !comp}<div class="tabs">
         <button class:on={tab === "listing"} onclick={() => (tab = "listing")}>Liste</button>
-        <button class:on={tab === "trans"} onclick={() => (tab = "trans")}>Transcendance{trans.opportunities.length ? ` · ${trans.opportunities.length}` : ""}</button>
+        <button class:on={tab === "trans"} onclick={() => (tab = "trans")}>Transcendance{transCount ? ` · ${transCount}` : ""}</button>
       </div>{/if}
       {#if tab === "trans" && !comp}
         <div class="trans">
@@ -493,9 +512,9 @@
             {/each}
             {#if trans.unpricedCount}<div class="mut note">{trans.unpricedCount} lots candidats ne peuvent pas être classés tant que leur rune n'a pas de prix enregistré.</div>{/if}
             <div class="ghead">Candidats rentables{#if focus} <button class="mini" onclick={() => (focus = null)}>Toutes les runes ✕</button>{/if}</div>
-            {#each trans.opportunities as o (o.row.uid ?? o.buy + "-" + o.row.density)}
+            {#each trans.opportunities as o (keyOf(o.row))}
               {@const t = o.best!.target}
-              {@const cid = lotKey(o.row, rows.indexOf(o.row))}
+              {@const cid = keyOf(o.row)}
               <div class="opp">
                 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
                 <div class="oh sel" class:picked={cand?.id === cid} title="Cliquer pour mettre en avant ce lot et les lots avec la même rune sur le graphique" onclick={() => (cand = cand?.id === cid ? null : { id: cid, a: t.a, value: t.value })}>
@@ -506,7 +525,7 @@
                   <button class="mini" class:on={isSaved(o)} title="Garder ce candidat pour y revenir plus tard" onclick={(ev) => (ev.stopPropagation(), toggleSaved(o))}>{isSaved(o) ? "Enregistré ✓" : "Enregistrer"}</button>
                   <span class="mut">achat {kamas(o.buy)} · rune {kamas(t.runeCost ?? 0)} · vente ~{kamas(t.sale)} · densité {o.z >= 0 ? "+" : ""}{o.z.toFixed(1)}σ</span>
                 </div>
-                <ItemCard row={o.row} collapsible open={openSet.has("t" + (o.row.uid ?? ""))} ontoggle={() => toggleOpen("t" + (o.row.uid ?? ""))} />
+                <ItemCard row={o.row} collapsible open={openSet.has("t" + cid)} ontoggle={() => toggleOpen("t" + cid)} />
               </div>
             {:else}
               <div class="mut">Aucun candidat rentable pour le moment.</div>
@@ -523,10 +542,10 @@
             <span class="mut">· Plus rentable de partir du niveau {levelling.best!.level}</span>
           </div>
           {#if levelOpen}
-            {#each levelling.opts as o, i (o.row.uid ?? i + "-" + o.price)}
-              {@const li = rows.indexOf(o.row)}
+            {#each levelling.opts as o (keyOf(o.row))}
+              {@const listed = rowSet.has(o.row)}
               <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-              <div class="deal" title={li >= 0 ? "Cliquer pour aller au lot dans la liste" : ""} onclick={() => li >= 0 && focusLot(lotKey(o.row, li))}>
+              <div class="deal" title={listed ? "Cliquer pour aller au lot dans la liste" : ""} onclick={() => listed && focusLot(keyOf(o.row))}>
                 <div class="lvl"><b>{kamas(Math.round(o.total))}</b> <span class="mut">= niveau {o.level} à {kamas(o.price)} + {kamas(Math.round(o.feed))} de nourriture</span></div>
                 <div class="mut">{o.plan?.feeds.map((x) => `${x.meals} repas ${x.food} (${x.units} unité${x.units > 1 ? "s" : ""})`).join(" + ")}</div>
               </div>
@@ -540,7 +559,7 @@
             <span class="chev" class:shut={!dealsOpen}>▾</span> Bonnes affaires <span class="mut">· {deals.length} {deals.length === 1 ? "lot se démarque" : "lots se démarquent"} au-dessus de la tendance des prix</span>
           </button>
           {#if comp}
-            {#if dealsOpen}<CompanionTable lots={lotsOf(deals.map((d: any) => d.row)).map((l) => ({ ...l, key: "d-" + l.key }))} {unitPrice} {neurons} {neuroneUnit} {resource} faded={lacksFade} onpick={(k) => pickLot(String(k).slice(2))} />{/if}
+            {#if dealsOpen}<CompanionTable lots={lotsOf(deals.map((d: any) => d.row)).map((l) => ({ ...l, key: "d-" + l.key }))} {neurons} {neuroneUnit} {resource} faded={lacksFade} onpick={(k) => pickLot(String(k).slice(2))} />{/if}
           {:else}
           {#each dealsOpen ? deals : [] as d (d.key)}
             {@const alt = trans.alternative(d.row)}
@@ -559,16 +578,24 @@
         {#if extractable}
           <div class="warn altw">⚠ {extractable} lot{extractable > 1 ? "s" : ""} rentable{extractable > 1 ? "s" : ""} à extraire en {resource.toLowerCase()}</div>
         {/if}
-        <CompanionTable lots={lotsOf(rows)} {unitPrice} {neurons} {neuroneUnit} {resource} {picked} faded={lacksFade} onpick={pickLot} />
+        <CompanionTable lots={lotsOf(rows)} {neurons} {neuroneUnit} {resource} {picked} faded={lacksFade} onpick={pickLot} />
       {:else}
-      {#each rows as r, i (lotKey(r, i))}
-        {@const key = lotKey(r, i)}
-        <div id="lot-{key}" class="lot" class:picked={picked === key} class:faded={lacksFade(r)} animate:flip={{ duration: 320 }}>
+      {#snippet lotCard(r: any)}
+        {@const key = keyOf(r)}
+        <div class="lot" class:picked={picked === key} class:faded={lacksFade(r)}>
           <ItemCard row={r} companion={comp} collapsible open={allOpen || openSet.has(key)} ontoggle={() => toggleOpen(key)} {fade} onfade={toggleFade} pinned={isPin(r)} onpin={comp ? undefined : () => togglePin(r)} versus={versusFor(r)} />
         </div>
+      {/snippet}
+      {#if rows.length >= VIRTUAL_FROM}
+        <!-- long listings: only the lots on screen are rendered, no reorder animation -->
+        <VirtualList bind:this={vlist} items={rows} key={keyOf} id={(r) => "lot-" + keyOf(r)} estimate={85} row={lotCard} />
       {:else}
-        <div class="mut">Aucun lot ne correspond au filtre</div>
-      {/each}
+        {#each rows as r (keyOf(r))}
+          <div id="lot-{keyOf(r)}" animate:flip={{ duration: 320 }}>{@render lotCard(r)}</div>
+        {:else}
+          <div class="mut">Aucun lot ne correspond au filtre</div>
+        {/each}
+      {/if}
       {/if}
       {/if}
     {/if}

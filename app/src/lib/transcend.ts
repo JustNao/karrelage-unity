@@ -1,5 +1,6 @@
 /** Transcendance opportunities: unlocked lots that gain a rune effect worth more than the rune costs. */
 import { analyse } from "./density";
+import { unitPrice as unit } from "./price";
 
 export interface Rune { gid: number; name: string; a: number; value: number }
 /** unit = price read in the auction house, avg = average of the last week (preload), override = manual. Priority: override, unit, avg. */
@@ -50,10 +51,10 @@ export interface Opportunity {
 }
 
 /**
- * `unit` gives a lot's unit price. Targets = every (added effect, value) seen on the transcended lots of this listing.
+ * Targets = every (added effect, value) seen on the transcended lots of this listing.
  * Profit = sale * (1 - tax) - buy price - rune price.
  */
-export function transcendance(rows: any[], unit: (r: any) => number, runes: Rune[], prices: Map<number, StoredPrice>, focus: string | null = null, now = Date.now() / 1000) {
+export function transcendance(rows: any[], runes: Rune[], prices: Map<number, StoredPrice>, focus: string | null = null, now = Date.now() / 1000) {
   const runeFor = (a: number, v: number) => runes.find((r) => r.a === a && r.value === v) ?? null;
   const isStale = (gid: number) => {
     const p = prices.get(gid);

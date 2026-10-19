@@ -10,26 +10,41 @@
     added?: boolean;
     /** The lot lacks some default effect. */
     missing?: boolean;
-    /** Drawn faded (the lot lacks the effect being looked at). */
-    faded?: boolean;
   }
 </script>
 
 <script lang="ts">
-  import { analyse, isGoodDeal } from "../density";
+  import { analyse, isGoodDeal, type Fit } from "../density";
 
   /**
    * Price (x) against density (y) of the lots of one item, with a least-squares trend line and a ±2σ band.
    * Green dots sit far above the line: more value than their price suggests (good deals). Blue = has an added effect,
    * orange = lacks some default effect.
    */
-  let { points, selected = null, equipment = true, onselect }: { points: Point[]; selected?: string | number | null; /** Equipment only: EXO / missing-effect legend entries are meaningless for companions and mounts. */ equipment?: boolean; onselect: (id: string | number) => void } = $props();
+  let {
+    points,
+    fit: given = null,
+    faded = null,
+    selected = null,
+    equipment = true,
+    onselect,
+  }: {
+    points: Point[];
+    /** The fit of `points` when the caller already has it (computed here otherwise). */
+    fit?: Fit | null;
+    /** Ids drawn faded (lots lacking the effect being looked at); kept apart from the points so fading never refits. */
+    faded?: Set<string | number> | null;
+    selected?: string | number | null;
+    /** Equipment only: EXO / missing-effect legend entries are meaningless for companions and mounts. */
+    equipment?: boolean;
+    onselect: (id: string | number) => void;
+  } = $props();
 
   const H = 220;
   const M = { l: 14, r: 14, t: 12, b: 26 };
   let W = $state(600);
 
-  const fit = $derived(analyse(points));
+  const fit = $derived(given ?? analyse(points));
 
   const dom = $derived.by(() => {
     const xs = points.map((p) => p.x);
@@ -82,7 +97,7 @@
     {#each points as p, i (p.id)}
       {@const t = tone(i)}
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-      <g class="dot {t}" class:faded={p.faded} class:sel={selected === p.id} onclick={() => onselect(p.id)}>
+      <g class="dot {t}" class:faded={faded?.has(p.id)} class:sel={selected === p.id} onclick={() => onselect(p.id)}>
         <circle cx={sx(p.x)} cy={sy(p.y)} r="11" class="hit" />
         <circle cx={sx(p.x)} cy={sy(p.y)} r={t === "good" ? 6.5 : 4.5} class="pt" />
         {#if selected === p.id}<circle cx={sx(p.x)} cy={sy(p.y)} r="10" class="ring" />{/if}

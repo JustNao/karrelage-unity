@@ -6,13 +6,10 @@
   import SmoothScroll from "../../../../lib/components/SmoothScroll.svelte";
   import type { StoredPrice } from "../../../../lib/transcend";
   import { FAMILIES, isSenile } from "../../../../lib/mounts";
+  import { unitPriceOrNull as lotPrice } from "../../../../lib/price";
 
   /** Every mount of every family (dragodindes, muldos, volkornes): [game item name, generation, resources per extraction] from the guides (see `source` in mounts.json). */
   const MOUNTS = FAMILIES.flatMap((f) => f.mounts.map(([name, gen, neurons]) => ({ name, gen, neurons, family: f.id, neurone: f.neurone })));
-  const lotPrice = (lot: any) => {
-    const v = lot.prices.filter((p: any) => p.price > 0).map((p: any) => p.price / p.qty);
-    return v.length ? Math.min(...v) : null;
-  };
   const MOUNT_NAMES = new Set(MOUNTS.map((m) => m.name));
 
   type SortKey = "name" | "gen" | "neurons" | "buy" | "sale" | "profit" | "pct" | "good";

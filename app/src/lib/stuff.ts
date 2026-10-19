@@ -1,6 +1,7 @@
 /** Stuff tab logic: slots, stat panels, totals (items + set bonuses + base / scrolls / exo), prices and the cheapest-combination solver.
  *  Item stats and set bonuses come from the data pack (`stuff.item_info`), never from Dofusbook. */
 import { craftCost, type Recipes } from "./craft";
+import { unitPriceOrNull } from "./price";
 import type { StoredPrice } from "./transcend";
 
 /** Breed ids (Dofusbook `character_class` = the game's breed ids). */
@@ -88,10 +89,7 @@ const countable = (group: string | null | undefined) => !!group && group !== "we
 
 /** Lot of the auction store (see crates/modules/src/auction.rs). */
 export interface Lot { uid: number; gid: number; prices: { qty: number; price: number }[]; effects: any[] }
-export const lotUnit = (lot: Lot): number | null => {
-  const v = lot.prices.filter((p) => p.price > 0 && p.qty > 0).map((p) => p.price / p.qty);
-  return v.length ? Math.min(...v) : null;
-};
+export const lotUnit = (lot: Lot): number | null => unitPriceOrNull(lot);
 
 /** Pseudo-stat ids (EXO_BASE + stat) holding the part of a lot's stat that is an exo (effect added on the item, or forged over its base maximum): the build's forgemagie
  *  (e.g. +1 PA / +1 PM) is then looked for on the items themselves. */

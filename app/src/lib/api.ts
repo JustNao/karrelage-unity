@@ -41,16 +41,19 @@ export const getStatus = () => invoke<Status>("status");
 export const captureSet = (on: boolean) => invoke<Status>("capture_set", { on });
 export const restartApp = () => invoke("restart_app");
 
+/** One formatter for every number shown (creating one per call, as toLocaleString does, is slow in long lists). */
+const nf = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 3 });
+
 /** A price with its unit: "12 345 kamas"; from a million up, compacted: 1M3 = 1.3 million, 10M3 = 10.3 million. */
 export const kamas = (n: number) => {
   const v = Number(n);
-  if (Math.abs(v) < 1e6) return `${v.toLocaleString("fr-FR")} kamas`;
+  if (Math.abs(v) < 1e6) return `${nf.format(v)} kamas`;
   const tenths = Math.round(Math.abs(v) / 1e5); // millions, one decimal, as an integer
   const frac = tenths % 10;
   return `${v < 0 ? "−" : ""}${Math.floor(tenths / 10)}M${frac || ""} kamas`;
 };
 /** Full price, no compaction, "K" as unit: "2 380 000 K". */
-export const kamasFull = (n: number) => `${Number(n).toLocaleString("fr-FR")} K`;
+export const kamasFull = (n: number) => `${nf.format(Number(n))} K`;
 export const ago = (t: number) => {
   const d = Math.round(Date.now() / 1000 - t);
   return "il y a " + (d < 60 ? `${d}s` : d < 3600 ? `${Math.round(d / 60)}min` : `${Math.round(d / 3600)}h`);
