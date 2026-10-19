@@ -14,7 +14,7 @@
 }
 * { box-sizing: border-box; }
 html, body, #app { height: 100%; }
-body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.4 var(--font); font-variant-numeric: tabular-nums; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 13px/1.4 var(--font); font-variant-numeric: tabular-nums; }
 input, select, button { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font: inherit; }
 button { cursor: pointer; }
 button:hover { border-color: var(--acc); }

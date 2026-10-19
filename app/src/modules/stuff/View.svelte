@@ -58,7 +58,9 @@
   let noDofus = $state((() => { try { return localStorage.getItem("karrelage.stuff.noDofus") === "1"; } catch { return false; } })());
   $effect(() => { try { localStorage.setItem("karrelage.stuff.noDofus", noDofus ? "1" : "0"); } catch {} });
   /** Slots left out of the prices: the ones marked with "€", plus the Dofus when the toggle is on (they still count in stats). */
-  const ignored = $derived(new Set([...(build?.ignored ?? []), ...(noDofus ? DOFUS : [])]));
+  const DOFUS_TYPE = 23; // itemtypes: Dofus (trophées 151 and prysmaradites share the same slots and stay priced)
+  const dofusSlots = $derived(DOFUS.filter((s) => info.items[build?.slots[s]?.gid ?? -1]?.type_id === DOFUS_TYPE));
+  const ignored = $derived(new Set([...(build?.ignored ?? []), ...(noDofus ? dofusSlots : [])]));
   const perSlot = $derived(
     Object.fromEntries(slotIds.map((s) => [s, slotPrices(build!.slots[s].gid, lotsOf(s), build!.chosen[s], recipes, prices)])),
   );
@@ -190,7 +192,7 @@
     {#if s.icon && icon("stat", s.icon)}<img src={icon("stat", s.icon)} alt="" />{:else}<span class="ph"></span>{/if}
     <span class="lab">{s.label}</span>
     {#if anyChosen && v !== m}<span class="mut">/ {m}</span>{/if}
-    <button class="pf" title="Viser le maximum atteignable avec les objets ({m})" onclick={() => setTarget(s.stat, String(m))}>jet perf</button>
+    <button class="pf" title="Viser le maximum atteignable avec les objets ({m})" onclick={() => setTarget(s.stat, String(m))}>Max</button>
     <input class="tg" inputmode="numeric" placeholder="min" value={build?.targets[s.stat] ?? ""} onchange={(e) => setTarget(s.stat, e.currentTarget.value)} title="Valeur minimale voulue pour la recherche de la combinaison la moins chère" />
     {#if caracCode(s.stat)}
       {@const code = caracCode(s.stat)!}
@@ -290,7 +292,7 @@
             <span class="mut">Sélection</span> <b>{kamas(picked.total)}</b>
             {#if picked.missingSlots.length}<span class="mut">{picked.missingSlots.length} non choisi</span>{/if}</div>
         {/if}
-              <label class="small"><input type="checkbox" bind:checked={noDofus} /> Sans les Dofus dans le prix</label>
+              <label class="small"><input type="checkbox" bind:checked={noDofus} /> Sans les Dofus (hors trophées) dans le prix</label>
               <hr />
               <div class="fh">Combinaison la moins chère</div>
               <div class="mut small">Renseignez des minimums dans les cases « min » des stats, puis lancez la recherche parmi les lots scannés.</div>
@@ -357,7 +359,7 @@
   .side > :global(.wrap), .main > :global(.wrap) { flex: 1; }
   .add { display: flex; gap: 6px; margin-bottom: 8px; }
   .add input { flex: 1; min-width: 0; }
-  .err { font-size: 14px; margin-bottom: 6px; }
+  .err { font-size: 12px; margin-bottom: 6px; }
   .bi { display: flex; align-items: center; gap: 2px; padding: 3px 4px; border: 1px solid transparent; border-radius: 6px; }
   .bi.on { background: var(--panel); border-color: var(--line); }
   .nm { flex: 1; text-align: left; border: 0; background: none; padding: 2px 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -367,31 +369,31 @@
   .pad { padding: 20px; }
   .bar { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; padding: 6px 10px; margin-bottom: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
   .ttl { flex: 1; min-width: 220px; }
-  .ttl a { margin-left: 8px; font-size: 14px; }
+  .ttl a { margin-left: 8px; font-size: 12px; }
   .price { white-space: nowrap; }
   .price .bad { font-size: 11px; margin-left: 4px; }
   .sheet { display: grid; grid-template-columns: 480px max-content 560px; justify-content: center; gap: 14px; align-items: start; padding-bottom: 12px; }
   .stats { display: flex; flex-direction: column; gap: 8px; }
   .box { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
-  .st { display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 14px; }
+  .st { display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 12px; }
   .st img, .st .ph { width: 21px; height: 21px; flex: none; }
   .st .lab { flex: 1; color: var(--mut); }
   .st b { min-width: 44px; text-align: right; }
   .st.hp b { font-size: 14px; }
-  .fm { color: #4aa3ff; font-size: 14px; min-width: 26px; text-align: left; flex: none; }
-  .pf { padding: 0 4px; font: inherit; color: var(--mut); line-height: 18px; }
+  .fm { color: #4aa3ff; font-size: 12px; min-width: 26px; text-align: left; flex: none; }
+  .pf { height: 22px; padding: 0 6px; font: inherit; color: var(--mut); }
   .pf:hover { color: var(--fg); }
   .fmsel { width: 100%; margin-top: 4px; }
   .st .lab { white-space: nowrap; }
   .tgw { width: 44px; flex: none; }
   .c4 { min-width: 44px; text-align: right; flex: none; }
-  .st.hd { font-size: 14px; }
-  .tg { width: 44px; padding: 1px 4px; font: inherit; text-align: right; }
+  .st.hd { font-size: 12px; }
+  .tg { width: 44px; height: 22px; padding: 0 4px; font: inherit; text-align: right; }
   .two { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
   .prices { width: 100%; }
   .prices .price { margin: 2px 0; }
   .prices hr { border: 0; border-top: 1px solid var(--line); margin: 8px 0; }
-  .small { font-size: 14px; margin: 4px 0; }
+  .small { font-size: 12px; margin: 4px 0; }
   .center { display: flex; flex-direction: column; align-items: center; gap: 10px; }
   .doll { display: flex; gap: 14px; align-items: stretch; width: 100%; justify-content: center; }
   .col { display: flex; flex-direction: column; gap: 8px; }
@@ -413,7 +415,7 @@
   .dot.fresh { background: var(--ok); }
   .dot.stale { background: var(--bad); }
   .picker { width: 100%; max-height: 300px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; padding: 6px; display: flex; flex-direction: column; gap: 3px; background: var(--panel); }
-  .lotb { text-align: left; font-size: 14px; padding: 3px 6px; }
+  .lotb { text-align: left; font-size: 12px; padding: 3px 6px; }
   .lotb.on { border-color: var(--acc); }
   .good { color: var(--ok); }
   .bad { color: var(--bad); }
