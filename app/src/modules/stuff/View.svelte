@@ -144,6 +144,19 @@
   const allDofusOwned = $derived(dofusSlots.length > 0 && dofusSlots.every((s) => owned.has(s)));
   const setDofusOwned = (on: boolean) => { const rest = (build!.owned ?? []).filter((s) => !dofusSlots.includes(s)); patch({ owned: on ? [...rest, ...dofusSlots] : rest }); result = null; };
   const toggleOwned = (slot: string) => { const o = build!.owned ?? []; patch({ owned: o.includes(slot) ? o.filter((s) => s !== slot) : [...o, slot] }); result = null; };
+  /** PA / PM / PO minimums start at the Dofusbook value of the build (once per build, so clearing them sticks). */
+  const AUTOFILL = [1, 23, 19];
+  const AUTOFILL_KEY = "karrelage.stuff.autofilled";
+  $effect(() => {
+    if (!build || !max || !slotIds.every((s) => info.items[build!.slots[s].gid])) return; // data of the items not loaded yet
+    let done: string[] = [];
+    try { done = JSON.parse(localStorage.getItem(AUTOFILL_KEY) ?? "[]"); } catch {}
+    if (done.includes(build.id)) return;
+    const targets = { ...build.targets };
+    for (const s of AUTOFILL) if (targets[s] == null && (max.totals.get(s) ?? 0) > 0) targets[s] = max.totals.get(s)!;
+    patch({ targets });
+    try { localStorage.setItem(AUTOFILL_KEY, JSON.stringify([...done, build.id])); } catch {}
+  });
   const setTarget = (stat: number, v: string) => {
     const t = { ...build!.targets };
     const n = parseInt(v, 10);
