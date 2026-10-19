@@ -12,7 +12,7 @@
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
   import type { StoredPrice } from "../../lib/transcend";
   import {
-    CARAC, FM_STATS, FRESH_SECS, HP_STAT, PANELS, SLOT_LAYOUT, SLOT_TITLES, STAT_ICON_CODES, STAT_LABEL, compute, fmOf, itemStats, lotStats, lotUnit, slotPrices, solve, sumSlots,
+    CARAC, FM_STATS, className, FRESH_SECS, HP_STAT, PANELS, SLOT_LAYOUT, SLOT_TITLES, STAT_ICON_CODES, STAT_LABEL, compute, fmOf, itemStats, lotStats, lotUnit, slotPrices, solve, sumSlots,
     type Build, type Info, type Lot, type Resolved, type SolveResult, type StatRow,
   } from "../../lib/stuff";
 
@@ -298,7 +298,7 @@
             <div class="build">
             <div class="doll">
               <div class="col">{#each SLOT_LAYOUT.left as s}{@render slot(s)}{/each}</div>
-              <div class="char"><div class="lvl">Niveau {build.level}</div><div class="mut">classe {build.class}</div></div>
+              <div class="char"><div class="lvl">Niveau {build.level}</div><div class="mut">{className(build.class)}</div></div>
               <div class="col">{#each SLOT_LAYOUT.right as s}{@render slot(s)}{/each}</div>
             </div>
             <div class="row">{#each SLOT_LAYOUT.bottom.filter((s) => build?.slots[s]) as s}{@render slot(s)}{/each}</div>

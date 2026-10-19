@@ -3,6 +3,13 @@
 import { craftCost, type Recipes } from "./craft";
 import type { StoredPrice } from "./transcend";
 
+/** Breed ids (Dofusbook `character_class` = the game's breed ids). */
+export const CLASSES: Record<number, string> = {
+  1: "Féca", 2: "Osamodas", 3: "Enutrof", 4: "Sram", 5: "Xélor", 6: "Ecaflip", 7: "Eniripsa", 8: "Iop", 9: "Crâ", 10: "Sadida", 11: "Sacrieur", 12: "Pandawa",
+  13: "Roublard", 14: "Zobal", 15: "Steamer", 16: "Eliotrope", 17: "Huppermage", 18: "Ouginak", 20: "Forgelance",
+};
+export const className = (id: number) => CLASSES[id] ?? `Classe ${id}`;
+
 export const FRESH_SECS = 60 * 60; // an item scanned less than 1 h ago counts as fresh
 
 export interface SlotRef { db_id: number; gid: number; picture: number; name: string; level: number }
