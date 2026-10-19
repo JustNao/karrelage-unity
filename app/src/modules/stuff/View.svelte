@@ -229,9 +229,9 @@
       <button class="bmini" onclick={add} disabled={busy}>{busy ? "…" : "Ajouter"}</button>
     </div>
     {#if err}<div class="bad err">{err}</div>{/if}
-    {#each builds as b (b.id)}
+    {#each builds as b, i (b.id)}
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-      <div class="irow" class:sel={b.id === sel} onclick={() => renaming !== b.id && select(b.id)}>
+      <div class="irow" class:first={i === 0} class:sel={b.id === sel} onclick={() => renaming !== b.id && select(b.id)}>
         {#if renaming === b.id}
           <input class="rn" bind:value={draft} onclick={(e) => e.stopPropagation()} onkeydown={(e) => { if (e.key === "Enter") rename(b); if (e.key === "Escape") renaming = null; }} onblur={() => rename(b)} />
         {:else}
@@ -365,11 +365,12 @@
   .main > :global(.wrap) { flex: 1; }
   /* builds list: same look as the HDV item list */
   .side { overflow: auto; min-height: 0; min-width: 0; background: var(--panel); border-right: 1px solid var(--line); font-family: var(--font); }
-  .side .sbar { display: flex; gap: 6px; padding: 6px 10px; position: sticky; top: 36px; z-index: 2; background: var(--panel); }
+  .side .sbar { display: flex; gap: 6px; padding: 6px 10px; position: sticky; top: 30px; z-index: 3; background: var(--panel); }
   .side .sbar input { flex: 1; min-width: 0; padding: 3px 6px; }
   .side .irow { display: flex; align-items: center; gap: 4px; padding: 6px 10px; border-bottom: 1px solid var(--line); cursor: pointer; }
   .side .irow:hover { background: var(--bg); }
-  .side .irow.sel { outline: 1px solid var(--acc); }
+  .side .irow.sel { outline: 1px solid var(--acc); position: relative; z-index: 2; }
+  .side .irow.first { border-top: 1px solid var(--line); }
   .side .empty { padding: 6px 10px; }
   .side .err { padding: 0 10px 6px; }
   .bmini { padding: 2px 7px; font-size: 11px; }

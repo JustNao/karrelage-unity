@@ -17,9 +17,9 @@
 </div>
 
 <style>
-  .phead { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 6px 8px 0; margin-bottom: 8px; position: sticky; top: 0; z-index: 2; background: inherit; }
+  .phead { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 0 8px; height: 30px; box-sizing: border-box; position: sticky; top: 0; z-index: 4; background: inherit; }
   .phead.rev { flex-direction: row-reverse; }
-  .phead.shut { justify-content: center; padding: 6px 0 0; }
+  .phead.shut { justify-content: center; padding: 0; }
   .phead .fh { margin: 0; }
   .mini { border: 0; background: none; padding: 0 6px; color: var(--mut); font-size: 16px; line-height: 1.2; }
   .mini:hover { color: var(--fg); }
