@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { SvelteMap } from "svelte/reactivity";
+  import { SvelteMap, SvelteSet } from "svelte/reactivity";
   import { call, kamas, on } from "../../lib/api";
   import Grip from "../../lib/components/Grip.svelte";
   import PanelHead from "../../lib/components/PanelHead.svelte";
@@ -8,6 +8,7 @@
   import { Columns } from "../../lib/columns.svelte";
   import { SCAN_LIST_KEY, type ScanItem } from "../../lib/scanlist";
   import type { Recipes } from "../../lib/craft";
+  import ItemCard from "../../lib/components/ItemCard.svelte";
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
   import type { StoredPrice } from "../../lib/transcend";
   import {
@@ -185,16 +186,13 @@
       .slice(0, 6)
       .map((e: any) => `${e.hi ?? ""} ${STAT_LABEL.get(e.stat) ?? e.text}`)
       .join(" · ");
-  /** Every effect of a lot, exos (effects added on the item) in blue-ish "+". */
-  const lotFull = (l: Lot) =>
-    l.effects
-      .filter((e: any) => e.status !== "removed" && e.group && e.group !== "weapon" && e.group !== "other")
-      .map((e: any) => `${e.status === "added" ? "exo " : ""}${e.hi ?? ""} ${STAT_LABEL.get(e.stat) ?? e.text}`)
-      .join(" · ");
+  /** Lots whose effects are unfolded in the list under the build (like the HDV: folded = only exo / above-max effects). */
+  let openLots = new SvelteSet<string>();
+  const toggleLot = (slot: string) => (openLots.has(slot) ? openLots.delete(slot) : openLots.add(slot));
   const rowsOf = (map: Record<string, number | null | undefined>) =>
     slotIds.flatMap((s) => {
       const lot = map[s] != null ? lotsOf(s).find((l) => l.uid === map[s]) : null;
-      return lot ? [{ slot: s, name: build!.slots[s].name, price: lotUnit(lot)!, line: lotFull(lot) }] : [];
+      return lot ? [{ slot: s, name: build!.slots[s].name, price: lotUnit(lot)!, lot }] : [];
     });
   /** The lots of the combination found, else the lots chosen in the build. */
   const tableRows = $derived(build ? rowsOf(result && result !== "none" ? result.picks : build.chosen) : []);
@@ -398,15 +396,15 @@
               {/if}
                                       {#if tableRows.length}
                 <div class="fh tt">{result && result !== "none" ? "Combinaison trouvée" : "Lots choisis"}</div>
-                <table class="lots">
-                  <thead><tr><th>Emplacement</th><th>Objet</th><th class="n">Prix</th><th>Effets</th></tr></thead>
-                  <tbody>
-                    {#each tableRows as r (r.slot)}
-                      <tr><td class="mut">{SLOT_TITLES[r.slot]}</td><td><b>{r.name}</b></td><td class="n">{kamas(r.price)}</td><td class="fx">{r.line}</td></tr>
-                    {/each}
-                  </tbody>
-                  <tfoot><tr><td colspan="2">Total</td><td class="n"><b>{kamas(tableRows.reduce((s, r) => s + r.price, 0))}</b></td><td></td></tr></tfoot>
-                </table>
+                <div class="lotlist">
+                  {#each tableRows as r (r.slot)}
+                    <div class="lrow">
+                      <div class="lh"><span class="mut">{SLOT_TITLES[r.slot]}</span> <b>{r.name}</b></div>
+                      <ItemCard row={r.lot} collapsible open={openLots.has(r.slot)} ontoggle={() => toggleLot(r.slot)} />
+                    </div>
+                  {/each}
+                </div>
+                <div class="tot">Total <b>{kamas(tableRows.reduce((s, r) => s + r.price, 0))}</b></div>
               {/if}
             </div>
           </section>
@@ -484,12 +482,9 @@
   .two > div { min-width: 0; }
   .split { border: 0; border-top: 1px solid var(--line); margin: 6px 0 12px; }
   .bottom { display: grid; grid-template-columns: minmax(260px, 320px) minmax(0, 1fr); gap: 14px; align-items: start; padding-bottom: 16px; }
-  .lots { width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 12px; }
-  .lots th { text-align: left; font-weight: 400; color: var(--mut); padding: 2px 6px; }
-  .lots td { padding: 4px 6px; border-top: 1px solid var(--line); vertical-align: top; }
-  .lots tfoot td { border-top: 2px solid var(--line); }
-  .lots .n { text-align: right; white-space: nowrap; }
-  .lots .fx { color: var(--mut); }
+  .lotlist { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 8px; margin-top: 6px; }
+  .lh { font-size: 12px; margin-bottom: 2px; }
+  .tot { margin-top: 8px; text-align: right; }
   .tt { margin-top: 12px; }
   @container (max-width: 920px) { .bottom { grid-template-columns: minmax(0, 1fr); } }
   .prices .price { margin: 2px 0; }
