@@ -2,8 +2,8 @@
 //! Static checks on the pack, a fingerprint comparison with the installed game files (sizes only, nothing is read), a live
 //! check of the message types seen on the wire, and a button that recomputes the names (pipeline/update_names.py).
 use crate::auction::{AH_BUY, AH_LIST, AH_ROW_REMOVED, AH_ROW_UPDATED};
-use crate::{brisage, inventory};
 use crate::prices::AVG_PRICES;
+use crate::{brisage, inventory};
 use crate::{Ctx, Interest, Message, Module};
 use anyhow::{anyhow, Result};
 use loutil_proto::{Kind, MessageDescriptor};

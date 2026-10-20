@@ -142,7 +142,9 @@ impl Auction {
     fn on_change(&self, m: &Message, ctx: &Ctx) {
         let Some(f) = &m.fmt else { return };
         let mut s = self.store.lock();
-        let Some(ent) = s.values_mut().find(|e| e["rows"].as_array().is_some_and(|r| r.iter().any(|x| !x["uid"].is_null() && x["uid"] == f["uid"]))) else { return };
+        let Some(ent) = s.values_mut().find(|e| e["rows"].as_array().is_some_and(|r| r.iter().any(|x| !x["uid"].is_null() && x["uid"] == f["uid"]))) else {
+            return;
+        };
         let rows = ent["rows"].as_array_mut().unwrap();
         if apply_change(rows, f).is_none() {
             return;
@@ -234,7 +236,15 @@ pub(crate) fn parse_effect(data: &Data, b: &ObjectEffect, e: &DynamicMessage) ->
 
 /// One AH row (a lot: prices per stack size, effects) from its ints / prices / effects fields; `fallback` = the
 /// listing's (gid, type) when the row's ints do not resolve.
-fn format_row(data: &Data, oe: &ObjectEffect, it: &DynamicMessage, ints: Vec<i64>, prices_f: &str, effects_f: &str, fallback: (Option<i64>, Option<i64>)) -> Value {
+fn format_row(
+    data: &Data,
+    oe: &ObjectEffect,
+    it: &DynamicMessage,
+    ints: Vec<i64>,
+    prices_f: &str,
+    effects_f: &str,
+    fallback: (Option<i64>, Option<i64>),
+) -> Value {
     let (mut gid, mut typ, mut uid) = data.resolve_gid_type(&ints);
     if gid.is_none() {
         (gid, typ, uid) = (fallback.0, fallback.1, None);

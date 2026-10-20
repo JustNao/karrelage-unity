@@ -103,7 +103,14 @@ impl Default for Prices {
 
 impl Prices {
     pub fn new() -> Self {
-        Self { store: Default::default(), persist: OnceLock::new(), runes: OnceLock::new(), craft_runes: OnceLock::new(), by_name: OnceLock::new(), listings: Default::default() }
+        Self {
+            store: Default::default(),
+            persist: OnceLock::new(),
+            runes: OnceLock::new(),
+            craft_runes: OnceLock::new(),
+            by_name: OnceLock::new(),
+            listings: Default::default(),
+        }
     }
 
     fn path(ctx: &Ctx) -> std::path::PathBuf {

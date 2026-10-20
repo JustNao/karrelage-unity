@@ -255,7 +255,8 @@ impl Module for Brisage {
 
     fn init(&self, ctx: &Ctx) {
         let coefs = self.coefs.clone();
-        let (persist, saved) = Persist::open(ctx.module_dir("brisage").join("coefs.json"), ctx.logger(), move || json!(coefs.lock().values().cloned().collect::<Vec<_>>()));
+        let (persist, saved) =
+            Persist::open(ctx.module_dir("brisage").join("coefs.json"), ctx.logger(), move || json!(coefs.lock().values().cloned().collect::<Vec<_>>()));
         let _ = self.persist.set(persist);
         let mut s = self.coefs.lock();
         for e in saved.as_ref().and_then(Value::as_array).into_iter().flatten() {
