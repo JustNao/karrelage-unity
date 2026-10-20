@@ -12,13 +12,24 @@
 
   const ASTRAL = ["mineure", "moyenne", "majeure", "épatante", "merveilleuse", "légendaire"]; // weakest to strongest
   type SortKey = "name" | "effect" | "astral" | "craft" | "cumul" | "sale" | "profit" | "pct";
-  interface Row { gid: number; name: string; effect: string | null; recipe: string; astral: string | null; astralRank: number | null; craft: number | null; cumul: number | null; sale: number | null; profit: number | null; pct: number | null; missing: string[] }
+  interface Row { gid: number; name: string; effect: string | null; transcend: boolean; recipe: string; astral: string | null; astralRank: number | null; craft: number | null; cumul: number | null; sale: number | null; profit: number | null; pct: number | null; missing: string[] }
 
-  let list = $state.raw<{ gid: number; name: string; effect: string | null }[]>([]);
+  let list = $state.raw<{ gid: number; name: string; effect: string | null; transcend: boolean }[]>([]);
   let recipes = $state.raw<Recipes>({ recipes: {}, names: {} });
   let q = $state("");
   let err = $state("");
   let onlyPriced = $state(false);
+  // transcendance runes (type 211) shown or not, remembered
+  const TRANSCEND_KEY = "karrelage.crafting.runes.transcend";
+  let showTranscend = $state(true);
+  try {
+    showTranscend = localStorage.getItem(TRANSCEND_KEY) !== "0";
+  } catch {}
+  $effect(() => {
+    try {
+      localStorage.setItem(TRANSCEND_KEY, showTranscend ? "1" : "0");
+    } catch {}
+  });
   const sort = useSort<SortKey>("pct", true, (k) => k !== "name");
 
   const rows = $derived.by<Row[]>(() =>
@@ -41,7 +52,7 @@
   const view = $derived.by(() => {
     const m = matcher(q);
     return sort.apply(
-      rows.filter((r) => m(r.name) && (!onlyPriced || r.pct != null)),
+      rows.filter((r) => m(r.name) && (!onlyPriced || r.pct != null) && (showTranscend || !r.transcend)),
       (r, k) => (k === "astral" ? r.astralRank : r[k]),
     );
   });
@@ -58,7 +69,7 @@
   ];
 
   onMount(() => {
-    call<{ gid: number; name: string; effect: string | null }[]>("prices", "craft_runes").then((l) => (list = l)).catch((e) => (err = String(e)));
+    call<{ gid: number; name: string; effect: string | null; transcend: boolean }[]>("prices", "craft_runes").then((l) => (list = l)).catch((e) => (err = String(e)));
     call<Recipes>("auction", "recipes").then((r) => (recipes = r));
     void prices.ensure();
   });
@@ -68,7 +79,9 @@
   <div class="head">
     <div class="fh">Runes</div>
   </div>
-  <SearchBar bind:value={q} bind:priced={onlyPriced} placeholder="Rechercher une rune…" width="180px" />
+  <SearchBar bind:value={q} bind:priced={onlyPriced} placeholder="Rechercher une rune…" width="180px">
+    {#snippet after()}<label><input type="checkbox" bind:checked={showTranscend} /> Runes de transcendance</label>{/snippet}
+  </SearchBar>
   {#if err}<Banner inset>Erreur : {err} (relancez l'application pour charger la dernière version)</Banner>{/if}
   <SmoothScroll>
     <SortTable columns={COLUMNS} rows={view} {sort} key={(r) => r.gid}>

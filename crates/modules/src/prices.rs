@@ -232,7 +232,7 @@ impl Module for Prices {
                     Value::Array(v)
                 })
                 .clone()),
-            // Every craftable rune (forgemagie type 78 and transcendance type 211): [{gid, name, effect}]
+            // Every craftable rune (forgemagie type 78 and transcendance type 211): [{gid, name, effect, transcend}]
             "craft_runes" => Ok(self
                 .craft_runes
                 .get_or_init(|| {
@@ -244,7 +244,7 @@ impl Module for Prices {
                         .map(|(g, i)| {
                             // the effect the rune grants, rendered like in game ("+10 Force")
                             let effect = i.effects.iter().find(|e| !RUNE_MARKER_EFFECTS.contains(&e.a)).map(|e| ctx.data.render_effect(e.a, &[json!(e.max)]).0);
-                            json!({"gid": g, "name": ctx.data.item_name(*g), "effect": effect})
+                            json!({"gid": g, "name": ctx.data.item_name(*g), "effect": effect, "transcend": i.type_id == RUNE_TYPE})
                         })
                         .collect();
                     v.sort_by_key(|x| x["gid"].as_i64());
