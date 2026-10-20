@@ -111,13 +111,15 @@ pub trait Module: Send + Sync {
 
 /// Every module of the app. Register new ones here.
 pub fn all() -> Vec<Box<dyn Module>> {
+    let inventory = inventory::Inventory::new();
+    let uids = inventory.uids();
     vec![
         Box::new(packets::Packets::new()),
         Box::new(auction::Auction::new()),
         Box::new(prices::Prices::new()),
         Box::new(stuff::Stuff::new()),
-        Box::new(brisage::Brisage::new()),
-        Box::new(inventory::Inventory::new()),
+        Box::new(brisage::Brisage::new(uids)),
+        Box::new(inventory),
         Box::new(names::NamesTab::new()),
         Box::new(update::Update::new()),
     ]

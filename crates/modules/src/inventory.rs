@@ -9,7 +9,7 @@ use loutil_proto::DynamicMessage;
 use parking_lot::Mutex;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, OnceLock};
 
 pub const CONTENT: &str = "InventoryContentEvent";
@@ -39,12 +39,17 @@ pub(crate) struct Bindings {
     pub deleted_list: String,
 }
 
+/// Object uid -> item gid of every equipment piece seen this session, kept after its deletion (the Brisage module resolves the
+/// uids of broken items with it: the item is gone from the inventory by then).
+pub type UidMap = Arc<Mutex<HashMap<i64, i64>>>;
+
 pub struct Inventory {
     bind: OnceLock<Option<(Bindings, ObjectEffect)>>,
     /// object uid -> item (see `item`)
     items: Arc<Mutex<BTreeMap<i64, Value>>>,
     updated: Arc<Mutex<f64>>,
     persist: OnceLock<Persist>,
+    uids: UidMap,
 }
 
 impl Default for Inventory {
@@ -55,7 +60,12 @@ impl Default for Inventory {
 
 impl Inventory {
     pub fn new() -> Self {
-        Self { bind: OnceLock::new(), items: Default::default(), updated: Default::default(), persist: OnceLock::new() }
+        Self { bind: OnceLock::new(), items: Default::default(), updated: Default::default(), persist: OnceLock::new(), uids: Default::default() }
+    }
+
+    /// Shared uid -> gid map (see `UidMap`).
+    pub fn uids(&self) -> UidMap {
+        self.uids.clone()
     }
 
     fn bindings(&self, ctx: &Ctx) -> Option<&(Bindings, ObjectEffect)> {
@@ -122,6 +132,9 @@ impl Module for Inventory {
             let mut s = self.items.lock();
             for it in saved["items"].as_array().into_iter().flatten() {
                 if let Some(uid) = it["uid"].as_i64() {
+                    if let Some(gid) = it["gid"].as_i64() {
+                        self.uids.lock().insert(uid, gid);
+                    }
                     s.insert(uid, it.clone());
                 }
             }
@@ -131,7 +144,16 @@ impl Module for Inventory {
     fn on_message(&self, m: &Message, ctx: &Ctx) {
         let (Some(msg), Some((b, eb))) = (m.decoded.as_ref(), self.bindings(ctx)) else { return };
         let t = m.raw.t;
-        let parse = |l: Vec<DynamicMessage>| -> Vec<(i64, Value)> { l.iter().filter_map(|x| Self::item(ctx, b, eb, x, t)).collect() };
+        let parse = |l: Vec<DynamicMessage>| -> Vec<(i64, Value)> {
+            let out: Vec<(i64, Value)> = l.iter().filter_map(|x| Self::item(ctx, b, eb, x, t)).collect();
+            let mut u = self.uids.lock();
+            for (uid, it) in &out {
+                if let Some(gid) = it["gid"].as_i64() {
+                    u.insert(*uid, gid);
+                }
+            }
+            out
+        };
         let one = |name: &str| msg.get_field_by_name(name).and_then(|v| v.as_message().cloned()).into_iter().collect::<Vec<_>>();
         {
             let mut s = self.items.lock();

@@ -2,7 +2,7 @@
 //! Static checks on the pack, a fingerprint comparison with the installed game files (sizes only, nothing is read), a live
 //! check of the message types seen on the wire, and a button that recomputes the names (pipeline/update_names.py).
 use crate::auction::AH_LIST;
-use crate::inventory;
+use crate::{brisage, inventory};
 use crate::prices::AVG_PRICES;
 use crate::{Ctx, Interest, Message, Module};
 use anyhow::{anyhow, Result};
@@ -138,6 +138,19 @@ fn binding_checks(ctx: &Ctx) -> Vec<Value> {
             }
         }
         None => out.push(check("bindings.inventory (entrée)", false, "liste d'objets introuvable")),
+    }
+    // break results: DecraftResultEvent -> DecraftedItem -> Rune
+    let dc = &b["decraft"];
+    let decraft = ctx.proto.obf_for_clear(brisage::DECRAFT).and_then(|o| ctx.proto.message(&o));
+    match decraft.as_ref().and_then(|m| sub_msg(m, &s(&dc["results"]))) {
+        Some(item) => {
+            out.push(fields_check("bindings.decraft (objet)", &item, ["coef_min", "coef_max", "uid", "runes"].iter().map(|k| s(&dc[k])).collect(), vec![]));
+            match sub_msg(&item, &s(&dc["runes"])) {
+                Some(r) => out.push(fields_check("bindings.decraft (rune)", &r, vec![s(&dc["rune_gid"]), s(&dc["rune_qty"])], vec![])),
+                None => out.push(check("bindings.decraft (rune)", false, "message de rune introuvable")),
+            }
+        }
+        None => out.push(check("bindings.decraft (objet)", false, format!("{} : liste de résultats introuvable", brisage::DECRAFT))),
     }
     for (clear, key) in [
         (inventory::ADDED, "added"),

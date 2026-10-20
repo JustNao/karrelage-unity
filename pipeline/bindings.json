@@ -31,6 +31,16 @@
   "deleted": "fsmr",
   "deleted_list": "fssq"
  },
+ "decraft": {
+  "_doc": "DecraftResultEvent (breaking items into runes): results = DecraftedItem {coef_min, coef_max (floats, 0.529 = 52.9 %; equal for one item), uid (object uid of the broken item), runes: [{rune_gid, rune_qty}]}.",
+  "results": "fyeo",
+  "coef_min": "fyeh",
+  "coef_max": "fyei",
+  "uid": "fyej",
+  "runes": "fyek",
+  "rune_gid": "fyed",
+  "rune_qty": "fyec"
+ },
  "object_effect": {
   "action": ["gdmq", "gdmr"],
   "oneof": "gdng"

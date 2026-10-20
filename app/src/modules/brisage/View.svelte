@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { call } from "../../lib/api";
+  import { call, on } from "../../lib/api";
   import { breakEven, lotEffects, meanRoll, outcome, type BrisItem, type BrisPack, type Outcome } from "../../lib/brisage";
   import { craftCost, type Recipes } from "../../lib/craft";
   import { AH_TAX } from "../../lib/transcend";
@@ -8,7 +8,7 @@
   import { lotKeys, unitPriceOrNull } from "../../lib/price";
   import { auction } from "../../lib/stores/auction.svelte";
   import { prices } from "../../lib/stores/prices.svelte";
-  import { fmtNum, kamas, signedKamas } from "../../lib/fmt";
+  import { ago, fmtNum, kamas, signedKamas } from "../../lib/fmt";
   import { useSort } from "../../lib/sort.svelte";
   import Banner from "../../lib/components/Banner.svelte";
   import Grip from "../../lib/components/Grip.svelte";
@@ -20,40 +20,44 @@
 
   /** Rows rendered at once in the list (narrow it with the search / filters). */
   const SHOWN = 300;
-  const KEY = "karrelage.brisage";
+  /** Filters and selection, remembered between tabs and sessions. */
+  const UI_KEY = "karrelage.brisage.ui";
+  /** Coefficients typed before they were stored by the backend (moved there once). */
+  const OLD_COEFS_KEY = "karrelage.brisage.coefs";
+  /** Weapon types (the rest of the breakable types are worn equipment). */
+  const WEAPONS = new Set([2, 3, 4, 5, 6, 7, 8, 19, 20, 21, 22, 114, 271]);
 
-  const load = <T,>(k: string, d: T): T => {
+  interface UiState { q: string; types: number[]; lvMin: number | null; lvMax: number | null; priced: boolean; noDrop: boolean; sel: number | null }
+  const ui = $state<UiState>({ q: "", types: [], lvMin: null, lvMax: null, priced: true, noDrop: false, sel: null });
+  try {
+    Object.assign(ui, JSON.parse(localStorage.getItem(UI_KEY) ?? "{}"));
+  } catch {}
+  $effect(() => {
+    const s = JSON.stringify(ui);
     try {
-      return JSON.parse(localStorage.getItem(`${KEY}.${k}`) ?? "null") ?? d;
-    } catch {
-      return d;
-    }
-  };
-  const save = (k: string, v: unknown) => {
-    try {
-      localStorage.setItem(`${KEY}.${k}`, JSON.stringify(v));
+      localStorage.setItem(UI_KEY, s);
     } catch {}
-  };
+  });
 
   const cols = new Columns(`karrelage.cols.brisage`, { detail: 640 });
   let pack = $state.raw<BrisPack>({ items: [], runes: {} });
   let recipes = $state.raw<Recipes>({ recipes: {}, names: {} });
   let err = $state("");
-  let q = $state("");
-  let type = $state("");
-  let onlyPriced = $state(load("priced", true));
-  let noDrop = $state(load("noDrop", false));
-  /** Coefficient (%) typed per item (gid -> %). */
-  let coefs = $state<Record<string, number>>(load("coefs", {}));
-  let selGid = $state<number | null>(null);
+
+  /** An item's coefficient: read from a break (`DecraftResultEvent`) or typed. */
+  interface Coef { gid: number; coef: number; t: number; source: "brisage" | "manuel"; guessed?: boolean }
+  let coefs = $state<Record<string, Coef>>({});
+  /** Break results whose item the backend could not tell (focus break, uid not in the inventory): to assign by hand. */
+  interface Pending { uid: number; coef: number; t: number; runes: [number, number][] }
+  let pending = $state.raw<Pending[]>([]);
+  const runeNames = $derived(new Map(Object.values(pack.runes).map((r) => [r.gid, r.name.replace(/^Rune /, "")])));
+  const runesText = (p: Pending) => p.runes.map(([g, q]) => `${q} ${runeNames.get(g) ?? "#" + g}`).join(", ");
+  const assign = (p: Pending, gid: number | null) => call("brisage", "assign", { uid: p.uid, t: p.t, gid }).catch((e) => (err = String(e)));
   /** Source chosen per item in the detail panel ("craft" or a lot key); default = the best one. */
   let chosen = $state<Record<string, string>>({});
-  $effect(() => save("priced", onlyPriced));
-  $effect(() => save("noDrop", noDrop));
-  $effect(() => save("coefs", coefs));
 
   const price = (gid: number) => prices.price(gid);
-  const coefOf = (gid: number): number | null => coefs[gid] ?? null;
+  const coefOf = (gid: number): number | null => coefs[gid]?.coef ?? null;
 
   /** One way of getting the item to break: crafting it (mean roll) or buying a scanned lot (its own effects). */
   interface Source { key: string; kind: "craft" | "lot"; cost: number | null; out: Outcome; even: number | null; lot?: any; missing?: string[] }
@@ -79,33 +83,69 @@
     return out.sort((a, b) => (a.even ?? Infinity) - (b.even ?? Infinity));
   }
 
-  type SortKey = "name" | "level" | "cost" | "value" | "even" | "profit";
-  interface Row { item: BrisItem; gid: number; name: string; level: number; best: Source | null; cost: number | null; value: number | null; even: number | null; profit: number | null; coef: number | null; scanned: boolean }
+  type SortKey = "name" | "level" | "cost" | "even" | "profit";
+  interface Row { item: BrisItem; gid: number; name: string; level: number; best: Source | null; cost: number | null; even: number | null; profit: number | null; coef: number | null }
 
   const rows = $derived.by<Row[]>(() =>
     pack.items.map((item) => {
       const best = sourcesOf(item)[0] ?? null;
       const coef = coefOf(item.gid);
-      const value = best ? best.out.best.value : null;
-      const profit = best?.cost != null && coef != null ? (value! * coef) / 100 - best.cost : null;
-      return { item, gid: item.gid, name: item.name, level: item.level, best, cost: best?.cost ?? null, value, even: best?.even ?? null, profit, coef, scanned: auction.items.has(item.gid) };
+      const profit = best?.cost != null && coef != null ? (best.out.best.value * coef) / 100 - best.cost : null;
+      return { item, gid: item.gid, name: item.name, level: item.level, best, cost: best?.cost ?? null, even: best?.even ?? null, profit, coef };
     }),
   );
-  const types = $derived([...new Set(pack.items.map((i) => i.type))].sort((a, b) => a.localeCompare(b, "fr")));
 
-  const sort = useSort<SortKey>("even", false, (k) => k === "level" || k === "value" || k === "profit");
+  // ---- filters ----
+  /** Breakable types, weapons and worn equipment apart. */
+  const typeGroups = $derived.by(() => {
+    const by = new Map<number, string>();
+    for (const i of pack.items) by.set(i.type_id, i.type);
+    const list = [...by].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name, "fr"));
+    return [
+      { label: "Équipements", types: list.filter((t) => !WEAPONS.has(t.id)) },
+      { label: "Armes", types: list.filter((t) => WEAPONS.has(t.id)) },
+    ];
+  });
+  const typeSet = $derived(new Set(ui.types));
+  const toggleType = (id: number) => (ui.types = typeSet.has(id) ? ui.types.filter((t) => t !== id) : [...ui.types, id]);
+  const toggleGroup = (ids: number[]) => {
+    const all = ids.every((id) => typeSet.has(id));
+    ui.types = all ? ui.types.filter((t) => !ids.includes(t)) : [...new Set([...ui.types, ...ids])];
+  };
+  const typeLabel = $derived.by(() => {
+    if (!ui.types.length) return "Tous les types";
+    const names = typeGroups.flatMap((g) => g.types).filter((t) => typeSet.has(t.id)).map((t) => t.name);
+    return names.length <= 2 ? names.join(", ") : `${names.length} types`;
+  });
+  let typesOpen = $state(false);
+  let typesEl = $state<HTMLElement | null>(null);
+  const closeTypes = (e: PointerEvent) => typesOpen && typesEl && !typesEl.contains(e.target as Node) && (typesOpen = false);
+  const num = (v: string) => (v.trim() === "" || !Number.isFinite(+v) ? null : +v);
+  const filtered = $derived(!!(ui.q || ui.types.length || ui.lvMin != null || ui.lvMax != null || ui.noDrop));
+  const resetFilters = () => Object.assign(ui, { q: "", types: [], lvMin: null, lvMax: null, noDrop: false });
+
+  const sort = useSort<SortKey>("even", false, (k) => k === "level" || k === "profit");
   const view = $derived.by(() => {
-    const m = matcher(q);
-    return sort.apply(rows.filter((r) => m(r.name) && (!type || r.item.type === type) && (!noDrop || !r.item.drop) && (!onlyPriced || r.even != null)));
+    const m = matcher(ui.q);
+    return sort.apply(
+      rows.filter(
+        (r) =>
+          m(r.name) &&
+          (!ui.types.length || typeSet.has(r.item.type_id)) &&
+          (ui.lvMin == null || r.level >= ui.lvMin) &&
+          (ui.lvMax == null || r.level <= ui.lvMax) &&
+          (!ui.noDrop || !r.item.drop) &&
+          (!ui.priced || r.even != null),
+      ),
+    );
   });
 
   const COLUMNS: { key: SortKey; label: string; num?: boolean; title?: string }[] = [
     { key: "name", label: "Objet" },
     { key: "level", label: "Niv.", num: true },
     { key: "cost", label: "Prix", num: true, title: "Craft (prix enregistrés des ingrédients) ou lot le plus intéressant à l'HDV" },
-    { key: "value", label: "Runes à 100 %", num: true, title: "Meilleur résultat (sans focus ou focus sur un effet), runes vendues après la taxe" },
-    { key: "even", label: "Coef. rentable", num: true, title: "Coefficient à partir duquel le brisage rembourse l'objet" },
-    { key: "profit", label: "Bénéfice", num: true, title: "Au coefficient saisi pour cet objet" },
+    { key: "even", label: "Coef. rentable", num: true, title: "Coefficient à partir duquel le brisage (meilleur résultat, avec ou sans focus) rembourse l'objet" },
+    { key: "profit", label: "Bénéfice", num: true, title: "Au coefficient connu de cet objet (relevé au brisage ou saisi)" },
   ];
 
   /** Kamas rounded to the unit (rune values are fractional). */
@@ -114,52 +154,93 @@
   const coefText = (c: number | null) => (c == null ? "—" : `${fmtNum(c, c < 10 ? 1 : 0)} %`);
 
   // ---- detail ----
-  const sel = $derived(rows.find((r) => r.gid === selGid) ?? null);
+  const sel = $derived(rows.find((r) => r.gid === ui.sel) ?? null);
   const sources = $derived(sel ? sourcesOf(sel.item) : []);
-  const src = $derived(sources.find((s) => s.key === chosen[selGid ?? ""]) ?? sources[0] ?? null);
+  const src = $derived(sources.find((s) => s.key === chosen[ui.sel ?? ""]) ?? sources[0] ?? null);
   /** Without any source (no recipe price, nothing scanned): the mean roll, priced at nothing. */
   const out = $derived(src?.out ?? (sel ? outcome(meanRoll(sel.item), sel.level, pack.runes, price) : null));
-  const coef = $derived(sel ? (coefOf(sel.gid) ?? 100) : 100);
+  const selCoef = $derived(sel ? coefs[sel.gid] ?? null : null);
+  const coef = $derived(selCoef?.coef ?? 100);
   const k = $derived(coef / 100);
-  const setCoef = (v: string) => {
-    if (!sel) return;
+  const setCoef = (gid: number, v: string) => {
     const n = parseFloat(v.replace(",", "."));
-    if (Number.isFinite(n) && n >= 0) coefs[sel.gid] = n;
-    else delete coefs[sel.gid];
+    const c = Number.isFinite(n) && n >= 0 ? n : null;
+    if (c != null) coefs[gid] = { gid, coef: c, t: Date.now() / 1000, source: "manuel" };
+    else delete coefs[gid];
+    call("brisage", "set_coef", { gid, coef: c }).catch((e) => (err = String(e)));
   };
   const srcLabel = (s: Source) => (s.kind === "craft" ? `Craft (jet moyen) · ${s.cost != null ? kamas(s.cost) : "prix inconnu"}` : `Lot HDV · ${kamas(s.cost!)}`) + ` · rentable à ${coefText(s.even)}`;
 
   onMount(() => {
     call<BrisPack>("brisage", "items").then((p) => (pack = p)).catch((e) => (err = String(e)));
     call<Recipes>("auction", "recipes").then((r) => (recipes = r));
+    const offPending = on<Pending[]>("brisage:pending", (l) => (pending = l));
+    call<Pending[]>("brisage", "pending").then((l) => (pending = l)).catch(() => {});
+    const off = on<Coef | { gid: number; coef: null }>("brisage:coef", (e) => {
+      if (e.coef == null) delete coefs[e.gid];
+      else coefs[e.gid] = e as Coef;
+    });
+    call<Record<string, Coef>>("brisage", "coefs").then(async (c) => {
+      Object.assign(coefs, c);
+      // coefficients typed with the first version of the tab (browser storage) move to the backend
+      try {
+        const old: Record<string, number> = JSON.parse(localStorage.getItem(OLD_COEFS_KEY) ?? "{}");
+        for (const [g, v] of Object.entries(old)) if (!c[g]) await call("brisage", "set_coef", { gid: +g, coef: v });
+        localStorage.removeItem(OLD_COEFS_KEY);
+      } catch {}
+    });
     void prices.ensure();
     void auction.ensure();
+    return () => {
+      void off.then((f) => f());
+      void offPending.then((f) => f());
+    };
   });
 </script>
+
+<svelte:window onpointerdown={closeTypes} />
 
 <div class="view cgrid" class:anim={!cols.dragging} style:grid-template-columns="1fr 5px {cols.px("detail")}px">
   <div class="list">
     <div class="fh">Brisage</div>
-    <SearchBar bind:value={q} bind:priced={onlyPriced} placeholder="Rechercher un objet…">
+    <SearchBar bind:value={ui.q} bind:priced={ui.priced} placeholder="Rechercher un objet…">
       {#snippet before()}
-        <select bind:value={type}>
-          <option value="">Tous les types</option>
-          {#each types as t (t)}<option value={t}>{t}</option>{/each}
-        </select>
+        <div class="types" bind:this={typesEl}>
+          <button class="tbtn" class:on={ui.types.length > 0} onclick={() => (typesOpen = !typesOpen)}>{typeLabel} ▾</button>
+          {#if typesOpen}
+            <div class="tpop">
+              <div class="trow top">
+                <button class="mini" onclick={() => (ui.types = [])}>Tous</button>
+              </div>
+              {#each typeGroups as g (g.label)}
+                {@const ids = g.types.map((t) => t.id)}
+                <label class="tgroup"><input type="checkbox" checked={ids.every((id) => typeSet.has(id))} indeterminate={ids.some((id) => typeSet.has(id)) && !ids.every((id) => typeSet.has(id))} onchange={() => toggleGroup(ids)} /> {g.label}</label>
+                <div class="tlist">
+                  {#each g.types as t (t.id)}
+                    <label><input type="checkbox" checked={typeSet.has(t.id)} onchange={() => toggleType(t.id)} /> {t.name}</label>
+                  {/each}
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </div>
+        <span class="lv">Niv. <input type="number" min="1" max="200" placeholder="min" value={ui.lvMin ?? ""} oninput={(e) => (ui.lvMin = num(e.currentTarget.value))} /> – <input type="number" min="1" max="200" placeholder="max" value={ui.lvMax ?? ""} oninput={(e) => (ui.lvMax = num(e.currentTarget.value))} /></span>
       {/snippet}
-      {#snippet after()}<label title="Objets lâchés par un monstre"><input type="checkbox" bind:checked={noDrop} /> Masquer les objets droppables</label>{/snippet}
+      {#snippet after()}
+        <label title="Objets lâchés par un monstre"><input type="checkbox" bind:checked={ui.noDrop} /> Masquer les objets droppables</label>
+        {#if filtered}<button class="mini" onclick={resetFilters}>Effacer les filtres</button>{/if}
+      {/snippet}
     </SearchBar>
     {#if err}<Banner inset>Erreur : {err} (relancez l'application pour charger la dernière version)</Banner>{/if}
     <SmoothScroll>
-      <SortTable columns={COLUMNS} rows={view.slice(0, SHOWN)} {sort} key={(r) => r.gid} rowProps={(r) => ({ class: [(r.profit ?? 0) > 0 ? "hot" : "", r.gid === selGid ? "sel" : ""].join(" "), onclick: () => (selGid = r.gid) })}>
+      <SortTable columns={COLUMNS} rows={view.slice(0, SHOWN)} {sort} key={(r) => r.gid} rowProps={(r) => ({ class: [(r.profit ?? 0) > 0 ? "hot" : "", r.gid === ui.sel ? "sel" : ""].join(" "), onclick: () => (ui.sel = r.gid) })}>
         {#snippet row(r)}
           <td><b>{r.name}</b> <span class="mut">{r.item.type}</span>{#if r.item.drop} <span class="mut" title="Lâché par un monstre">· drop</span>{/if}</td>
           <td class="n">{r.level}</td>
           <td class="n" title={r.best?.kind === "craft" && r.best.missing?.length ? "Prix manquant : " + r.best.missing.join(", ") : ""}>
             {#if r.cost != null}{kamas(r.cost)} <span class="mut">{r.best?.kind === "lot" ? "HDV" : "craft"}</span>{:else}—{/if}
           </td>
-          <td class="n">{#if r.value != null}{k0(r.value)} <span class="mut">{focusName(r.best!.out)}</span>{#if r.best!.out.unpriced} <span class="warn" title="Une rune n'a pas de prix">⚠</span>{/if}{:else}—{/if}</td>
-          <td class="n"><b>{coefText(r.even)}</b></td>
+          <td class="n" title={r.best ? `Meilleur résultat : ${focusName(r.best.out)}` : ""}><b>{coefText(r.even)}</b>{#if r.best?.out.unpriced} <span class="warn" title="Une rune n'a pas de prix (comptée 0)">⚠</span>{/if}</td>
           <td class="n" class:good={(r.profit ?? 0) > 0} class:bad={(r.profit ?? 0) < 0}>{#if r.profit != null}{signedKamas(Math.round(r.profit))} <span class="mut">à {coefText(r.coef)}</span>{:else}—{/if}</td>
         {/snippet}
         {#snippet empty()}Aucun objet à afficher : ouvrez les objets (ou leurs ingrédients) et les runes à l'hôtel de vente pour enregistrer leurs prix (ou désactivez « Prix connus seulement »).{/snippet}
@@ -172,10 +253,25 @@
 
   <div class="detail" class:cz={cols.collapsed.detail}>
     <PanelHead {cols} name="detail" title="Détail" dir={-1} />
+    {#each pending as p (p.uid + ":" + p.t)}
+      <div class="pending">
+        <div><b>Brisage non reconnu</b> <span class="mut">{ago(p.t)}</span> · coefficient <b>{coefText(p.coef)}</b></div>
+        <div class="mut">{runesText(p)}</div>
+        <div class="pbtns">
+          <button disabled={!sel} onclick={() => sel && assign(p, sel.gid)}>{sel ? `Attribuer à ${sel.name}` : "Choisissez l'objet brisé dans la liste"}</button>
+          <button class="mini" onclick={() => assign(p, null)}>Ignorer</button>
+        </div>
+      </div>
+    {/each}
     {#if sel && out}
       <div class="fh">{sel.name} <span class="mut">· niv. {sel.level} · {sel.item.type}{sel.item.drop ? " · drop" : ""}{sel.item.craft ? " · craftable" : ""}</span></div>
       <div class="ctl">
-        <label>Coefficient <input type="number" min="0" step="1" value={coefOf(sel.gid) ?? ""} placeholder="100" oninput={(e) => setCoef(e.currentTarget.value)} /> %</label>
+        <label>Coefficient <input type="number" min="0" step="1" value={selCoef?.coef ?? ""} placeholder="100" oninput={(e) => setCoef(sel.gid, e.currentTarget.value)} /> %</label>
+        {#if selCoef}
+          <span class="mut" title={selCoef.guessed ? "Objet reconnu d'après les runes obtenues (absent de l'inventaire lu)" : ""}>
+            {selCoef.source === "brisage" ? "relevé au brisage" : "saisi"} {ago(selCoef.t)}{selCoef.guessed ? " ?" : ""}
+          </span>
+        {/if}
         {#if sources.length}
           <select value={src?.key} onchange={(e) => (chosen[sel.gid] = e.currentTarget.value)}>
             {#each sources as s (s.key)}<option value={s.key}>{srcLabel(s)}</option>{/each}
@@ -191,13 +287,14 @@
         <tbody>
           {#each out.lines as l, i (l.a)}
             <tr class:hot={out.best.focus === l.a}>
-              <td title={l.rune.label ?? ""}>{l.rune.name.replace(/^Rune /, "")}</td>
+              <td title={l.rune.label ?? ""}>{l.rune.name.replace(/^Rune /, "")}{#if l.exo} <span class="exo" title="Exo : donne ses runes mais ne peut pas être focus">exo</span>{/if}</td>
               <td class="n">{fmtNum(l.value, 1)}</td>
               <td class="n">{#if l.price != null}{kamas(l.price)}{:else}<span class="warn" title="Ouvrez la rune à l'HDV">?</span>{/if}</td>
               <td class="n">{fmtNum(l.count * k)}</td>
               <td class="n">{k0(l.count * (l.price ?? 0) * (1 - AH_TAX) * k)}</td>
-              <td class="n">{fmtNum(l.focus * k)}</td>
-              <td class="n"><b>{k0(out.focus[i] * k)}</b></td>
+              {#if l.exo}<td class="n mut">—</td><td class="n mut">—</td>
+              {:else}<td class="n">{fmtNum(l.focus * k)}</td>
+              <td class="n"><b>{k0(out.focus[i] * k)}</b></td>{/if}
             </tr>
           {/each}
           <tr class:hot={out.best.focus == null} class="tot">
@@ -219,7 +316,6 @@
       </div>
 
       {#if src?.kind === "lot"}<ItemCard row={src.lot} />{/if}
-      <p class="mut small">Runes par effet = (3 × poids × jet × niveau / 200 + 1) × coefficient / poids de la rune. Le focus donne les runes de l'effet choisi plus la moitié du poids des autres effets. Valeurs moyennes : le jeu tire les fractions au hasard.</p>
     {:else}
       <div class="mut">Choisissez un objet dans la liste.</div>
     {/if}
@@ -230,10 +326,21 @@
   .view { flex: 1; min-height: 0; display: grid; font-family: var(--font); }
   .list { min-width: 0; min-height: 0; display: flex; flex-direction: column; padding: 8px 10px 0; }
   .list > :global(.wrap) { flex: 1; }
-  .list :global(select) { padding: 3px 6px; }
+  /* no top padding in the scroller: the sticky header would stick below it and rows would show through the gap */
+  .list :global(.scroller) { padding-top: 0; }
+  .list :global(.tbl th) { z-index: 1; }
   .list :global(tbody tr) { cursor: pointer; }
   .list :global(tr.sel td) { box-shadow: inset 0 1px 0 var(--acc), inset 0 -1px 0 var(--acc); }
   .more { padding: 8px 6px; }
+  .types { position: relative; }
+  .tbtn { padding: 3px 8px; min-width: 130px; text-align: left; }
+  .tbtn.on { border-color: var(--acc); }
+  .tpop { position: absolute; top: calc(100% + 4px); left: 0; z-index: 20; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 4px 16px #0008; padding: 6px 10px 8px; min-width: 280px; display: flex; flex-direction: column; gap: 4px; }
+  .tpop label { display: flex; align-items: center; gap: 6px; white-space: nowrap; cursor: pointer; }
+  .tgroup { font-weight: 600; margin-top: 4px; }
+  .tlist { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; padding-left: 18px; }
+  .lv { display: inline-flex; align-items: center; gap: 4px; }
+  .lv input { width: 56px; padding: 3px 6px; }
   .detail { overflow: auto; background: var(--panel); border-left: 1px solid var(--line); padding: 0 10px 10px; font-size: 12px; }
   .detail :global(.phead) { padding-left: 0; padding-right: 0; }
   .ctl { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
@@ -244,4 +351,7 @@
   .runes .tot td { font-weight: 600; }
   .sum { padding: 8px 10px; background: var(--bg); border: 1px solid var(--line); margin-bottom: 10px; display: flex; flex-direction: column; gap: 4px; }
   .small { font-size: 11px; }
+  .pending { border: 1px solid var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent); padding: 6px 8px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 4px; }
+  .pbtns { display: flex; gap: 8px; align-items: center; }
+  .exo { color: var(--acc); font-size: 10px; }
 </style>
