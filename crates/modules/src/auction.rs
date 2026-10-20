@@ -14,6 +14,8 @@ use std::sync::{Arc, OnceLock};
 
 /// Clear name pinned in pipeline overrides (work/overrides.json) for the AH listing event.
 pub const AH_LIST: &str = "ExchangeTypesItemsExchangerDescriptionForUserEvent";
+/// Answer to an AH purchase: the lot bought leaves the stored listing.
+pub const AH_BUY: &str = "ExchangeBidHouseBuyResultEvent";
 
 // build-specific obfuscated field names, read from the data pack's bindings.json
 #[derive(Deserialize, Clone)]
@@ -38,9 +40,16 @@ pub(crate) struct ObjectEffect {
     action: Vec<String>,
     oneof: String,
 }
+/// bindings.json `ah_buy` (separate so that a pack without it still loads the listing bindings).
+#[derive(Deserialize, Clone)]
+struct AhBuy {
+    uid: String,
+    bought: String,
+}
 
 pub struct Auction {
     bind: OnceLock<Option<Bindings>>,
+    buy_bind: OnceLock<Option<AhBuy>>,
     store: Arc<Mutex<BTreeMap<String, Value>>>,
     persist: OnceLock<Persist>,
     /// pack-derived answers, constant once the pack is loaded
@@ -59,6 +68,7 @@ impl Auction {
     pub fn new() -> Self {
         Self {
             bind: OnceLock::new(),
+            buy_bind: OnceLock::new(),
             store: Default::default(),
             persist: OnceLock::new(),
             effects: OnceLock::new(),
@@ -69,6 +79,10 @@ impl Auction {
 
     fn bindings(&self, ctx: &Ctx) -> Option<&Bindings> {
         self.bind.get_or_init(|| serde_json::from_value(ctx.data.bindings.clone()).ok()).as_ref()
+    }
+
+    fn buy_bindings(&self, ctx: &Ctx) -> Option<&AhBuy> {
+        self.buy_bind.get_or_init(|| serde_json::from_value(ctx.data.bindings.get("ah_buy")?.clone()).ok()).as_ref()
     }
 
     fn store_path(ctx: &Ctx) -> std::path::PathBuf {
@@ -102,6 +116,29 @@ impl Auction {
             "min_price": mins.iter().min(), "rows": rows, "defaults": f["defaults"], "demo": m.raw.srv == "demo",
         });
         self.store.lock().insert(gid.to_string(), ent.clone());
+        self.save();
+        ctx.emit("auction", "item", ent);
+    }
+
+    /// A lot bought at the AH: drop it from its stored listing (the scan time is kept) and send the listing again.
+    fn on_buy(&self, m: &Message, ctx: &Ctx) {
+        let (Some(msg), Some(b)) = (m.decoded.as_ref(), self.buy_bindings(ctx)) else { return };
+        if !msg.get_field_by_name(&b.bought).and_then(|v| v.as_bool()).unwrap_or(false) {
+            return;
+        }
+        let uid = int(msg, &b.uid);
+        let mut s = self.store.lock();
+        let Some(ent) = s.values_mut().find(|e| e["rows"].as_array().is_some_and(|r| r.iter().any(|x| x["uid"].as_i64() == Some(uid)))) else {
+            ctx.log(format!("auction: lot {uid} acheté, absent des listes enregistrées"));
+            return;
+        };
+        let rows = ent["rows"].as_array_mut().unwrap();
+        rows.retain(|x| x["uid"].as_i64() != Some(uid));
+        let min = rows.iter().filter_map(|r| r["prices"].get(0).and_then(|p| p["price"].as_i64())).filter(|p| *p > 0).min();
+        ent["lots"] = json!(rows.len());
+        ent["min_price"] = json!(min);
+        let ent = ent.clone();
+        drop(s);
         self.save();
         ctx.emit("auction", "item", ent);
     }
@@ -223,7 +260,7 @@ impl Module for Auction {
     }
 
     fn interest(&self) -> Interest {
-        Interest::Types(&[AH_LIST])
+        Interest::Types(&[AH_LIST, AH_BUY])
     }
 
     fn init(&self, ctx: &Ctx) {
@@ -283,6 +320,9 @@ impl Module for Auction {
     }
 
     fn on_message(&self, m: &Message, ctx: &Ctx) {
+        if m.name == AH_BUY {
+            return self.on_buy(m, ctx);
+        }
         self.update_store(m, ctx);
     }
 

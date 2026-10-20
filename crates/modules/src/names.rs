@@ -1,7 +1,7 @@
 //! Developer tool: are the message names of the loaded data pack compatible with the game that is installed / running?
 //! Static checks on the pack, a fingerprint comparison with the installed game files (sizes only, nothing is read), a live
 //! check of the message types seen on the wire, and a button that recomputes the names (pipeline/update_names.py).
-use crate::auction::AH_LIST;
+use crate::auction::{AH_BUY, AH_LIST};
 use crate::{brisage, inventory};
 use crate::prices::AVG_PRICES;
 use crate::{Ctx, Interest, Message, Module};
@@ -114,6 +114,12 @@ fn binding_checks(ctx: &Ctx) -> Vec<Value> {
             }
             None => out.push(check("bindings.ah_item", false, "message d'objet introuvable")),
         }
+    }
+    // AH purchase result
+    let buy = ctx.proto.obf_for_clear(AH_BUY).and_then(|o| ctx.proto.message(&o));
+    match &buy {
+        Some(m) => out.push(fields_check("bindings.ah_buy (champs)", m, vec![s(&b["ah_buy"]["uid"]), s(&b["ah_buy"]["bought"])], vec![])),
+        None => out.push(check("bindings.ah_buy", false, format!("{AH_BUY} introuvable"))),
     }
     // average prices
     let avg = ctx.proto.obf_for_clear(AVG_PRICES).and_then(|o| ctx.proto.message(&o));

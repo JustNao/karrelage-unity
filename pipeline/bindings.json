@@ -10,6 +10,11 @@
   "effects": "fycc",
   "ints": ["fyby", "fyca", "fycb"]
  },
+ "ah_buy": {
+  "_doc": "ExchangeBidHouseBuyResultEvent (answer to an AH purchase): object_uid = uid of the lot bought (as in the AH listing), bought = success.",
+  "uid": "fycx",
+  "bought": "fycy"
+ },
  "avg_prices": {
   "_doc": "ObjectAveragePricesEvent: repeated entries of (item gid, average per-unit price over the last week). The third field of an entry is unused.",
   "items": "fswf",
