@@ -59,10 +59,13 @@
   const myPrice = $derived(versus ? unitPrice(row) : Infinity);
   const pinPrice = $derived(versus ? unitPrice(versus.pin) : Infinity);
   const priceDelta = $derived(myPrice - pinPrice);
+  /** Folded lot: an over-max line only shows what it has above its default max ("+12 Vitalité" instead of "412 Vitalité"). */
+  const excessText = (e: any): string | null =>
+    !open && !versus && e.status === "above" && e.range && e.hi != null && !isNegative(e) && /^\d+/.test(e.text ?? "") ? String(e.text).replace(/^\d+/, `+${e.hi - e.range[1]}`) : null;
   const hint = (e: any) =>
     `effet ${e.action}` +
     (e.range ? ` · de base ${rangeLabel(e.range).slice(1, -1)}` : "") +
-    (e.status === "added" ? " · EXO (pas un effet de base)" : e.status === "above" ? " · au-dessus du max de base" : e.status === "removed" ? " · retiré (effet de base manquant)" : "");
+    (e.status === "added" ? " · EXO (pas un effet de base)" : e.status === "above" ? ` · au-dessus du max de base (${e.text})` : e.status === "removed" ? " · retiré (effet de base manquant)" : "");
 </script>
 
 {#snippet icon(e: any)}
@@ -75,6 +78,8 @@
     {e.text}
   {:else if mirror}
     {#if e.range && e.status !== "removed" && e.action !== LEGENDARY_EFFECT}<small class="rg">{rangeLabel(e.range)}</small>{/if}{e.text}{@render icon(e)}
+  {:else if excessText(e)}
+    {@render icon(e)}{excessText(e)}
   {:else}
     {@render icon(e)}{e.text}{#if e.range && e.status !== "removed" && e.action !== LEGENDARY_EFFECT}<small>{rangeLabel(e.range)}</small>{/if}
   {/if}
