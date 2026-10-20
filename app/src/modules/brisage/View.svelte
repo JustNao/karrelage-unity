@@ -45,10 +45,12 @@
   let err = $state("");
 
   /** An item's coefficient: read from a break (`DecraftResultEvent`) or typed. */
-  interface Coef { gid: number; coef: number; t: number; source: "brisage" | "manuel"; guessed?: boolean }
+  interface Coef { gid: number; coef: number; t: number; source: "brisage" | "manuel"; guessed?: boolean; first?: number; qty?: number | null; focus?: number | null }
   let coefs = $state<Record<string, Coef>>({});
   /** Break results whose item the backend could not tell (focus break, uid not in the inventory): to assign by hand. */
-  interface Pending { uid: number; coef: number; t: number; runes: [number, number][] }
+  /** A break result as the backend records it (first / last = coefficient of the first / last item of the stack, %). */
+  interface Break { t: number; uid: number; gid: number | null; how: "inventaire" | "runes" | "manuel" | null; first: number; last: number; qty: number | null; focus: number | null; runes: [number, number][] }
+  type Pending = Break;
   let pending = $state.raw<Pending[]>([]);
   const runeNames = $derived(new Map(Object.values(pack.runes).map((r) => [r.gid, r.name.replace(/^Rune /, "")])));
   const runesText = (p: Pending) => p.runes.map(([g, q]) => `${q} ${runeNames.get(g) ?? "#" + g}`).join(", ");
@@ -152,6 +154,29 @@
   const k0 = (n: number) => kamas(Math.round(n));
   const focusName = (o: Outcome) => (o.best.focus == null ? "sans focus" : `focus ${o.lines.find((l) => l.a === o.best.focus)?.rune.name.replace(/^Rune /, "")}`);
   const coefText = (c: number | null) => (c == null ? "—" : `${fmtNum(c, c < 10 ? 1 : 0)} %`);
+  const dateFmt = new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  /** "20/10/2026 22:30:39" */
+  const when = (t: number) => dateFmt.format(new Date(t * 1000));
+
+  /** Row clicked: select it and copy its name (to paste in the auction house search). */
+  let copied = $state<number | null>(null);
+  function pick(r: Row) {
+    ui.sel = r.gid;
+    navigator.clipboard?.writeText(r.name).then(() => {
+      copied = r.gid;
+      setTimeout(() => copied === r.gid && (copied = null), 900);
+    }, () => {});
+  }
+
+  /** Break history of the selected item, latest first. */
+  let breaks = $state.raw<Break[]>([]);
+  const loadBreaks = (gid: number | null) => {
+    if (gid == null) return void (breaks = []);
+    call<Break[]>("brisage", "breaks", { gid }).then((l) => ui.sel === gid && (breaks = l.reverse())).catch(() => {});
+  };
+  $effect(() => loadBreaks(ui.sel));
+  const runeName = (a: number | null) => (a == null ? "" : (pack.runes[a]?.name.replace(/^Rune /, "") ?? "#" + a));
+  const runeTotal = (b: Break) => b.runes.reduce((s, [, q]) => s + q, 0);
 
   // ---- detail ----
   const sel = $derived(rows.find((r) => r.gid === ui.sel) ?? null);
@@ -175,6 +200,7 @@
     call<BrisPack>("brisage", "items").then((p) => (pack = p)).catch((e) => (err = String(e)));
     call<Recipes>("auction", "recipes").then((r) => (recipes = r));
     const offPending = on<Pending[]>("brisage:pending", (l) => (pending = l));
+    const offBreak = on<Break>("brisage:break", (b) => b.gid === ui.sel && loadBreaks(ui.sel));
     call<Pending[]>("brisage", "pending").then((l) => (pending = l)).catch(() => {});
     const off = on<Coef | { gid: number; coef: null }>("brisage:coef", (e) => {
       if (e.coef == null) delete coefs[e.gid];
@@ -194,6 +220,7 @@
     return () => {
       void off.then((f) => f());
       void offPending.then((f) => f());
+      void offBreak.then((f) => f());
     };
   });
 </script>
@@ -233,9 +260,9 @@
     </SearchBar>
     {#if err}<Banner inset>Erreur : {err} (relancez l'application pour charger la dernière version)</Banner>{/if}
     <SmoothScroll>
-      <SortTable columns={COLUMNS} rows={view.slice(0, SHOWN)} {sort} key={(r) => r.gid} rowProps={(r) => ({ class: [(r.profit ?? 0) > 0 ? "hot" : "", r.gid === ui.sel ? "sel" : ""].join(" "), onclick: () => (ui.sel = r.gid) })}>
+      <SortTable columns={COLUMNS} rows={view.slice(0, SHOWN)} {sort} key={(r) => r.gid} rowProps={(r) => ({ class: [(r.profit ?? 0) > 0 ? "hot" : "", r.gid === ui.sel ? "sel" : ""].join(" "), onclick: () => pick(r) })}>
         {#snippet row(r)}
-          <td><b>{r.name}</b> <span class="mut">{r.item.type}</span>{#if r.item.drop} <span class="mut" title="Lâché par un monstre">· drop</span>{/if}</td>
+          <td><b>{r.name}</b>{#if copied === r.gid} <span class="copied">copié</span>{/if} <span class="mut">{r.item.type}</span>{#if r.item.drop} <span class="mut" title="Lâché par un monstre">· drop</span>{/if}</td>
           <td class="n">{r.level}</td>
           <td class="n" title={r.best?.kind === "craft" && r.best.missing?.length ? "Prix manquant : " + r.best.missing.join(", ") : ""}>
             {#if r.cost != null}{kamas(r.cost)} <span class="mut">{r.best?.kind === "lot" ? "HDV" : "craft"}</span>{:else}—{/if}
@@ -255,7 +282,7 @@
     <PanelHead {cols} name="detail" title="Détail" dir={-1} />
     {#each pending as p (p.uid + ":" + p.t)}
       <div class="pending">
-        <div><b>Brisage non reconnu</b> <span class="mut">{ago(p.t)}</span> · coefficient <b>{coefText(p.coef)}</b></div>
+        <div><b>Brisage non reconnu</b> <span class="mut">{when(p.t)}</span> · coefficient <b>{coefText(p.last)}</b></div>
         <div class="mut">{runesText(p)}</div>
         <div class="pbtns">
           <button disabled={!sel} onclick={() => sel && assign(p, sel.gid)}>{sel ? `Attribuer à ${sel.name}` : "Choisissez l'objet brisé dans la liste"}</button>
@@ -269,7 +296,7 @@
         <label>Coefficient <input type="number" min="0" step="1" value={selCoef?.coef ?? ""} placeholder="100" oninput={(e) => setCoef(sel.gid, e.currentTarget.value)} /> %</label>
         {#if selCoef}
           <span class="mut" title={selCoef.guessed ? "Objet reconnu d'après les runes obtenues (absent de l'inventaire lu)" : ""}>
-            {selCoef.source === "brisage" ? "relevé au brisage" : "saisi"} {ago(selCoef.t)}{selCoef.guessed ? " ?" : ""}
+            {selCoef.source === "brisage" ? "brisé le" : "saisi le"} {when(selCoef.t)} ({ago(selCoef.t)}){selCoef.guessed ? " ?" : ""}
           </span>
         {/if}
         {#if sources.length}
@@ -316,6 +343,24 @@
       </div>
 
       {#if src?.kind === "lot"}<ItemCard row={src.lot} />{/if}
+
+      {#if breaks.length}
+        <div class="fh hist">Brisages enregistrés</div>
+        <table class="tbl runes">
+          <thead><tr><th>Date</th><th class="n" title="Coefficient du premier et du dernier objet du lot brisé">Coefficient</th><th class="n" title="Taille du lot dans l'inventaire (si l'objet y a été vu)">Qté</th><th>Focus</th><th class="n">Runes</th></tr></thead>
+          <tbody>
+            {#each breaks as b (b.uid + ":" + b.t)}
+              <tr title={b.how === "runes" ? "Objet reconnu d'après les runes" : b.how === "manuel" ? "Objet attribué à la main" : ""}>
+                <td>{when(b.t)}</td>
+                <td class="n">{b.first !== b.last ? `${fmtNum(b.first)} → ` : ""}<b>{fmtNum(b.last)} %</b></td>
+                <td class="n">{b.qty ?? "?"}</td>
+                <td>{runeName(b.focus) || "—"}</td>
+                <td class="n">{runeTotal(b)}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      {/if}
     {:else}
       <div class="mut">Choisissez un objet dans la liste.</div>
     {/if}
@@ -351,6 +396,8 @@
   .runes .tot td { font-weight: 600; }
   .sum { padding: 8px 10px; background: var(--bg); border: 1px solid var(--line); margin-bottom: 10px; display: flex; flex-direction: column; gap: 4px; }
   .small { font-size: 11px; }
+  .copied { color: var(--ok); font-size: 10px; }
+  .hist { margin-top: 12px; }
   .pending { border: 1px solid var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent); padding: 6px 8px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 4px; }
   .pbtns { display: flex; gap: 8px; align-items: center; }
   .exo { color: var(--acc); font-size: 10px; }

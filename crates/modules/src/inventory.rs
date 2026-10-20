@@ -39,9 +39,30 @@ pub(crate) struct Bindings {
     pub deleted_list: String,
 }
 
-/// Object uid -> item gid of every equipment piece seen this session, kept after its deletion (the Brisage module resolves the
-/// uids of broken items with it: the item is gone from the inventory by then).
-pub type UidMap = Arc<Mutex<HashMap<i64, i64>>>;
+/// An equipment piece as last seen in the inventory: its gid, stack size and effect values ([action, value]).
+#[derive(Clone, Debug, Default)]
+pub struct Seen {
+    pub gid: i64,
+    pub quantity: i64,
+    pub effects: Vec<(i64, i64)>,
+}
+
+impl Seen {
+    fn of(it: &Value) -> Option<Self> {
+        let effects = it["effects"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|e| e["status"] != "removed")
+            .filter_map(|e| Some((e["action"].as_i64()?, e["hi"].as_i64()?)))
+            .collect();
+        Some(Seen { gid: it["gid"].as_i64()?, quantity: it["quantity"].as_i64().unwrap_or(1), effects })
+    }
+}
+
+/// Object uid -> the equipment piece, for every piece seen (loaded or captured), kept after its deletion: the Brisage
+/// module resolves the uids of broken items with it (the item is gone from the inventory by then).
+pub type UidMap = Arc<Mutex<HashMap<i64, Seen>>>;
 
 pub struct Inventory {
     bind: OnceLock<Option<(Bindings, ObjectEffect)>>,
@@ -63,7 +84,7 @@ impl Inventory {
         Self { bind: OnceLock::new(), items: Default::default(), updated: Default::default(), persist: OnceLock::new(), uids: Default::default() }
     }
 
-    /// Shared uid -> gid map (see `UidMap`).
+    /// Shared uid -> item map (see `UidMap`).
     pub fn uids(&self) -> UidMap {
         self.uids.clone()
     }
@@ -132,8 +153,8 @@ impl Module for Inventory {
             let mut s = self.items.lock();
             for it in saved["items"].as_array().into_iter().flatten() {
                 if let Some(uid) = it["uid"].as_i64() {
-                    if let Some(gid) = it["gid"].as_i64() {
-                        self.uids.lock().insert(uid, gid);
+                    if let Some(seen) = Seen::of(it) {
+                        self.uids.lock().insert(uid, seen);
                     }
                     s.insert(uid, it.clone());
                 }
@@ -148,8 +169,8 @@ impl Module for Inventory {
             let out: Vec<(i64, Value)> = l.iter().filter_map(|x| Self::item(ctx, b, eb, x, t)).collect();
             let mut u = self.uids.lock();
             for (uid, it) in &out {
-                if let Some(gid) = it["gid"].as_i64() {
-                    u.insert(*uid, gid);
+                if let Some(seen) = Seen::of(it) {
+                    u.insert(*uid, seen);
                 }
             }
             out

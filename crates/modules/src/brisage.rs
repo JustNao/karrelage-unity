@@ -76,12 +76,17 @@ pub struct Brisage {
     coefs: Arc<Mutex<BTreeMap<i64, Value>>>,
     persist: OnceLock<Persist>,
     uids: UidMap,
-    /// Break results whose item could not be told (latest last): {uid, coef, t, runes}; the user can assign them to an item.
+    /// Every break result seen, oldest first (see `record`): the data a model of the coefficient will be fitted on.
+    history: Arc<Mutex<Vec<Value>>>,
+    history_persist: OnceLock<Persist>,
+    /// Break results whose item could not be told (latest last; same shape as `history`): to assign to an item by hand.
     pending: Mutex<Vec<Value>>,
 }
 
 /// Unassigned break results kept for the session.
 const MAX_PENDING: usize = 10;
+/// Break results kept in the history.
+const MAX_HISTORY: usize = 5000;
 
 impl Default for Brisage {
     fn default() -> Self {
@@ -92,7 +97,43 @@ impl Default for Brisage {
 impl Brisage {
     /// `uids`: object uid -> gid of the equipment seen in the inventory (shared with the inventory module).
     pub fn new(uids: UidMap) -> Self {
-        Self { pack: OnceLock::new(), bind: OnceLock::new(), coefs: Default::default(), persist: OnceLock::new(), uids, pending: Default::default() }
+        Self {
+            pack: OnceLock::new(),
+            bind: OnceLock::new(),
+            coefs: Default::default(),
+            persist: OnceLock::new(),
+            uids,
+            history: Default::default(),
+            history_persist: OnceLock::new(),
+            pending: Default::default(),
+        }
+    }
+
+    /// The effect focused in a break: a single kind of rune received from an item that yields several.
+    fn focus_of(pack: &Pack, gid: i64, runes: &[(i64, i64)]) -> Option<i64> {
+        let (_, effects) = pack.items.get(&gid)?;
+        let [(rune, _)] = runes else { return None };
+        let a = pack.runes.iter().find(|(_, r)| r.gid == *rune)?.0;
+        (effects.iter().filter(|e| e.0 != *a).count() > 0).then_some(*a)
+    }
+
+    /// Coefficient entry of an item from a break record (coef = the last item's, the latest known).
+    fn coef_entry(rec: &Value) -> Value {
+        json!({
+            "gid": rec["gid"], "coef": rec["last"], "first": rec["first"], "t": rec["t"], "source": "brisage", "uid": rec["uid"],
+            "guessed": rec["how"] == "runes", "qty": rec["qty"], "focus": rec["focus"], "runes": rec["runes"],
+        })
+    }
+
+    fn push_history(&self, rec: Value) {
+        let mut h = self.history.lock();
+        h.push(rec);
+        let extra = h.len().saturating_sub(MAX_HISTORY);
+        h.drain(..extra);
+        drop(h);
+        if let Some(p) = self.history_persist.get() {
+            p.touch();
+        }
     }
 
     fn bindings(&self, ctx: &Ctx) -> Option<&Bindings> {
@@ -222,30 +263,52 @@ impl Module for Brisage {
                 s.insert(g, e.clone());
             }
         }
+        let history = self.history.clone();
+        let (persist, saved) = Persist::open(ctx.module_dir("brisage").join("breaks.json"), ctx.logger(), move || Value::Array(history.lock().clone()));
+        let _ = self.history_persist.set(persist);
+        if let Some(Value::Array(l)) = saved {
+            *self.history.lock() = l;
+        }
     }
 
     fn on_message(&self, m: &Message, ctx: &Ctx) {
         let (Some(msg), Some(b)) = (m.decoded.as_ref(), self.bindings(ctx)) else { return };
         let float = |x: &loutil_proto::DynamicMessage, f: &str| x.get_field_by_name(f).and_then(|v| v.as_f32()).unwrap_or(0.0) as f64;
+        let pct = |x: f64| (x * 10000.0).round() / 100.0; // 0.529079 -> 52.91 %
         for r in messages(msg, &b.results) {
-            // a stack of identical items: coef_max for the first one broken, coef_min for the last (= the latest coefficient)
+            // presumably a stack of identical items: coef_max for the first one broken, coef_min for the last (the latest)
             let (lo, hi) = (float(&r, &b.coef_min), float(&r, &b.coef_max));
-            let coef = (lo.min(hi) * 1000.0).round() / 10.0;
             let uid = int(&r, &b.uid);
             let runes: Vec<(i64, i64)> = messages(&r, &b.runes).iter().map(|x| (int(x, &b.rune_gid), int(x, &b.rune_qty))).collect();
-            let known = self.uids.lock().get(&uid).copied();
-            let Some(gid) = known.or_else(|| Self::guess_gid(self.pack(ctx), &runes)) else {
-                ctx.log(format!("brisage: objet {uid} non reconnu, coefficient {coef:.1} % à attribuer dans l'onglet Brisage"));
+            let seen = self.uids.lock().get(&uid).cloned();
+            let pack = self.pack(ctx);
+            let (gid, how) = match &seen {
+                Some(s) => (Some(s.gid), Some("inventaire")),
+                None => match Self::guess_gid(pack, &runes) {
+                    Some(g) => (Some(g), Some("runes")),
+                    None => (None, None),
+                },
+            };
+            // the break record: stack size and rolls as last seen in the inventory (null when the uid was never seen)
+            let rec = json!({
+                "t": m.raw.t, "uid": uid, "gid": gid, "how": how, "first": pct(lo.max(hi)), "last": pct(lo.min(hi)),
+                "qty": seen.as_ref().map(|s| s.quantity), "effects": seen.as_ref().map(|s| s.effects.clone()),
+                "focus": gid.and_then(|g| Self::focus_of(pack, g, &runes)), "runes": runes,
+            });
+            self.push_history(rec.clone());
+            let Some(gid) = gid else {
+                ctx.log(format!("brisage: objet {uid} non reconnu, coefficient {} % à attribuer dans l'onglet Brisage", rec["last"]));
                 let mut l = self.pending.lock();
-                l.push(json!({"uid": uid, "coef": coef, "t": m.raw.t, "runes": runes}));
+                l.push(rec);
                 let extra = l.len().saturating_sub(MAX_PENDING);
                 l.drain(..extra);
                 ctx.emit("brisage", "pending", Value::Array(l.clone()));
                 continue;
             };
-            let e = json!({"gid": gid, "coef": coef, "t": m.raw.t, "source": "brisage", "uid": uid, "guessed": known.is_none(), "runes": runes});
+            let e = Self::coef_entry(&rec);
             self.coefs.lock().insert(gid, e.clone());
             self.changed(ctx, e);
+            ctx.emit("brisage", "break", rec);
         }
     }
 
@@ -272,22 +335,39 @@ impl Module for Brisage {
                 self.changed(ctx, e.clone());
                 Ok(e)
             }
-            // unassigned break results: [{uid, coef, t, runes}]
+            // unassigned break results (records, see `history`)
             "pending" => Ok(Value::Array(self.pending.lock().clone())),
             // args: {uid, t, gid}: that pending break result is about this item (gid null just dismisses it)
             "assign" => {
                 let (uid, t) = (args["uid"].as_i64(), args["t"].as_f64());
+                let same = |p: &Value| p["uid"].as_i64() == uid && p["t"].as_f64() == t;
                 let mut l = self.pending.lock();
-                let i = l.iter().position(|p| p["uid"].as_i64() == uid && p["t"].as_f64() == t).ok_or_else(|| anyhow!("brisage: unknown break result"))?;
-                let p = l.remove(i);
+                let i = l.iter().position(same).ok_or_else(|| anyhow!("brisage: unknown break result"))?;
+                let mut rec = l.remove(i);
                 ctx.emit("brisage", "pending", Value::Array(l.clone()));
                 drop(l);
                 if let Some(gid) = args["gid"].as_i64() {
-                    let e = json!({"gid": gid, "coef": p["coef"], "t": p["t"], "source": "brisage", "uid": p["uid"], "runes": p["runes"]});
+                    let runes: Vec<(i64, i64)> = serde_json::from_value(rec["runes"].clone()).unwrap_or_default();
+                    rec["gid"] = json!(gid);
+                    rec["how"] = json!("manuel");
+                    rec["focus"] = json!(Self::focus_of(self.pack(ctx), gid, &runes));
+                    if let Some(h) = self.history.lock().iter_mut().rev().find(|h| same(h)) {
+                        *h = rec.clone();
+                    }
+                    if let Some(p) = self.history_persist.get() {
+                        p.touch();
+                    }
+                    let e = Self::coef_entry(&rec);
                     self.coefs.lock().insert(gid, e.clone());
                     self.changed(ctx, e);
+                    ctx.emit("brisage", "break", rec);
                 }
                 Ok(json!({"ok": true}))
+            }
+            // args: {gid?}: the break history (of one item), oldest first
+            "breaks" => {
+                let gid = args["gid"].as_i64();
+                Ok(Value::Array(self.history.lock().iter().filter(|h| gid.is_none() || h["gid"].as_i64() == gid).cloned().collect()))
             }
             _ => Err(anyhow!("brisage: unknown method {method}")),
         }
@@ -361,7 +441,11 @@ mod tests {
         b.on_message(&msg, &hub.ctx);
         let c = b.call("coefs", Value::Null, &hub.ctx).unwrap();
         let e = &c["11609"];
-        assert_eq!(e["coef"], json!(52.9), "{c}");
+        assert_eq!(e["coef"], json!(52.91), "{c}");
+        assert_eq!(e["first"], json!(52.91));
+        assert!(e["focus"].is_null());
+        let h = b.call("breaks", json!({"gid": 11609}), &hub.ctx).unwrap();
+        assert_eq!((h[0]["how"].as_str(), h[0]["qty"].is_null()), (Some("runes"), true));
         assert_eq!(e["source"], "brisage");
         assert_eq!(e["uid"], 5402139);
         assert_eq!(e["guessed"], true);
@@ -369,10 +453,12 @@ mod tests {
 
         // with the uid known from the inventory, no guess
         let uids: UidMap = Default::default();
-        uids.lock().insert(5402139, 11609);
+        uids.lock().insert(5402139, crate::inventory::Seen { gid: 11609, quantity: 1, effects: vec![(118, 31)] });
         let b2 = Brisage::new(uids);
         b2.on_message(&msg, &hub.ctx);
         assert_eq!(b2.call("coefs", Value::Null, &hub.ctx).unwrap()["11609"]["guessed"], false);
+        let h = b2.call("breaks", Value::Null, &hub.ctx).unwrap();
+        assert_eq!((h[0]["how"].as_str(), h[0]["qty"].as_i64(), h[0]["effects"][0][1].as_i64()), (Some("inventaire"), Some(1), Some(31)));
 
         // a stack of three: three times the runes, still the Doline
         let pack = b.pack(&hub.ctx);
@@ -381,9 +467,13 @@ mod tests {
         // a focus break (one kind of rune) is never guessed: it waits to be assigned
         assert_eq!(Brisage::guess_gid(pack, &[(7459, 225)]), None);
         let p = Brisage::new(Default::default());
-        p.pending.lock().push(json!({"uid": 1, "coef": 302.7, "t": 2.0, "runes": [[7459, 225]]}));
+        let rec = json!({"uid": 1, "first": 310.0, "last": 302.7, "t": 2.0, "gid": null, "runes": [[7459, 225]]});
+        p.pending.lock().push(rec.clone());
+        p.push_history(rec);
         p.call("assign", json!({"uid": 1, "t": 2.0, "gid": 6748}), &hub.ctx).unwrap();
-        assert_eq!(p.call("coefs", Value::Null, &hub.ctx).unwrap()["6748"]["coef"], json!(302.7));
+        let c = p.call("coefs", Value::Null, &hub.ctx).unwrap();
+        assert_eq!((c["6748"]["coef"].as_f64(), c["6748"]["first"].as_f64(), c["6748"]["focus"].as_i64()), (Some(302.7), Some(310.0), Some(210)));
+        assert_eq!(p.call("breaks", json!({"gid": 6748}), &hub.ctx).unwrap()[0]["how"], "manuel");
         assert!(p.call("pending", Value::Null, &hub.ctx).unwrap().as_array().unwrap().is_empty());
 
         b.call("set_coef", json!({"gid": 11609, "coef": 40}), &hub.ctx).unwrap();
