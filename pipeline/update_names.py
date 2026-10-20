@@ -1,6 +1,6 @@
 """Recompute the data pack's message names (what the app's developer "Noms" tab runs).
 
-  python pipeline/update_names.py               # names only: match_protos.py + export_pack.py (protos already built for this game build)
+  python pipeline/update_names.py               # names only: script_names.py + match_protos.py + export_pack.py (protos already built for this game build)
   python pipeline/update_names.py --repack      # only export_pack.py + package_pack.py (no matching, no dump): refresh dist/datapack.zip
   python pipeline/update_names.py --from-game   # whole chain after a game update: copy the game files, dump them with
                                                 # Il2CppInspectorRedux, protodec -> protos, build_protos, game data, match, export
@@ -113,6 +113,7 @@ if "--from-game" in sys.argv:
 
 if not REPACK:
     step("Calcul des noms (correspondance structurelle avec les protos beta)")
+    run([py, "pipeline/script_names.py"])   # clear names / name lengths from the game's Unity script table
     run([py, "pipeline/match_protos.py"])
 
 step("Export du pack de données")

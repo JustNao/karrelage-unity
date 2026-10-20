@@ -126,7 +126,7 @@
     <div class="fh">Noms des paquets <span class="mut">· compatibilité du pack avec la version du jeu</span></div>
     {#if report}<span class="badge {VERDICT[report.verdict].cls}">{VERDICT[report.verdict].label}</span>{/if}
     <button onclick={refresh}>Vérifier</button>
-    <button disabled={running || !report?.canCompute} onclick={() => compute("names")} title="Relance la correspondance des noms (match_protos) puis l'export du pack">Calculer les noms</button>
+    <button disabled={running || !report?.canCompute} onclick={() => compute("names")} title="Relit les noms de la table de scripts Unity (script_names), relance la correspondance (match_protos) puis l'export du pack">Calculer les noms</button>
     <button disabled={running || !report?.canCompute} onclick={() => compute("repack")} title="Réexporte le pack (export_pack) et régénère dist/datapack.zip, sans correspondance des noms ni dump du jeu">Repack data</button>
     <ConfirmButton label="Tout régénérer depuis le jeu" confirmLabel="Confirmer (plusieurs minutes)" disabled={running || !report?.canCompute} title="Après une mise à jour du jeu : copie des fichiers, dump IL2CPP, protos, données, noms, export" onconfirm={() => compute("full")} />
   </div>

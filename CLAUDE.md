@@ -66,7 +66,8 @@ tools/                   Il2CppInspectorRedux, protodec, local .NET 10 (dotnet10
 # after a game update: re-copy files, re-dump, regenerate (see README.md for the full block)
 python pipeline/extract_gamedata.py --refresh
 python pipeline/build_protos.py           # also writes work/pb/protocol.desc
-python pipeline/match_protos.py           # ~1 min, rewrites work/mapping.json (reference names + overrides are applied on top)
+python pipeline/script_names.py           # names from the game's Unity script table (MonoScriptData) -> work/script_names.json
+python pipeline/match_protos.py           # a few s, rewrites work/mapping.json (anchored on script names; reference names + overrides on top)
 python pipeline/import_reference_names.py <list.txt>   # obf type -> clear name list (e.g. community dump) -> pipeline/reference/message_names.json
 python pipeline/export_pack.py            # -> datapack/ (what the app loads)
 python pipeline/make_fixtures.py          # only if the demo packet / formatter changed
@@ -85,7 +86,8 @@ A newer pack can be dropped in `%APPDATA%/fr.dofus.karrelage/datapack/` and wins
 - Effect ids on the wire = `effects` table ids (= item `possibleEffects[].actionId`), not `baseEffectId`.
 - Item default effect range = `diceNum..diceSide` (`diceSide == 0` → fixed). Colours: blue = not a default effect, green = above default max, grey = default effect missing.
 - Svelte 5: plain `Map`/`Set` inside `$state` are not reactive – use `SvelteMap`/`SvelteSet`; `x ??= []` returns the raw value, re-read through the proxy.
-- Name precedence: auto beta match < `pipeline/reference/message_names.json` (conf `ref`) < `work/overrides.json` (conf `manual`).
+- Name precedence: auto beta match < `pipeline/reference/message_names.json` (conf `ref`) < script table (conf `script`) < `work/overrides.json` (conf `manual`); a `ref` name whose length contradicts the script table is dropped.
+- Script table (`pipeline/script_names.py`, `pipeline/dotnet_meta.py` = minimal .NET metadata reader): Unity's `MonoScriptData` in each protocol DummyDll lists the source files (one per .proto, with their class count) and every class as `namespace|name` in declaration order (enums excluded). The obfuscator blanks entries with underscores of the same length but leaves protoc's nested `Types` containers (they carry the parent's clear full name), some nested classes and `decoy_*` classes (fakes, conf `decoy`, never matched). Class blocks in the type table start with each file's `<File>Reflection` (only top-level class with one field), in compile order, and are given to files of the same size by an assignment on leaked structure + name lengths. Blank entries still give package + name length, which constrains `match_protos.py`.
 - Effects carry `group` (stats/main/secondary/damage/resist/other, from the game's characteristic categories), `order` (rank in the in-game panel) and `density` (= effectPowerRate: AP 100, MP 90, vitality 0.2 – kept for later features), all computed in `pipeline/export_pack.py`. The UI orders item effects: new first, then stats/main, damage, resistances, utility (secondary/other); filter list/picker sections: Main stats, Secondary stats, Damage, Resistances, Other.
 - `weapon` group = weapon hit effects ("dommages X", "vole X"); the UI only offers it for items whose default effects contain some. Filter rows = the item's *default* effects that are `filterable` (no negative twins; from "other" only 795 Arme de chasse) plus whatever the user adds.
 - Item **density** (`Data::item_density`, per lot as `density`) = sum of effect value x effect density; negatives already carry half of their twin's rate. The HDV tab plots price vs density with a least-squares line (`DensityChart.svelte`); dots beyond 2σ above the line are likely underpriced lots.

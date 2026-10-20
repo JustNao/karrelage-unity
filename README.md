@@ -92,7 +92,8 @@ tools/protodec/protodec.exe work/dump/dll/Ankama.Dofus.Protocol.Game.dll work/pr
 tools/protodec/protodec.exe work/dump/dll/Ankama.Dofus.Protocol.Connection.dll work/proto/connection.proto
 python pipeline/build_protos.py             # compile protos, writes work/pb/protocol.desc
 # 3. clear names (obfuscated names rotate on every update)
-python pipeline/match_protos.py             # ~1 min: structural match with the beta protos -> work/mapping.json
+python pipeline/script_names.py             # clear names leaked by the Unity script table of the dump -> work/script_names.json
+python pipeline/match_protos.py             # structural match with the beta protos, anchored on those names -> work/mapping.json
 python pipeline/import_reference_names.py <list.txt>   # optional: community obf->clear list -> pipeline/reference/message_names.json
 #    pin confirmed names in work/overrides.json (they win over everything), roles/fields in pipeline/bindings.json
 # 4. game data: items, effects, item types, i18n

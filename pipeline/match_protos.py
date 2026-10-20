@@ -88,17 +88,62 @@ def main():
     emap = {c: b for c, (b, j) in match_enums(cur_enums, beta_enums).items()}
     print(f"cur msgs {len(cur_msgs)}  beta msgs {len(beta_msgs)}  enums matched {len(emap)}/{len(cur_enums)}")
 
-    return run(cur_msgs, beta_msgs, emap)
+    return run(cur_msgs, beta_msgs, emap, script_constraints(cur_msgs, beta_msgs))
+
+
+def _flat(ns):
+    """Package / namespace in a comparable form: 'Com.Ankama.Dofus.Server.Game.Protocol.Tax.Collector' == '...taxcollector'."""
+    return (ns or "").replace(".", "").replace("_", "").lower()
+
+
+def script_constraints(cur_msgs, beta_msgs):
+    """From work/script_names.json (script_names.py): {cur full name: (clear name or None, name length, package)}, plus the
+    beta message each known name points to. Leaked names become fixed pairs; blank ones restrict the candidates."""
+    p = work / "script_names.json"
+    if not p.exists():
+        return {}
+    sn = json.loads(p.read_text(encoding="utf-8"))
+    beta_by_short = collections.defaultdict(list)
+    for bn in beta_msgs:
+        beta_by_short[bn.rsplit(".", 1)[-1]].append(bn)
+    out = {}
+    for cn in cur_msgs:
+        v = sn.get(cn.rsplit(".", 1)[-1])
+        if not v:
+            continue
+        beta = None
+        if v["name"]:
+            same = [b for b in beta_by_short.get(v["name"], []) if _flat(b).startswith(_flat(v["pkg"]))] or beta_by_short.get(v["name"], [])
+            beta = same[0] if len(same) == 1 else None
+        out[cn] = {"name": v["name"], "len": v["len"], "pkg": v["pkg"], "beta": beta, "conf": v["conf"]}
+    return out
 
 
 def _ids(mapping):
     return {c: i for i, c in enumerate(mapping)}
 
 
-def run(cur_msgs, beta_msgs, emap):
+def run(cur_msgs, beta_msgs, emap, script=None):
     benum_id = {b: i for i, b in enumerate(sorted(set(emap.values())))}
+    script = script or {}
     cmap = {}   # cur -> beta
     info = {}
+    # names read from the game's script table are certain: they seed the rounds as anchors
+    for cn, s in script.items():
+        if s["beta"] and s["beta"] not in cmap.values():
+            cmap[cn] = s["beta"]; info[cn] = (1.0, -1, False)
+    print(f"script table anchors: {len(cmap)}")
+
+    def allowed(cn, bn):
+        """A blank script entry still fixes the package and the length of the clear name."""
+        s = script.get(cn)
+        if not s or s["name"]:
+            return not s
+        if s["conf"] == "decoy":
+            return False                          # a fake class from the obfuscator
+        short = bn.rsplit(".", 1)[-1]
+        return (s["len"] is None or len(short) == s["len"]) and (not s["pkg"] or _flat(bn).startswith(_flat(s["pkg"])))
+
     for rnd in range(7):
         pair_id = {c: i for i, c in enumerate(cmap)}
         beta_pair_id = {cmap[c]: i for c, i in pair_id.items()}
@@ -128,13 +173,14 @@ def run(cur_msgs, beta_msgs, emap):
         for n, c in bk.items():
             by_size[sum(c.values())].append(n)
         cand = []
+        taken_now = pair_id_rev(cmap)
         for cn, cc in ck.items():
             if cn in cmap:
                 continue
             sz = sum(cc.values())
             for s in range(max(0, sz - 4), sz + 3):
                 for bn in by_size.get(s, ()):
-                    if bn in pair_id_rev(cmap):
+                    if bn in taken_now or not allowed(cn, bn):
                         continue
                     bc = bk[bn]
                     inter = sum((cc & bc).values())
@@ -164,7 +210,7 @@ def run(cur_msgs, beta_msgs, emap):
             # require uniqueness for exact-ish early rounds: top beta candidate must be unambiguous
             amb = second_c.get(cn, 0) >= d - 0.04 or second_b.get(bn, 0) >= d - 0.04
             nf = sum(ck[cn].values())
-            if amb or nf < 3:
+            if amb or (nf < 3 and cn not in script):   # tiny messages only with the script-table constraint
                 continue
             cmap[cn] = bn; taken_b.add(bn); info[cn] = (d, rnd, amb); added += 1
         print(f"round {rnd} thr {thr}: +{added}  total {len(cmap)}")
@@ -226,12 +272,19 @@ def message_short(full):
 
 if __name__ == "__main__":
     cmap, info, beta_msgs, cur_msgs, emap = main()
+    script = script_constraints(cur_msgs, beta_msgs)
     mapping = {}
     for cn, bn in cmap.items():
         d, rnd, amb = info[cn]
-        conf = "high" if d >= 0.95 and rnd <= 2 else "med" if d >= 0.8 else "low"
+        conf = "script" if rnd < 0 else "high" if d >= 0.95 and rnd <= 2 else "med" if d >= 0.8 else "low"
         mapping[cn] = {"name": message_short(bn), "full": bn, "score": round(d, 3), "round": rnd, "conf": conf,
                        "fields": field_assign(cur_msgs[cn], beta_msgs[bn], cmap, emap)}
+    # script-table names with no beta counterpart (messages added since the beta): name only, no field names
+    for cn, s in script.items():
+        if s["name"] and cn not in mapping:
+            mapping[cn] = {"name": s["name"], "full": f"{s['pkg']}.{s['name']}" if s["pkg"] else None, "conf": "script", "fields": {}}
+        elif s["name"] and mapping[cn]["name"] != s["name"]:
+            mapping[cn].update(name=s["name"], conf="script")
     ov = work / "overrides.json"
     if ov.exists():
         for k, v in json.loads(ov.read_text()).items():

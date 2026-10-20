@@ -27,6 +27,7 @@ _mpath = root / "work" / "mapping.json"
 
 _opath = root / "work" / "overrides.json"
 _rpath = pathlib.Path(__file__).with_name("reference") / "message_names.json"   # obf type -> clear name (import_reference_names.py)
+_spath = root / "work" / "script_names.json"   # names / name lengths from the game's script table (script_names.py)
 
 
 def overrides():
@@ -34,11 +35,17 @@ def overrides():
 
 
 def mapping():
-    """work/mapping.json (auto beta matches), then the reference name list, then work/overrides.json (confirmed by hand) on top."""
+    """work/mapping.json (auto beta matches + names read from the game's script table, conf "script"), then the reference
+    name list, then work/overrides.json (confirmed by hand) on top. A reference name never replaces a script-table name, nor
+    contradicts the name length the script table gives (work/script_names.json)."""
     global _mapping
     if _mapping is None:
         m = json.loads(_mpath.read_text(encoding="utf-8")) if _mpath.exists() else {}
+        sn = json.loads(_spath.read_text(encoding="utf-8")) if _spath.exists() else {}
         for obf, name in (json.loads(_rpath.read_text(encoding="utf-8")) if _rpath.exists() else {}).items():
+            s = sn.get(obf, {})
+            if m.get(obf, {}).get("conf") == "script" or (s.get("len") is not None and s["len"] != len(name)):
+                continue
             e = m.setdefault(obf, {"fields": {}})
             e["name"], e["conf"] = name, "ref"
         for k, v in overrides().items():
