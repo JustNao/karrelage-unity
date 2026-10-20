@@ -52,10 +52,42 @@
     }
   }
 
-  async function compute(mode: "names" | "full" | "repack") {
+  type Mode = "names" | "full" | "repack";
+  const startStep = (mode: Mode) => ({ k: 1, n: mode === "full" ? 7 : mode === "repack" ? 1 : 2, title: "Démarrage…" });
+
+  /** One output line of update_names.py: a progress step or a journal line. */
+  function push(l: string): boolean {
+    const m = /^@@STEP (\d+) (\d+) (.*)$/.exec(l);
+    if (m) {
+      progress = { k: +m[1], n: +m[2], title: m[3] };
+      return false;
+    }
+    log = [...log.slice(-400), l];
+    return true;
+  }
+
+  async function scrollLog() {
+    await tick();
+    if (logEl) logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  /** The run keeps going while the tab is closed: rebuild the journal and progress from what the backend recorded. */
+  async function restore() {
+    const j = await call<{ mode: Mode | ""; lines: string[]; done: boolean | null; running: boolean }>("names", "job");
+    if (!j.mode) return;
+    log = [];
+    progress = startStep(j.mode);
+    j.lines.forEach(push);
+    running = j.running;
+    finished = j.running ? null : j.done;
+    if (finished && progress) progress = { ...progress, title: "fin" };
+    scrollLog();
+  }
+
+  async function compute(mode: Mode) {
     log = [];
     finished = null;
-    progress = { k: 1, n: mode === "full" ? 7 : mode === "repack" ? 1 : 2, title: "Démarrage…" };
+    progress = startStep(mode);
     try {
       await call("names", "compute", { mode });
       running = true;
@@ -69,12 +101,8 @@
     call("names", "set_active", { on: true }).then(refresh);
     const timer = setInterval(refresh, 3000);
     const offs = [
-      on<string>("names:log", async (l) => {
-        const m = /^@@STEP (\d+) (\d+) (.*)$/.exec(l);
-        if (m) return void (progress = { k: +m[1], n: +m[2], title: m[3] });
-        log = [...log.slice(-400), l];
-        await tick();
-        if (logEl) logEl.scrollTop = logEl.scrollHeight;
+      on<string>("names:log", (l) => {
+        if (push(l)) scrollLog();
       }),
       on<{ ok: boolean }>("names:done", (d) => {
         running = false;
@@ -83,6 +111,8 @@
         refresh();
       }),
     ];
+    // after the listeners are in place, so no line falls between the snapshot and the live stream
+    Promise.all(offs).then(restore);
     return () => {
       clearInterval(timer);
       call("names", "set_active", { on: false });

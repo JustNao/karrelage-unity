@@ -26,10 +26,22 @@ fn repo_root() -> Option<PathBuf> {
     root.join("pipeline").join("update_names.py").exists().then_some(root)
 }
 
+/// Output of the last pipeline run, kept here so the tab can be closed and reopened while it runs.
+#[derive(Default)]
+struct Job {
+    mode: &'static str,
+    /// raw output lines, "@@STEP" progress lines included (capped)
+    lines: Vec<String>,
+    done: Option<bool>,
+}
+
+const JOB_LINES: usize = 2000;
+
 /// Observes message types only while the tab is open (type names and counters, never payloads).
 pub struct NamesTab {
     active: AtomicBool,
     running: Arc<AtomicBool>,
+    job: Arc<Mutex<Job>>,
     seen: Mutex<BTreeMap<String, u64>>,
 }
 
@@ -41,7 +53,7 @@ impl Default for NamesTab {
 
 impl NamesTab {
     pub fn new() -> Self {
-        Self { active: AtomicBool::new(false), running: Default::default(), seen: Mutex::new(BTreeMap::new()) }
+        Self { active: AtomicBool::new(false), running: Default::default(), job: Default::default(), seen: Mutex::new(BTreeMap::new()) }
     }
 }
 
@@ -130,7 +142,22 @@ fn game_check(ctx: &Ctx) -> Value {
     })
 }
 
-fn spawn_pipeline(root: PathBuf, mode: &'static str, emit: Arc<dyn Fn(&str, Value) + Send + Sync>, running: Arc<AtomicBool>) {
+fn spawn_pipeline(root: PathBuf, mode: &'static str, emit: Arc<dyn Fn(&str, Value) + Send + Sync>, running: Arc<AtomicBool>, job: Arc<Mutex<Job>>) {
+    *job.lock() = Job { mode, ..Default::default() };
+    // every line is both recorded (for a tab reopened later) and streamed to an open tab
+    let emit_log = {
+        let (emit, job) = (emit.clone(), job.clone());
+        Arc::new(move |l: String| {
+            {
+                let mut j = job.lock();
+                if j.lines.len() >= JOB_LINES {
+                    j.lines.drain(..JOB_LINES / 4);
+                }
+                j.lines.push(l.clone());
+            }
+            emit("names:log", json!(l));
+        })
+    };
     std::thread::spawn(move || {
         let mut cmd = Command::new("python");
         cmd.arg("pipeline/update_names.py").current_dir(&root).env("PYTHONUTF8", "1").env("PYTHONUNBUFFERED", "1");
@@ -145,12 +172,12 @@ fn spawn_pipeline(root: PathBuf, mode: &'static str, emit: Arc<dyn Fn(&str, Valu
             Ok(mut child) => {
                 let mut readers = vec![];
                 if let Some(o) = child.stdout.take() {
-                    let e = emit.clone();
-                    readers.push(std::thread::spawn(move || BufReader::new(o).lines().map_while(Result::ok).for_each(|l| e("names:log", json!(l)))));
+                    let e = emit_log.clone();
+                    readers.push(std::thread::spawn(move || BufReader::new(o).lines().map_while(Result::ok).for_each(|l| e(l))));
                 }
                 if let Some(o) = child.stderr.take() {
-                    let e = emit.clone();
-                    readers.push(std::thread::spawn(move || BufReader::new(o).lines().map_while(Result::ok).for_each(|l| e("names:log", json!(l)))));
+                    let e = emit_log.clone();
+                    readers.push(std::thread::spawn(move || BufReader::new(o).lines().map_while(Result::ok).for_each(|l| e(l))));
                 }
                 for r in readers {
                     let _ = r.join();
@@ -158,10 +185,11 @@ fn spawn_pipeline(root: PathBuf, mode: &'static str, emit: Arc<dyn Fn(&str, Valu
                 child.wait().map(|s| s.success()).unwrap_or(false)
             }
             Err(e) => {
-                emit("names:log", json!(format!("impossible de lancer python : {e}")));
+                emit_log(format!("impossible de lancer python : {e}"));
                 false
             }
         };
+        job.lock().done = Some(ok);
         running.store(false, Ordering::SeqCst);
         emit("names:done", json!({"ok": ok}));
     });
@@ -196,6 +224,11 @@ impl Module for NamesTab {
                     self.seen.lock().clear();
                 }
                 Ok(json!({"active": on}))
+            }
+            // output of the current / last pipeline run (mode is "" when nothing ran yet)
+            "job" => {
+                let j = self.job.lock();
+                Ok(json!({"mode": j.mode, "lines": j.lines, "done": j.done, "running": self.running.load(Ordering::SeqCst)}))
             }
             "reset" => {
                 self.seen.lock().clear();
@@ -241,7 +274,7 @@ impl Module for NamesTab {
                     Some("repack") => "repack",
                     _ => "names",
                 };
-                spawn_pipeline(root, mode, ctx.emitter(), self.running.clone());
+                spawn_pipeline(root, mode, ctx.emitter(), self.running.clone(), self.job.clone());
                 Ok(json!({"started": true, "mode": mode}))
             }
             _ => Err(anyhow!("names: unknown method {method}")),
