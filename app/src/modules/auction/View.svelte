@@ -25,7 +25,7 @@
   import CompanionTable from "../../lib/components/CompanionTable.svelte";
   import { mountInfo, neuroneGids, neuronsOf, resourcePlural } from "../../lib/mounts";
   import { FLAG_EFFECTS, rangeLabel, sections, type EffectMeta } from "../../lib/effects";
-  import { STAT_ICON } from "../../lib/stuff";
+  import { iconOfStat } from "../../lib/stores/statIcons.svelte";
   import { benefit, craftCost, type CraftLine, type Recipes } from "../../lib/craft";
   import { AH_TAX, isTranscended, targetKey, transcendance, type Rune } from "../../lib/transcend";
   import { byUnitPrice, lotKeys, unitPrice } from "../../lib/price";
@@ -38,8 +38,7 @@
   let selGid = $state<number | null>((() => { try { return JSON.parse(localStorage.getItem(SEL_KEY) ?? "null"); } catch { return null; } })());
   $effect(() => { try { localStorage.setItem(SEL_KEY, JSON.stringify(selGid)); } catch {} });
   let picker = $state.raw<EffectMeta[]>([]); // effects found on level 150-200 equipment (what the picker offers)
-  let statIcons = $state.raw<Record<string, string>>({}); // Dofusbook stat icons (data URLs, cached by the stuff module)
-  const iconOf = (a: number) => { const st = meta[a]?.stat; return st != null ? statIcons[STAT_ICON.get(st) ?? ""] : undefined; };
+  const iconOf = (a: number) => iconOfStat(meta[a]?.stat); // Dofusbook stat icons (shared store)
   let meta = $state.raw<Record<number, EffectMeta>>({}); // every labelled effect (labels/groups of whatever shows up in a lot)
   let filters = $state<Record<number, Filter[]>>({}); // gid -> filters
   let openSet = new SvelteSet<string | number>(); // lot keys
@@ -381,7 +380,6 @@
     const live = <T,>(f: (v: T) => void) => (v: T) => void (alive && f(v)); // answers after the tab closed are dropped
     call<EffectMeta[]>("auction", "effects").then(live((e) => (picker = e)));
     call<EffectMeta[]>("auction", "effect_meta").then(live((l) => (meta = Object.fromEntries(l.map((e) => [e.id, e])))));
-    call<Record<string, string>>("stuff", "stat_icons").then(live((m) => (statIcons = m))).catch(() => {});
     call<Recipes>("auction", "recipes").then(live((r) => (recipes = r)));
     neuroneGids().then(live((m) => (neurGids = m))).catch(() => {});
     foodGids().then(live((m) => (foodIds = m))).catch(() => {});

@@ -2,6 +2,7 @@
   import { fmtInt, kamasFull } from "../fmt";
   import { unitPrice } from "../price";
   import { app } from "../app.svelte";
+  import { iconOfStat } from "../stores/statIcons.svelte";
   import { fmtDelta, pairRows } from "../compare";
   import { isLegendary, levelOf, xpOfLevel } from "../companion";
   import { HIDDEN_EFFECTS, LEGENDARY_EFFECT, isBelowMin, isNegative, isPerfectLine, isWeaponEffect, perfection, rangeLabel, sortEffects } from "../effects";
@@ -61,13 +62,18 @@
     (e.status === "added" ? " · EXO (pas un effet de base)" : e.status === "above" ? " · au-dessus du max de base" : e.status === "removed" ? " · retiré (effet de base manquant)" : "");
 </script>
 
+{#snippet icon(e: any)}
+  {@const src = iconOfStat(e.stat)}
+  {#if src}<img class="sic" {src} alt="" />{:else}<span class="sic"></span>{/if}
+{/snippet}
+
 {#snippet line(e: any, mirror: boolean)}
   {#if isWeaponEffect(e)}
     {e.text}
   {:else if mirror}
-    {#if e.range && e.status !== "removed" && e.action !== LEGENDARY_EFFECT}<small class="rg">{rangeLabel(e.range)}</small>{/if}{e.text}
+    {#if e.range && e.status !== "removed" && e.action !== LEGENDARY_EFFECT}<small class="rg">{rangeLabel(e.range)}</small>{/if}{e.text}{@render icon(e)}
   {:else}
-    {e.text}{#if e.range && e.status !== "removed" && e.action !== LEGENDARY_EFFECT}<small>{rangeLabel(e.range)}</small>{/if}
+    {@render icon(e)}{e.text}{#if e.range && e.status !== "removed" && e.action !== LEGENDARY_EFFECT}<small>{rangeLabel(e.range)}</small>{/if}
   {/if}
 {/snippet}
 
@@ -177,7 +183,11 @@
   .prices { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; margin: 0 0 2px; }
   .price { font-weight: 700; color: var(--fg); font-size: 14px; }
   .price.no { opacity: 0.4; }
-  .eff { margin: 0; padding-left: 16px; }
+  .eff { margin: 0; padding-left: 0; list-style: none; }
+  .eff.wpn { padding-left: 21px; }
+  /* stat icon (or an empty slot of the same width, so the texts stay aligned) */
+  .sic { display: inline-block; width: 16px; height: 16px; vertical-align: -3px; margin-right: 5px; }
+  .cmp .r .sic { margin: 0 0 0 5px; }
   .eff.wpn { margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px dashed var(--line); }
   .ln.unk { color: var(--warn); }
   .ln.added { color: var(--acc); font-weight: 700; }
