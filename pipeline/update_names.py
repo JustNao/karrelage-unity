@@ -8,7 +8,7 @@
 The game folder is only READ (two files are copied into work/dump_input); nothing there is ever modified.
 Restart Karrelage afterwards so it loads the new datapack/.
 """
-import os, pathlib, shutil, subprocess, sys, time
+import os, pathlib, queue, shutil, subprocess, sys, threading, time
 
 root = pathlib.Path(__file__).resolve().parent.parent
 py = sys.executable
@@ -29,13 +29,52 @@ def step(title):
     print(f"\n== {title} ==", flush=True)
 
 
-def run(cmd, extra_env=None):
+def kill_tree(pid):
+    subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def run(cmd, extra_env=None, done_marker=None, grace=30, limit=None):
+    """Run a tool, relaying its output line by line. `done_marker`: a tool that prints this line has finished its work;
+    if it has not exited `grace` s later it is stuck (Il2CppInspectorRedux sometimes never returns after its export) and is
+    killed with its children. `limit`: hard timeout in s."""
     print("$ " + " ".join(str(c) for c in cmd), flush=True)
     t = time.time()
-    r = subprocess.run([str(c) for c in cmd], cwd=root, env={**env, **(extra_env or {})}, stdin=subprocess.DEVNULL)  # no stdin: some tools wait for a keypress when done
-    if r.returncode:
-        print(f"ECHEC (code {r.returncode})", flush=True)
-        sys.exit(r.returncode)
+    # no stdin: some tools wait for a keypress when done
+    p = subprocess.Popen([str(c) for c in cmd], cwd=root, env={**env, **(extra_env or {})}, stdin=subprocess.DEVNULL,
+                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    done_at = exited_at = None
+    killed = eof = False
+    lines = queue.Queue()
+    threading.Thread(target=lambda: ([lines.put(l) for l in p.stdout], lines.put(None)), daemon=True).start()
+    while not eof:
+        try:
+            l = lines.get(timeout=1)
+        except queue.Empty:
+            l = False
+        if l is None:
+            eof = True
+        elif l:
+            text = l.decode("utf-8", "replace").rstrip()
+            print(text, flush=True)
+            if done_marker and done_marker in text and done_at is None:
+                done_at = time.time()
+        if p.poll() is not None:
+            exited_at = exited_at or time.time()
+            if time.time() - exited_at > 3:
+                break   # exited, but a child it left behind still holds the pipe: do not wait for it
+        elif done_at is not None and time.time() - done_at > grace:
+            print(f"(le programme ne s'est pas arrêté {grace}s après la fin de son travail : arrêt forcé)", flush=True)
+            kill_tree(p.pid)
+            killed = True
+            break
+        elif limit and time.time() - t > limit:
+            print(f"ECHEC : délai dépassé ({limit}s), arrêt forcé", flush=True)
+            kill_tree(p.pid)
+            sys.exit(1)
+    code = 0 if killed else p.wait()
+    if code:
+        print(f"ECHEC (code {code})", flush=True)
+        sys.exit(code)
     print(f"ok ({time.time() - t:.0f}s)", flush=True)
 
 
@@ -54,7 +93,7 @@ def from_game():
     inspector = root / "tools" / "inspector" / "Il2CppInspectorRedux.CLI-win-x64" / "Il2CppInspector.Redux.CLI.exe"
     run([inspector, "process", dump_input / "GameAssembly.dll", dump_input / "global-metadata.dat",
          "-o", root / "work" / "dump", "-d", "--unity-version", "6000.0.0"],
-        {"DOTNET_ROOT": str(dotnet), "DOTNET_MULTILEVEL_LOOKUP": "0"})
+        {"DOTNET_ROOT": str(dotnet), "DOTNET_MULTILEVEL_LOOKUP": "0"}, done_marker="Export finished", limit=1800)
 
     step("DummyDll -> .proto (protodec)")
     (root / "work" / "proto").mkdir(parents=True, exist_ok=True)
