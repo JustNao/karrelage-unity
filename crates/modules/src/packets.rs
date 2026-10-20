@@ -101,7 +101,6 @@ impl Module for Packets {
         Interest::All
     }
 
-
     fn init(&self, ctx: &Ctx) {
         let (outbox, emit) = (self.outbox.clone(), ctx.emitter());
         std::thread::spawn(move || loop {
@@ -171,8 +170,12 @@ impl Module for Packets {
                     v
                 };
                 v["hexTruncated"] = json!(v["len"].as_u64().unwrap_or(0) as usize > HEX_BYTES);
-                let name: String = v["name"].as_str().or(v["type"].as_str()).unwrap_or("paquet").chars().map(|c| if c.is_alphanumeric() { c } else { '_' }).collect();
-                let dir = std::env::var_os("USERPROFILE").map(|h| std::path::PathBuf::from(h).join("Downloads")).filter(|d| d.is_dir()).unwrap_or_else(std::env::temp_dir);
+                let name: String =
+                    v["name"].as_str().or(v["type"].as_str()).unwrap_or("paquet").chars().map(|c| if c.is_alphanumeric() { c } else { '_' }).collect();
+                let dir = std::env::var_os("USERPROFILE")
+                    .map(|h| std::path::PathBuf::from(h).join("Downloads"))
+                    .filter(|d| d.is_dir())
+                    .unwrap_or_else(std::env::temp_dir);
                 let path = dir.join(format!("karrelage-{name}-{id}.json"));
                 std::fs::write(&path, serde_json::to_string_pretty(&v)?)?;
                 let _ = std::process::Command::new("explorer").arg(format!("/select,{}", path.display())).spawn();
