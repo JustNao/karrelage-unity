@@ -20,8 +20,10 @@ export interface Build {
   targets: Record<string, number>;
   /** slot -> uid of the chosen auction lot */
   chosen: Record<string, number | null>;
-  /** slots the user already owns (taken at their perfect roll, not bought) */
+  /** slots the user already owns (not bought): taken at their perfect roll, or at the roll of their own copy (`own_uid`) */
   owned?: string[];
+  /** owned slot -> inventory uid of the user's own copy whose stats count (none = perfect roll) */
+  own_uid?: Record<string, number>;
   /** slots left out of the price (they still count in stats) */
   ignored: string[];
 }
@@ -210,8 +212,9 @@ export interface Cand { slot: string; gid: number; uid: number; price: number; s
 export interface SolveResult { picks: Record<string, number>; cost: number; totals: Totals; approx: boolean; nodes: number; fixedSlots: string[]; }
 
 /** Cheapest lot combination whose stat totals reach `targets` (stat -> minimum). One lot per free slot; ignored slots and slots without any scanned
- *  lot keep their current item (chosen lot, else theoretical maximum) at no cost. Set bonuses are tracked incrementally. Returns null when infeasible. */
-export function solve(b: Build, info: Info, lotsOf: (slot: string) => Lot[], targets: Record<string, number>, nodeLimit = 4_000_000, progress?: (fraction: number) => void): SolveResult | null {
+ *  lot keep their current item (the user's own copy `ownLot` or else the theoretical maximum for an ignored slot, the chosen lot or else the theoretical
+ *  maximum otherwise) at no cost. Set bonuses are tracked incrementally. Returns null when infeasible. */
+export function solve(b: Build, info: Info, lotsOf: (slot: string) => Lot[], targets: Record<string, number>, nodeLimit = 4_000_000, progress?: (fraction: number) => void, ownLot: (slot: string) => Lot | undefined = () => undefined): SolveResult | null {
   // a PdV target is a vitality target: hp = 50 + 5 x level + vitality
   const wanted: Record<string, number> = { ...targets };
   if (wanted[HP_STAT] > 0) { const vit = wanted[HP_STAT] - 50 - 5 * b.level; wanted[11] = Math.max(wanted[11] ?? 0, vit); delete wanted[HP_STAT]; }
@@ -229,8 +232,8 @@ export function solve(b: Build, info: Info, lotsOf: (slot: string) => Lot[], tar
 
   const resolveFixed = (slot: string) => {
     const gid = b.slots[slot].gid;
-    // counted off the price: perfect roll (max level for a familiar / mount), whatever lot was chosen; otherwise keep the chosen lot
-    const lot = ignored.has(slot) ? undefined : lotsOf(slot).find((l) => l.uid === b.chosen[slot]);
+    // counted off the price: the user's own copy, else the perfect roll (max level for a familiar / mount), whatever lot was chosen; otherwise keep the chosen lot
+    const lot = ignored.has(slot) ? ownLot(slot) : lotsOf(slot).find((l) => l.uid === b.chosen[slot]);
     for (const [s, v] of lot ? lotStats(lot) : itemStats(info.items[gid] ?? { effects: [] } as any)) add(base, s, v);
     baseGids.push(gid);
     fixedSlots.push(slot);

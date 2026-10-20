@@ -5,6 +5,7 @@
   import { kamas } from "../../lib/fmt";
   import { auction } from "../../lib/stores/auction.svelte";
   import { prices } from "../../lib/stores/prices.svelte";
+  import { inventory } from "../../lib/stores/inventory.svelte";
   import ConfirmButton from "../../lib/components/ConfirmButton.svelte";
   import Grip from "../../lib/components/Grip.svelte";
   import ProgressBar from "../../lib/components/ProgressBar.svelte";
@@ -52,17 +53,23 @@
     return t != null && now - t <= FRESH_SECS;
   };
   const chosenLot = (slot: string) => lotsOf(slot).find((l) => l.uid === build?.chosen[slot]) ?? null;
+  /** The user's own copy an owned slot counts at (still in the inventory), else undefined = perfect roll. */
+  const ownLot = (slot: string) => {
+    if (!build || !owned.has(slot)) return undefined;
+    const it = inventory.byUid(build.own_uid?.[slot]);
+    return it && it.gid === build.slots[slot].gid ? it : undefined;
+  };
 
   const resolveWith = (real: boolean): Resolved[] =>
     slotIds.map((slot) => {
       const gid = build!.slots[slot].gid;
-      // an item counted off the price is taken at its perfect roll (max level for a familiar / mount): the theoretical maximum
-      const lot = real && !ignored.has(slot) ? chosenLot(slot) : null;
+      // an item counted off the price is taken at the roll of the user's own copy, else at its perfect roll (max level for a familiar / mount)
+      const lot = real ? (ignored.has(slot) ? ownLot(slot) ?? null : chosenLot(slot)) : null;
       return { slot, gid, lot, stats: lot ? lotStats(lot) : itemStats(info.items[gid] ?? ({ effects: [] } as any)) };
     });
   const real = $derived(build ? compute(build, info, resolveWith(true)) : null);
   const max = $derived(build ? compute(build, info, resolveWith(false)) : null);
-  const anyChosen = $derived(!!build && slotIds.some((s) => chosenLot(s)));
+  const anyChosen = $derived(!!build && slotIds.some((s) => chosenLot(s) || ownLot(s)));
 
   const DOFUS_SLOTS = ["d1", "d2", "d3", "d4", "d5", "d6"];
   const DOFUS_TYPE = 23; // itemtypes: Dofus (trophées 151 and prysmaradites share the slots and are not touched)
@@ -125,7 +132,7 @@
     busy = false;
   }
 
-  const patch = (p: Partial<Pick<Build, "targets" | "chosen" | "ignored" | "owned" | "fm">>) => {
+  const patch = (p: Partial<Pick<Build, "targets" | "chosen" | "ignored" | "owned" | "own_uid" | "fm">>) => {
     if (!build) return;
     Object.assign(build, p);
     call("stuff", "save_state", { id: build.id, patch: p }).catch((e) => (err = String(e)));
@@ -151,8 +158,37 @@
 
   /** "Sans les Dofus": marks every Dofus slot as owned (same as clicking each one), or unmarks them all. */
   const allDofusOwned = $derived(dofusSlots.length > 0 && dofusSlots.every((s) => owned.has(s)));
-  const setDofusOwned = (on: boolean) => { const rest = (build!.owned ?? []).filter((s) => !dofusSlots.includes(s)); patch({ owned: on ? [...rest, ...dofusSlots] : rest }); result = null; };
-  const toggleOwned = (slot: string) => { const o = build!.owned ?? []; patch({ owned: o.includes(slot) ? o.filter((s) => s !== slot) : [...o, slot] }); result = null; };
+  const setDofusOwned = (on: boolean) => {
+    const rest = (build!.owned ?? []).filter((s) => !dofusSlots.includes(s));
+    const own = { ...build!.own_uid };
+    for (const s of dofusSlots) if (on && !owned.has(s)) setCopy(own, s, firstCopy(s)); else if (!on) delete own[s];
+    patch({ owned: on ? [...rest, ...dofusSlots] : rest, own_uid: own }); result = null;
+  };
+  /** The copy of a slot's item the character has (worn first), if any. */
+  const firstCopy = (slot: string) => inventory.ofGid(build!.slots[slot].gid)[0]?.uid ?? null;
+  const setCopy = (own: Record<string, number>, slot: string, uid: number | null) => { if (uid == null) delete own[slot]; else own[slot] = uid; };
+  /** Owned at the roll of copy `uid` ("perfect" = perfect roll), or bought (`null`). */
+  const setOwned = (slot: string, how: number | "perfect" | null) => {
+    const o = (build!.owned ?? []).filter((s) => s !== slot);
+    const own = { ...build!.own_uid };
+    setCopy(own, slot, typeof how === "number" ? how : null);
+    patch({ owned: how == null ? o : [...o, slot], own_uid: own });
+    result = null;
+  };
+  /** ✕: owned (the character's own copy when it has one, else the perfect roll) or bought again. */
+  const toggleOwned = (slot: string) => setOwned(slot, owned.has(slot) ? null : firstCopy(slot) ?? "perfect");
+
+  /** Popup of a slot (click on its item): perfect roll, one of the character's copies, or to buy. Fixed position, so the scroll area does not clip it. */
+  let pop = $state<{ slot: string; left: number; top?: number; bottom?: number; maxH: number } | null>(null);
+  const POP_W = 330;
+  function openPop(slot: string, el: HTMLElement) {
+    if (pop?.slot === slot) { pop = null; return; }
+    const r = el.getBoundingClientRect();
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - POP_W - 8));
+    const below = window.innerHeight - r.bottom - 12;
+    pop = below >= 260 || below >= r.top ? { slot, left, top: r.bottom + 4, maxH: below } : { slot, left, bottom: window.innerHeight - r.top + 4, maxH: r.top - 12 };
+  }
+  const closePop = (e: Event) => { if (pop && !(e.target instanceof Element && e.target.closest(".pop, .slot .ic"))) pop = null; };
   /** PA / PM / PO minimums start at the Dofusbook value of the build (once per build, so clearing them sticks). */
   const AUTOFILL = [1, 23, 19];
   const AUTOFILL_KEY = "karrelage.stuff.autofilled";
@@ -199,14 +235,15 @@
       }
     };
     worker.onerror = (e) => { err = e.message || "erreur du calcul"; stop(); };
-    worker.postMessage({ build: { ...$state.snapshot(build!), ignored: [...ignored] }, info, lots, targets: $state.snapshot(build!.targets) });
+    const own = Object.fromEntries(slotIds.flatMap((s) => { const l = ownLot(s); return l ? [[s, { uid: l.uid, gid: l.gid, prices: [], effects: l.effects }]] : []; }));
+    worker.postMessage({ build: { ...$state.snapshot(build!), ignored: [...ignored] }, info, lots, own, targets: $state.snapshot(build!.targets) });
   }
   function stop() { worker?.terminate(); worker = null; solving = false; }
   function cancel() { cancelled = true; stop(); }
 
   const rowsOf = (map: Record<string, number | null | undefined>) =>
     slotIds.flatMap((s) => {
-      if (ignored.has(s)) return []; // owned: perfect roll, not a lot of the output
+      if (ignored.has(s)) return []; // owned: own copy or perfect roll, not a lot of the output
       const lot = map[s] != null ? lotsOf(s).find((l) => l.uid === map[s]) : null;
       return lot ? [{ slot: s, name: build!.slots[s].name, picture: build!.slots[s].picture, price: lotUnit(lot)!, lot }] : [];
     });
@@ -220,6 +257,7 @@
     call<Recipes>("auction", "recipes").then((r) => (recipes = r));
     void auction.ensure();
     void prices.ensure();
+    void inventory.ensure();
     return () => {
       alive = false;
       clearInterval(tick);
@@ -254,12 +292,15 @@
   {#if build?.slots[id]}
     {@const sl = build.slots[id]}
     {@const lot = chosenLot(id)}
-    <div class="slot" class:fresh={!owned.has(id) && fresh(id)} class:stale={!owned.has(id) && !fresh(id)} class:own={owned.has(id)} class:ign={ignored.has(id)}>
+    {@const copies = inventory.ofGid(sl.gid)}
+    {@const mine = ownLot(id)}
+    <div class="slot" class:fresh={!owned.has(id) && fresh(id)} class:stale={!owned.has(id) && !fresh(id)} class:own={owned.has(id)} class:mine={!!mine} class:ign={ignored.has(id)}>
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-      <div class="ic" title="{sl.name} — {SLOT_TITLES[id]}{lot ? ` (lot à ${kamas(lotUnit(lot)!)})` : ''}" onclick={() => toggleOwned(id)}>
+      <div class="ic" title="{sl.name} — {SLOT_TITLES[id]}{mine ? ' (mon objet)' : owned.has(id) ? ' (jet parfait)' : lot ? ` (lot à ${kamas(lotUnit(lot)!)})` : ''}" onclick={(e) => openPop(id, e.currentTarget)}>
         {#if icon("item", sl.picture)}<img src={icon("item", sl.picture)} alt={sl.name} />{:else}<span class="mut">{SLOT_TITLES[id]}</span>{/if}
       </div>
-      <button class="ow" class:on={owned.has(id)} title={owned.has(id) ? "Je ne possède plus cet objet" : "Je possède déjà cet objet (jet parfait, pas acheté)"} onclick={() => toggleOwned(id)}>✕</button>
+      {#if copies.length}<span class="inv" title="Dans l'inventaire du personnage ({copies.some((c) => c.equipped) ? 'équipé' : 'sac'}{copies.length > 1 ? `, ${copies.length} exemplaires` : ''})"></span>{/if}
+      <button class="ow" class:on={owned.has(id)} title={owned.has(id) ? "Je ne possède plus cet objet" : copies.length ? "Je possède déjà cet objet (mon exemplaire, pas acheté)" : "Je possède déjà cet objet (jet parfait, pas acheté)"} onclick={() => toggleOwned(id)}>✕</button>
     </div>
   {:else}
     <div class="slot empty"></div>
@@ -328,7 +369,7 @@
               <div class="col">{#each SLOT_LAYOUT.right as s}{@render slot(s)}{/each}</div>
             </div>
             <div class="row">{#each SLOT_LAYOUT.bottom.filter((s) => build?.slots[s]) as s}{@render slot(s)}{/each}</div>
-            <div class="legend mut"><span class="dot fresh"></span> scanné il y a moins d'1 h <span class="dot stale"></span> à scanner · ✕ = je possède déjà l'objet</div>
+            <div class="legend mut"><span class="dot fresh"></span> scanné il y a moins d'1 h <span class="dot stale"></span> à scanner <span class="dot inv"></span> dans mon inventaire · ✕ = je possède déjà l'objet · clic = jet parfait ou mon exemplaire</div>
 
             </div>
           </section>
@@ -420,6 +461,31 @@
   </main>
 </div>
 
+<svelte:window onpointerdown={closePop} onkeydown={(e) => e.key === "Escape" && (pop = null)} onresize={() => (pop = null)} />
+{#if pop && build?.slots[pop.slot]}
+  {@const id = pop.slot}
+  {@const sl = build.slots[id]}
+  {@const mine = ownLot(id)}
+  <div class="pop" style:left="{pop.left}px" style:top={pop.top != null ? `${pop.top}px` : null} style:bottom={pop.bottom != null ? `${pop.bottom}px` : null} style:max-height="{pop.maxH}px" style:width="{POP_W}px">
+    <div class="phd"><b>{sl.name}</b> <span class="mut">{SLOT_TITLES[id]}</span></div>
+    <button class="opt" class:on={owned.has(id) && !mine} onclick={() => { setOwned(id, "perfect"); pop = null; }}>
+      Jet parfait <span class="mut">— je l'ai déjà, compté au maximum</span>
+    </button>
+    {#each inventory.ofGid(sl.gid) as it (it.uid)}
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <div class="opt copy" class:on={mine?.uid === it.uid} role="button" tabindex="0" onclick={() => { setOwned(id, it.uid); pop = null; }}>
+        <div>Mon objet <span class="mut">— {it.equipped ? "équipé" : "dans le sac"}</span></div>
+        <ItemCard row={it} flags={false} priced={false} />
+      </div>
+    {:else}
+      <div class="mut small">{inventory.updated ? "Le personnage n'a pas cet objet (équipé ou dans le sac)." : "Inventaire inconnu : connectez votre personnage pendant que Karrelage tourne."}</div>
+    {/each}
+    <button class="opt" class:on={!owned.has(id)} onclick={() => { setOwned(id, null); pop = null; }}>
+      À acheter <span class="mut">— je ne l'ai pas</span>
+    </button>
+  </div>
+{/if}
+
 <style>
   .grid { flex: 1; min-height: 0; display: grid; font-family: var(--font); }
   .main { min-height: 0; display: flex; flex-direction: column; padding: 8px 10px 0; min-width: 0; }
@@ -503,6 +569,15 @@
   .slot.stale .ic { border-color: var(--bad); }
   .slot.ign .ic { opacity: 0.55; }
   .slot.own .ic { border-color: var(--mut); }
+  .slot.mine .ic { border-color: #4aa3ff; }
+  .inv { position: absolute; right: 4px; top: 4px; width: 8px; height: 8px; border-radius: 50%; background: #4aa3ff; }
+  .dot.inv { background: #4aa3ff; }
+  .pop { position: fixed; z-index: 50; overflow-y: auto; box-sizing: border-box; padding: 8px; display: flex; flex-direction: column; gap: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45); font-size: 12px; font-family: var(--font); }
+  .phd { padding: 0 2px 2px; }
+  .opt { text-align: left; padding: 5px 8px; font: inherit; border: 1px solid var(--line); border-radius: 6px; background: none; cursor: pointer; }
+  .opt:hover { border-color: var(--mut); }
+  .opt.on { border-color: #4aa3ff; }
+  .copy { display: flex; flex-direction: column; gap: 4px; }
   .slot img { max-width: 100%; max-height: 100%; }
   .ow { position: absolute; left: -4px; bottom: -4px; width: 18px; height: 18px; padding: 0; border-radius: 9px; font-size: 10px; line-height: 1; color: var(--mut); }
   .ow.on { background: var(--mut); color: #000; border-color: var(--mut); }

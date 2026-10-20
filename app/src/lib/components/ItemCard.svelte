@@ -20,6 +20,7 @@
     versus = null,
     companion = false,
     flags = true,
+    priced = true,
   }: {
     row: any;
     collapsible?: boolean;
@@ -35,6 +36,8 @@
     versus?: { pin: any; name: string } | null;
     /** Perfection flags (damage / resistances / characteristics) and the transcendance shield in the header. */
     flags?: boolean;
+    /** False for an item that is not for sale (inventory): no price row. */
+    priced?: boolean;
   } = $props();
 
   const level = $derived(companion ? levelOf(row) : null);
@@ -88,7 +91,7 @@
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div class="card" class:col={collapsible} onclick={() => collapsible && ontoggle?.()}>
-  {#if !versus || onpin}
+  {#if (!versus || onpin) && priced}
     <div class="prices">
       {#if !versus}
         {#each prices as p (p.qty)}

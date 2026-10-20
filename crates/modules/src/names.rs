@@ -2,6 +2,7 @@
 //! Static checks on the pack, a fingerprint comparison with the installed game files (sizes only, nothing is read), a live
 //! check of the message types seen on the wire, and a button that recomputes the names (pipeline/update_names.py).
 use crate::auction::AH_LIST;
+use crate::inventory;
 use crate::prices::AVG_PRICES;
 use crate::{Ctx, Interest, Message, Module};
 use anyhow::{anyhow, Result};
@@ -81,7 +82,7 @@ fn binding_checks(ctx: &Ctx) -> Vec<Value> {
     let list_of = |v: &Value| -> Vec<String> { v.as_array().into_iter().flatten().map(s).collect() };
     let mut out = vec![];
 
-    for (clear, role) in [(AH_LIST, "Message liste HDV"), (AVG_PRICES, "Message prix moyens")] {
+    for (clear, role) in [(AH_LIST, "Message liste HDV"), (AVG_PRICES, "Message prix moyens"), (inventory::CONTENT, "Message inventaire")] {
         match ctx.proto.obf_for_clear(clear) {
             Some(obf) if ctx.proto.message(&obf).is_some() => out.push(check(role, true, format!("{clear} → {obf}"))),
             Some(obf) => out.push(check(role, false, format!("{clear} → {obf}, absent des schémas"))),
@@ -119,6 +120,38 @@ fn binding_checks(ctx: &Ctx) -> Vec<Value> {
     match avg.as_ref().and_then(|m| sub_msg(m, &s(&b["avg_prices"]["items"]))) {
         Some(entry) => out.push(fields_check("bindings.avg_prices (champs)", &entry, vec![s(&b["avg_prices"]["gid"]), s(&b["avg_prices"]["price"])], vec![])),
         None => out.push(check("bindings.avg_prices (champs)", false, "liste d'entrées introuvable")),
+    }
+    // inventory: content -> ObjectItemInventory -> ObjectItem, and the events that follow it
+    let inv = &b["inventory"];
+    let content = ctx.proto.obf_for_clear(inventory::CONTENT).and_then(|o| ctx.proto.message(&o));
+    match content.as_ref().and_then(|m| sub_msg(m, &s(&inv["objects"]))) {
+        Some(entry) => {
+            out.push(fields_check("bindings.inventory (entrée)", &entry, vec![s(&inv["item"]), s(&inv["position"])], vec![]));
+            match sub_msg(&entry, &s(&inv["item"])) {
+                Some(item) => out.push(fields_check(
+                    "bindings.inventory (objet)",
+                    &item,
+                    ["gid", "uid", "quantity", "effects"].iter().map(|k| s(&inv[k])).collect(),
+                    vec![],
+                )),
+                None => out.push(check("bindings.inventory (objet)", false, "message d'objet introuvable")),
+            }
+        }
+        None => out.push(check("bindings.inventory (entrée)", false, "liste d'objets introuvable")),
+    }
+    for (clear, key) in [
+        (inventory::ADDED, "added"),
+        (inventory::ADDED_LIST, "added_list"),
+        (inventory::MODIFIED, "modified"),
+        (inventory::DELETED, "deleted"),
+        (inventory::DELETED_LIST, "deleted_list"),
+    ] {
+        let found = ctx.proto.obf_for_clear(clear).and_then(|o| ctx.proto.message(&o)).is_some_and(|m| m.get_field_by_name(&s(&inv[key])).is_some());
+        out.push(check(
+            &format!("bindings.inventory.{key}"),
+            found,
+            if found { format!("{clear} ok") } else { format!("{clear} : champ {} introuvable", s(&inv[key])) },
+        ));
     }
     out
 }

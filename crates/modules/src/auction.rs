@@ -34,7 +34,7 @@ struct AhItem {
     ints: Vec<String>,
 }
 #[derive(Deserialize, Clone)]
-struct ObjectEffect {
+pub(crate) struct ObjectEffect {
     action: Vec<String>,
     oneof: String,
 }
@@ -118,8 +118,13 @@ fn raw_json(v: &PbValue) -> Value {
     }
 }
 
+/// The effects that are stats of the item (info effects, the lock and the element-change marker left out).
+pub(crate) fn stat_effects(effs: Vec<Effect>) -> Vec<Effect> {
+    effs.into_iter().filter(|e| info_key(e.action).is_none() && e.action != LOCK_EFFECT && e.action != ELEMENT_CHANGE_EFFECT).collect()
+}
+
 /// ObjectEffect message -> annotated-later Effect.
-fn parse_effect(data: &Data, b: &ObjectEffect, e: &DynamicMessage) -> Effect {
+pub(crate) fn parse_effect(data: &Data, b: &ObjectEffect, e: &DynamicMessage) -> Effect {
     let acts: Vec<i64> = b.action.iter().map(|n| int(e, n)).collect();
     let action = acts.iter().find(|a| data.effects.contains_key(a)).or_else(|| acts.iter().find(|a| **a != 0)).or(acts.first()).copied().unwrap_or(0);
     let (mut params, mut raw): (Vec<Value>, Value) = (vec![], Value::Null);
@@ -193,8 +198,7 @@ fn format_ah_list(data: &Data, b: &Bindings, msg: &DynamicMessage) -> Value {
         let meta: Map<String, Value> =
             effs.iter().filter_map(|e| info_key(e.action).map(|k| (k.to_string(), e.str.clone().map_or(Value::Null, Value::from)))).collect();
         let locked = effs.iter().any(|e| e.action == LOCK_EFFECT);
-        let stats: Vec<Effect> =
-            effs.into_iter().filter(|e| info_key(e.action).is_none() && e.action != LOCK_EFFECT && e.action != ELEMENT_CHANGE_EFFECT).collect();
+        let stats = stat_effects(effs);
         let density = (data.item_density(&stats) * 1000.0).round() / 1000.0;
         rows.push(json!({
             "uid": uid, "gid": gid, "ints": ints,

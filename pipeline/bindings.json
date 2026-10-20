@@ -16,6 +16,21 @@
   "gid": "fsvx",
   "price": "fsvy"
  },
+ "inventory": {
+  "_doc": "InventoryContentEvent (sent at login) -> objects: ObjectItemInventory {item: ObjectItem {gid, uid, quantity, effects: ObjectEffect}, position (0-15 equipped, 63 bag)}; ObjectAdded/ObjectsAdded/ObjectModified events carry ObjectItemInventory, ObjectDeleted/ObjectsDeleted object uids.",
+  "objects": "fsro",
+  "item": "gdxj",
+  "position": "gdxm",
+  "gid": "gcif",
+  "uid": "gcig",
+  "quantity": "gcie",
+  "effects": "gcii",
+  "added": "fsot",
+  "added_list": "fsup",
+  "modified": "fsoy",
+  "deleted": "fsmr",
+  "deleted_list": "fssq"
+ },
  "object_effect": {
   "action": ["gdmq", "gdmr"],
   "oneof": "gdng"
