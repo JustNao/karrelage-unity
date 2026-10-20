@@ -16,6 +16,9 @@ use std::sync::{Arc, OnceLock};
 pub const AH_LIST: &str = "ExchangeTypesItemsExchangerDescriptionForUserEvent";
 /// Answer to an AH purchase: the lot bought leaves the stored listing.
 pub const AH_BUY: &str = "ExchangeBidHouseBuyResultEvent";
+/// A row of the open AH listing changed (new prices after a purchase or a new offer) or left it.
+pub const AH_ROW_UPDATED: &str = "ExchangeBidHouseInListUpdatedEvent";
+pub const AH_ROW_REMOVED: &str = "ExchangeBidHouseInListRemovedEvent";
 
 // build-specific obfuscated field names, read from the data pack's bindings.json
 #[derive(Deserialize, Clone)]
@@ -40,16 +43,28 @@ pub(crate) struct ObjectEffect {
     action: Vec<String>,
     oneof: String,
 }
-/// bindings.json `ah_buy` (separate so that a pack without it still loads the listing bindings).
+/// bindings.json `ah_buy` / `ah_row` / `ah_row_removed` (each optional, so that an older pack still loads the listing bindings).
 #[derive(Deserialize, Clone)]
 struct AhBuy {
     uid: String,
     bought: String,
 }
+#[derive(Deserialize, Clone)]
+struct AhRow {
+    prices: String,
+    effects: String,
+    ints: Vec<String>,
+}
+#[derive(Deserialize, Clone)]
+struct AhRowRemoved {
+    ints: Vec<String>,
+}
 
 pub struct Auction {
     bind: OnceLock<Option<Bindings>>,
     buy_bind: OnceLock<Option<AhBuy>>,
+    row_bind: OnceLock<Option<AhRow>>,
+    removed_bind: OnceLock<Option<AhRowRemoved>>,
     store: Arc<Mutex<BTreeMap<String, Value>>>,
     persist: OnceLock<Persist>,
     /// pack-derived answers, constant once the pack is loaded
@@ -69,6 +84,8 @@ impl Auction {
         Self {
             bind: OnceLock::new(),
             buy_bind: OnceLock::new(),
+            row_bind: OnceLock::new(),
+            removed_bind: OnceLock::new(),
             store: Default::default(),
             persist: OnceLock::new(),
             effects: OnceLock::new(),
@@ -81,8 +98,8 @@ impl Auction {
         self.bind.get_or_init(|| serde_json::from_value(ctx.data.bindings.clone()).ok()).as_ref()
     }
 
-    fn buy_bindings(&self, ctx: &Ctx) -> Option<&AhBuy> {
-        self.buy_bind.get_or_init(|| serde_json::from_value(ctx.data.bindings.get("ah_buy")?.clone()).ok()).as_ref()
+    fn role<'a, T: serde::de::DeserializeOwned>(cell: &'a OnceLock<Option<T>>, ctx: &Ctx, role: &str) -> Option<&'a T> {
+        cell.get_or_init(|| serde_json::from_value(ctx.data.bindings.get(role)?.clone()).ok()).as_ref()
     }
 
     fn store_path(ctx: &Ctx) -> std::path::PathBuf {
@@ -120,20 +137,16 @@ impl Auction {
         ctx.emit("auction", "item", ent);
     }
 
-    /// A lot bought at the AH: drop it from its stored listing (the scan time is kept) and send the listing again.
-    fn on_buy(&self, m: &Message, ctx: &Ctx) {
-        let (Some(msg), Some(b)) = (m.decoded.as_ref(), self.buy_bindings(ctx)) else { return };
-        if !msg.get_field_by_name(&b.bought).and_then(|v| v.as_bool()).unwrap_or(false) {
+    /// A change of the open listing (`apply_change`): applied to the stored listing holding that lot, sent again with
+    /// its scan time kept.
+    fn on_change(&self, m: &Message, ctx: &Ctx) {
+        let Some(f) = &m.fmt else { return };
+        let mut s = self.store.lock();
+        let Some(ent) = s.values_mut().find(|e| e["rows"].as_array().is_some_and(|r| r.iter().any(|x| !x["uid"].is_null() && x["uid"] == f["uid"]))) else { return };
+        let rows = ent["rows"].as_array_mut().unwrap();
+        if apply_change(rows, f).is_none() {
             return;
         }
-        let uid = int(msg, &b.uid);
-        let mut s = self.store.lock();
-        let Some(ent) = s.values_mut().find(|e| e["rows"].as_array().is_some_and(|r| r.iter().any(|x| x["uid"].as_i64() == Some(uid)))) else {
-            ctx.log(format!("auction: lot {uid} acheté, absent des listes enregistrées"));
-            return;
-        };
-        let rows = ent["rows"].as_array_mut().unwrap();
-        rows.retain(|x| x["uid"].as_i64() != Some(uid));
         let min = rows.iter().filter_map(|r| r["prices"].get(0).and_then(|p| p["price"].as_i64())).filter(|p| *p > 0).min();
         ent["lots"] = json!(rows.len());
         ent["min_price"] = json!(min);
@@ -219,33 +232,62 @@ pub(crate) fn parse_effect(data: &Data, b: &ObjectEffect, e: &DynamicMessage) ->
     }
 }
 
+/// One AH row (a lot: prices per stack size, effects) from its ints / prices / effects fields; `fallback` = the
+/// listing's (gid, type) when the row's ints do not resolve.
+fn format_row(data: &Data, oe: &ObjectEffect, it: &DynamicMessage, ints: Vec<i64>, prices_f: &str, effects_f: &str, fallback: (Option<i64>, Option<i64>)) -> Value {
+    let (mut gid, mut typ, mut uid) = data.resolve_gid_type(&ints);
+    if gid.is_none() {
+        (gid, typ, uid) = (fallback.0, fallback.1, None);
+    }
+    let prices = int_list(it, prices_f);
+    let info = gid.and_then(|g| data.items.get(&g));
+    let effs: Vec<Effect> = messages(it, effects_f).iter().map(|e| parse_effect(data, oe, e)).collect();
+    let meta: Map<String, Value> =
+        effs.iter().filter_map(|e| info_key(e.action).map(|k| (k.to_string(), e.str.clone().map_or(Value::Null, Value::from)))).collect();
+    let locked = effs.iter().any(|e| e.action == LOCK_EFFECT);
+    let stats = stat_effects(effs);
+    let density = (data.item_density(&stats) * 1000.0).round() / 1000.0;
+    json!({
+        "uid": uid, "gid": gid, "ints": ints,
+        "name": gid.map_or_else(|| "item#None".to_string(), |g| data.item_name(g)),
+        "level": info.map(|i| i.level), "type": data.type_name(typ.or(info.map(|i| i.type_id))),
+        "icon": info.map(|i| i.icon_id),
+        "prices": prices.iter().enumerate().map(|(i, p)| json!({"qty": LOT_SIZES.get(i).copied().unwrap_or(i as i64), "price": p})).collect::<Vec<_>>(),
+        "meta": meta, "locked": locked, "density": density,
+        "effects": data.compare_effects(stats, gid),
+    })
+}
+
+/// Apply a listing change (fmt `auction_bought` / `auction_row` / `auction_row_removed`) to the rows of a listing.
+/// None when it changes nothing (no row with that uid...). A purchase only removes a row holding a single offer (an
+/// equipment lot): a resource row lists the cheapest stack of every size, the server's `auction_row` updates it.
+pub(crate) fn apply_change(rows: &mut Vec<Value>, f: &Value) -> Option<()> {
+    let uid = f["uid"].as_i64()?;
+    let i = rows.iter().position(|r| r["uid"].as_i64() == Some(uid))?;
+    match f["kind"].as_str()? {
+        "auction_row" => rows[i] = f["row"].clone(),
+        "auction_row_removed" => {
+            rows.remove(i);
+        }
+        "auction_bought" => {
+            let offers = rows[i]["prices"].as_array().map_or(0, |p| p.iter().filter(|p| p["price"].as_i64().unwrap_or(0) > 0).count());
+            if f["bought"] != true || offers > 1 {
+                return None;
+            }
+            rows.remove(i);
+        }
+        _ => return None,
+    }
+    Some(())
+}
+
 fn format_ah_list(data: &Data, b: &Bindings, msg: &DynamicMessage) -> Value {
     let names = |v: &[String]| -> Vec<i64> { v.iter().map(|n| int(msg, n)).collect() };
     let (gid0, type0, _) = data.resolve_gid_type(&names(&b.ah_list.ints));
     let mut rows = vec![];
     for it in messages(msg, &b.ah_list.items) {
         let ints: Vec<i64> = b.ah_item.ints.iter().map(|n| int(&it, n)).collect();
-        let (mut gid, mut typ, mut uid) = data.resolve_gid_type(&ints);
-        if gid.is_none() {
-            (gid, typ, uid) = (gid0, type0, None);
-        }
-        let prices = int_list(&it, &b.ah_item.prices);
-        let info = gid.and_then(|g| data.items.get(&g));
-        let effs: Vec<Effect> = messages(&it, &b.ah_item.effects).iter().map(|e| parse_effect(data, &b.object_effect, e)).collect();
-        let meta: Map<String, Value> =
-            effs.iter().filter_map(|e| info_key(e.action).map(|k| (k.to_string(), e.str.clone().map_or(Value::Null, Value::from)))).collect();
-        let locked = effs.iter().any(|e| e.action == LOCK_EFFECT);
-        let stats = stat_effects(effs);
-        let density = (data.item_density(&stats) * 1000.0).round() / 1000.0;
-        rows.push(json!({
-            "uid": uid, "gid": gid, "ints": ints,
-            "name": gid.map_or_else(|| "item#None".to_string(), |g| data.item_name(g)),
-            "level": info.map(|i| i.level), "type": data.type_name(typ.or(info.map(|i| i.type_id))),
-            "icon": info.map(|i| i.icon_id),
-            "prices": prices.iter().enumerate().map(|(i, p)| json!({"qty": LOT_SIZES.get(i).copied().unwrap_or(i as i64), "price": p})).collect::<Vec<_>>(),
-            "meta": meta, "locked": locked, "density": density,
-            "effects": data.compare_effects(stats, gid),
-        }));
+        rows.push(format_row(data, &b.object_effect, &it, ints, &b.ah_item.prices, &b.ah_item.effects, (gid0, type0)));
     }
     json!({
         "kind": "auction_items", "defaults": data.defaults_for(gid0),
@@ -260,7 +302,7 @@ impl Module for Auction {
     }
 
     fn interest(&self) -> Interest {
-        Interest::Types(&[AH_LIST, AH_BUY])
+        Interest::Types(&[AH_LIST, AH_BUY, AH_ROW_UPDATED, AH_ROW_REMOVED])
     }
 
     fn init(&self, ctx: &Ctx) {
@@ -313,15 +355,33 @@ impl Module for Auction {
     }
 
     fn format(&self, m: &Message, ctx: &Ctx) -> Option<Value> {
-        if m.name != AH_LIST {
-            return None;
+        let msg = m.decoded.as_ref()?;
+        match m.name.as_str() {
+            AH_LIST => Some(format_ah_list(&ctx.data, self.bindings(ctx)?, msg)),
+            AH_BUY => {
+                let b = Self::role(&self.buy_bind, ctx, "ah_buy")?;
+                let bought = msg.get_field_by_name(&b.bought).and_then(|v| v.as_bool()).unwrap_or(false);
+                Some(json!({"kind": "auction_bought", "uid": int(msg, &b.uid), "bought": bought}))
+            }
+            AH_ROW_UPDATED => {
+                let (b, oe) = (Self::role(&self.row_bind, ctx, "ah_row")?, &self.bindings(ctx)?.object_effect);
+                let ints: Vec<i64> = b.ints.iter().map(|n| int(msg, n)).collect();
+                let row = format_row(&ctx.data, oe, msg, ints, &b.prices, &b.effects, (None, None));
+                Some(json!({"kind": "auction_row", "uid": row["uid"], "gid": row["gid"], "row": row}))
+            }
+            AH_ROW_REMOVED => {
+                let b = Self::role(&self.removed_bind, ctx, "ah_row_removed")?;
+                let ints: Vec<i64> = b.ints.iter().map(|n| int(msg, n)).collect();
+                let (gid, _, uid) = ctx.data.resolve_gid_type(&ints);
+                Some(json!({"kind": "auction_row_removed", "uid": uid, "gid": gid, "ints": ints}))
+            }
+            _ => None,
         }
-        Some(format_ah_list(&ctx.data, self.bindings(ctx)?, m.decoded.as_ref()?))
     }
 
     fn on_message(&self, m: &Message, ctx: &Ctx) {
-        if m.name == AH_BUY {
-            return self.on_buy(m, ctx);
+        if m.name != AH_LIST {
+            return self.on_change(m, ctx);
         }
         self.update_store(m, ctx);
     }
@@ -370,6 +430,23 @@ mod tests {
             Value::Array(a) => a.iter_mut().for_each(strip_nulls),
             _ => {}
         }
+    }
+
+    #[test]
+    fn listing_changes() {
+        let lot = |uid: i64, prices: &[i64]| json!({"uid": uid, "prices": prices.iter().map(|p| json!({"price": p})).collect::<Vec<_>>()});
+        let mut rows = vec![lot(1, &[100]), lot(2, &[5, 40, 300, 0])];
+        // an equipment lot bought leaves the listing; a failed purchase or an unknown uid changes nothing
+        assert!(apply_change(&mut rows, &json!({"kind": "auction_bought", "uid": 1, "bought": false})).is_none());
+        assert!(apply_change(&mut rows, &json!({"kind": "auction_bought", "uid": 9, "bought": true})).is_none());
+        assert!(apply_change(&mut rows, &json!({"kind": "auction_bought", "uid": 1, "bought": true})).is_some());
+        assert_eq!(rows.len(), 1);
+        // a resource row (several stack sizes) waits for the server's updated row
+        assert!(apply_change(&mut rows, &json!({"kind": "auction_bought", "uid": 2, "bought": true})).is_none());
+        apply_change(&mut rows, &json!({"kind": "auction_row", "uid": 2, "row": lot(2, &[6, 45, 0, 0])})).unwrap();
+        assert_eq!(rows[0]["prices"][1]["price"], json!(45));
+        apply_change(&mut rows, &json!({"kind": "auction_row_removed", "uid": 2})).unwrap();
+        assert!(rows.is_empty());
     }
 
     #[test]

@@ -15,6 +15,16 @@
   "uid": "fycx",
   "bought": "fycy"
  },
+ "ah_row": {
+  "_doc": "ExchangeBidHouseInListUpdatedEvent (a row of the open AH listing changed, e.g. after a purchase): same shape as an ah_item row (prices per stack size, three unordered ints uid / gid / type, effects).",
+  "prices": "fygu",
+  "effects": "fygy",
+  "ints": ["fygv", "fygw", "fygx"]
+ },
+ "ah_row_removed": {
+  "_doc": "ExchangeBidHouseInListRemovedEvent (a row left the open AH listing): three unordered ints uid / gid / type.",
+  "ints": ["fxyy", "fxyz", "fxza"]
+ },
  "avg_prices": {
   "_doc": "ObjectAveragePricesEvent: repeated entries of (item gid, average per-unit price over the last week). The third field of an entry is unused.",
   "items": "fswf",

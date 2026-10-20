@@ -1,6 +1,6 @@
 //! Stored prices: the cheapest per-unit price seen for every item opened in the auction house, grouped by item
 //! category / type, with a manual override that wins over the captured price.
-use crate::auction::AH_LIST;
+use crate::auction::{apply_change, AH_BUY, AH_LIST, AH_ROW_REMOVED, AH_ROW_UPDATED};
 use crate::{Ctx, Interest, Message, Module, Persist};
 use anyhow::{anyhow, Result};
 use loutil_data::items::RUNE_MARKER_EFFECTS;
@@ -56,6 +56,21 @@ pub struct Prices {
     runes: OnceLock<Value>,
     craft_runes: OnceLock<Value>,
     by_name: OnceLock<HashMap<String, i64>>,
+    /// gid -> rows of the last listing seen this session, to follow its changes (purchases, updated / removed rows)
+    listings: Mutex<HashMap<i64, Vec<Value>>>,
+}
+
+/// Per-unit price of a listing: the highest stack size on sale (x1000 over x100 over x10 over x1), the cheapest such
+/// stack's price per unit. None when nobody sells it.
+fn unit_price(rows: &[Value]) -> Option<f64> {
+    let offers: Vec<(f64, f64)> = rows
+        .iter()
+        .flat_map(|r| r["prices"].as_array().into_iter().flatten())
+        .filter_map(|p| Some((p["qty"].as_f64().filter(|q| *q > 0.0)?, p["price"].as_f64().filter(|x| *x > 0.0)?)))
+        .collect();
+    let top = offers.iter().map(|(q, _)| *q).fold(0.0, f64::max);
+    let unit = offers.iter().filter(|(q, _)| *q == top).map(|(q, p)| p / q).fold(f64::INFINITY, f64::min);
+    unit.is_finite().then_some(unit)
 }
 
 /// Case / nbsp / apostrophe / accent insensitive item name, for `gids_by_name`.
@@ -88,7 +103,7 @@ impl Default for Prices {
 
 impl Prices {
     pub fn new() -> Self {
-        Self { store: Default::default(), persist: OnceLock::new(), runes: OnceLock::new(), craft_runes: OnceLock::new(), by_name: OnceLock::new() }
+        Self { store: Default::default(), persist: OnceLock::new(), runes: OnceLock::new(), craft_runes: OnceLock::new(), by_name: OnceLock::new(), listings: Default::default() }
     }
 
     fn path(ctx: &Ctx) -> std::path::PathBuf {
@@ -146,7 +161,7 @@ impl Module for Prices {
     }
 
     fn interest(&self) -> Interest {
-        Interest::Types(&[AH_LIST, AVG_PRICES])
+        Interest::Types(&[AH_LIST, AH_BUY, AH_ROW_UPDATED, AH_ROW_REMOVED, AVG_PRICES])
     }
 
     fn init(&self, ctx: &Ctx) {
@@ -173,24 +188,25 @@ impl Module for Prices {
         if m.name == AVG_PRICES {
             return self.on_average_prices(m, ctx);
         }
-        let Some(f) = m.fmt.as_ref().filter(|f| f["kind"] == "auction_items") else { return };
+        let Some(f) = m.fmt.as_ref() else { return };
         if m.raw.srv == "demo" {
             return;
         }
-        let Some(rows) = f["rows"].as_array() else { return };
-        let Some(gid) = f["gid"].as_i64().or_else(|| rows.first().and_then(|r| r["gid"].as_i64())) else { return };
-        // Per-unit price of the highest stack size on sale (x1000 over x100 over x10 over x1): the mean price per unit
-        // in that stack, taking the cheapest such stack.
-        let offers: Vec<(f64, f64)> = rows
-            .iter()
-            .flat_map(|r| r["prices"].as_array().into_iter().flatten())
-            .filter_map(|p| Some((p["qty"].as_f64().filter(|q| *q > 0.0)?, p["price"].as_f64().filter(|x| *x > 0.0)?)))
-            .collect();
-        let top = offers.iter().map(|(q, _)| *q).fold(0.0, f64::max);
-        let unit = offers.iter().filter(|(q, _)| *q == top).map(|(q, p)| p / q).fold(f64::INFINITY, f64::min);
-        if !unit.is_finite() {
-            return; // nobody is selling it: keep the previous price
-        }
+        let (gid, unit) = if f["kind"] == "auction_items" {
+            let Some(rows) = f["rows"].as_array() else { return };
+            let Some(gid) = f["gid"].as_i64().or_else(|| rows.first().and_then(|r| r["gid"].as_i64())) else { return };
+            self.listings.lock().insert(gid, rows.clone());
+            (gid, unit_price(rows))
+        } else {
+            // a purchase / an updated or removed row of a listing seen earlier
+            let mut l = self.listings.lock();
+            let Some((gid, rows)) = l.iter_mut().find(|(_, r)| r.iter().any(|x| !x["uid"].is_null() && x["uid"] == f["uid"])) else { return };
+            if apply_change(rows, f).is_none() {
+                return;
+            }
+            (*gid, unit_price(rows))
+        };
+        let Some(unit) = unit else { return }; // nobody is selling it any more: keep the previous price
         let mut s = self.store.lock();
         let ent = s.entry(gid).or_insert_with(|| json!({"gid": gid, "override": null}));
         ent["unit"] = json!(unit.round() as i64);
