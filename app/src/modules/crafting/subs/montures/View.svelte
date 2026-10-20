@@ -18,7 +18,7 @@
   const MOUNT_NAMES = new Set(MOUNTS.map((m) => m.name));
 
   type SortKey = "name" | "gen" | "neurons" | "buy" | "sale" | "profit" | "pct" | "good";
-  interface Row { gid: number; name: string; family: string; gen: number; neurons: number; buy: number | null; scanned: boolean; bestSenile: boolean; good: number; goodSenile: number; sale: number | null; profit: number | null; pct: number | null }
+  interface Row { gid: number; name: string; family: string; gen: number; neurons: number; buy: number | null; scanned: boolean; bestSenile: boolean; good: number; goodSenile: number; goodLots: { price: number; n: number; senile: boolean; sale: number; profit: number; pct: number }[]; sale: number | null; profit: number | null; pct: number | null }
 
   let gids = $state.raw<Record<string, number>>({});
   let q = $state("");
@@ -62,7 +62,9 @@
       const sale = unit != null ? unit * n : null;
       const bn = best ? best.b : buy != null ? gain(n, buy) : null;
       const prof = lots?.filter((l) => (l.b?.profit ?? 0) > 0) ?? [];
-      return [{ gid, name, family, gen, neurons: n, buy, scanned: !!sc, bestSenile: !!best?.senile, good: prof.length, goodSenile: prof.filter((l) => l.senile).length, sale, profit: bn?.profit ?? null, pct: bn?.pct ?? null }];
+      // every profitable lot, best first: listed under the mount's row
+      const goodLots = prof.map((l) => ({ price: l.price, n: l.n, senile: l.senile, sale: unit! * l.n, profit: l.b!.profit, pct: l.b!.pct })).sort((a, b) => b.profit - a.profit);
+      return [{ gid, name, family, gen, neurons: n, buy, scanned: !!sc, bestSenile: !!best?.senile, good: prof.length, goodSenile: prof.filter((l) => l.senile).length, goodLots, sale, profit: bn?.profit ?? null, pct: bn?.pct ?? null }];
     }),
   );
 
@@ -124,6 +126,19 @@
         <td class="n" class:good={(r.pct ?? 0) > 0} class:bad={(r.pct ?? 0) < 0}><b>{r.pct != null ? pct(r.pct) : "—"}</b></td>
         <td class="n" class:good={r.good > 0}>{#if r.scanned}<b>{r.good}</b>{#if r.goodSenile} <span class="mut">(dont {r.goodSenile} sénile{r.goodSenile > 1 ? "s" : ""})</span>{/if}{:else}—{/if}</td>
       {/snippet}
+      {#snippet sub(r)}
+        {#each r.goodLots as l, i (i)}
+          <tr class="lot">
+            <td colspan="2" class="mut">↳ lot rentable</td>
+            <td class="n">{l.n}{#if l.senile} <span class="mut">sénile</span>{/if}</td>
+            <td class="n"><b>{kamas(l.price)}</b></td>
+            <td class="n">{kamas(l.sale)}</td>
+            <td class="n good">{signedKamas(l.profit)}</td>
+            <td class="n good">{pct(l.pct)}</td>
+            <td></td>
+          </tr>
+        {/each}
+      {/snippet}
       {#snippet empty()}Aucune monture à afficher : ouvrez-les et leur ressource (neurone, ambre, corne) à l'hôtel de vente pour enregistrer leurs prix (ou désactivez « Prix connus seulement »).{/snippet}
     </SortTable>
   </SmoothScroll>
@@ -135,5 +150,7 @@
   .head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
   .head .fh { margin: 0; flex: 1; min-width: 260px; }
   .rv :global(select) { padding: 3px 6px; }
+  .rv :global(tr.lot td) { font-size: 0.92em; padding-top: 1px; padding-bottom: 1px; }
+  .rv :global(tr.lot td:first-child) { padding-left: 18px; }
   .sum { margin-bottom: 10px; padding: 8px 10px; background: var(--panel); border: 1px solid var(--line); }
 </style>

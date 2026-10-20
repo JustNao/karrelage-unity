@@ -19,6 +19,7 @@
     row,
     empty,
     rowProps,
+    sub,
   }: {
     columns: { key: K; label: string; num?: boolean; title?: string }[];
     rows: R[];
@@ -29,6 +30,8 @@
     empty?: Snippet;
     /** Extra attributes of each <tr> (id, class, onclick...). */
     rowProps?: (r: R) => Record<string, any>;
+    /** Extra <tr>s rendered right under each row (details of that row; not sorted). */
+    sub?: Snippet<[R]>;
   } = $props();
 </script>
 
@@ -43,6 +46,7 @@
   <tbody>
     {#each rows as r (key(r))}
       <tr {...rowProps?.(r)}>{@render row(r)}</tr>
+      {@render sub?.(r)}
     {:else}
       {#if empty}<tr><td colspan={columns.length} class="mut">{@render empty()}</td></tr>{/if}
     {/each}
