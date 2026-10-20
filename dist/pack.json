@@ -1,7 +1,8 @@
 {
  "pack": 1,
- "generated": 1792520552,
- "size": 1003565,
- "sha256": "e6be2e5bae5b16d7501be3e10586e9c7132414f63f4c5266b1e6ef55ce582e2b",
+ "generated": 1792531491,
+ "game": "3.7.12.12",
+ "size": 1009451,
+ "sha256": "2e40070132e1c710a58ef4406ec625c5091d5cf954e1fcac44b91d5f3f724210",
  "file": "datapack.zip"
 }
