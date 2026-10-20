@@ -1,16 +1,17 @@
-//! Packet inspector: ring buffer of every decoded message, with name editing (developer tool).
+//! Packet inspector: the last packets of every message type, with name editing (developer tool).
 use crate::{Ctx, Interest, Message, Module};
 use anyhow::{anyhow, Result};
 use loutil_core::wire;
 use loutil_proto::DynamicMessage;
 use parking_lot::Mutex;
 use serde_json::{json, Map, Value};
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-const RING: usize = 5000;
+/// Packets kept per message type (recorded all the time, so memory stays bounded by the number of types).
+const PER_TYPE: usize = 20;
 /// Bytes of raw payload kept per packet for the hex view.
 const HEX_BYTES: usize = 4096;
 /// New packets are sent to the UI in batches (one event per tick instead of one per packet).
@@ -25,10 +26,10 @@ struct Entry {
     raw: Vec<u8>,
 }
 
-/// Raw traffic is only kept while the inspector tab is open (`active`): the app runs all the time, so nothing
-/// accumulates (or lingers in memory) otherwise.
+/// Every packet is recorded, even with the inspector tab closed, but only the last `PER_TYPE` of each message type are
+/// kept; new packets are streamed to the UI only while the tab is open (`active`).
 pub struct Packets {
-    ring: Mutex<VecDeque<Entry>>,
+    ring: Mutex<HashMap<String, VecDeque<Entry>>>,
     active: AtomicBool,
     /// rendered packets not sent to the UI yet
     outbox: Arc<Mutex<Vec<Value>>>,
@@ -42,7 +43,7 @@ impl Default for Packets {
 
 impl Packets {
     pub fn new() -> Self {
-        Self { ring: Mutex::new(VecDeque::new()), active: AtomicBool::new(false), outbox: Default::default() }
+        Self { ring: Mutex::new(HashMap::new()), active: AtomicBool::new(false), outbox: Default::default() }
     }
 
     fn record(&self, m: &Message) -> Map<String, Value> {
@@ -73,6 +74,11 @@ impl Packets {
         r
     }
 
+    /// Buffer key: the message type, or the envelope kind for packets without one.
+    fn key(rec: &Map<String, Value>) -> String {
+        rec.get("type").and_then(Value::as_str).map_or_else(|| format!("?{}", rec.get("kind").and_then(Value::as_str).unwrap_or("")), str::to_owned)
+    }
+
     /// Record as sent to the UI, with names as they are *now*.
     fn render(entry: &Entry, ctx: &Ctx) -> Value {
         let mut r = entry.rec.clone();
@@ -95,9 +101,6 @@ impl Module for Packets {
         Interest::All
     }
 
-    fn wants(&self) -> bool {
-        self.active.load(Ordering::Relaxed)
-    }
 
     fn init(&self, ctx: &Ctx) {
         let (outbox, emit) = (self.outbox.clone(), ctx.emitter());
@@ -113,15 +116,18 @@ impl Module for Packets {
     fn on_message(&self, m: &Message, ctx: &Ctx) {
         let raw = m.raw.payload[..m.raw.payload.len().min(HEX_BYTES)].to_vec();
         let entry = Entry { rec: self.record(m), msg: m.decoded.clone(), raw };
-        let out = Self::render(&entry, ctx);
+        let out = self.active.load(Ordering::Relaxed).then(|| Self::render(&entry, ctx));
         {
             let mut ring = self.ring.lock();
-            if ring.len() == RING {
-                ring.pop_front();
+            let q = ring.entry(Self::key(&entry.rec)).or_default();
+            if q.len() == PER_TYPE {
+                q.pop_front();
             }
-            ring.push_back(entry);
+            q.push_back(entry);
         }
-        self.outbox.lock().push(out);
+        if let Some(out) = out {
+            self.outbox.lock().push(out);
+        }
     }
 
     fn call(&self, method: &str, args: Value, ctx: &Ctx) -> Result<Value> {
@@ -129,14 +135,15 @@ impl Module for Packets {
             "list" => {
                 let since = args.get("since").and_then(Value::as_u64).unwrap_or(0);
                 let ring = self.ring.lock();
-                Ok(Value::Array(ring.iter().filter(|e| e.rec["id"].as_u64().unwrap_or(0) > since).map(|e| Self::render(e, ctx)).collect()))
+                let mut all: Vec<&Entry> = ring.values().flatten().filter(|e| e.rec["id"].as_u64().unwrap_or(0) > since).collect();
+                all.sort_by_key(|e| e.rec["id"].as_u64().unwrap_or(0));
+                Ok(Value::Array(all.into_iter().map(|e| Self::render(e, ctx)).collect()))
             }
-            // the inspector tab opened (on: true) or closed: closing drops everything buffered
+            // the inspector tab opened (on: true) or closed: new packets are streamed only while it is open
             "set_active" => {
                 let on = args.get("on").and_then(Value::as_bool).unwrap_or(false);
                 self.active.store(on, Ordering::Relaxed);
                 if !on {
-                    *self.ring.lock() = VecDeque::new();
                     self.outbox.lock().clear();
                 }
                 Ok(json!({"active": on}))
@@ -145,12 +152,12 @@ impl Module for Packets {
                 self.ring.lock().clear();
                 Ok(json!({"buffered": 0}))
             }
-            "buffered" => Ok(json!(self.ring.lock().len())),
+            "buffered" => Ok(json!(self.ring.lock().values().map(VecDeque::len).sum::<usize>())),
             // args: {id} -> hex of the start of that packet's payload
             "hex" => {
                 let id = args.get("id").and_then(Value::as_u64).unwrap_or(0);
                 let ring = self.ring.lock();
-                Ok(ring.iter().find(|e| e.rec["id"].as_u64() == Some(id)).map_or(Value::Null, |e| json!(wire::hex(&e.raw))))
+                Ok(ring.values().flatten().find(|e| e.rec["id"].as_u64() == Some(id)).map_or(Value::Null, |e| json!(wire::hex(&e.raw))))
             }
             // args: {id} -> writes that packet (as rendered, plus its hex) to <Downloads>/karrelage-<name>-<id>.json,
             // selects it in the Explorer and returns the path
@@ -158,7 +165,7 @@ impl Module for Packets {
                 let id = args.get("id").and_then(Value::as_u64).ok_or_else(|| anyhow!("id required"))?;
                 let mut v = {
                     let ring = self.ring.lock();
-                    let e = ring.iter().find(|e| e.rec["id"].as_u64() == Some(id)).ok_or_else(|| anyhow!("paquet {id} plus en mémoire"))?;
+                    let e = ring.values().flatten().find(|e| e.rec["id"].as_u64() == Some(id)).ok_or_else(|| anyhow!("paquet {id} plus en mémoire"))?;
                     let mut v = Self::render(e, ctx);
                     v["hex"] = json!(wire::hex(&e.raw));
                     v

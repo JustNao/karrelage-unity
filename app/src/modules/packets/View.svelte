@@ -189,7 +189,7 @@
 
   onMount(() => {
     const offs: Promise<() => void>[] = [on("packets:batch", add)];
-    // the backend only records while this tab is open, and drops its buffer when it closes
+    // the backend records all the time (last packets of each type); it streams new ones only while this tab is open
     call("packets", "set_active", { on: true })
       .then(() => call<any[]>("packets", "list"))
       .then((l) => reset(l));
@@ -200,12 +200,27 @@
     };
   });
 
+  function toggleHidden(k: string) {
+    const h = new Set(hidden);
+    h.has(k) ? h.delete(k) : h.add(k);
+    hidden = h;
+    if (onlyType === k && h.has(k)) onlyType = null;
+  }
   function clickType(k: string, e: MouseEvent) {
+    if (e.shiftKey) toggleHidden(k);
+    else onlyType = onlyType === k ? null : k;
+  }
+  /** Shift+click on a packet hides its whole type, a plain click selects it. */
+  function clickPacket(p: any, e: MouseEvent) {
     if (e.shiftKey) {
-      const h = new Set(hidden);
-      h.has(k) ? h.delete(k) : h.add(k);
-      hidden = h;
-    } else onlyType = onlyType === k ? null : k;
+      e.preventDefault();
+      toggleHidden(nm(p));
+    } else sel = p.id;
+  }
+  const allHidden = $derived(typeStats.length > 0 && typeStats.every(([k]) => hidden.has(k)));
+  function toggleAll() {
+    hidden = allHidden ? new Set() : new Set(typeStats.map(([k]) => k));
+    if (!allHidden) onlyType = null;
   }
 
   async function clear() {
@@ -230,6 +245,13 @@
   }
 </script>
 
+{#snippet eye(open: boolean)}
+  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z" />
+    {#if open}<circle cx="8" cy="8" r="2" />{:else}<path d="M2.5 13.5l11-11" />{/if}
+  </svg>
+{/snippet}
+
 <div class="bar">
   <SearchBar bind:value={q} placeholder="Filtrer (nom, champ, valeur)…" width="240px" compact>
     {#snippet after()}
@@ -243,10 +265,18 @@
 </div>
 <div class="grid cgrid" class:anim={!cols.dragging} style:grid-template-columns={`${cols.px("types")}px 5px 1fr 5px ${current?.fmt ? cols.w.fmt + "px 5px " : ""}${cols.px("detail")}px`}>
   <SideList {cols} name="types" title="Types">
+    {#snippet bar()}
+      <div class="tyall">
+        <button class="eye" onclick={toggleAll} title={allHidden ? "Afficher tous les types" : "Masquer tous les types"}>{@render eye(!allHidden)}</button>
+        <span class="mut">{allHidden ? "Tout afficher" : "Tout masquer"}</span>
+        {#if hidden.size && !allHidden}<span class="mut small">{hidden.size} masqué{hidden.size > 1 ? "s" : ""}</span>{/if}
+      </div>
+    {/snippet}
     {#each typeStats as [k, c] (k)}
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
       <div class="irow ty" class:hid={hidden.has(k)} class:sel={onlyType === k} title="clic : seulement celui-ci · maj+clic : masquer" onclick={(e) => clickType(k, e)}>
-        <span>{k}</span><span class="mut">{c}</span>
+        <button class="eye" onclick={(e) => (e.stopPropagation(), toggleHidden(k))} title={hidden.has(k) ? "Afficher ce type" : "Masquer ce type"}>{@render eye(!hidden.has(k))}</button>
+        <span class="tn">{k}</span><span class="mut">{c}</span>
       </div>
     {/each}
   </SideList>
@@ -266,7 +296,7 @@
     <VirtualList items={visible} key={(p) => p.id} estimate={23} overscan={20}>
       {#snippet row(p)}
         <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-        <div class="tr" class:sel={sel === p.id} onclick={() => (sel = p.id)}>
+        <div class="tr" class:sel={sel === p.id} title="maj+clic : masquer ce type" onmousedown={(e) => e.shiftKey && e.preventDefault()} onclick={(e) => clickPacket(p, e)}>
           <div class="td t">{fmtT(p.t)}</div>
           <div class="td d {p.dir === 'C->S' ? 'c2s' : 's2c'}">{p.dir === "C->S" ? "→ S" : "← S"}</div>
           <div class="td k">{p.kind ?? ""}</div>
@@ -325,9 +355,14 @@
   .detail { border-left: 1px solid var(--line); padding: 10px; }
   .fmt { border-left: 1px solid var(--line); padding: 10px; }
   /* compact rows: many message types */
-  .irow.ty { padding: 3px 8px; display: flex; justify-content: space-between; gap: 6px; }
-  .irow.ty.hid { opacity: 0.35; text-decoration: line-through; }
-  .irow.ty span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .irow.ty { padding: 3px 8px 3px 4px; display: flex; align-items: center; gap: 4px; }
+  .irow.ty.hid .tn, .irow.ty.hid .mut { opacity: 0.35; text-decoration: line-through; }
+  .irow.ty .tn { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .eye { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; padding: 0; border: 0; background: none; color: var(--mut); border-radius: 4px; }
+  .eye:hover { color: var(--fg); background: var(--line); }
+  .irow.ty.hid .eye { color: var(--mut); opacity: 0.6; }
+  .tyall { display: flex; align-items: center; gap: 4px; padding: 2px 4px; font-size: 12px; }
+  .small { font-size: 11px; }
   .list { overflow: auto; }
   /* rows are divs (the list is virtualized): same columns as the former table */
   .tr { display: grid; grid-template-columns: var(--rowcols); cursor: pointer; border-bottom: 1px solid var(--line); }
@@ -340,7 +375,6 @@
   .rz:hover { background: var(--acc); opacity: 0.5; }
   .exp { display: flex; gap: 8px; align-items: center; margin: 6px 0; min-width: 0; }
   .exp span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .small { font-size: 11px; }
   .tr.sel { background: color-mix(in srgb, var(--acc) 22%, transparent); }
   .c2s { color: var(--c2s); }
   .s2c { color: var(--s2c); }
