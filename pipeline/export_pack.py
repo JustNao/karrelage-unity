@@ -21,7 +21,7 @@ dump("names.json", schema.mapping())
 ids = set()
 items = {}
 for k, v in gd.items.items():
-    items[k] = {"nameId": v["nameId"], "typeId": v["typeId"], "level": v["level"], "iconId": v["iconId"], "setId": v.get("itemSetId"),
+    items[k] = {"nameId": v["nameId"], "typeId": v["typeId"], "level": v["level"], "iconId": v["iconId"], "setId": v.get("itemSetId"), "drop": bool(v.get("drop")),
                 "effects": [{"a": e["a"], "min": e["min"], "max": e["max"]} for e in v.get("effects", [])]}
     ids.add(v["nameId"])
 # Effect classification, following the in-game characteristics panel:

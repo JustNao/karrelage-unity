@@ -51,6 +51,7 @@ def main():
         if "id" not in r or "nameId" not in r:
             continue
         items[r["id"]] = {k: r.get(k) for k in ("id", "nameId", "descriptionId", "typeId", "level", "iconId", "itemSetId", "realWeight", "price", "_class")}
+        items[r["id"]]["drop"] = bool(r.get("dropMonsterIds"))   # dropped by some monster (Temporis-only drops left out)
         # default ("perfect roll range") effects: action id == effects table id; dice num..side is the min..max (side 0 = fixed)
         eff = []
         for ref in r.get("possibleEffects", []):

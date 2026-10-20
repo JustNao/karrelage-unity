@@ -53,6 +53,9 @@ pub struct Item {
     /// Item set (panoplie) the item belongs to, if any (absent in older packs).
     #[serde(default)]
     pub set_id: Option<i64>,
+    /// Dropped by some monster (absent in older packs).
+    #[serde(default)]
+    pub drop: bool,
     pub effects: Vec<DefaultEffect>,
 }
 
