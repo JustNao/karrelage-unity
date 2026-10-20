@@ -45,7 +45,8 @@ export const SLOT_TITLES: Record<string, string> = {
 
 export interface StatRow { stat: number; label: string; icon: string }
 const r = (stat: number, label: string, icon: string): StatRow => ({ stat, label, icon });
-/** Characteristic ids (game `characteristics` table) shown in each panel; icon = Dofusbook element code (dofusbook.net/assets/img/elements/<code>.png, codes as on a Dofusbook sheet). */
+/** Characteristic ids (game `characteristics` table, as the item effects modify them: % Do Mêlée / Dist / Armes / Sorts = 125 / 120 / 122 / 123
+ * dealtDamageMultiplier*, not 31 "Dommages Renvoyés" / 98) shown in each panel; icon = Dofusbook element code (dofusbook.net/assets/img/elements/<code>.png, codes as on a Dofusbook sheet). */
 export const PANELS = {
   main: [r(1, "PA", "pa"), r(23, "PM", "pm"), r(19, "PO", "po"), r(48, "Prospection", "pp"), r(44, "Initiative", "ii"), r(18, "Critique", "cc"), r(26, "Invocations", "ic"), r(49, "Soin", "so")],
   /** Vitality: not listed (the PdV row stands for it), kept so its effects stay known and labelled. */
@@ -53,7 +54,7 @@ export const PANELS = {
   carac: [r(12, "Sagesse", "sa"), r(10, "Force", "fo"), r(15, "Intelligence", "in"), r(13, "Chance", "ch"), r(14, "Agilité", "ag"), r(25, "Puissance", "pu")],
   secondary: [r(78, "Fuite", "fu"), r(79, "Tacle", "ta"), r(27, "Esq. PA", "epa"), r(28, "Esq. PM", "epm"), r(82, "Ret. PA", "rpa"), r(83, "Ret. PM", "rpm"), r(40, "Pods", "pd")],
   damage: [r(92, "Do Neutre", "dnf"), r(88, "Do Terre", "dtf"), r(89, "Do Feu", "dff"), r(90, "Do Eau", "def"), r(91, "Do Air", "daf"), r(16, "Dommages", "dmg"), r(86, "Do Critique", "dc"), r(84, "Do Poussée", "dp"),
-    r(31, "% Do Armes", "dw"), r(98, "% Do Sorts", "ds"), r(125, "% Do Mêlée", "dm"), r(120, "% Do Dist", "dd")],
+    r(122, "% Do Armes", "dw"), r(123, "% Do Sorts", "ds"), r(125, "% Do Mêlée", "dm"), r(120, "% Do Dist", "dd")],
   resist: [r(58, "Ré Neutre", "rn"), r(54, "Ré Terre", "rt"), r(55, "Ré Feu", "rf"), r(56, "Ré Eau", "re"), r(57, "Ré Air", "ra"), r(87, "Ré Critique", "rc"), r(85, "Ré Poussée", "rp"),
     r(37, "%Ré Neutre", "rnp"), r(33, "%Ré Terre", "rtp"), r(34, "%Ré Feu", "rfp"), r(35, "%Ré Eau", "rep"), r(36, "%Ré Air", "rap"), r(124, "%Ré Mêlée", "rm"), r(121, "%Ré Dist", "rd"), r(142, "%Ré Armes", "rw")],
 };
@@ -74,7 +75,7 @@ export const FM_STATS: Record<string, { stat: number; label: string }> = {
   ii: { stat: 44, label: "Initiative" }, cc: { stat: 18, label: "Critique" }, ic: { stat: 26, label: "Invocations" }, so: { stat: 49, label: "Soin" }, pp: { stat: 48, label: "Prospection" },
   fu: { stat: 78, label: "Fuite" }, ta: { stat: 79, label: "Tacle" }, dmg: { stat: 16, label: "Dommages" }, dnf: { stat: 92, label: "Do Neutre" }, dtf: { stat: 88, label: "Do Terre" },
   dff: { stat: 89, label: "Do Feu" }, def: { stat: 90, label: "Do Eau" }, daf: { stat: 91, label: "Do Air" }, dc: { stat: 86, label: "Do Critique" }, dp: { stat: 84, label: "Do Poussée" },
-  dw: { stat: 31, label: "% Do Armes" }, ds: { stat: 98, label: "% Do Sorts" }, dm: { stat: 125, label: "% Do Mêlée" }, dd: { stat: 120, label: "% Do Dist" },
+  dw: { stat: 122, label: "% Do Armes" }, ds: { stat: 123, label: "% Do Sorts" }, dm: { stat: 125, label: "% Do Mêlée" }, dd: { stat: 120, label: "% Do Dist" },
   rn: { stat: 58, label: "Ré Neutre" }, rt: { stat: 54, label: "Ré Terre" }, rf: { stat: 55, label: "Ré Feu" }, re: { stat: 56, label: "Ré Eau" }, ra: { stat: 57, label: "Ré Air" },
   rnp: { stat: 37, label: "%Ré Neutre" }, rtp: { stat: 33, label: "%Ré Terre" }, rfp: { stat: 34, label: "%Ré Feu" }, rep: { stat: 35, label: "%Ré Eau" }, rap: { stat: 36, label: "%Ré Air" },
   rc: { stat: 87, label: "Ré Critique" }, rp: { stat: 85, label: "Ré Poussée" }, rm: { stat: 124, label: "%Ré Mêlée" }, rd: { stat: 121, label: "%Ré Dist" }, rw: { stat: 142, label: "%Ré Armes" },
