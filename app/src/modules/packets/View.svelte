@@ -36,6 +36,52 @@
   // resizable panels: types | list (flexible) | formatted | detail
   const cols = new Columns("karrelage.cols.packets", { types: 170, fmt: 420, detail: 480 });
 
+  // resizable list columns (heure, sens, genre, nom; the summary takes the rest), widths remembered in localStorage
+  const RKEY = "karrelage.packets.rowcols";
+  const RDEF = [84, 44, 64, 190];
+  const RMIN = 30;
+  let rw = $state(
+    (() => {
+      try {
+        const v = JSON.parse(localStorage.getItem(RKEY) ?? "null");
+        if (Array.isArray(v) && v.length === RDEF.length && v.every((x) => typeof x === "number")) return v as number[];
+      } catch {}
+      return [...RDEF];
+    })(),
+  );
+  const rowCols = $derived(rw.map((w) => w + "px").join(" ") + " minmax(0, 1fr)");
+  function dragCol(i: number, e: PointerEvent) {
+    e.preventDefault();
+    const x0 = e.clientX, w0 = rw[i];
+    const move = (ev: PointerEvent) => (rw[i] = Math.max(RMIN, Math.round(w0 + ev.clientX - x0)));
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      try { localStorage.setItem(RKEY, JSON.stringify(rw)); } catch {}
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+  function resetCol(i: number) {
+    rw[i] = RDEF[i];
+    try { localStorage.setItem(RKEY, JSON.stringify(rw)); } catch {}
+  }
+
+  /** Export of the selected packet: written to the Downloads folder by the backend, which shows it in the Explorer. */
+  let exported = $state("");
+  async function exportPacket() {
+    if (!current) return;
+    try {
+      exported = await call<string>("packets", "export", { id: current.id });
+    } catch (e) {
+      exported = "échec : " + e;
+    }
+  }
+  $effect(() => {
+    sel;
+    exported = "";
+  });
+
   const nm = (p: any) => p.name || p.type || "?";
   const fmtT = (t: number) => {
     const d = new Date(t * 1000);
@@ -205,7 +251,18 @@
     {/each}
   </SideList>
   <Grip {cols} name="types" dir={1} />
-  <div class="list" bind:this={listEl}>
+  <div class="list" bind:this={listEl} style:--rowcols={rowCols}>
+    <div class="tr th">
+      {#each ["Heure", "Sens", "Genre", "Nom", "Contenu"] as h, i}
+        <div class="td">
+          {h}
+          {#if i < rw.length}
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <span class="rz" title="glisser pour redimensionner · double-clic : largeur par défaut" onpointerdown={(e) => dragCol(i, e)} ondblclick={() => resetCol(i)}></span>
+          {/if}
+        </div>
+      {/each}
+    </div>
     <VirtualList items={visible} key={(p) => p.id} estimate={23} overscan={20}>
       {#snippet row(p)}
         <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
@@ -248,6 +305,10 @@
         {/if}
         <span class="mut">{current.type && current.type !== current.name ? `(${current.type})` : ""}</span>
       </div>
+      <div class="exp">
+        <button onclick={exportPacket} title="Enregistre le paquet (décodé, brut, hexadécimal) en JSON dans le dossier Téléchargements">Exporter en JSON</button>
+        {#if exported}<span class="mut small" title={exported}>{exported}</span>{/if}
+      </div>
       <div class="mut">{current.dir} · {current.kind ?? "?"} · uid {current.uid ?? "-"} · {current.len} octets · {current.srv}{current.conf ? " · correspondance : " + current.conf : ""}</div>
       <h3>{current.decoded ? "Décodé (noms associés ; « a (x|y?) » = candidats ambigus)" : "Sans schéma"}</h3>
       <pre><JsonTree v={current.decoded ?? current.body ?? current.unparsed} onrename={renameField} /></pre>
@@ -269,10 +330,17 @@
   .irow.ty span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .list { overflow: auto; }
   /* rows are divs (the list is virtualized): same columns as the former table */
-  .tr { display: grid; grid-template-columns: 84px 44px 64px 190px minmax(0, 1fr); cursor: pointer; border-bottom: 1px solid var(--line); }
+  .tr { display: grid; grid-template-columns: var(--rowcols); cursor: pointer; border-bottom: 1px solid var(--line); }
   .td { padding: 2px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .td.t, .td.k { color: var(--mut); }
   .tr:hover { background: var(--panel); }
+  .tr.th { position: sticky; top: 0; z-index: 2; background: var(--bg); cursor: default; color: var(--mut); font-size: 11px; user-select: none; }
+  .tr.th .td { position: relative; overflow: visible; }
+  .rz { position: absolute; top: 0; bottom: 0; right: -3px; width: 6px; cursor: col-resize; z-index: 1; }
+  .rz:hover { background: var(--acc); opacity: 0.5; }
+  .exp { display: flex; gap: 8px; align-items: center; margin: 6px 0; min-width: 0; }
+  .exp span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .small { font-size: 11px; }
   .tr.sel { background: color-mix(in srgb, var(--acc) 22%, transparent); }
   .c2s { color: var(--c2s); }
   .s2c { color: var(--s2c); }

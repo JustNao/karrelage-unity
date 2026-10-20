@@ -152,6 +152,25 @@ impl Module for Packets {
                 let ring = self.ring.lock();
                 Ok(ring.iter().find(|e| e.rec["id"].as_u64() == Some(id)).map_or(Value::Null, |e| json!(wire::hex(&e.raw))))
             }
+            // args: {id} -> writes that packet (as rendered, plus its hex) to <Downloads>/karrelage-<name>-<id>.json,
+            // selects it in the Explorer and returns the path
+            "export" => {
+                let id = args.get("id").and_then(Value::as_u64).ok_or_else(|| anyhow!("id required"))?;
+                let mut v = {
+                    let ring = self.ring.lock();
+                    let e = ring.iter().find(|e| e.rec["id"].as_u64() == Some(id)).ok_or_else(|| anyhow!("paquet {id} plus en mémoire"))?;
+                    let mut v = Self::render(e, ctx);
+                    v["hex"] = json!(wire::hex(&e.raw));
+                    v
+                };
+                v["hexTruncated"] = json!(v["len"].as_u64().unwrap_or(0) as usize > HEX_BYTES);
+                let name: String = v["name"].as_str().or(v["type"].as_str()).unwrap_or("paquet").chars().map(|c| if c.is_alphanumeric() { c } else { '_' }).collect();
+                let dir = std::env::var_os("USERPROFILE").map(|h| std::path::PathBuf::from(h).join("Downloads")).filter(|d| d.is_dir()).unwrap_or_else(std::env::temp_dir);
+                let path = dir.join(format!("karrelage-{name}-{id}.json"));
+                std::fs::write(&path, serde_json::to_string_pretty(&v)?)?;
+                let _ = std::process::Command::new("explorer").arg(format!("/select,{}", path.display())).spawn();
+                Ok(json!(path.display().to_string()))
+            }
             // confirm/edit a decoded name; persisted in the user overrides file
             "rename" => {
                 let msg = args.get("msg").and_then(Value::as_str).ok_or_else(|| anyhow!("msg required"))?;
