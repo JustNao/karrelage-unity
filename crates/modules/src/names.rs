@@ -134,11 +134,18 @@ fn game_check(ctx: &Ctx) -> Value {
     let size = |p: PathBuf| std::fs::metadata(p).ok().map(|m| m.len());
     let cur_a = size(dir.join("GameAssembly.dll"));
     let cur_m = size(dir.join("Dofus_Data/il2cpp_data/Metadata/global-metadata.dat"));
-    let same = (fp.assembly.is_none() || fp.assembly == cur_a) && (fp.metadata.is_none() || fp.metadata == cur_m);
+    let cur_v = loutil_data::installed_game_version();
+    let same_v = fp.version.is_none() || cur_v.is_none() || fp.version == cur_v;
+    let same = same_v && (fp.assembly.is_none() || fp.assembly == cur_a) && (fp.metadata.is_none() || fp.metadata == cur_m);
+    let v = |x: &Option<String>| x.clone().unwrap_or_else(|| "?".into());
     json!({
         "state": if same { "match" } else { "changed" },
-        "detail": if same { "le jeu installé correspond au pack" } else { "le jeu installé a changé depuis la génération du pack" },
-        "pack": {"assembly": fp.assembly, "metadata": fp.metadata}, "game": {"assembly": cur_a, "metadata": cur_m},
+        "detail": if same {
+            format!("le jeu installé ({}) correspond au pack", v(&cur_v))
+        } else {
+            format!("le jeu installé ({}) a changé depuis la génération du pack ({})", v(&cur_v), v(&fp.version))
+        },
+        "pack": {"assembly": fp.assembly, "metadata": fp.metadata, "version": fp.version}, "game": {"assembly": cur_a, "metadata": cur_m, "version": cur_v},
     })
 }
 

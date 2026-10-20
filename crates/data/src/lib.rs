@@ -22,6 +22,18 @@ pub struct Manifest {
 pub struct GameFingerprint {
     pub assembly: Option<u64>,
     pub metadata: Option<u64>,
+    /// Game version of the dumped build ("3.7.12.12", from the Ankama launcher; absent in older packs).
+    #[serde(default)]
+    pub version: Option<String>,
+}
+
+/// Version of the installed game, as the Ankama launcher records it (`%APPDATA%/zaap/.../dofus3/release.json`,
+/// `"version": "6.0_3.7.12.12"` -> "3.7.12.12"). Read only.
+pub fn installed_game_version() -> Option<String> {
+    let p = PathBuf::from(std::env::var_os("APPDATA")?).join("zaap/repositories/production/dofus/dofus3/release.json");
+    let v: Value = serde_json::from_slice(&std::fs::read(p).ok()?).ok()?;
+    let s = v.get("version")?.as_str()?;
+    Some(s.rsplit_once('_').map_or(s, |(_, v)| v).to_string())
 }
 
 #[derive(Debug, Deserialize, Clone)]

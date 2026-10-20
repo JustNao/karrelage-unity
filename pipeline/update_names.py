@@ -6,9 +6,12 @@
                                                 # Il2CppInspectorRedux, protodec -> protos, build_protos, game data, match, export
 
 The game folder is only READ (two files are copied into work/dump_input); nothing there is ever modified.
-Restart Karrelage afterwards so it loads the new datapack/.
+Afterwards dist/ is committed as "Data pack for Dofus <version>" (not pushed). Restart Karrelage so it loads the new datapack/.
 """
 import os, pathlib, queue, shutil, subprocess, sys, threading, time
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from game_version import dumped_version, installed_version
 
 root = pathlib.Path(__file__).resolve().parent.parent
 py = sys.executable
@@ -78,6 +81,21 @@ def run(cmd, extra_env=None, done_marker=None, grace=30, limit=None):
     print(f"ok ({time.time() - t:.0f}s)", flush=True)
 
 
+def commit_pack():
+    """Commit the regenerated dist/ (only those two files, whatever else is staged), labelled with the game version.
+    Not pushed: pushing is what publishes the pack to the app's users."""
+    files = ["dist/datapack.zip", "dist/pack.json"]
+    git = lambda *a: subprocess.run(["git", *a], cwd=root, capture_output=True, text=True)
+    if git("rev-parse", "--is-inside-work-tree").returncode:
+        return print("(pas un dépôt git : pas de commit)", flush=True)
+    if not git("status", "--porcelain", "--", *files).stdout.strip():
+        return print("pack inchangé : pas de commit", flush=True)
+    v = dumped_version()
+    msg = f"Data pack for Dofus {v}" if v else "Data pack update"
+    r = git("commit", "-m", msg, "--", *files)
+    print((f"commit : {msg}" if r.returncode == 0 else f"commit impossible : {(r.stderr or r.stdout).strip()}") + " (à pousser pour publier)", flush=True)
+
+
 def from_game():
     dump_input = root / "work" / "dump_input"
     dump_input.mkdir(parents=True, exist_ok=True)
@@ -87,6 +105,9 @@ def from_game():
             sys.exit(f"fichier introuvable : {src} (variable LOUTIL_GAME pour changer le dossier du jeu)")
         shutil.copy2(src, dump_input / src.name)
         print("copié", src.name, flush=True)
+    v = installed_version()   # labels the pack with the build it is dumped from
+    (dump_input / "version.txt").write_text(v or "", encoding="utf-8")
+    print("version du jeu :", v or "inconnue (launcher Ankama introuvable)", flush=True)
 
     step("Dump IL2CPP (Il2CppInspectorRedux)")
     dotnet = root / "tools" / "dotnet10"
@@ -119,6 +140,7 @@ if not REPACK:
 step("Export du pack de données")
 run([py, "pipeline/export_pack.py"])
 run([py, "pipeline/package_pack.py"])   # dist/: what the app downloads from GitHub
+commit_pack()
 
 print(f"@@STEP {TOTAL} {TOTAL} fin", flush=True)
 print("\nTERMINE : redémarrez Karrelage pour charger le nouveau pack.", flush=True)
