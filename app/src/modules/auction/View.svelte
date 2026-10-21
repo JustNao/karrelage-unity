@@ -13,12 +13,11 @@
   import ConfirmButton from "../../lib/components/ConfirmButton.svelte";
   import SearchBar, { matcher } from "../../lib/components/SearchBar.svelte";
   import SideList from "../../lib/components/SideList.svelte";
-  import { flip } from "svelte/animate";
   import DensityChart from "../../lib/components/DensityChart.svelte";
   import EffectPicker from "../../lib/components/EffectPicker.svelte";
   import ItemCard from "../../lib/components/ItemCard.svelte";
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
-  import VirtualList from "../../lib/components/VirtualList.svelte";
+  import { iconOfItem, lazyIcon } from "../../lib/stores/itemIcons.svelte";
   import { LEVEL_EFFECT, isLegendary, levelOf, xpOfLevel } from "../../lib/companion";
   import { analyse, isGoodDeal } from "../../lib/density";
   import { settings } from "../../lib/stores/settings.svelte";
@@ -71,10 +70,6 @@
   const stored = prices.map; // stored prices (the rune prices feed the transcendance tab)
   let recipes = $state.raw<Recipes>({ recipes: {}, names: {} });
   let allOpen = $state(false);
-  /** Equipment lots as a condensed table (default) or as cards (remembered). */
-  const VIEW_KEY = "karrelage.auction.view";
-  let tableView = $state((() => { try { return localStorage.getItem(VIEW_KEY) !== "cards"; } catch { return false; } })());
-  $effect(() => { try { localStorage.setItem(VIEW_KEY, tableView ? "table" : "cards"); } catch {} });
   let sortDir = $state(1);
 
   let legendOnly = $state(false); // companions: only legendary ones
@@ -193,13 +188,9 @@
     neurons != null && neuroneUnit != null ? rows.filter((r: any) => Number.isFinite(unitPrice(r)) && benefit(neuroneUnit * neuronsOf(r, neurons), unitPrice(r)).profit > 0).length : 0,
   );
   const lotsOf = (l: any[]) => l.map((r) => ({ row: r, key: keyOf(r) }));
-  /** From this many lots on, the list is virtualized (and not animated). */
-  const VIRTUAL_FROM = 50;
-  let vlist = $state<ReturnType<typeof VirtualList> | null>(null);
-  /** Scroll the lot list to a lot (rendering it first when the list is virtualized). */
+  /** Scroll the lot list to a lot. */
   async function revealLot(id: string | number) {
     await tick();
-    if (!comp && !tableView && vlist) return void vlist.scrollToKey(id);
     document.getElementById(`lot-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
   }
   async function pickLot(id: string | number) {
@@ -234,9 +225,10 @@
     }
   }
 
-  /** Fill the min field of one effect: the low end of its default range (or the lowest value seen in the lots). */
+  /** Fill the min field of one effect: the low end of its default range (or the lowest value seen in the lots); flags: lots that have it. */
   function setMin(a: number, def: number[] | null) {
     if (!item) return;
+    if (FLAG_EFFECTS.has(a)) return void (filterOf(item.gid, a).min = "1");
     const seen = item.rows.map((r: any) => lotVal(r, a)).filter((v: number) => v > 0);
     const v = def ? def[0] : seen.length ? Math.min(...seen) : null;
     if (v !== null) filterOf(item.gid, a).min = v;
@@ -248,6 +240,13 @@
     const seen = item.rows.map((r: any) => lotVal(r, a)).filter((v: number) => v > 0);
     const v = def ? def[1] : seen.length ? Math.max(...seen) : null;
     if (v !== null) filterOf(item.gid, a).min = v;
+  }
+
+  /** Clicking an effect (or a section title): fill its min, or clear it when it already filters. */
+  const toggleEffect = (a: number, def: number[] | null) => (active(a) ? clearEffect(a) : setMin(a, def));
+  function toggleGroup(g: { items: { a: number; def: number[] | null }[] }) {
+    if (g.items.some((x) => active(x.a))) g.items.forEach((x) => clearEffect(x.a));
+    else g.items.forEach((x) => setMin(x.a, x.def));
   }
 
   function clearEffect(a: number) {
@@ -453,10 +452,13 @@
         {#each g.items as i (i.gid)}
           {@const dc = dealCount(i)}
           <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-          <div class="irow" class:sel={selGid === i.gid} onclick={() => (selGid = i.gid)}>
-            <b>{i.name}</b> <span class="mut">niv. {i.level ?? "?"}</span>
-            {#if dc}<span class="deal-ico" title="{dc} {dc === 1 ? 'bonne affaire' : 'bonnes affaires'} dans cette liste">●</span>{/if}<br />
-            <span class="mut">{i.lots} lots · {i.min_price ? "min " + kamas(i.min_price) : "—"} · {ago(i.updated)}{i.demo ? " · demo" : ""}</span>
+          <div class="irow ii" class:sel={selGid === i.gid} onclick={() => (selGid = i.gid)}>
+            <span class="iic" use:lazyIcon={i.icon}>{#if iconOfItem(i.icon)}<img src={iconOfItem(i.icon)} alt="" />{/if}</span>
+            <div class="itx">
+              <b>{i.name}</b> <span class="mut">niv. {i.level ?? "?"}</span>
+              {#if dc}<span class="deal-ico" title="{dc} {dc === 1 ? 'bonne affaire' : 'bonnes affaires'} dans cette liste">●</span>{/if}<br />
+              <span class="mut">{i.lots} lots · {i.min_price ? "min " + kamas(i.min_price) : "—"} · {ago(i.updated)}{i.demo ? " · demo" : ""}</span>
+            </div>
           </div>
         {/each}
       </Collapsible>
@@ -470,11 +472,11 @@
   <SmoothScroll toTop>
     {#if item}
       <div class="head">
+        <span class="hic" use:lazyIcon={item.icon}>{#if iconOfItem(item.icon)}<img src={iconOfItem(item.icon)} alt="" />{/if}</span>
         <div class="fh">{item.name} <span class="mut">{item.level != null ? "niv. " + item.level + " · " : ""}{item.type ?? ""}{app.dev ? " · gid " + item.gid : ""} · mis à jour {ago(item.updated)} · {rows.length}/{item.lots} lots</span></div>
         <button class="sort" onclick={() => (sortDir = -sortDir)} title="Cliquer pour inverser l'ordre des prix">
           Prix <span class="arrow" class:desc={sortDir === -1}>↑</span>
         </button>
-        {#if !comp}<button onclick={() => (tableView = !tableView)} title="Afficher les lots en cartes ou en tableau condensé">{tableView ? "Vue cartes" : "Vue tableau"}</button>{/if}
         <button onclick={() => ((allOpen = !allOpen), openSet.clear())}>{allOpen ? "Tout replier" : "Tout déplier"}</button>
         {#if pin}<button class="on" onclick={() => (pin = null)} title="Arrêter de comparer les lots avec le lot épinglé">Désépingler {pin.item.name}</button>{/if}
       </div>
@@ -656,24 +658,7 @@
         {/if}
         <CompanionTable lots={lotsOf(rows)} {neurons} {neuroneUnit} {resource} {picked} faded={lacksFade} onpick={pickLot} />
       {:else}
-      {#snippet lotCard(r: any)}
-        {@const key = keyOf(r)}
-        <div class="lot" class:picked={picked === key} class:faded={lacksFade(r)}>
-          <ItemCard row={r} companion={comp} collapsible open={allOpen || openSet.has(key)} ontoggle={() => toggleOpen(key)} {fade} onfade={toggleFade} pinned={isPin(r)} onpin={comp ? undefined : () => togglePin(r)} versus={versusFor(r)} />
-        </div>
-      {/snippet}
-      {#if tableView}
         <LotTable lots={lotsOf(rows)} good={goodKeys} transcend={false} {picked} open={(k) => allOpen || openSet.has(k)} faded={lacksFade} ontoggle={toggleRow} stickTop={points.length >= 3 ? graphH : 0} {fade} onfade={toggleFade} pinned={isPin} onpin={togglePin} versus={versusFor} />
-      {:else if rows.length >= VIRTUAL_FROM}
-        <!-- long listings: only the lots on screen are rendered, no reorder animation -->
-        <VirtualList bind:this={vlist} items={rows} key={keyOf} id={(r) => "lot-" + keyOf(r)} estimate={85} row={lotCard} />
-      {:else}
-        {#each rows as r (keyOf(r))}
-          <div id="lot-{keyOf(r)}" animate:flip={{ duration: 320 }}>{@render lotCard(r)}</div>
-        {:else}
-          <div class="mut">Aucun lot ne correspond au filtre</div>
-        {/each}
-      {/if}
       {/if}
       {/if}
     {/if}
@@ -686,7 +671,7 @@
     {#if pin}
       <div class="pinned">
         <div class="fh">Objet épinglé <span class="mut">· {pin.item.name}{pin.item.level != null ? " niv. " + pin.item.level : ""}</span></div>
-        <ItemCard row={pin.row} companion={!!pin.item.companion} pinned onpin={() => (pin = null)} />
+        <ItemCard row={pin.row} companion={!!pin.item.companion} perfectFlags={false} pinned onpin={() => (pin = null)} />
       </div>
     {/if}
     {#if item}
@@ -694,10 +679,10 @@
         <div class="fh">Filtrer les {item.type?.toLowerCase() ?? "compagnon"}s</div>
         {@const lv = flist(item.gid).find((z) => z.a === LEVEL_EFFECT)}
         <div class="frow lv" class:on={active(LEVEL_EFFECT)}>
-          <div class="lb">Niveau</div>
+          <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+          <div class="lb" onclick={() => clearEffect(LEVEL_EFFECT)} title="Cliquer pour effacer">Niveau</div>
           <input type="number" placeholder="min" value={lv?.min ?? ""} oninput={(e) => (filterOf(item.gid, LEVEL_EFFECT).min = e.currentTarget.value)} />
           <input type="number" placeholder="max" value={lv?.max ?? ""} oninput={(e) => (filterOf(item.gid, LEVEL_EFFECT).max = e.currentTarget.value)} />
-          <button class="mini" disabled={!active(LEVEL_EFFECT)} onclick={() => clearEffect(LEVEL_EFFECT)}>Effacer</button>
         </div>
         <label class="leg"><input type="checkbox" bind:checked={legendOnly} /> Statut légendaire uniquement</label>
       {:else}
@@ -711,19 +696,19 @@
       <div class="btns"><EffectPicker effects={pickable} onpick={(id) => filterOf(item.gid, id)} /></div>
       {#each groups as g (g.key)}
         <div class="ghead">
-          <span>{g.label}</span>
-          <span class="gbtns">
-            {#if g.key !== "added"}
-              <button class="mini" onclick={() => g.items.forEach((x) => setMin(x.a, x.def))} title="Remplir le min de tous les effets de cette section avec le bas de leur plage de base">min</button>
-              <button class="mini" onclick={() => g.items.forEach((x) => setPerf(x.a, x.def))} title="Remplir le min de tous les effets de cette section avec le max de leur plage de base (jet parfait)">perf</button>
-            {/if}
-            <button class="mini" disabled={!g.items.some((x) => active(x.a))} onclick={() => g.items.forEach((x) => clearEffect(x.a))} title="Effacer les filtres de cette section">Effacer</button>
-          </span>
+          <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+          <span class="glb" class:on={g.items.some((x) => active(x.a))} onclick={() => toggleGroup(g)} title="Cliquer pour remplir le min de chaque effet avec le bas de sa plage de base (encore une fois pour effacer)">{g.label}</span>
+          {#if g.key !== "added"}
+            <span class="gbtns">
+              <button class="mini" onclick={() => g.items.forEach((x) => setPerf(x.a, x.def))} title="Remplir le min de tous les effets de cette section avec le max de leur plage de base (jet parfait)">Perf</button>
+            </span>
+          {/if}
         </div>
         {#each g.items as x (x.a)}
           {@const y = flist(item.gid).find((z) => z.a === x.a)}
           <div class="frow" class:on={active(x.a)}>
-            <div class="lb">{#if iconOf(x.a)}<img class="sic" src={iconOf(x.a)} alt="" />{/if}{x.label}</div>
+            <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+            <div class="lb" onclick={() => toggleEffect(x.a, x.def)} title="Cliquer pour remplir le min avec le bas de la plage de base (encore une fois pour effacer)">{#if iconOf(x.a)}<img class="sic" src={iconOf(x.a)} alt="" />{/if}{x.label}</div>
             {#if FLAG_EFFECTS.has(x.a)}
               <label class="tog"><input type="checkbox" checked={active(x.a)} onchange={(e) => (filterOf(item.gid, x.a).min = e.currentTarget.checked ? "1" : "")} /> Uniquement les lots qui l'ont</label>
             {:else}
@@ -733,10 +718,8 @@
             {#if x.def == null}
               <button class="mini" onclick={() => (filterOf(item.gid, x.a).min = "1")} title="Remplir le min avec 1 (lots qui ont cet effet)">+1</button>
             {:else}
-              <button class="mini" onclick={() => setMin(x.a, x.def)} title="Remplir le min avec le bas de la plage de base">min</button>
-              <button class="mini" onclick={() => setPerf(x.a, x.def)} title="Remplir le min avec le max de la plage de base (jet parfait)">perf</button>
+              <button class="mini" onclick={() => setPerf(x.a, x.def)} title="Remplir le min avec le max de la plage de base (jet parfait)">Perf</button>
             {/if}
-            <button class="mini" disabled={!active(x.a)} onclick={() => clearEffect(x.a)}>Effacer</button>
             {/if}
           </div>
         {/each}
@@ -750,6 +733,14 @@
 
 <style>
   .view { flex: 1; min-height: 0; display: grid; }
+  /* item icon left of a list row, as tall as the row (fetched once on screen) */
+  .irow.ii { display: flex; gap: 8px; align-items: stretch; padding-left: 4px; }
+  /* the icon never sizes the row: positioned over a box that is as wide as the row is tall */
+  .iic { flex: none; position: relative; align-self: stretch; aspect-ratio: 1; margin: -3px 0; }
+  .iic img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+  .itx { min-width: 0; }
+  .hic { flex: none; width: 36px; height: 36px; margin: -6px 0; }
+  .hic img { width: 100%; height: 100%; object-fit: contain; display: block; }
   .deal-ico { display: inline-block; width: 8px; height: 8px; margin-left: 4px; border-radius: 50%; background: var(--ok); vertical-align: middle; position: relative; top: -1px; font-size: 0; }
   .craft { margin: 0 0 10px; padding: 6px 10px; border: 1px solid var(--bad); border-radius: 8px; font-family: var(--font); font-size: 13px; }
   .craft.pos { border-color: var(--ok); }
@@ -785,10 +776,8 @@
   .deals :global(.chd.dhead) { font: 600 13px var(--font); color: var(--ok); margin-bottom: 8px; padding: 0; }
   .deals :global(.chd.dhead .mut) { font-weight: 400; }
   .deal { cursor: pointer; }
-  .deal, .lot { transition: opacity 0.25s; }
-  .deal.faded, .lot.faded { opacity: 0.2; }
-  .lot.picked :global(.card) { border-color: var(--acc); animation: pulse 1.6s ease-out; }
-  @keyframes pulse { from { box-shadow: 0 0 0 0 color-mix(in srgb, var(--acc) 70%, transparent); } to { box-shadow: 0 0 0 14px transparent; } }
+  .deal { transition: opacity 0.25s; }
+  .deal.faded { opacity: 0.2; }
   .tabs { display: flex; gap: 6px; margin-bottom: 10px; }
   .tabs .on { border-color: var(--acc); color: var(--acc); }
   .trans .note { margin: 4px 0 8px; font-size: 12px; }
@@ -802,14 +791,17 @@
   .link { border: 0; background: none; color: var(--acc); padding: 0; text-decoration: underline; }
   .trans .ok { color: var(--ok); }
   .btns { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
-  .frow.lv { grid-template-columns: 1fr 52px 52px auto; }
+  .frow.lv { grid-template-columns: 1fr 52px 52px; }
   .leg { display: block; margin: 8px 0; }
-  .frow { display: grid; grid-template-columns: 1fr auto 52px 52px auto auto auto; gap: 4px; align-items: center; margin: 3px 0; }
+  .frow { display: grid; grid-template-columns: 1fr auto 52px 52px auto; gap: 4px; align-items: center; margin: 3px 0; }
   .frow input { width: 100%; padding: 2px 4px; }
   .frow .tog { grid-column: 2 / -1; display: flex; gap: 6px; align-items: center; }
   .frow .tog input { width: auto; }
   .frow .sic { width: 16px; height: 16px; vertical-align: -3px; margin-right: 5px; }
-  .frow .lb { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .frow .lb { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+  .frow .lb:hover, .glb:hover { color: var(--acc); }
+  .glb { cursor: pointer; }
+  .glb.on { color: var(--acc); }
   .frow .rg { color: var(--mut); text-align: right; white-space: nowrap; padding-right: 2px; }
   .frow.on .lb { font-weight: 700; color: var(--acc); }
 </style>

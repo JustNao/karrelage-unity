@@ -15,7 +15,7 @@
 
 <script lang="ts">
   import { analyse, goodZ, isGoodDeal, type Fit } from "../density";
-  import { fmtCompact as compact } from "../fmt";
+  import { fmtCompact as compact, kamasFull } from "../fmt";
 
   /**
    * Price (x) against density (y) of the lots of one item, with a least-squares trend line and a band of ± the good-deal threshold (σ).
@@ -74,6 +74,17 @@
     return out;
   });
 
+  /** Mouse position (svg x) over the plot: a dashed vertical line down to the axis, labelled with the price there. */
+  let hx = $state<number | null>(null);
+  function hover(ev: MouseEvent) {
+    const x = ev.clientX - (ev.currentTarget as SVGSVGElement).getBoundingClientRect().left;
+    hx = x >= M.l && x <= W - M.r ? x : null;
+  }
+  const hprice = $derived(hx == null ? null : dom.x0 + ((hx - M.l) / (W - M.l - M.r)) * (dom.x1 - dom.x0));
+  const hlabel = $derived(hprice == null ? "" : kamasFull(Math.max(0, Math.round(hprice))));
+  const hw = $derived(hlabel.length * 6.2 + 10); // label box width (approximation of the 11px text)
+  const hlx = $derived(hx == null ? 0 : Math.min(Math.max(hx, hw / 2 + 1), W - hw / 2 - 1));
+
   /** green = good deal, else blue (added effect) / orange (missing effect), both = blue with an orange ring. */
   type Tone = "good" | "added" | "missing" | "both" | "mid";
   const tone = (i: number): Tone => {
@@ -86,7 +97,7 @@
   <div class="legend">
     <span><i class="d good"></i>Bonne affaire</span>{#if equipment}<span><i class="d added"></i>EXO</span><span><i class="d missing"></i>Effet manquant</span>{/if}
   </div>
-  <svg width={W} height={H} role="img" aria-label="Densité en fonction du prix">
+  <svg width={W} height={H} role="img" aria-label="Densité en fonction du prix" onmousemove={hover} onmouseleave={() => (hx = null)}>
     <path d={band} class="band" />
     <line x1={M.l} x2={W - M.r} y1={H - M.b} y2={H - M.b} class="axis" />
     {#each ticks as t}
@@ -94,6 +105,13 @@
       <text x={sx(t)} y={H - 8} class="tick">{compact(t)}</text>
     {/each}
     <path d={line()} class="trend" />
+    {#if hx != null}
+      <g class="hover">
+        <line x1={hx} x2={hx} y1={M.t} y2={H - M.b} class="hline" />
+        <rect x={hlx - hw / 2} y={H - M.b + 2} width={hw} height="17" rx="4" class="hbox" />
+        <text x={hlx} y={H - M.b + 14} class="htxt">{hlabel}</text>
+      </g>
+    {/if}
     {#each points as p, i (p.id)}
       {@const t = tone(i)}
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
@@ -114,6 +132,10 @@
   .trend { stroke: var(--acc); stroke-width: 1.5; stroke-dasharray: 5 4; fill: none; opacity: 0.85; }
   .axis { stroke: #3a3f4b; stroke-width: 1; }
   .tick { fill: var(--mut); font-size: 10px; text-anchor: middle; }
+  .hover { pointer-events: none; }
+  .hline { stroke: #c9ced8; stroke-width: 1; stroke-dasharray: 4 4; opacity: 0.6; }
+  .hbox { fill: #1b1e26; stroke: #3a3f4b; }
+  .htxt { fill: #e6e9ef; font-size: 11px; text-anchor: middle; }
   .dot { cursor: pointer; transition: opacity 0.25s; }
   .dot.faded { opacity: 0.14; }
   .hit { fill: transparent; }

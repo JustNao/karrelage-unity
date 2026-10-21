@@ -20,6 +20,7 @@
     versus = null,
     companion = false,
     flags = true,
+    perfectFlags = true,
     priced = true,
     inTable = false,
   }: {
@@ -37,6 +38,8 @@
     versus?: { pin: any; name: string } | null;
     /** Perfection flags (damage / resistances / characteristics) and the transcendance shield in the header. */
     flags?: boolean;
+    /** False: no "★ … parfaites" flags (the transcendance shield stays). */
+    perfectFlags?: boolean;
     /** False for an item that is not for sale (inventory): no price row. */
     priced?: boolean;
     /** Unfolded under its row of the HDV table: the row already shows the price and the perfection flags. */
@@ -121,7 +124,7 @@
       <span class="flag on" title="Niveau (xp totale {level != null ? fmtInt(xpOfLevel(level)) : '?'})">{level != null ? "Niveau " + level : "Niveau ?"}</span>
       <span class="flag" class:on={legendary}>★ Statut légendaire</span>
     {:else if flags}
-    {#if !inTable}
+    {#if !inTable && perfectFlags}
     <span class="flag" class:on={perfect.damage} title="Tous les effets de dommages de base à leur maximum">★ Dommages parfaits</span>
     <span class="flag" class:on={perfect.resist} title="Résistances de base à leur maximum (seulement les % de résistance quand l'objet en a)">★ Résistances parfaites</span>
     <span class="flag" class:on={perfect.main} title="Caractéristiques principales au maximum (à 3 près pour force/intelligence/agilité/chance/sagesse, 10 pour la vitalité)">★ Caractéristiques parfaites</span>

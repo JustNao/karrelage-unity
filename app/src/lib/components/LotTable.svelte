@@ -142,7 +142,7 @@
     rows={sorted}
     {sort}
     key={(r) => r.key}
-    rowProps={(r) => ({ id: `lot-${r.key}`, class: [picked === r.key && "picked", faded(r.row) && "faded", r.good && "hot", open(r.key) && "open", rowClass?.(r.meta)].filter(Boolean).join(" "), onclick: () => ontoggle(r.key) })}
+    rowProps={(r) => ({ id: `lot-${r.key}`, class: [picked === r.key && "picked", faded(r.row) && "faded", r.good && "hot", pinned(r.row) && "pinned", open(r.key) && "open", rowClass?.(r.meta)].filter(Boolean).join(" "), onclick: () => ontoggle(r.key) })}
   >
     {#snippet row(r)}
       {#each leads as l (l.key)}<td class="lead" class:n={l.num}>{@render l.cell(r.meta)}</td>{/each}
@@ -197,6 +197,8 @@
   .ltable :global(tr.faded) { opacity: 0.2; }
   .ltable :global(tr.hot) { background: color-mix(in srgb, var(--ok) 14%, transparent); }
   .ltable :global(tr.hot td) { background: none; }
+  .ltable :global(tr.pinned), .ltable :global(tr.pinned:not(.card-row):hover) { background: color-mix(in srgb, #f5c542 18%, transparent); }
+  .ltable :global(tr.pinned td) { background: none !important; }
   /* the open row is marked by a background, not bold text: a change of width would reflow the table mid-animation */
   .ltable :global(tr.open:not(.hot) td) { background: var(--panel); }
   /* the sticky header sits flush with the top of the scroll area (over the scroller's padding), under the sticky graph */
