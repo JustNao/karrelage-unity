@@ -2,9 +2,19 @@
   import { RULE_DEFAULTS, RULE_TITLES, rules, type RuleBase } from "../../lib/stores/automation.svelte";
   import { playSound, SOUNDS } from "../../lib/sounds";
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
+  import { kamasFull } from "../../lib/fmt";
 
   /** Automation: rules checked on every scan (lib/automation.ts), one section per tab, like Paramètres. A triggered rule
    *  plays its sound and shows up in the header « Notifications ». */
+
+  /** "2,500,000", "2.5M", "500k" -> kamas; empty or unreadable -> null (no limit). */
+  function parsePrice(s: string): number | null {
+    const m = s.replace(/[\s,]/g, "").match(/^(\d+(?:\.\d+)?)([kKmM]?)$/);
+    if (!m) return null;
+    const v = parseFloat(m[1]) * (m[2] === "" ? 1 : m[2].toLowerCase() === "k" ? 1e3 : 1e6);
+    return v > 0 ? Math.round(v) : null;
+  }
+  const priceText = (v: number | null) => (v != null ? kamasFull(v).replace(/\s*K$/, "") : "");
   const clampCoef = (v: number) => (Number.isFinite(v) ? Math.max(0, Math.round(v)) : RULE_DEFAULTS.exoDo.maxEven);
 </script>
 
@@ -32,7 +42,7 @@
               <div class="mut">
                 À chaque objet scanné à l'hôtel de vente : un lot avec un exo « % dommages » (sorts, armes, distance, mêlée) moins cher
                 que la rune de transcendance de cette stat (prix enregistré), et dont le brisage rembourse le prix à partir d'un
-                coefficient au plus égal au seuil (« Coef. rentable » de l'onglet Brisage). Un même lot ne sonne qu'une fois par session.
+                coefficient au plus égal au seuil (« Coef. rentable » de l'onglet Brisage), sans dépasser le prix max s'il est fixé. Un même lot ne sonne qu'une fois par session.
               </div>
             </div>
           </div>
@@ -41,6 +51,11 @@
               Coef. rentable max
               <input type="number" min="0" step="10" value={rules.exoDo.maxEven} onchange={(e) => (rules.exoDo.maxEven = clampCoef(e.currentTarget.valueAsNumber))} />
               <span class="mut">%</span>
+            </label>
+            <label title="Prix du lot au-delà duquel la règle ne se déclenche pas (vide = sans limite)">
+              Prix max
+              <input class="price" type="text" inputmode="numeric" placeholder="sans limite" value={priceText(rules.exoDo.maxPrice)} onchange={(e) => (e.currentTarget.value = priceText((rules.exoDo.maxPrice = parsePrice(e.currentTarget.value))))} />
+              <span class="mut">K</span>
             </label>
             {@render sound(rules.exoDo)}
           </div>
@@ -63,6 +78,7 @@
   .params { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; padding-left: 56px; }
   .params label { display: inline-flex; align-items: center; gap: 6px; }
   .params input[type="number"] { width: 70px; }
+  .params input.price { width: 110px; text-align: right; }
   .snd { display: inline-flex; align-items: center; gap: 6px; }
   .snd input[type="range"] { width: 110px; }
   .vol { min-width: 38px; }

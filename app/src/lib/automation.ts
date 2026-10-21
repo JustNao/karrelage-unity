@@ -5,7 +5,7 @@
  *
  * exoDo: a lot with an exo (added effect) on a "% dommages" stat (an effect some "Rune Ta Do Per …" transcendance rune
  * adds), cheaper than that rune, whose break-even coefficient (Brisage tab: price / runes value at 100 %, best focus) is
- * at most `maxEven`.
+ * at most `maxEven`, and that costs at most `maxPrice` (when set).
  */
 import { call } from "./api";
 import { breakEven, lotEffects, outcome, type BrisPack } from "./brisage";
@@ -43,7 +43,7 @@ function checkExoDo(item: any) {
   let hits = 0;
   for (const lot of item.rows) {
     const buy = unitPriceOrNull(lot);
-    if (buy == null) continue;
+    if (buy == null || (r.maxPrice != null && buy > r.maxPrice)) continue;
     for (const e of lot.effects ?? []) {
       if (e.status !== "added" || e.hi == null) continue;
       const rune = runeFor(e.action, e.hi);

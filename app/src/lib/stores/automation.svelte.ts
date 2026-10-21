@@ -14,7 +14,7 @@ export interface RuleBase { enabled: boolean; sound: string; volume: number }
 const DEFAULTS = {
   /** HDV: a scanned lot with a "% dommages" exo cheaper than the transcendance rune of that stat, that pays back when broken
    *  from a low enough coefficient. */
-  exoDo: { enabled: true, sound: DEFAULT_SOUND, volume: 0.6, /** Highest break-even coefficient (%, Brisage « Coef. rentable »). */ maxEven: 500 },
+  exoDo: { enabled: true, sound: DEFAULT_SOUND, volume: 0.6, /** Highest break-even coefficient (%, Brisage « Coef. rentable »). */ maxEven: 500, /** Highest lot price (kamas, per unit); null = no limit. */ maxPrice: null as number | null },
 };
 export type Rules = typeof DEFAULTS;
 export type RuleId = keyof Rules;
