@@ -176,6 +176,41 @@
     patch({ owned: how == null ? o : [...o, slot], own_uid: own });
     result = null;
   };
+  /**
+   * "Utiliser mes objets": the slots whose item the character has. One copy -> owned at that copy, automatically;
+   * several copies -> the user picks one (popup of the slot), listed in a warning until done.
+   */
+  const mineSlots = $derived(slotIds.filter((s) => inventory.ofGid(build!.slots[s].gid).length > 0));
+  const copiesOf = (slot: string) => inventory.ofGid(build!.slots[slot].gid);
+  const singleSlots = $derived(mineSlots.filter((s) => copiesOf(s).length === 1));
+  const multiSlots = $derived(mineSlots.filter((s) => copiesOf(s).length > 1));
+  /** A slot counts one of the character's copies. */
+  const usesCopy = (slot: string) => owned.has(slot) && copiesOf(slot).some((c) => c.uid === build!.own_uid?.[slot]);
+  const useMine = $derived(singleSlots.length > 0 && singleSlots.every(usesCopy));
+  /** Several copies, none chosen yet: the user has to pick it. */
+  const toPick = $derived(useMine ? multiSlots.filter((s) => !usesCopy(s)) : []);
+  const setUseMine = (on: boolean) => {
+    const own = { ...build!.own_uid };
+    let o = [...(build!.owned ?? [])];
+    for (const slot of singleSlots) {
+      const uid = copiesOf(slot)[0].uid;
+      if (on) {
+        if (!o.includes(slot)) o.push(slot);
+        own[slot] = uid;
+      } else if (own[slot] === uid) {
+        o = o.filter((x) => x !== slot); // only the slots this toggle set (same copy): the others stay as the user left them
+        delete own[slot];
+      }
+    }
+    patch({ owned: o, own_uid: own });
+    result = null;
+  };
+  /** Opens the popup of a slot to pick the copy (from the warning). */
+  const pickSlot = (slot: string) => {
+    const el = document.querySelector<HTMLElement>(`.slot[data-slot="${slot}"] .ic`);
+    if (el) openPop(slot, el);
+  };
+
   /** ✕: owned (the character's own copy when it has one, else the perfect roll) or bought again. */
   const toggleOwned = (slot: string) => setOwned(slot, owned.has(slot) ? null : firstCopy(slot) ?? "perfect");
 
@@ -298,7 +333,7 @@
     {@const lot = chosenLot(id)}
     {@const copies = inventory.ofGid(sl.gid)}
     {@const mine = ownLot(id)}
-    <div class="slot" class:fresh={!owned.has(id) && fresh(id)} class:stale={!owned.has(id) && !fresh(id)} class:own={owned.has(id)} class:mine={!!mine} class:ign={ignored.has(id)}>
+    <div class="slot" data-slot={id} class:fresh={!owned.has(id) && fresh(id)} class:stale={!owned.has(id) && !fresh(id)} class:own={owned.has(id)} class:mine={!!mine} class:ign={ignored.has(id)}>
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
       <div class="ic" title="{sl.name} — {SLOT_TITLES[id]}{mine ? ' (mon objet)' : owned.has(id) ? ' (jet parfait)' : lot ? ` (lot à ${kamas(lotUnit(lot)!)})` : ''}" onclick={(e) => openPop(id, e.currentTarget)}>
         {#if icon("item", sl.picture)}<img src={icon("item", sl.picture)} alt={sl.name} />{:else}<span class="mut">{SLOT_TITLES[id]}</span>{/if}
@@ -373,6 +408,17 @@
               <div class="col">{#each SLOT_LAYOUT.right as s}{@render slot(s)}{/each}</div>
             </div>
             <div class="row">{#each SLOT_LAYOUT.bottom.filter((s) => build?.slots[s]) as s}{@render slot(s)}{/each}</div>
+            {#if mineSlots.length}
+              <div class="usemine">
+                <label title="Compter les objets du stuff présents dans mon inventaire à leur jet réel, hors du prix"><input type="checkbox" checked={useMine} disabled={!singleSlots.length} onchange={(e) => setUseMine(e.currentTarget.checked)} /> Utiliser mes objets <span class="mut">({mineSlots.length} dans mon inventaire)</span></label>
+                {#if toPick.length || (!singleSlots.length && multiSlots.some((s) => !usesCopy(s)))}
+                  <div class="warn small">
+                    ⚠ Plusieurs exemplaires dans mon inventaire, à choisir moi-même :
+                    {#each (toPick.length ? toPick : multiSlots.filter((s) => !usesCopy(s))) as s, i (s)}{i ? ", " : " "}<button class="link" onclick={(ev) => (ev.stopPropagation(), pickSlot(s))}>{SLOT_TITLES[s]} ({copiesOf(s).length})</button>{/each}
+                  </div>
+                {/if}
+              </div>
+            {/if}
             <div class="legend mut"><span class="dot fresh"></span> scanné il y a moins d'1 h <span class="dot stale"></span> à scanner <span class="dot inv"></span> dans mon inventaire · ✕ = je possède déjà l'objet · clic = jet parfait ou mon exemplaire</div>
 
             </div>
@@ -558,6 +604,8 @@
   @container (max-width: 920px) { .bottom { grid-template-columns: minmax(0, 1fr); } }
   .prices .price { margin: 2px 0; }
   .small { font-size: 12px; margin: 4px 0; }
+  .usemine { margin: 8px 0 2px; font-size: 13px; }
+  .usemine .link { border: 0; background: none; padding: 0; color: var(--acc); text-decoration: underline; font: inherit; }
   .center { display: flex; flex-direction: column; align-items: center; gap: 10px; }
   .build { display: flex; flex-direction: column; align-items: center; gap: 10px; min-width: 0; }
   .doll { display: flex; gap: 14px; align-items: stretch; width: 100%; justify-content: center; }
