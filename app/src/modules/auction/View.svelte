@@ -23,11 +23,12 @@
   import { analyse, isGoodDeal } from "../../lib/density";
   import { feeder, foodGids, levelBase } from "../../lib/familiar";
   import CompanionTable from "../../lib/components/CompanionTable.svelte";
+  import LotTable from "../../lib/components/LotTable.svelte";
   import { mountInfo, neuroneGids, neuronsOf, resourcePlural } from "../../lib/mounts";
   import { FLAG_EFFECTS, rangeLabel, sections, type EffectMeta } from "../../lib/effects";
   import { iconOfStat } from "../../lib/stores/statIcons.svelte";
   import { benefit, craftCost, type CraftLine, type Recipes } from "../../lib/craft";
-  import { AH_TAX, isTranscended, targetKey, transcendance, type Rune } from "../../lib/transcend";
+  import { AH_TAX, isTableRune, isTranscended, targetKey, transcendance, type Rune } from "../../lib/transcend";
   import { byUnitPrice, lotKeys, unitPrice } from "../../lib/price";
 
   interface Filter { a: number; min: string | number; max: string | number }
@@ -55,7 +56,8 @@
   let pin = $state.raw<{ item: any; row: any } | null>(null);
   const isPin = (r: any) => !!pin && !!item && pin.item.gid === item.gid && pin.row.uid === r.uid;
   const togglePin = (r: any) => (pin = isPin(r) ? null : { item, row: r });
-  const lacksFade = (r: any) => fade !== null && !r.effects.some((e: any) => e.action === fade && e.status !== "removed");
+  /** Highlighted effect: lots without it as an EXO or above its base max are faded out (a plain base roll does not count). */
+  const lacksFade = (r: any) => fade !== null && !r.effects.some((e: any) => e.action === fade && (e.status === "added" || e.status === "above"));
   const toggleFade = (a: number) => (fade = fade === a ? null : a);
   let tab = $state<"listing" | "trans">("listing");
   let levelOpen = $state(true);
@@ -66,6 +68,10 @@
   const stored = prices.map; // stored prices (the rune prices feed the transcendance tab)
   let recipes = $state.raw<Recipes>({ recipes: {}, names: {} });
   let allOpen = $state(false);
+  /** Equipment lots as a condensed table (default) or as cards (remembered). */
+  const VIEW_KEY = "karrelage.auction.view";
+  let tableView = $state((() => { try { return localStorage.getItem(VIEW_KEY) !== "cards"; } catch { return false; } })());
+  $effect(() => { try { localStorage.setItem(VIEW_KEY, tableView ? "table" : "cards"); } catch {} });
   let sortDir = $state(1);
 
   let legendOnly = $state(false); // companions: only legendary ones
@@ -190,7 +196,7 @@
   /** Scroll the lot list to a lot (rendering it first when the list is virtualized). */
   async function revealLot(id: string | number) {
     await tick();
-    if (!comp && vlist) return void vlist.scrollToKey(id);
+    if (!comp && !tableView && vlist) return void vlist.scrollToKey(id);
     document.getElementById(`lot-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
   }
   async function pickLot(id: string | number) {
@@ -251,6 +257,13 @@
   function toggleOpen(key: string | number) {
     openSet.has(key) ? openSet.delete(key) : openSet.add(key);
   }
+  /** Table view: unfolding a lot also marks it on the graph; folding it back clears the mark. */
+  function toggleRow(key: string) {
+    toggleOpen(key);
+    picked = openSet.has(key) || allOpen ? key : picked === key ? null : picked;
+  }
+  /** Height of the sticky graph: the table header sticks right under it. */
+  let graphH = $state(0);
 
   /** Graph dots: price (per unit) against the lot's density. Same lots as the list, so every dot has a card. */
   /** Rune focus (Transcendance tab): the graph fades the lots that lack the focused effect (like the highlight). */
@@ -358,6 +371,11 @@
   const trans = $derived(transcendance(comp ? [] : rows, runes, stored, focus));
   const transCount = $derived(!comp && rows.some(isTranscended) ? trans.opportunities.length : 0);
   const runeName = (n: string) => n;
+  /** Table view: the good deals (green lines) and the transcendance candidates by row (only the runes of `isTableRune`). */
+  const goodKeys = $derived(new Set<string>(fit ? points.filter((_: any, i: number) => isGoodDeal(fit!, i, points.length)).map((p: any) => p.id) : []));
+  const tableRunes = $derived(runes.filter(isTableRune));
+  const oppByRow = $derived(new Map(transcendance(comp ? [] : rows, tableRunes, stored).opportunities.map((o) => [o.row, o])));
+
 
   /** Clicking a dot: unroll the lot and scroll the list down to it (nothing is filtered out). */
   async function focusLot(id: string | number) {
@@ -435,6 +453,7 @@
         <button class="sort" onclick={() => (sortDir = -sortDir)} title="Cliquer pour inverser l'ordre des prix">
           Prix <span class="arrow" class:desc={sortDir === -1}>↑</span>
         </button>
+        {#if !comp}<button onclick={() => (tableView = !tableView)} title="Afficher les lots en cartes ou en tableau condensé">{tableView ? "Vue cartes" : "Vue tableau"}</button>{/if}
         <button onclick={() => ((allOpen = !allOpen), openSet.clear())}>{allOpen ? "Tout replier" : "Tout déplier"}</button>
         {#if pin}<button class="on" onclick={() => (pin = null)} title="Arrêter de comparer les lots avec le lot épinglé">Désépingler {pin.item.name}</button>{/if}
       </div>
@@ -468,7 +487,7 @@
         </div>
       {/if}
       {#if points.length >= 3}
-        <div class="graph"><DensityChart {points} {fit} faded={fadedIds} equipment={!comp && !mount} selected={tab === "trans" && cand ? cand.id : picked} onselect={focusLot} /></div>
+        <div class="graph" bind:offsetHeight={graphH}><DensityChart {points} {fit} faded={fadedIds} equipment={!comp && !mount} selected={tab === "trans" && cand ? cand.id : picked} onselect={focusLot} /></div>
       {/if}
       {#if !comp}<div class="tabs">
         <button class:on={tab === "listing"} onclick={() => (tab = "listing")}>Liste</button>
@@ -584,7 +603,9 @@
           <ItemCard row={r} companion={comp} collapsible open={allOpen || openSet.has(key)} ontoggle={() => toggleOpen(key)} {fade} onfade={toggleFade} pinned={isPin(r)} onpin={comp ? undefined : () => togglePin(r)} versus={versusFor(r)} />
         </div>
       {/snippet}
-      {#if rows.length >= VIRTUAL_FROM}
+      {#if tableView}
+        <LotTable lots={lotsOf(rows)} good={goodKeys} opps={oppByRow} {picked} open={(k) => allOpen || openSet.has(k)} faded={lacksFade} ontoggle={toggleRow} stickTop={points.length >= 3 ? graphH : 0} {fade} onfade={toggleFade} pinned={isPin} onpin={togglePin} versus={versusFor} />
+      {:else if rows.length >= VIRTUAL_FROM}
         <!-- long listings: only the lots on screen are rendered, no reorder animation -->
         <VirtualList bind:this={vlist} items={rows} key={keyOf} id={(r) => "lot-" + keyOf(r)} estimate={85} row={lotCard} />
       {:else}
@@ -634,8 +655,8 @@
           <span>{g.label}</span>
           <span class="gbtns">
             {#if g.key !== "added"}
-              <button class="mini" onclick={() => g.items.forEach((x) => setMin(x.a, x.def))} title="Remplir le min de tous les effets de cette section avec le bas de leur plage de base">Jet min</button>
-              <button class="mini" onclick={() => g.items.forEach((x) => setPerf(x.a, x.def))} title="Remplir le min de tous les effets de cette section avec le max de leur plage de base (jet parfait)">Jet parfait</button>
+              <button class="mini" onclick={() => g.items.forEach((x) => setMin(x.a, x.def))} title="Remplir le min de tous les effets de cette section avec le bas de leur plage de base">min</button>
+              <button class="mini" onclick={() => g.items.forEach((x) => setPerf(x.a, x.def))} title="Remplir le min de tous les effets de cette section avec le max de leur plage de base (jet parfait)">perf</button>
             {/if}
             <button class="mini" disabled={!g.items.some((x) => active(x.a))} onclick={() => g.items.forEach((x) => clearEffect(x.a))} title="Effacer les filtres de cette section">Effacer</button>
           </span>
@@ -653,8 +674,8 @@
             {#if x.def == null}
               <button class="mini" onclick={() => (filterOf(item.gid, x.a).min = "1")} title="Remplir le min avec 1 (lots qui ont cet effet)">+1</button>
             {:else}
-              <button class="mini" onclick={() => setMin(x.a, x.def)} title="Remplir le min avec le bas de la plage de base">Jet min</button>
-              <button class="mini" onclick={() => setPerf(x.a, x.def)} title="Remplir le min avec le max de la plage de base (jet parfait)">Jet parfait</button>
+              <button class="mini" onclick={() => setMin(x.a, x.def)} title="Remplir le min avec le bas de la plage de base">min</button>
+              <button class="mini" onclick={() => setPerf(x.a, x.def)} title="Remplir le min avec le max de la plage de base (jet parfait)">perf</button>
             {/if}
             <button class="mini" disabled={!active(x.a)} onclick={() => clearEffect(x.a)}>Effacer</button>
             {/if}
@@ -693,7 +714,8 @@
   .filter .ghead { display: flex; align-items: center; justify-content: flex-start; gap: 10px; }
   .ghead { margin: 12px 0 2px; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--mut); }
   .gbtns { display: flex; gap: 4px; text-transform: none; letter-spacing: 0; }
-  .graph { margin-bottom: 12px; }
+  /* the graph stays at the top of the scroll area (flush, over the scroller's padding) while the lots scroll under it */
+  .graph { position: sticky; top: calc(-1 * var(--pad, 12px)); z-index: 3; margin-bottom: 6px; padding: 6px 0; background: var(--bg); }
   .head .on { border-color: var(--acc); color: var(--acc); }
   .lvt { width: 56px; padding: 1px 4px; margin: 0 4px; }
   .lvl { padding: 0; }

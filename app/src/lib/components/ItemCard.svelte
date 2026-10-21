@@ -21,6 +21,7 @@
     companion = false,
     flags = true,
     priced = true,
+    inTable = false,
   }: {
     row: any;
     collapsible?: boolean;
@@ -38,6 +39,8 @@
     flags?: boolean;
     /** False for an item that is not for sale (inventory): no price row. */
     priced?: boolean;
+    /** Unfolded under its row of the HDV table: the row already shows the price and the perfection flags. */
+    inTable?: boolean;
   } = $props();
 
   const level = $derived(companion ? levelOf(row) : null);
@@ -96,9 +99,9 @@
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div class="card" class:col={collapsible} onclick={() => collapsible && ontoggle?.()}>
-  {#if (!versus || onpin) && priced}
+  {#if (!versus || onpin) && priced && !(inTable && !onpin)}
     <div class="prices">
-      {#if !versus}
+      {#if !versus && !inTable}
         {#each prices as p (p.qty)}
           <span class="price">{#if p.qty > 1}×{p.qty} {/if}{kamasFull(p.price)}</span>
         {:else}
@@ -110,18 +113,23 @@
       {/if}
     </div>
   {/if}
+  <!-- in the HDV table, an unlocked lot has nothing left for the title line -->
+  {#if !(inTable && !row.locked)}
   <h4>
     {#if collapsible}<span class="chev">{open ? "▾" : "▸"}</span>{/if}
     {#if companion}
       <span class="flag on" title="Niveau (xp totale {level != null ? fmtInt(xpOfLevel(level)) : '?'})">{level != null ? "Niveau " + level : "Niveau ?"}</span>
       <span class="flag" class:on={legendary}>★ Statut légendaire</span>
     {:else if flags}
+    {#if !inTable}
     <span class="flag" class:on={perfect.damage} title="Tous les effets de dommages de base à leur maximum">★ Dommages parfaits</span>
-    <span class="flag" class:on={perfect.resist} title="Toutes les résistances de base à leur maximum">★ Résistances parfaites</span>
+    <span class="flag" class:on={perfect.resist} title="Résistances de base à leur maximum (seulement les % de résistance quand l'objet en a)">★ Résistances parfaites</span>
     <span class="flag" class:on={perfect.main} title="Caractéristiques principales au maximum (à 3 près pour force/intelligence/agilité/chance/sagesse, 10 pour la vitalité)">★ Caractéristiques parfaites</span>
+    {/if}
     {#if row.locked}<span class="shield" title="Empêche les futures forgemagies — ne peut plus être modifié">🛡 Transcendance</span>{/if}
     {/if}
   </h4>
+  {/if}
   {#if app.dev}
     <div class="sub">
       uid {row.uid ?? "?"} · gid {row.gid ?? "?"}
