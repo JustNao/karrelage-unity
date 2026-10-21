@@ -66,6 +66,9 @@ export const isPerfectLine = (e: any) => !isWeaponEffect(e) && !!e.range && !isN
 /** The line is below the default minimum of its range. */
 export const isBelowMin = (e: any) => !isWeaponEffect(e) && !!e.range && !isNegative(e) && e.status !== "removed" && (e.hi ?? Infinity) < e.range[0];
 
+/** % resistances: elements (terre, eau, air, feu, neutre), melee, ranged, weapons, spells. */
+export const PERCENT_RESIST = new Set([210, 211, 212, 213, 214, 2803, 2807, 2811, 2815]);
+
 export interface Perfection {
   damage: boolean;
   resist: boolean;
@@ -75,13 +78,15 @@ export interface Perfection {
 /**
  * Perfect rolls of a lot, judged on the item's default effects only (those carry a `range`): a group is perfect when it has
  * default effects and all of them are present at (or above) their default max, within the tolerance for main stats.
+ * Resistances: only the % resistances when the item has some by default, otherwise every resistance.
  */
 export function perfection(effs: any[]): Perfection {
-  const check = (groups: string[]) => {
-    const rel = effs.filter((e) => groups.includes(e.group) && e.range && !(e.density < 0));
-    return rel.length > 0 && rel.every(isPerfectLine);
-  };
-  return { damage: check(["damage"]), resist: check(["resist"]), main: check(["stats", "main"]) };
+  const relevant = (groups: string[]) => effs.filter((e) => groups.includes(e.group) && e.range && !(e.density < 0));
+  const perfect = (rel: any[]) => rel.length > 0 && rel.every(isPerfectLine);
+  // resistances: only the % ones when the item has some (fixed resistances, pushback, critical... then do not count)
+  const res = relevant(["resist"]);
+  const pct = res.filter((e) => PERCENT_RESIST.has(e.action));
+  return { damage: perfect(relevant(["damage"])), resist: perfect(pct.length ? pct : res), main: perfect(relevant(["stats", "main"])) };
 }
 
 /** [X] for a single possible value, [min–max] for a range (filter rows and item lines alike). */
