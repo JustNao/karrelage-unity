@@ -31,6 +31,17 @@ class AppState {
     } catch {}
   }
 
+  /** Open tab (module id); null = the first one shown. */
+  tab = $state<string | null>(null);
+  /** A lot to show in the HDV tab (a notification was clicked): the tab opens it, then clears this. */
+  hdvFocus = $state<{ gid: number; lot: string } | null>(null);
+
+  /** Open the HDV tab on a lot of an item. */
+  showLot(gid: number, lot: string) {
+    this.hdvFocus = { gid, lot };
+    this.tab = "auction";
+  }
+
   private poll: ReturnType<typeof setInterval> | undefined;
 
   /** The status is pushed (`app:status`) at startup and when capture is switched; the connections to Dofus.exe are found

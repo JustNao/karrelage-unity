@@ -5,10 +5,11 @@
   import { modules } from "./lib/registry";
   import Banner from "./lib/components/Banner.svelte";
   import ProgressBar from "./lib/components/ProgressBar.svelte";
+  import Notifications from "./lib/components/Notifications.svelte";
+  import { startAutomation } from "./lib/automation";
 
-  let current = $state(modules.find((m) => !m.devOnly)?.id ?? modules[0]?.id);
   const tabs = $derived(modules.filter((m) => app.dev || !m.devOnly));
-  const active = $derived(tabs.find((m) => m.id === current) ?? tabs[0]);
+  const active = $derived(tabs.find((m) => m.id === app.tab) ?? tabs[0]);
   const s = $derived(app.status);
   let err = $state("");
 
@@ -44,6 +45,7 @@
   $effect(() => {
     if (restored || !s.ready) return;
     restored = true;
+    void startAutomation(); // automation rules watch every scan, whatever tab is open (needs the data pack)
     if (app.capture && !s.on && !s.npcapError) captureSet(true).catch((e) => (err = String(e)));
   });
 
@@ -64,12 +66,13 @@
     <h1>Karrelage</h1>
     <nav>
       {#each tabs as m (m.id)}
-        <button class="tab" class:on={active?.id === m.id} onclick={() => (current = m.id)}>{m.title}</button>
+        <button class="tab" class:on={active?.id === m.id} onclick={() => (app.tab = m.id)}>{m.title}</button>
       {/each}
     </nav>
     <button class="sw" class:on={s.on} role="switch" aria-checked={!!s.on} aria-label="Activer la capture" disabled={!s.ready} onclick={toggle}></button>
     <span class="state" class:on={s.on}>{s.on ? "ACTIVE" : "INACTIVE"}</span>
     <span class="mut">{s.on ? (s.tracking?.length ? "Connecté à Dofus" : "En attente de Dofus.exe…") : ""}</span>
+    <Notifications />
     <span class="grow"></span>
     {#if upd.state === "available"}
       <span class="upd warn" title="Un pack de données plus récent est publié sur GitHub">⚠ Nouvelles données du jeu disponibles</span>

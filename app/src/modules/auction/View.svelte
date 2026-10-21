@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
   import { SvelteSet } from "svelte/reactivity";
   import { app } from "../../lib/app.svelte";
   import Grip from "../../lib/components/Grip.svelte";
@@ -404,6 +404,26 @@
     tab = "listing"; // from the Transcendance tab: switch so the lot is rendered
     await revealLot(id);
   }
+  /** A lot asked for from elsewhere (a notification, `app.showLot`): open its item, unfold it and scroll to it. Filters of
+   *  the item that hide it are cleared. Waits for the scanned listings. */
+  let listed = $state(false);
+  $effect(() => {
+    const f = app.hdvFocus;
+    if (f && listed) untrack(() => void showFocus(f));
+  });
+  async function showFocus(f: { gid: number; lot: string }) {
+    app.hdvFocus = null;    if (!items.has(f.gid)) return;
+    selGid = f.gid;
+    tab = "listing";
+    legendOnly = false;
+    await tick(); // the selection effect resets the highlight and the rune focus first
+    if (!rows.some((r: any) => keyOf(r) === f.lot)) filters[f.gid] = [];
+    if (!item?.rows.some((r: any) => keyOf(r) === f.lot)) return; // sold since: the item alone
+    openSet.add(f.lot);
+    picked = f.lot;
+    await revealLot(f.lot);
+  }
+
   /** An item just captured from the game: show it (a refresh of the item already open keeps its scroll position). */
   async function showNew(i: any) {
     if (selGid === i.gid) return;
@@ -425,6 +445,8 @@
     void prices.ensure();
     // the shared stores never let an older snapshot replace a newer scan / price (see lib/stores)
     auction.ensure().then(live(() => {
+      listed = true;
+      if (app.hdvFocus) return; // showFocus picks the item and scrolls
       if ((selGid === null || !items.has(selGid)) && list.length) selGid = list[0].gid;
       void tick().then(() => document.querySelector(".ilist .irow.sel")?.scrollIntoView({ block: "center" })); // back to the item that was open
     }));
