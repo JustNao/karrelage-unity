@@ -77,6 +77,51 @@ fn unit_price(rows: &[Value]) -> Option<f64> {
     units.get(units.len().saturating_sub(1) / 2).copied()
 }
 
+/// Every offer of a listing as `[qty, price]`, sorted, for the price history.
+fn offers(rows: &[Value]) -> Vec<[i64; 2]> {
+    let mut v: Vec<[i64; 2]> = rows
+        .iter()
+        .flat_map(|r| r["prices"].as_array().into_iter().flatten())
+        .filter_map(|p| Some([p["qty"].as_i64().filter(|q| *q > 0)?, p["price"].as_i64().filter(|x| *x > 0)?]))
+        .collect();
+    v.sort_unstable();
+    v
+}
+
+/// Price history: one JSON line appended per event, never rewritten, read back only on demand (`history`).
+/// AH listing / change: {t, gid, kind: "ah", unit, offers: [[qty, price]]}; weekly averages: {t, kind: "avg", prices: {gid: price}}.
+fn append_history(ctx: &Ctx, line: &Value) {
+    use std::io::Write;
+    let dir = ctx.module_dir("prices");
+    let r = std::fs::create_dir_all(&dir).and_then(|_| {
+        let mut f = std::fs::OpenOptions::new().create(true).append(true).open(dir.join("history.jsonl"))?;
+        writeln!(f, "{line}")
+    });
+    if let Err(e) = r {
+        ctx.log(format!("prices: history not written: {e}"));
+    }
+}
+
+/// History lines of one item (or every line when `gid` is None) at or after `since`; averages are reduced to that item's price.
+fn read_history(path: &std::path::Path, gid: Option<i64>, since: f64) -> Vec<Value> {
+    use std::io::BufRead;
+    let Ok(f) = std::fs::File::open(path) else { return vec![] };
+    std::io::BufReader::new(f)
+        .lines()
+        .map_while(Result::ok)
+        .filter_map(|l| serde_json::from_str::<Value>(&l).ok())
+        .filter(|v| v["t"].as_f64().unwrap_or(0.0) >= since)
+        .filter_map(|mut v| match gid {
+            None => Some(v),
+            Some(g) if v["kind"] == "avg" => {
+                let p = v["prices"].get(g.to_string())?.clone();
+                Some(json!({"t": v["t"], "gid": g, "kind": "avg", "avg": p}))
+            }
+            Some(g) => (v["gid"] == g).then(|| v.take()),
+        })
+        .collect()
+}
+
 /// Case / nbsp / apostrophe / accent insensitive item name, for `gids_by_name`.
 fn norm_name(s: &str) -> String {
     s.replace('\u{a0}', " ")
@@ -145,6 +190,7 @@ impl Prices {
         let (Some(msg), Some(b)) = (m.decoded.as_ref(), ctx.data.bindings.get("avg_prices")) else { return };
         let field = |k: &str| b[k].as_str().unwrap_or_default();
         let mut changed = vec![];
+        let mut hist = serde_json::Map::new();
         let mut s = self.store.lock();
         for e in messages(msg, field("items")) {
             let (gid, price) = (int(&e, field("gid")), int(&e, field("price")));
@@ -156,11 +202,13 @@ impl Prices {
             ent["avg_updated"] = json!(m.raw.t);
             Self::describe(ctx, gid, ent);
             changed.push(ent.clone());
+            hist.insert(gid.to_string(), json!(price));
         }
         drop(s);
         if changed.is_empty() {
             return;
         }
+        append_history(ctx, &json!({"t": m.raw.t, "kind": "avg", "prices": hist}));
         self.save();
         ctx.emit("prices", "bulk", Value::Array(changed));
     }
@@ -203,11 +251,11 @@ impl Module for Prices {
         if m.raw.srv == "demo" {
             return;
         }
-        let (gid, unit) = if f["kind"] == "auction_items" {
+        let (gid, unit, offers) = if f["kind"] == "auction_items" {
             let Some(rows) = f["rows"].as_array() else { return };
             let Some(gid) = f["gid"].as_i64().or_else(|| rows.first().and_then(|r| r["gid"].as_i64())) else { return };
             self.listings.lock().insert(gid, rows.clone());
-            (gid, unit_price(rows))
+            (gid, unit_price(rows), offers(rows))
         } else {
             // a purchase / an updated or removed row of a listing seen earlier
             let mut l = self.listings.lock();
@@ -215,8 +263,10 @@ impl Module for Prices {
             if apply_change(rows, f).is_none() {
                 return;
             }
-            (*gid, unit_price(rows))
+            (*gid, unit_price(rows), offers(rows))
         };
+        // recorded even when nobody sells it any more (empty offers)
+        append_history(ctx, &json!({"t": m.raw.t, "gid": gid, "kind": "ah", "unit": unit.map(|u| u.round() as i64), "offers": offers}));
         let Some(unit) = unit else { return }; // nobody is selling it any more: keep the previous price
         let mut s = self.store.lock();
         let ent = s.entry(gid).or_insert_with(|| json!({"gid": gid, "override": null}));
@@ -295,6 +345,12 @@ impl Module for Prices {
                 }
                 Ok(Value::Object(out))
             }
+            // args: {gid?, since?} -> history lines, oldest first (not used by the UI yet)
+            "history" => Ok(Value::Array(read_history(
+                &ctx.module_dir("prices").join("history.jsonl"),
+                args["gid"].as_i64(),
+                args["since"].as_f64().unwrap_or(0.0),
+            ))),
             // args: {gid, value: number | null}; null removes the override
             "set_override" => {
                 let gid = args["gid"].as_i64().ok_or_else(|| anyhow!("prices: gid required"))?;
@@ -371,6 +427,9 @@ mod tests {
         assert_eq!(get(&list, 1711)["avg"], 5000);
         assert_eq!(get(&list, 1728)["avg"], 300);
         assert!(get(&list, 1711)["unit"].is_null());
+        // the averages are appended to the history, reduced to the asked item
+        let h = p.call("history", json!({"gid": 1728}), &hub.ctx).unwrap();
+        assert_eq!(h, json!([{"t": 1.0, "gid": 1728, "kind": "avg", "avg": 300}]));
         // a manual override survives a later average
         p.call("set_override", json!({"gid": 1711, "value": 42}), &hub.ctx).unwrap();
         p.on_message(&msg(2.0), &hub.ctx);
