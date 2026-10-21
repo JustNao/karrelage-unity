@@ -6,7 +6,7 @@
   import PanelHead from "../../lib/components/PanelHead.svelte";
   import { Columns } from "../../lib/columns.svelte";
   import { call } from "../../lib/api";
-  import { ago, kamas, pct, signedKamas } from "../../lib/fmt";
+  import { ago, kamas, kamasFull, pct, signedKamas } from "../../lib/fmt";
   import { auction } from "../../lib/stores/auction.svelte";
   import { prices } from "../../lib/stores/prices.svelte";
   import Collapsible from "../../lib/components/Collapsible.svelte";
@@ -25,11 +25,13 @@
   import { feeder, foodGids, levelBase } from "../../lib/familiar";
   import CompanionTable from "../../lib/components/CompanionTable.svelte";
   import LotTable from "../../lib/components/LotTable.svelte";
+  import SortTable from "../../lib/components/SortTable.svelte";
+  import { useSort } from "../../lib/sort.svelte";
   import { mountInfo, neuroneGids, neuronsOf, resourcePlural } from "../../lib/mounts";
   import { FLAG_EFFECTS, rangeLabel, sections, type EffectMeta } from "../../lib/effects";
   import { iconOfStat } from "../../lib/stores/statIcons.svelte";
   import { benefit, craftCost, type CraftLine, type Recipes } from "../../lib/craft";
-  import { AH_TAX, isTableRune, isTranscended, targetKey, transcendance, type Rune } from "../../lib/transcend";
+  import { AH_TAX, isTranscended, targetKey, transcendance, type Rune, type Target } from "../../lib/transcend";
   import { byUnitPrice, lotKeys, unitPrice } from "../../lib/price";
 
   interface Filter { a: number; min: string | number; max: string | number }
@@ -367,16 +369,33 @@
   /** Is the saved lot still in the latest scan of its item? null = the item has not been scanned (here) since. */
   const stillListed = (sv: Saved) => {
     const it = items.get(sv.gid);
-    return it && sv.row.uid != null ? it.rows.some((r: any) => r.uid === sv.row.uid) && it.updated > sv.savedAt : null;
+    return it && sv.row.uid != null && it.updated > sv.savedAt ? it.rows.some((r: any) => r.uid === sv.row.uid) : null;
   };
   /** Only computed when read (deriveds are lazy): the Transcendance tab, the deals' "similar item" hint, and the tab count when some lot is transcended. */
   const trans = $derived(transcendance(comp ? [] : rows, runes, stored, focus));
   const transCount = $derived(!comp && rows.some(isTranscended) ? trans.opportunities.length : 0);
   const runeName = (n: string) => n;
-  /** Table view: the good deals (green lines) and the transcendance candidates by row (only the runes of `isTableRune`). */
+  /** Table view: the good deals (green lines). */
   const goodKeys = $derived(new Set<string>(fit ? points.filter((_: any, i: number) => isGoodDeal(fit!, i, points.length)).map((p: any) => p.id) : []));
-  const tableRunes = $derived(runes.filter(isTableRune));
-  const oppByRow = $derived(new Map(transcendance(comp ? [] : rows, tableRunes, stored).opportunities.map((o) => [o.row, o])));
+
+  // ---- Transcendance tab tables
+  /** Unfolding a candidate also puts it (and the lots with the same rune) forward on the graph; folding it clears that. */
+  function toggleCand(key: string, o: any) {
+    toggleOpen(key);
+    const cid = keyOf(o.row);
+    const t = o.best!.target;
+    cand = openSet.has(key) ? { id: cid, a: t.a, value: t.value } : cand?.id === cid ? null : cand;
+  }
+  type TargetKey = "effect" | "lots" | "sale" | "rune" | "cost";
+  const targetSort = useSort<TargetKey>(null, false, (k) => k === "lots");
+  const TARGET_COLUMNS: { key: TargetKey; label: string; num?: boolean; title?: string }[] = [
+    { key: "effect", label: "Effet ajouté" },
+    { key: "lots", label: "Lots", num: true },
+    { key: "sale", label: "À partir de", num: true, title: "Lot transcendé le moins cher avec cet effet" },
+    { key: "rune", label: "Rune" },
+    { key: "cost", label: "Prix de la rune", num: true },
+  ];
+  const targetValue = (t: Target, k: TargetKey) => (k === "effect" ? effLabel(t.a) : k === "lots" ? t.lots : k === "sale" ? t.sale : k === "rune" ? (t.rune?.name ?? null) : t.runeCost);
 
 
   /** Clicking a dot: unroll the lot and scroll the list down to it (nothing is filtered out). */
@@ -497,59 +516,97 @@
       </div>{/if}
       {#if tab === "trans" && !comp}
         <div class="trans">
+          <!-- saved candidates: a snapshot kept across scans -->
+          {#snippet svRemove(sv: Saved)}<button class="mini" title="Retirer ce candidat" onclick={(ev) => (ev.stopPropagation(), persistSaved(saved.filter((x) => x.key !== sv.key)))}>✕</button>{/snippet}
+          {#snippet svProfit(sv: Saved)}<b class="ok">+{kamasFull(sv.profit)}</b>{/snippet}
+          {#snippet svInvest(sv: Saved)}<span title="Prix du lot + prix de la rune">{kamasFull(sv.buy + sv.runeCost)}</span>{/snippet}
+          {#snippet svItem(sv: Saved)}<button class="link" onclick={(ev) => (ev.stopPropagation(), (selGid = sv.gid))}>{sv.itemName}</button>{/snippet}
+          {#snippet svRune(sv: Saved)}+{sv.value} {sv.label} <span class="mut">{sv.rune.replace(/^Rune /, "")}</span>{/snippet}
+          {#snippet svState(sv: Saved)}
+            {@const live = stillListed(sv)}
+            {#if live === true}<span class="ok">en vente</span>{:else if live === false}<span class="warn">absent du dernier scan</span>{:else}<span class="mut">pas rescanné</span>{/if}
+            <span class="mut"> · {ago(sv.savedAt)}</span>
+          {/snippet}
           {#if saved.length}
             <div class="ghead">Candidats enregistrés</div>
-            {#each saved as sv (sv.key)}
-              {@const live = stillListed(sv)}
-              <div class="opp">
-                <div class="oh">
-                  <b class="ok">+{kamas(sv.profit)}</b>
-                  <span class="inv" title="Prix du lot + prix de la rune">investissement {kamas(sv.buy + sv.runeCost)}</span>
-                  <button class="link" onclick={() => (selGid = sv.gid)}>{sv.itemName}</button>
-                  <span>ajouter {sv.rune} (+{sv.value} {sv.label})</span>
-                  <span class="mut">achat {kamas(sv.buy)} · rune {kamas(sv.runeCost)} · vente ~{kamas(sv.sale)} · enregistré {ago(sv.savedAt)}</span>
-                  {#if live === true}<span class="ok">toujours en vente</span>{:else if live === false}<span class="warn">absent du dernier scan</span>{/if}
-                  <button class="mini" onclick={() => persistSaved(saved.filter((x) => x.key !== sv.key))}>Retirer ✕</button>
-                </div>
-                <ItemCard row={sv.row} collapsible open={openSet.has("s" + sv.key)} ontoggle={() => toggleOpen("s" + sv.key)} />
-              </div>
-            {/each}
+            <LotTable
+              lots={saved.map((sv) => ({ row: sv.row, key: "s" + sv.key, meta: sv }))}
+              deals={false}
+              transcend={false}
+              alignPrice={false}
+              leads={[
+                { key: "rm", label: "", cell: svRemove },
+                { key: "profit", label: "Bénéfice", cell: svProfit, sort: (sv) => sv.profit, num: true, desc: true },
+                { key: "invest", label: "Investissement", cell: svInvest, sort: (sv) => sv.buy + sv.runeCost, num: true, title: "Prix du lot + prix de la rune" },
+                { key: "item", label: "Objet", cell: svItem, sort: (sv) => sv.itemName },
+                { key: "rune", label: "Rune", cell: svRune, sort: (sv) => sv.label },
+                { key: "state", label: "Statut", cell: svState, sort: (sv) => sv.savedAt, desc: true },
+              ]}
+              open={(k) => openSet.has(k)}
+              ontoggle={toggleOpen}
+            />
           {/if}
           {#if trans.targets.length === 0}
             <div class="mut">Aucun lot transcendé de cet objet dans la liste : rien à comparer.</div>
           {:else}
-            <div class="ghead">Lots transcendés vus</div>
-            {#each trans.targets as t (targetKey(t))}
-              <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-              <div class="trow" class:foc={focus === targetKey(t)} title="Cliquer pour ne voir que les candidats de cette rune" onclick={() => (focus = focus === targetKey(t) ? null : targetKey(t))}>
-                <b>+{t.value} {effLabel(t.a)}</b>
-                <span class="mut">{t.lots} {t.lots === 1 ? "lot" : "lots"} · à partir de {kamas(t.sale)} ·</span>
-                {#if !t.rune}<span class="warn">aucune rune correspondante</span>
-                {:else if t.runeCost == null}<span class="warn">{runeName(t.rune.name)} : prix inconnu, ouvrez-la à l'hôtel de vente</span>
-                {:else}<span class="mut">{runeName(t.rune.name)} {kamas(t.runeCost)}</span>
-                  {#if t.avgOnly}<span class="warn" title="Ouvrez la rune à l'hôtel de vente pour relever son prix">⚠ prix moyen sur 7 jours seulement</span>{:else if t.stale}<span class="warn" title="Ouvrez la rune à l'hôtel de vente pour actualiser son prix">⚠ prix de la rune vieux de plus d'un jour</span>{/if}{/if}
-              </div>
-            {/each}
+            <div class="ghead">Lots transcendés vus <span class="hint">· cliquer sur une ligne pour ne voir que les candidats de cette rune</span></div>
+            <div class="ttable">
+              <SortTable
+                columns={TARGET_COLUMNS}
+                rows={targetSort.apply(trans.targets, targetValue)}
+                sort={targetSort}
+                key={(t) => targetKey(t)}
+                rowProps={(t) => ({ class: focus === targetKey(t) ? "picked" : "", onclick: () => (focus = focus === targetKey(t) ? null : targetKey(t)) })}
+              >
+                {#snippet row(t)}
+                  <td><b>+{t.value} {effLabel(t.a)}</b></td>
+                  <td class="n">{t.lots}</td>
+                  <td class="n">{kamasFull(t.sale)}</td>
+                  <td>{#if t.rune}{runeName(t.rune.name)}{:else}<span class="warn">aucune rune correspondante</span>{/if}</td>
+                  <td class="n">
+                    {#if t.rune && t.runeCost == null}<span class="warn" title="Ouvrez la rune à l'hôtel de vente">prix inconnu</span>
+                    {:else if t.runeCost != null}{kamasFull(t.runeCost)}
+                      {#if t.avgOnly}<span class="warn" title="Prix moyen sur 7 jours seulement : ouvrez la rune à l'hôtel de vente pour relever son prix"> ⚠</span>{:else if t.stale}<span class="warn" title="Prix de la rune vieux de plus d'un jour : ouvrez-la à l'hôtel de vente pour l'actualiser"> ⚠</span>{/if}
+                    {/if}
+                  </td>
+                {/snippet}
+              </SortTable>
+            </div>
             {#if trans.unpricedCount}<div class="mut note">{trans.unpricedCount} lots candidats ne peuvent pas être classés tant que leur rune n'a pas de prix enregistré.</div>{/if}
             <div class="ghead">Candidats rentables{#if focus} <button class="mini" onclick={() => (focus = null)}>Toutes les runes ✕</button>{/if}</div>
-            {#each trans.opportunities as o (keyOf(o.row))}
-              {@const t = o.best!.target}
-              {@const cid = keyOf(o.row)}
-              <div class="opp">
-                <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-                <div class="oh sel" class:picked={cand?.id === cid} title="Cliquer pour mettre en avant ce lot et les lots avec la même rune sur le graphique" onclick={() => (cand = cand?.id === cid ? null : { id: cid, a: t.a, value: t.value })}>
-                  <b class="ok">+{kamas(o.best!.profit)}</b>
-                  <span class="inv" title="Prix du lot + prix de la rune">investissement {kamas(o.buy + (t.runeCost ?? 0))}</span>
-                  <span>ajouter {t.rune?.name} (+{t.value} {effLabel(t.a)})</span>
-                  {#if t.avgOnly}<span class="warn" title="Prix moyen sur 7 jours, jamais relevé à l'hôtel de vente">⚠ prix de rune moyen</span>{:else if t.stale}<span class="warn" title="Prix de la rune vieux de plus d'un jour">⚠ prix de rune périmé</span>{/if}
-                  <button class="mini" class:on={isSaved(o)} title="Garder ce candidat pour y revenir plus tard" onclick={(ev) => (ev.stopPropagation(), toggleSaved(o))}>{isSaved(o) ? "Enregistré ✓" : "Enregistrer"}</button>
-                  <span class="mut">achat {kamas(o.buy)} · rune {kamas(t.runeCost ?? 0)} · vente ~{kamas(t.sale)} · densité {o.z >= 0 ? "+" : ""}{o.z.toFixed(1)}σ</span>
-                </div>
-                <ItemCard row={o.row} collapsible open={openSet.has("t" + cid)} ontoggle={() => toggleOpen("t" + cid)} />
-              </div>
+            {#snippet oSave(o: any)}<button class="mini star" class:on={isSaved(o)} title={isSaved(o) ? "Enregistré : cliquer pour l'oublier" : "Garder ce candidat pour y revenir plus tard"} onclick={(ev) => (ev.stopPropagation(), toggleSaved(o))}>{isSaved(o) ? "★" : "☆"}</button>{/snippet}
+            {#snippet oProfit(o: any)}<b class="ok">+{kamasFull(o.best.profit)}</b>{/snippet}
+            {#snippet oInvest(o: any)}<span title="Prix du lot + prix de la rune">{kamasFull(o.buy + (o.best.target.runeCost ?? 0))}</span>{/snippet}
+            {#snippet oRune(o: any)}
+              {@const t = o.best.target}
+              +{t.value} {effLabel(t.a)} <span class="mut">{(t.rune?.name ?? "").replace(/^Rune /, "")}</span>
+              {#if t.avgOnly}<span class="warn" title="Prix moyen sur 7 jours, jamais relevé à l'hôtel de vente"> ⚠</span>{:else if t.stale}<span class="warn" title="Prix de la rune vieux de plus d'un jour"> ⚠</span>{/if}
+            {/snippet}
+            {#snippet oSale(o: any)}~{kamasFull(o.best.target.sale)}{/snippet}
+            {#snippet oDensity(o: any)}<span class="mut">{o.z >= 0 ? "+" : ""}{o.z.toFixed(1)}σ</span>{/snippet}
+            {#if trans.opportunities.length}
+              <LotTable
+                lots={trans.opportunities.map((o) => ({ row: o.row, key: "t" + keyOf(o.row), meta: o }))}
+                deals={false}
+                transcend={false}
+                alignPrice={false}
+                picked={cand ? "t" + cand.id : null}
+                leads={[
+                  { key: "save", label: "", cell: oSave },
+                  { key: "profit", label: "Bénéfice", cell: oProfit, sort: (o) => o.best.profit, num: true, desc: true },
+                  { key: "invest", label: "Investissement", cell: oInvest, sort: (o) => o.buy + (o.best.target.runeCost ?? 0), num: true, title: "Prix du lot + prix de la rune" },
+                  { key: "rune", label: "Rune à ajouter", cell: oRune, sort: (o) => effLabel(o.best.target.a) },
+                  { key: "sale", label: "Revente", cell: oSale, sort: (o) => o.best.target.sale, num: true, title: "Lot transcendé le moins cher avec le même effet (avant taxe)" },
+                  { key: "z", label: "Densité", cell: oDensity, sort: (o) => o.z, num: true, desc: true, title: "Écart du lot à la tendance prix / densité (> 0 = plus de stats que son prix ne le laisse penser)" },
+                ]}
+                open={(k) => openSet.has(k)}
+                ontoggle={(k) => toggleCand(k, trans.opportunities.find((o) => "t" + keyOf(o.row) === k))}
+                {fade}
+                onfade={toggleFade}
+              />
             {:else}
               <div class="mut">Aucun candidat rentable pour le moment.</div>
-            {/each}
+            {/if}
           {/if}
         </div>
       {:else}
@@ -606,7 +663,7 @@
         </div>
       {/snippet}
       {#if tableView}
-        <LotTable lots={lotsOf(rows)} good={goodKeys} opps={oppByRow} {picked} open={(k) => allOpen || openSet.has(k)} faded={lacksFade} ontoggle={toggleRow} stickTop={points.length >= 3 ? graphH : 0} {fade} onfade={toggleFade} pinned={isPin} onpin={togglePin} versus={versusFor} />
+        <LotTable lots={lotsOf(rows)} good={goodKeys} transcend={false} {picked} open={(k) => allOpen || openSet.has(k)} faded={lacksFade} ontoggle={toggleRow} stickTop={points.length >= 3 ? graphH : 0} {fade} onfade={toggleFade} pinned={isPin} onpin={togglePin} versus={versusFor} />
       {:else if rows.length >= VIRTUAL_FROM}
         <!-- long listings: only the lots on screen are rendered, no reorder animation -->
         <VirtualList bind:this={vlist} items={rows} key={keyOf} id={(r) => "lot-" + keyOf(r)} estimate={85} row={lotCard} />
@@ -735,22 +792,15 @@
   .tabs { display: flex; gap: 6px; margin-bottom: 10px; }
   .tabs .on { border-color: var(--acc); color: var(--acc); }
   .trans .note { margin: 4px 0 8px; font-size: 12px; }
-  .trow { padding: 3px 6px; font-size: 12px; cursor: pointer; border-radius: 6px; border: 1px solid transparent; }
-  .trow:hover { background: var(--bg); }
-  .trow.foc { border-color: var(--acc); }
+  .ttable :global(tbody tr) { cursor: pointer; }
+  .ttable :global(tbody tr:hover) { background: var(--panel); }
+  .ttable :global(tr.picked) { outline: 1px solid var(--acc); outline-offset: -1px; }
+  .ghead .hint { text-transform: none; letter-spacing: 0; }
+  .trans :global(.mini.star) { padding: 0 5px; font-size: 13px; line-height: 1.2; }
+  .trans :global(.mini.star.on) { color: var(--acc); border-color: var(--acc); }
   .altw { font-size: 12px; margin-bottom: 4px; }
   .link { border: 0; background: none; color: var(--acc); padding: 0; text-decoration: underline; }
-  .oh .on { border-color: var(--acc); color: var(--acc); }
-  /* one frame around the gain line and the lot; the card inside drops its own edge */
-  .opp { margin-bottom: 12px; padding: 6px; border: 1px solid var(--line); border-radius: 10px; }
-  .opp :global(.card) { border: 0; padding: 0 4px 4px; margin-bottom: 0; }
-  .opp .oh { margin-bottom: 0; }
-  .oh { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; font-size: 12px; margin-bottom: 4px; }
-  .oh.sel { cursor: pointer; padding: 3px 6px; border: 1px solid transparent; border-radius: 6px; }
-  .oh.sel:hover { background: var(--bg); }
-  .oh.picked { border-color: var(--acc); }
-  .inv { font-weight: 600; }
-  .oh .ok { color: var(--ok); font-size: 14px; }
+  .trans .ok { color: var(--ok); }
   .btns { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
   .frow.lv { grid-template-columns: 1fr 52px 52px auto; }
   .leg { display: block; margin: 8px 0; }

@@ -15,7 +15,8 @@
    * characteristics, transcendance, over-max and EXO effects; good deals get a green line. Clicking a row unfolds the
    * lot's card under it, clicking the card folds it again. Clicking an over / EXO chip highlights the lots with that stat
    * (like "Mettre en avant" on the cards) without unfolding; the pin button sits left of the unfolded card.
-   * Also used for lots of different items (Stuff tab): a leading `lead` column (item), no deal / transcendance columns.
+   * Also used for lots of different items (Stuff tab) and for transcendance candidates: leading `leads` columns (item,
+   * profit, rune...), no deal / transcendance columns.
    */
   let {
     lots,
@@ -23,7 +24,9 @@
     opps = new Map(),
     deals = true,
     transcend = true,
-    lead,
+    leads = [],
+    alignPrice = true,
+    rowClass,
     picked = null,
     open,
     faded = () => false,
@@ -44,8 +47,12 @@
     /** Show the "Bonne affaire" / "Transcendance" columns (only meaningful within one item's listing). */
     deals?: boolean;
     transcend?: boolean;
-    /** A first column (label, cell, sort key), e.g. the item of each lot. */
-    lead?: { label: string; cell: Snippet<[any]>; sortKey?: (meta: any) => string };
+    /** Columns before the price (label, cell from the lot's `meta`, sort value; `desc` = sorted high to low first). */
+    leads?: { key: string; label: string; cell: Snippet<[any]>; sort?: (meta: any) => string | number | null; num?: boolean; desc?: boolean; title?: string }[];
+    /** The unfolded card starts under the row's price (else at the left edge). */
+    alignPrice?: boolean;
+    /** Extra class of a row (from its `meta`). */
+    rowClass?: (meta: any) => string;
     picked?: string | number | null;
     open: (key: string) => boolean;
     faded?: (r: any) => boolean;
@@ -67,6 +74,7 @@
       const price = tr?.previousElementSibling?.querySelector("td.pc b");
       if (price && table) node.style.paddingLeft = `${price.getBoundingClientRect().left - table.getBoundingClientRect().left}px`;
     };
+    if (!alignPrice) return;
     set();
     const ro = new ResizeObserver(set);
     if (table) ro.observe(table);
@@ -100,7 +108,7 @@
       const missing = shown.filter((e: any) => e.status === "removed").length;
       const o = opps.get(row);
       return {
-        row, key, meta, item: lead?.sortKey?.(meta) ?? "", price: unitPrice(row), damage: p.damage, resist: p.resist, main: p.main, extras, missing,
+        row, key, meta, price: unitPrice(row), damage: p.damage, resist: p.resist, main: p.main, extras, missing,
         locked: !!row.locked, opp: o?.best ?? null, good: good.has(key),
         // sort keys
         extra: extras.length, trans: o?.best ? o.best.profit : row.locked ? -1e12 : -2e12,
@@ -108,10 +116,12 @@
     }),
   );
 
-  type SortKey = "item" | "price" | "damage" | "resist" | "main" | "extra" | "trans" | "good";
-  const sort = useSort<SortKey>(null, false, (k) => k !== "price" && k !== "item"); // no column = the order of the list
+  type SortKey = string;
+  const leadOf = (k: string) => leads.find((l) => l.key === k);
+  // high to low first, except the price and the leads that are not `desc`; no column = the order of the list
+  const sort = useSort<SortKey>(null, false, (k) => (leadOf(k) ? !!leadOf(k)!.desc : k !== "price"));
   const allColumns: { key: SortKey; label: string; num?: boolean; title?: string }[] = $derived([
-    ...(lead ? [{ key: "item" as const, label: lead.label }] : []),
+    ...leads.map((l) => ({ key: l.key, label: l.label, num: l.num, title: l.title })),
     { key: "good", label: "Bonne affaire", title: "Lot bien au-dessus de la tendance prix / densité" },
     { key: "price", label: "Prix", num: true },
     { key: "damage", label: "Dommages parfaits", title: "Tous les effets de dommages de base à leur maximum" },
@@ -121,7 +131,9 @@
     { key: "extra", label: "Over / EXO", title: "Effets ajoutés (bleu) et ce qui dépasse le max de base (vert)" },
   ]);
   const columns = $derived(allColumns.filter((c) => (deals || c.key !== "good") && (transcend || c.key !== "trans")));
-  const sorted = $derived(sort.apply(rows, (r, k) => (k === "damage" || k === "resist" || k === "main" || k === "good" ? +r[k] : r[k])));
+  const sorted = $derived(
+    sort.apply(rows, (r: any, k) => (leadOf(k) ? (leadOf(k)!.sort?.(r.meta) ?? null) : k === "damage" || k === "resist" || k === "main" || k === "good" ? +r[k] : r[k])),
+  );
 </script>
 
 <div class="ltable" style:--stick="{stickTop}px">
@@ -130,10 +142,10 @@
     rows={sorted}
     {sort}
     key={(r) => r.key}
-    rowProps={(r) => ({ id: `lot-${r.key}`, class: [picked === r.key && "picked", faded(r.row) && "faded", r.good && "hot", open(r.key) && "open"].filter(Boolean).join(" "), onclick: () => ontoggle(r.key) })}
+    rowProps={(r) => ({ id: `lot-${r.key}`, class: [picked === r.key && "picked", faded(r.row) && "faded", r.good && "hot", open(r.key) && "open", rowClass?.(r.meta)].filter(Boolean).join(" "), onclick: () => ontoggle(r.key) })}
   >
     {#snippet row(r)}
-      {#if lead}<td class="lead">{@render lead.cell(r.meta)}</td>{/if}
+      {#each leads as l (l.key)}<td class="lead" class:n={l.num}>{@render l.cell(r.meta)}</td>{/each}
       {#if deals}<td class="c">{#if r.good}<span class="good" title="Bien au-dessus de la tendance prix / densité">●</span>{/if}</td>{/if}
       <td class="n pc"><b>{Number.isFinite(r.price) ? kamasFull(r.price) : "—"}</b></td>
       <td class="c">{#if r.damage}<span class="star">★</span>{/if}</td>

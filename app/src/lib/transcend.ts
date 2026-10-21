@@ -25,13 +25,6 @@ const runeEffects = (r: any) => r.effects.filter((e: any) => e.status === "added
 /** Overmax (above the default max) lots cannot take a rune; neither can locked ones. */
 export const canTranscend = (r: any) => !r.locked && !r.effects.some((e: any) => e.status === "above" || e.status === "added");
 
-/**
- * Runes the HDV table's transcendance column checks: +8 critical damage, % damage (spells, weapons, ranged, melee),
- * % resistances (elements, ranged, melee) and tackle. Effect ids = the rune's effect (see `prices.runes`).
- */
-const TABLE_RUNE_EFFECTS = new Set([2800, 2804, 2808, 2812, 210, 211, 212, 213, 214, 2803, 2807, 753]);
-export const isTableRune = (r: Rune) => TABLE_RUNE_EFFECTS.has(r.a) || (r.a === 418 && r.value === 8);
-
 export interface Target {
   a: number;
   value: number;

@@ -499,7 +499,7 @@
                   lots={tableRows.map((r) => ({ row: r.lot, key: r.slot, meta: r }))}
                   deals={false}
                   transcend={false}
-                  lead={{ label: "Objet", cell: itemCell, sortKey: (r) => r.name }}
+                  leads={[{ key: "item", label: "Objet", cell: itemCell, sort: (r) => r.name }]}
                   open={(k) => openLots.has(k)}
                   ontoggle={toggleLot}
                 />
