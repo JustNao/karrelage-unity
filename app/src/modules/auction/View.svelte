@@ -21,6 +21,7 @@
   import VirtualList from "../../lib/components/VirtualList.svelte";
   import { LEVEL_EFFECT, isLegendary, levelOf, xpOfLevel } from "../../lib/companion";
   import { analyse, isGoodDeal } from "../../lib/density";
+  import { settings } from "../../lib/stores/settings.svelte";
   import { feeder, foodGids, levelBase } from "../../lib/familiar";
   import CompanionTable from "../../lib/components/CompanionTable.svelte";
   import LotTable from "../../lib/components/LotTable.svelte";
@@ -297,10 +298,11 @@
   });
 
   /** Lots standing out above the price trend per scanned item (all its lots, unfiltered): the green icon in the left list.
-   *  Cached per item object: a scan replaces the item whole, so only the new one is analysed. */
-  const dealCache = new WeakMap<object, number>();
+   *  Cached per item object (a scan replaces the item whole, so only the new one is analysed) and threshold. */
+  const dealCache = new WeakMap<object, { z: number; n: number }>();
   function dealCount(it: any): number {
-    let n = dealCache.get(it);
+    const z = settings.hdv.goodZ;
+    let n = dealCache.get(it)?.z === z ? dealCache.get(it)!.n : undefined;
     if (n === undefined) {
       const pts = it.rows.map((r: any) => ({ x: unitPrice(r), y: yOf(r, !!it.companion) })).filter((p: any) => Number.isFinite(p.x) && Number.isFinite(p.y));
       n = 0;
@@ -308,7 +310,7 @@
         const f = analyse(pts);
         for (let i = 0; i < pts.length; i++) if (isGoodDeal(f, i, pts.length)) n++;
       }
-      dealCache.set(it, n);
+      dealCache.set(it, { z, n });
     }
     return n;
   }

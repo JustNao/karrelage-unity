@@ -14,11 +14,11 @@
 </script>
 
 <script lang="ts">
-  import { analyse, isGoodDeal, type Fit } from "../density";
+  import { analyse, goodZ, isGoodDeal, type Fit } from "../density";
   import { fmtCompact as compact } from "../fmt";
 
   /**
-   * Price (x) against density (y) of the lots of one item, with a least-squares trend line and a ±2σ band.
+   * Price (x) against density (y) of the lots of one item, with a least-squares trend line and a band of ± the good-deal threshold (σ).
    * Green dots sit far above the line: more value than their price suggests (good deals). Blue = has an added effect,
    * orange = lacks some default effect.
    */
@@ -51,7 +51,7 @@
     const xs = points.map((p) => p.x);
     const [x0, x1] = [Math.min(...xs), Math.max(...xs)];
     const padX = (x1 - x0 || x0 || 1) * 0.06;
-    const ys = [...points.map((p) => p.y), ...[x0, x1].flatMap((x) => [fit.slope * x + fit.icpt - 2 * fit.sigma, fit.slope * x + fit.icpt + 2 * fit.sigma])];
+    const ys = [...points.map((p) => p.y), ...[x0, x1].flatMap((x) => [fit.slope * x + fit.icpt - goodZ() * fit.sigma, fit.slope * x + fit.icpt + goodZ() * fit.sigma])];
     const [y0, y1] = [Math.min(...ys), Math.max(...ys)];
     const padY = (y1 - y0 || 1) * 0.08;
     return { x0: x0 - padX, x1: x1 + padX, y0: y0 - padY, y1: y1 + padY };
@@ -61,8 +61,8 @@
   const sy = (y: number) => H - M.b - ((y - dom.y0) / (dom.y1 - dom.y0)) * (H - M.t - M.b);
   const line = (off = 0) => `M${sx(dom.x0)},${sy(fit.slope * dom.x0 + fit.icpt + off)} L${sx(dom.x1)},${sy(fit.slope * dom.x1 + fit.icpt + off)}`;
   const band = $derived(
-    `M${sx(dom.x0)},${sy(fit.slope * dom.x0 + fit.icpt + 2 * fit.sigma)} L${sx(dom.x1)},${sy(fit.slope * dom.x1 + fit.icpt + 2 * fit.sigma)} ` +
-      `L${sx(dom.x1)},${sy(fit.slope * dom.x1 + fit.icpt - 2 * fit.sigma)} L${sx(dom.x0)},${sy(fit.slope * dom.x0 + fit.icpt - 2 * fit.sigma)} Z`,
+    `M${sx(dom.x0)},${sy(fit.slope * dom.x0 + fit.icpt + goodZ() * fit.sigma)} L${sx(dom.x1)},${sy(fit.slope * dom.x1 + fit.icpt + goodZ() * fit.sigma)} ` +
+      `L${sx(dom.x1)},${sy(fit.slope * dom.x1 + fit.icpt - goodZ() * fit.sigma)} L${sx(dom.x0)},${sy(fit.slope * dom.x0 + fit.icpt - goodZ() * fit.sigma)} Z`,
   );
 
   const ticks = $derived.by(() => {

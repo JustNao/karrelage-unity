@@ -1,4 +1,5 @@
 /** Price/density analysis shared by the chart and the "Good deals" section. */
+import { settings } from "./stores/settings.svelte";
 
 export interface Fit {
   slope: number;
@@ -8,8 +9,8 @@ export interface Fit {
   z: number[];
 }
 
-/** A lot this far above the trend line (in residual standard deviations) counts as a good deal. */
-export const GOOD_Z = 2;
+/** A lot this far above the trend line (in residual standard deviations) counts as a good deal (Paramètres > HDV, 2 by default). */
+export const goodZ = () => settings.hdv.goodZ;
 /** Below this many lots the trend is not meaningful, so nothing is flagged. */
 export const MIN_POINTS = 5;
 
@@ -26,4 +27,4 @@ export function analyse(pts: { x: number; y: number }[]): Fit {
   return { slope, icpt, sigma, z: res.map((r) => (sigma > 1e-9 ? r / sigma : 0)) };
 }
 
-export const isGoodDeal = (fit: Fit, i: number, n: number) => n >= MIN_POINTS && fit.sigma > 1e-9 && fit.z[i] >= GOOD_Z;
+export const isGoodDeal = (fit: Fit, i: number, n: number) => n >= MIN_POINTS && fit.sigma > 1e-9 && fit.z[i] >= goodZ();
