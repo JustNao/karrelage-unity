@@ -735,8 +735,9 @@
   .view { flex: 1; min-height: 0; display: grid; }
   /* item icon left of a list row, as tall as the row (fetched once on screen) */
   .irow.ii { display: flex; gap: 8px; align-items: stretch; padding-left: 4px; }
-  /* the icon never sizes the row: positioned over a box that is as wide as the row is tall */
-  .iic { flex: none; position: relative; align-self: stretch; aspect-ratio: 1; margin: -3px 0; }
+  /* the icon never sizes the row: positioned over a box as tall as the row's two lines of text (and as wide);
+     aspect-ratio cannot give the width here (a flex item's width is set before it is stretched) */
+  .iic { flex: none; position: relative; align-self: stretch; width: calc(2lh + 6px); margin: -3px 0; }
   .iic img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
   .itx { min-width: 0; }
   .hic { flex: none; width: 36px; height: 36px; margin: -6px 0; }
