@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Snippet } from "svelte";
   import { cubicOut } from "svelte/easing";
   import { kamasFull } from "../fmt";
   import { HIDDEN_EFFECTS, isNegative, perfection } from "../effects";
@@ -14,11 +15,15 @@
    * characteristics, transcendance, over-max and EXO effects; good deals get a green line. Clicking a row unfolds the
    * lot's card under it, clicking the card folds it again. Clicking an over / EXO chip highlights the lots with that stat
    * (like "Mettre en avant" on the cards) without unfolding; the pin button sits left of the unfolded card.
+   * Also used for lots of different items (Stuff tab): a leading `lead` column (item), no deal / transcendance columns.
    */
   let {
     lots,
-    good,
-    opps,
+    good = new Set(),
+    opps = new Map(),
+    deals = true,
+    transcend = true,
+    lead,
     picked = null,
     open,
     faded = () => false,
@@ -30,11 +35,17 @@
     versus = () => null,
     stickTop = 0,
   }: {
-    lots: { row: any; key: string }[];
+    /** `meta`: whatever the `lead` column shows (e.g. the slot and item of a Stuff lot). */
+    lots: { row: any; key: string; meta?: any }[];
     /** Keys of the lots well above the price trend (green line). */
-    good: Set<string>;
+    good?: Set<string>;
     /** Transcendance candidates of the listing (unlocked lots a rune makes profitable), by row. */
-    opps: Map<any, Opportunity>;
+    opps?: Map<any, Opportunity>;
+    /** Show the "Bonne affaire" / "Transcendance" columns (only meaningful within one item's listing). */
+    deals?: boolean;
+    transcend?: boolean;
+    /** A first column (label, cell, sort key), e.g. the item of each lot. */
+    lead?: { label: string; cell: Snippet<[any]>; sortKey?: (meta: any) => string };
     picked?: string | number | null;
     open: (key: string) => boolean;
     faded?: (r: any) => boolean;
@@ -53,7 +64,7 @@
     const tr = node.closest("tr");
     const table = node.closest("table");
     const set = () => {
-      const price = tr?.previousElementSibling?.querySelector("td:nth-child(2) b");
+      const price = tr?.previousElementSibling?.querySelector("td.pc b");
       if (price && table) node.style.paddingLeft = `${price.getBoundingClientRect().left - table.getBoundingClientRect().left}px`;
     };
     set();
@@ -76,7 +87,7 @@
   const unfold = (_: Element, { duration = 240 } = {}) => ({ duration, easing: cubicOut, css: (t: number) => `grid-template-rows: ${t}fr; opacity: ${Math.min(1, t * 1.5)}` });
 
   const rows = $derived(
-    lots.map(({ row, key }) => {
+    lots.map(({ row, key, meta }) => {
       const p = perfection(row.effects);
       const shown = row.effects.filter((e: any) => !HIDDEN_EFFECTS.has(e.action));
       // EXO (blue) first, then over-max (green)
@@ -89,7 +100,7 @@
       const missing = shown.filter((e: any) => e.status === "removed").length;
       const o = opps.get(row);
       return {
-        row, key, price: unitPrice(row), damage: p.damage, resist: p.resist, main: p.main, extras, missing,
+        row, key, meta, item: lead?.sortKey?.(meta) ?? "", price: unitPrice(row), damage: p.damage, resist: p.resist, main: p.main, extras, missing,
         locked: !!row.locked, opp: o?.best ?? null, good: good.has(key),
         // sort keys
         extra: extras.length, trans: o?.best ? o.best.profit : row.locked ? -1e12 : -2e12,
@@ -97,9 +108,10 @@
     }),
   );
 
-  type SortKey = "price" | "damage" | "resist" | "main" | "extra" | "trans" | "good";
-  const sort = useSort<SortKey>(null, false, (k) => k !== "price"); // no column = the order of the list (price)
-  const columns: { key: SortKey; label: string; num?: boolean; title?: string }[] = [
+  type SortKey = "item" | "price" | "damage" | "resist" | "main" | "extra" | "trans" | "good";
+  const sort = useSort<SortKey>(null, false, (k) => k !== "price" && k !== "item"); // no column = the order of the list
+  const allColumns: { key: SortKey; label: string; num?: boolean; title?: string }[] = $derived([
+    ...(lead ? [{ key: "item" as const, label: lead.label }] : []),
     { key: "good", label: "Bonne affaire", title: "Lot bien au-dessus de la tendance prix / densité" },
     { key: "price", label: "Prix", num: true },
     { key: "damage", label: "Dommages parfaits", title: "Tous les effets de dommages de base à leur maximum" },
@@ -107,7 +119,8 @@
     { key: "main", label: "Caractéristiques parfaites", title: "Caractéristiques principales au maximum" },
     { key: "trans", label: "Transcendance", title: "🛡 lot transcendé · +X : candidat rentable avec une rune (Do Cri +8, % Do, % Ré, Tacle)" },
     { key: "extra", label: "Over / EXO", title: "Effets ajoutés (bleu) et ce qui dépasse le max de base (vert)" },
-  ];
+  ]);
+  const columns = $derived(allColumns.filter((c) => (deals || c.key !== "good") && (transcend || c.key !== "trans")));
   const sorted = $derived(sort.apply(rows, (r, k) => (k === "damage" || k === "resist" || k === "main" || k === "good" ? +r[k] : r[k])));
 </script>
 
@@ -120,15 +133,18 @@
     rowProps={(r) => ({ id: `lot-${r.key}`, class: [picked === r.key && "picked", faded(r.row) && "faded", r.good && "hot", open(r.key) && "open"].filter(Boolean).join(" "), onclick: () => ontoggle(r.key) })}
   >
     {#snippet row(r)}
-      <td class="c">{#if r.good}<span class="good" title="Bien au-dessus de la tendance prix / densité">●</span>{/if}</td>
-      <td class="n"><b>{Number.isFinite(r.price) ? kamasFull(r.price) : "—"}</b></td>
+      {#if lead}<td class="lead">{@render lead.cell(r.meta)}</td>{/if}
+      {#if deals}<td class="c">{#if r.good}<span class="good" title="Bien au-dessus de la tendance prix / densité">●</span>{/if}</td>{/if}
+      <td class="n pc"><b>{Number.isFinite(r.price) ? kamasFull(r.price) : "—"}</b></td>
       <td class="c">{#if r.damage}<span class="star">★</span>{/if}</td>
       <td class="c">{#if r.resist}<span class="star">★</span>{/if}</td>
       <td class="c">{#if r.main}<span class="star">★</span>{/if}</td>
-      <td class="tr">
-        {#if r.locked}<span title="Transcendé">🛡</span>
-        {:else if r.opp}<span class="good" title="Ajouter {r.opp.target.rune?.name ?? 'la rune'} puis revendre (après taxe)">+{kamasFull(r.opp.profit)}</span> <span class="mut">{(r.opp.target.rune?.name ?? "").replace(/^Rune /, "")}</span>{/if}
-      </td>
+      {#if transcend}
+        <td class="tr">
+          {#if r.locked}<span title="Transcendé">🛡</span>
+          {:else if r.opp}<span class="good" title="Ajouter {r.opp.target.rune?.name ?? 'la rune'} puis revendre (après taxe)">+{kamasFull(r.opp.profit)}</span> <span class="mut">{(r.opp.target.rune?.name ?? "").replace(/^Rune /, "")}</span>{/if}
+        </td>
+      {/if}
       <td class="fx">
         {#each r.extras as x}
           <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
@@ -136,8 +152,9 @@
             class="chip"
             class:over={x.over}
             class:on={fade === x.action}
-            title={(x.over ? "Au-dessus du max de base" : "EXO : pas un effet de base") + (fade === x.action ? " · cliquer pour tout afficher" : " · cliquer pour mettre en avant les lots qui ont cet effet")}
-            onclick={(ev) => (ev.stopPropagation(), onfade?.(x.action))}>{#if x.icon}<img src={x.icon} alt="" />{/if}{x.text}</span>
+            class:act={!!onfade}
+            title={(x.over ? "Au-dessus du max de base" : "EXO : pas un effet de base") + (!onfade ? "" : fade === x.action ? " · cliquer pour tout afficher" : " · cliquer pour mettre en avant les lots qui ont cet effet")}
+            onclick={(ev) => onfade && (ev.stopPropagation(), onfade(x.action))}>{#if x.icon}<img src={x.icon} alt="" />{/if}{x.text}</span>
         {/each}
         {#if r.missing}<span class="chip miss" title="Effet(s) de base manquant(s)">−{r.missing} effet{r.missing > 1 ? "s" : ""}</span>{/if}
       </td>
@@ -189,6 +206,7 @@
   .pin.on { opacity: 1; filter: none; border-color: var(--acc); }
   .ltable :global(tr.card-row .card) { margin-bottom: 0; border: 0; padding: 0; background: none; }
   .c { text-align: center; }
+  .lead { white-space: nowrap; }
   /* profit and rune name each on one line, the rune going under the profit when the table is short of room */
   .ltable td.tr { white-space: normal; }
   .tr span { white-space: nowrap; }
@@ -197,8 +215,8 @@
   .chip { display: inline-flex; align-items: center; gap: 3px; margin: 0 4px 0 0; padding: 0 6px 0 4px; border-radius: 8px; font-size: 11px; white-space: nowrap; color: var(--acc); border: 1px solid color-mix(in srgb, var(--acc) 50%, var(--line)); }
   .chip img { width: 14px; height: 14px; }
   .chip.over { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 50%, var(--line)); }
-  .chip:not(.miss) { cursor: pointer; }
-  .chip:not(.miss):hover { background: color-mix(in srgb, currentColor 12%, transparent); }
+  .chip.act { cursor: pointer; }
+  .chip.act:hover { background: color-mix(in srgb, currentColor 12%, transparent); }
   .chip.on { background: color-mix(in srgb, currentColor 22%, transparent); border-color: currentColor; }
   .chip.miss { color: var(--warn, orange); border-color: var(--line); padding-left: 6px; }
   .good { color: var(--ok); }

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { SvelteMap } from "svelte/reactivity";
+  import { SvelteMap, SvelteSet } from "svelte/reactivity";
   import { call } from "../../lib/api";
   import { kamas } from "../../lib/fmt";
   import { auction } from "../../lib/stores/auction.svelte";
@@ -15,6 +15,7 @@
   import { SCAN_LIST_KEY, type ScanItem } from "../../lib/scanlist";
   import type { Recipes } from "../../lib/craft";
   import ItemCard from "../../lib/components/ItemCard.svelte";
+  import LotTable from "../../lib/components/LotTable.svelte";
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
   import {
     CARAC, FM_STATS, className, FRESH_SECS, HP_STAT, PANELS, SLOT_LAYOUT, SLOT_TITLES, STAT_ICON_CODES, STAT_LABEL, compute, fmOf, itemStats, lotStats, lotUnit, slotPrices, solve, sumSlots,
@@ -249,6 +250,9 @@
     });
   /** The lots of the combination found, else the lots chosen in the build. */
   const tableRows = $derived(build ? rowsOf(result && result !== "none" ? result.picks : build.chosen) : []);
+  /** Lots of the output unfolded in the table (by slot). */
+  const openLots = new SvelteSet<string>();
+  const toggleLot = (slot: string) => (openLots.has(slot) ? openLots.delete(slot) : openLots.add(slot));
 
   onMount(() => {
     const tick = setInterval(() => (now = Date.now() / 1000), 15000);
@@ -442,15 +446,17 @@
               {/if}
                                       {#if tableRows.length}
                 <div class="fh tt">{result && result !== "none" ? "Combinaison trouvée" : "Lots choisis"}</div>
-                <div class="lotlist">
-                  {#each tableRows as r (r.slot)}
-                    <div class="lrow">
-                      {#if icon("item", r.picture)}<img class="lic" src={icon("item", r.picture)} alt="" />{/if}
-                      <div class="lh"><span class="mut">{SLOT_TITLES[r.slot]}</span> <b>{r.name}</b></div>
-                      <ItemCard row={r.lot} flags={false} />
-                    </div>
-                  {/each}
-                </div>
+                {#snippet itemCell(r: (typeof tableRows)[number])}
+                  {#if icon("item", r.picture)}<img class="lic" src={icon("item", r.picture)} alt="" />{/if}<span class="mut">{SLOT_TITLES[r.slot]}</span> <b>{r.name}</b>
+                {/snippet}
+                <LotTable
+                  lots={tableRows.map((r) => ({ row: r.lot, key: r.slot, meta: r }))}
+                  deals={false}
+                  transcend={false}
+                  lead={{ label: "Objet", cell: itemCell, sortKey: (r) => r.name }}
+                  open={(k) => openLots.has(k)}
+                  ontoggle={toggleLot}
+                />
                 <div class="tot">Total <b>{kamas(tableRows.reduce((s, r) => s + r.price, 0))}</b></div>
               {/if}
             </div>
@@ -546,10 +552,7 @@
   .two > div { min-width: 0; }
   .split { border: 0; border-top: 1px solid var(--line); margin: 6px 0 12px; }
   .bottom { display: grid; grid-template-columns: minmax(260px, 320px) minmax(0, 1fr); gap: 14px; align-items: start; padding-bottom: 16px; }
-  .lotlist { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 8px; margin-top: 6px; }
-  .lrow { position: relative; }
-  .lic { position: absolute; top: 4px; right: 6px; width: 40px; height: 40px; z-index: 1; pointer-events: none; }
-  .lh { font-size: 12px; margin-bottom: 2px; padding-right: 48px; }
+  .lic { width: 22px; height: 22px; vertical-align: middle; margin-right: 6px; }
   .tot { margin-top: 8px; text-align: right; }
   .tt { margin-top: 12px; }
   @container (max-width: 920px) { .bottom { grid-template-columns: minmax(0, 1fr); } }
