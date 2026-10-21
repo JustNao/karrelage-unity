@@ -369,7 +369,8 @@ impl Module for Auction {
 
     fn init(&self, ctx: &Ctx) {
         let on_sale = self.on_sale.clone();
-        let (persist, saved) = Persist::open(ctx.module_dir("auction").join("on_sale.json"), ctx.logger(), move || json!(on_sale.lock().values().cloned().collect::<Vec<_>>()));
+        let (persist, saved) =
+            Persist::open(ctx.module_dir("auction").join("on_sale.json"), ctx.logger(), move || json!(on_sale.lock().values().cloned().collect::<Vec<_>>()));
         let _ = self.on_sale_persist.set(persist);
         for e in saved.as_ref().and_then(Value::as_array).into_iter().flatten() {
             if let Some(t) = e["type"].as_i64() {
@@ -448,7 +449,9 @@ impl Module for Auction {
             AH_TYPE => {
                 let b = Self::role(&self.type_bind, ctx, "ah_type")?;
                 let gids = int_list(msg, &b.gids);
-                Some(json!({"kind": "auction_type", "type": int(msg, &b.type_id), "type_name": ctx.data.type_name(Some(int(msg, &b.type_id))), "count": gids.len(), "gids": gids}))
+                Some(
+                    json!({"kind": "auction_type", "type": int(msg, &b.type_id), "type_name": ctx.data.type_name(Some(int(msg, &b.type_id))), "count": gids.len(), "gids": gids}),
+                )
             }
             AH_GONE => {
                 let b = Self::role(&self.gone_bind, ctx, "ah_gone")?;
@@ -539,7 +542,16 @@ mod tests {
         let hub = crate::Hub::new(data, proto, dir, Arc::new(|_, _| {}), Arc::new(|_| {}));
         let a = Auction::new();
         let send = |name: &str, decoded: DynamicMessage, t: f64| {
-            let mut m = Message { id: 1, raw: RawMessage { t, srv: "x".into(), dir: "S->C", payload: vec![] }, env: None, type_name: None, name: name.into(), conf: None, decoded: Some(decoded), fmt: None };
+            let mut m = Message {
+                id: 1,
+                raw: RawMessage { t, srv: "x".into(), dir: "S->C", payload: vec![] },
+                env: None,
+                type_name: None,
+                name: name.into(),
+                conf: None,
+                decoded: Some(decoded),
+                fmt: None,
+            };
             m.fmt = a.format(&m, &hub.ctx);
             a.on_message(&m, &hub.ctx);
         };
