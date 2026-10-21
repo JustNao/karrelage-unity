@@ -27,8 +27,8 @@
   /** Weapon types (the rest of the breakable types are worn equipment). */
   const WEAPONS = new Set([2, 3, 4, 5, 6, 7, 8, 19, 20, 21, 22, 114, 271]);
 
-  interface UiState { q: string; types: number[]; lvMin: number | null; lvMax: number | null; priced: boolean; noDrop: boolean; sel: number | null }
-  const ui = $state<UiState>({ q: "", types: [], lvMin: null, lvMax: null, priced: true, noDrop: false, sel: null });
+  interface UiState { q: string; types: number[]; lvMin: number | null; lvMax: number | null; priced: boolean; noDrop: boolean; absent: boolean; sel: number | null }
+  const ui = $state<UiState>({ q: "", types: [], lvMin: null, lvMax: null, priced: true, noDrop: false, absent: false, sel: null });
   try {
     Object.assign(ui, JSON.parse(localStorage.getItem(UI_KEY) ?? "{}"));
   } catch {}
@@ -85,15 +85,29 @@
     return out.sort((a, b) => (a.even ?? Infinity) - (b.even ?? Infinity));
   }
 
-  type SortKey = "name" | "level" | "cost" | "even" | "profit";
-  interface Row { item: BrisItem; gid: number; name: string; level: number; best: Source | null; cost: number | null; even: number | null; profit: number | null; coef: number | null }
+  /** What is on sale per item type, from the AH categories opened (`auction.on_sale`). */
+  interface OnSale { type: number; t: number; gids: number[] }
+  let onSale = $state.raw<Record<string, OnSale>>({});
+  const saleSets = $derived(new Map(Object.values(onSale).map((o) => [o.type, new Set(o.gids)])));
+  /** On sale in the AH: true / false, null while its category was never opened. */
+  const saleOf = (i: BrisItem) => saleSets.get(i.type_id)?.has(i.gid) ?? null;
+
+  /** A source with an exo: its runes count without focus (an item worth buying when it is cheap enough). */
+  const hasExo = (s: Source | null) => !!s?.out.lines.some((l) => l.exo);
+  const profitAt = (s: Source, coef: number) => (s.cost != null ? (s.out.best.value * coef) / 100 - s.cost : null);
+
+  type SortKey = "name" | "level" | "sale" | "cost" | "even" | "profit";
+  interface Row { item: BrisItem; gid: number; name: string; level: number; best: Source | null; cost: number | null; even: number | null; profit: number | null; coef: number | null; sale: boolean | null; good: number; goodExo: number }
 
   const rows = $derived.by<Row[]>(() =>
     pack.items.map((item) => {
-      const best = sourcesOf(item)[0] ?? null;
+      const sources = sourcesOf(item);
+      const best = sources[0] ?? null;
       const coef = coefOf(item.gid);
-      const profit = best?.cost != null && coef != null ? (best.out.best.value * coef) / 100 - best.cost : null;
-      return { item, gid: item.gid, name: item.name, level: item.level, best, cost: best?.cost ?? null, even: best?.even ?? null, profit, coef };
+      const profit = best && coef != null ? profitAt(best, coef) : null;
+      // scanned lots that pay at the known coefficient (an exo makes a lot worth more without focus)
+      const good = coef == null ? [] : sources.filter((s) => s.kind === "lot" && (profitAt(s, coef) ?? 0) > 0);
+      return { item, gid: item.gid, name: item.name, level: item.level, best, cost: best?.cost ?? null, even: best?.even ?? null, profit, coef, sale: saleOf(item), good: good.length, goodExo: good.filter(hasExo).length };
     }),
   );
 
@@ -123,10 +137,10 @@
   let typesEl = $state<HTMLElement | null>(null);
   const closeTypes = (e: PointerEvent) => typesOpen && typesEl && !typesEl.contains(e.target as Node) && (typesOpen = false);
   const num = (v: string) => (v.trim() === "" || !Number.isFinite(+v) ? null : +v);
-  const filtered = $derived(!!(ui.q || ui.types.length || ui.lvMin != null || ui.lvMax != null || ui.noDrop));
-  const resetFilters = () => Object.assign(ui, { q: "", types: [], lvMin: null, lvMax: null, noDrop: false });
+  const filtered = $derived(!!(ui.q || ui.types.length || ui.lvMin != null || ui.lvMax != null || ui.noDrop || ui.absent));
+  const resetFilters = () => Object.assign(ui, { q: "", types: [], lvMin: null, lvMax: null, noDrop: false, absent: false });
 
-  const sort = useSort<SortKey>("even", false, (k) => k === "level" || k === "profit");
+  const sort = useSort<SortKey>("even", false, (k) => k === "level" || k === "profit" || k === "sale");
   const view = $derived.by(() => {
     const m = matcher(ui.q);
     return sort.apply(
@@ -137,6 +151,7 @@
           (ui.lvMin == null || r.level >= ui.lvMin) &&
           (ui.lvMax == null || r.level <= ui.lvMax) &&
           (!ui.noDrop || !r.item.drop) &&
+          (!ui.absent || r.sale === false) &&
           (!ui.priced || r.even != null),
       ),
     );
@@ -145,6 +160,7 @@
   const COLUMNS: { key: SortKey; label: string; num?: boolean; title?: string }[] = [
     { key: "name", label: "Objet" },
     { key: "level", label: "Niv.", num: true },
+    { key: "sale", label: "HDV", title: "En vente à l'hôtel de vente quand sa catégorie a été ouverte pour la dernière fois (? = catégorie jamais ouverte)" },
     { key: "cost", label: "Prix", num: true, title: "Craft (prix enregistrés des ingrédients) ou lot le plus intéressant à l'HDV" },
     { key: "even", label: "Coef. rentable", num: true, title: "Coefficient à partir duquel le brisage (meilleur résultat, avec ou sans focus) rembourse l'objet" },
     { key: "profit", label: "Bénéfice", num: true, title: "Au coefficient connu de cet objet (relevé au brisage ou saisi)" },
@@ -153,6 +169,10 @@
   /** Kamas rounded to the unit (rune values are fractional). */
   const k0 = (n: number) => kamas(Math.round(n));
   const focusName = (o: Outcome) => (o.best.focus == null ? "sans focus" : `focus ${o.lines.find((l) => l.a === o.best.focus)?.rune.name.replace(/^Rune /, "")}`);
+  const saleTitle = (r: Row) => {
+    const o = onSale[r.item.type_id];
+    return o ? `Catégorie « ${r.item.type} » ouverte le ${when(o.t)} (${ago(o.t)}) : ${o.gids.length} objets en vente` : `Ouvrez la catégorie « ${r.item.type} » à l'HDV`;
+  };
   const coefText = (c: number | null) => (c == null ? "—" : `${fmtNum(c, c < 10 ? 1 : 0)} %`);
   const dateFmt = new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
   /** "20/10/2026 22:30:39" */
@@ -217,7 +237,10 @@
     });
     void prices.ensure();
     void auction.ensure();
+    call<Record<string, OnSale>>("auction", "on_sale").then((o) => (onSale = { ...o, ...onSale })).catch(() => {});
+    const offSale = on<OnSale>("auction:on_sale", (o) => (onSale = { ...onSale, [o.type]: o }));
     return () => {
+      void offSale.then((f) => f());
       void off.then((f) => f());
       void offPending.then((f) => f());
       void offBreak.then((f) => f());
@@ -255,6 +278,7 @@
       {/snippet}
       {#snippet after()}
         <label title="Objets lâchés par un monstre"><input type="checkbox" bind:checked={ui.noDrop} /> Masquer les objets droppables</label>
+        <label title="Objets absents de l'hôtel de vente quand leur catégorie a été ouverte (ouvrez les catégories à l'HDV pour les relever)"><input type="checkbox" bind:checked={ui.absent} /> Absents de l'HDV seulement</label>
         {#if filtered}<button class="mini" onclick={resetFilters}>Effacer les filtres</button>{/if}
       {/snippet}
     </SearchBar>
@@ -264,11 +288,12 @@
         {#snippet row(r)}
           <td><b>{r.name}</b>{#if copied === r.gid} <span class="copied">copié</span>{/if} <span class="mut">{r.item.type}</span>{#if r.item.drop} <span class="mut" title="Lâché par un monstre">· drop</span>{/if}</td>
           <td class="n">{r.level}</td>
+          <td title={saleTitle(r)}>{#if r.sale === true}<span class="mut">en vente</span>{:else if r.sale === false}<b class="good">absent</b>{:else}<span class="mut">?</span>{/if}</td>
           <td class="n" title={r.best?.kind === "craft" && r.best.missing?.length ? "Prix manquant : " + r.best.missing.join(", ") : ""}>
-            {#if r.cost != null}{kamas(r.cost)} <span class="mut">{r.best?.kind === "lot" ? "HDV" : "craft"}</span>{:else}—{/if}
+            {#if r.cost != null}{kamas(r.cost)} <span class="mut">{r.best?.kind === "lot" ? "HDV" : "craft"}</span>{#if r.best?.kind === "lot" && hasExo(r.best)} <span class="exo" title="Le lot a un exo : ses runes comptent sans focus">exo</span>{/if}{:else}—{/if}
           </td>
           <td class="n" title={r.best ? `Meilleur résultat : ${focusName(r.best.out)}` : ""}><b>{coefText(r.even)}</b>{#if r.best?.out.unpriced} <span class="warn" title="Une rune n'a pas de prix (comptée 0)">⚠</span>{/if}</td>
-          <td class="n" class:good={(r.profit ?? 0) > 0} class:bad={(r.profit ?? 0) < 0}>{#if r.profit != null}{signedKamas(Math.round(r.profit))} <span class="mut">à {coefText(r.coef)}</span>{:else}—{/if}</td>
+          <td class="n" class:good={(r.profit ?? 0) > 0} class:bad={(r.profit ?? 0) < 0}>{#if r.profit != null}{signedKamas(Math.round(r.profit))} <span class="mut">à {coefText(r.coef)}</span>{:else}—{/if}{#if r.good}<br /><span class="good small" title="Lots scannés rentables au coefficient connu">{r.good} lot{r.good > 1 ? "s" : ""} rentable{r.good > 1 ? "s" : ""}{r.goodExo ? ` (${r.goodExo} avec exo)` : ""}</span>{/if}</td>
         {/snippet}
         {#snippet empty()}Aucun objet à afficher : ouvrez les objets (ou leurs ingrédients) et les runes à l'hôtel de vente pour enregistrer leurs prix (ou désactivez « Prix connus seulement »).{/snippet}
       </SortTable>

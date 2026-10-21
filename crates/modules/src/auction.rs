@@ -19,6 +19,10 @@ pub const AH_BUY: &str = "ExchangeBidHouseBuyResultEvent";
 /// A row of the open AH listing changed (new prices after a purchase or a new offer) or left it.
 pub const AH_ROW_UPDATED: &str = "ExchangeBidHouseInListUpdatedEvent";
 pub const AH_ROW_REMOVED: &str = "ExchangeBidHouseInListRemovedEvent";
+/// Opening a category of the AH: the gids of every item on sale in that item type.
+pub const AH_TYPE: &str = "ExchangeTypesExchangerDescriptionForUserEvent";
+/// The last lot of an item left the AH (the item is no longer listed in its category).
+pub const AH_GONE: &str = "ExchangeBidHouseGenericItemRemovedEvent";
 
 // build-specific obfuscated field names, read from the data pack's bindings.json
 #[derive(Deserialize, Clone)]
@@ -59,14 +63,31 @@ struct AhRow {
 struct AhRowRemoved {
     ints: Vec<String>,
 }
+/// bindings.json `ah_type` (category opened: gids on sale + the item type) / `ah_gone` (gid no longer on sale).
+#[derive(Deserialize, Clone)]
+struct AhType {
+    gids: String,
+    #[serde(rename = "type")]
+    type_id: String,
+}
+#[derive(Deserialize, Clone)]
+struct AhGone {
+    gid: String,
+}
 
 pub struct Auction {
     bind: OnceLock<Option<Bindings>>,
     buy_bind: OnceLock<Option<AhBuy>>,
     row_bind: OnceLock<Option<AhRow>>,
     removed_bind: OnceLock<Option<AhRowRemoved>>,
+    type_bind: OnceLock<Option<AhType>>,
+    gone_bind: OnceLock<Option<AhGone>>,
     store: Arc<Mutex<BTreeMap<String, Value>>>,
     persist: OnceLock<Persist>,
+    /// item type -> {type, t, gids}: what was on sale in that AH category when it was last opened (minus the items whose
+    /// last lot left since)
+    on_sale: Arc<Mutex<BTreeMap<i64, Value>>>,
+    on_sale_persist: OnceLock<Persist>,
     /// pack-derived answers, constant once the pack is loaded
     effects: OnceLock<Value>,
     recipes: OnceLock<Value>,
@@ -86,8 +107,12 @@ impl Auction {
             buy_bind: OnceLock::new(),
             row_bind: OnceLock::new(),
             removed_bind: OnceLock::new(),
+            type_bind: OnceLock::new(),
+            gone_bind: OnceLock::new(),
             store: Default::default(),
             persist: OnceLock::new(),
+            on_sale: Default::default(),
+            on_sale_persist: OnceLock::new(),
             effects: OnceLock::new(),
             recipes: OnceLock::new(),
             effect_meta: OnceLock::new(),
@@ -135,6 +160,33 @@ impl Auction {
         self.store.lock().insert(gid.to_string(), ent.clone());
         self.save();
         ctx.emit("auction", "item", ent);
+    }
+
+    /// A category opened (`auction_type`: every gid on sale in an item type) or an item gone from it (`auction_gone`).
+    fn on_sale_change(&self, m: &Message, ctx: &Ctx) {
+        let Some(f) = &m.fmt else { return };
+        let ent = match f["kind"].as_str() {
+            Some("auction_type") => {
+                let Some(t) = f["type"].as_i64() else { return };
+                let ent = json!({"type": t, "t": m.raw.t, "gids": f["gids"]});
+                self.on_sale.lock().insert(t, ent.clone());
+                ent
+            }
+            Some("auction_gone") => {
+                let Some(gid) = f["gid"].as_i64() else { return };
+                let Some(t) = ctx.data.items.get(&gid).map(|i| i.type_id) else { return };
+                let mut s = self.on_sale.lock();
+                let Some(ent) = s.get_mut(&t) else { return };
+                let Some(gids) = ent["gids"].as_array_mut() else { return };
+                gids.retain(|g| g.as_i64() != Some(gid));
+                ent.clone()
+            }
+            _ => return,
+        };
+        if let Some(p) = self.on_sale_persist.get() {
+            p.touch();
+        }
+        ctx.emit("auction", "on_sale", ent);
     }
 
     /// A change of the open listing (`apply_change`): applied to the stored listing holding that lot, sent again with
@@ -312,10 +364,18 @@ impl Module for Auction {
     }
 
     fn interest(&self) -> Interest {
-        Interest::Types(&[AH_LIST, AH_BUY, AH_ROW_UPDATED, AH_ROW_REMOVED])
+        Interest::Types(&[AH_LIST, AH_BUY, AH_ROW_UPDATED, AH_ROW_REMOVED, AH_TYPE, AH_GONE])
     }
 
     fn init(&self, ctx: &Ctx) {
+        let on_sale = self.on_sale.clone();
+        let (persist, saved) = Persist::open(ctx.module_dir("auction").join("on_sale.json"), ctx.logger(), move || json!(on_sale.lock().values().cloned().collect::<Vec<_>>()));
+        let _ = self.on_sale_persist.set(persist);
+        for e in saved.as_ref().and_then(Value::as_array).into_iter().flatten() {
+            if let Some(t) = e["type"].as_i64() {
+                self.on_sale.lock().insert(t, e.clone());
+            }
+        }
         let store = self.store.clone();
         let (persist, saved) = Persist::open(Self::store_path(ctx), ctx.logger(), move || {
             let s = store.lock();
@@ -385,11 +445,24 @@ impl Module for Auction {
                 let (gid, _, uid) = ctx.data.resolve_gid_type(&ints);
                 Some(json!({"kind": "auction_row_removed", "uid": uid, "gid": gid, "ints": ints}))
             }
+            AH_TYPE => {
+                let b = Self::role(&self.type_bind, ctx, "ah_type")?;
+                let gids = int_list(msg, &b.gids);
+                Some(json!({"kind": "auction_type", "type": int(msg, &b.type_id), "type_name": ctx.data.type_name(Some(int(msg, &b.type_id))), "count": gids.len(), "gids": gids}))
+            }
+            AH_GONE => {
+                let b = Self::role(&self.gone_bind, ctx, "ah_gone")?;
+                let gid = int(msg, &b.gid);
+                Some(json!({"kind": "auction_gone", "gid": gid, "name": ctx.data.item_name(gid)}))
+            }
             _ => None,
         }
     }
 
     fn on_message(&self, m: &Message, ctx: &Ctx) {
+        if m.name == AH_TYPE || m.name == AH_GONE {
+            return self.on_sale_change(m, ctx);
+        }
         if m.name != AH_LIST {
             return self.on_change(m, ctx);
         }
@@ -399,6 +472,8 @@ impl Module for Auction {
     fn call(&self, method: &str, _args: Value, ctx: &Ctx) -> Result<Value> {
         match method {
             "items" => Ok(Value::Array(self.store.lock().values().cloned().collect())),
+            // what is on sale per item type: {type id: {type, t (category opened), gids}}
+            "on_sale" => Ok(Value::Object(self.on_sale.lock().iter().map(|(t, e)| (t.to_string(), e.clone())).collect())),
             "effects" => Ok(self.effects.get_or_init(|| ctx.data.filterable_effects()).clone()),
             "recipes" => Ok(self.recipes.get_or_init(|| ctx.data.recipes_json()).clone()),
             "effect_meta" => Ok(self.effect_meta.get_or_init(|| ctx.data.effect_meta()).clone()),
@@ -440,6 +515,40 @@ mod tests {
             Value::Array(a) => a.iter_mut().for_each(strip_nulls),
             _ => {}
         }
+    }
+
+    /// A category opened (gids on sale in "Amulette"), then one of them gone from the AH. Needs the data pack.
+    #[test]
+    fn items_on_sale_per_category() {
+        let pack = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../datapack");
+        if !pack.join("manifest.json").exists() {
+            return;
+        }
+        let dir = std::env::temp_dir().join("loutil-onsale");
+        let _ = std::fs::remove_dir_all(&dir);
+        let data = Arc::new(loutil_data::Data::load(&pack, "fr").unwrap());
+        let proto = Arc::new(Proto::load(&pack, dir.join("o.json")).unwrap());
+        let (tb, gb) = (data.bindings["ah_type"].clone(), data.bindings["ah_gone"].clone());
+        let (Some(t_obf), Some(g_obf)) = (proto.obf_for_clear(AH_TYPE), proto.obf_for_clear(AH_GONE)) else { return };
+        let mut t = DynamicMessage::new(proto.message(&t_obf).unwrap());
+        t.set_field_by_name(tb["gids"].as_str().unwrap(), PbValue::List(vec![PbValue::I32(11609), PbValue::I32(31789)]));
+        t.set_field_by_name(tb["type"].as_str().unwrap(), PbValue::I32(1));
+        let mut g = DynamicMessage::new(proto.message(&g_obf).unwrap());
+        g.set_field_by_name(gb["gid"].as_str().unwrap(), PbValue::I32(11609));
+
+        let hub = crate::Hub::new(data, proto, dir, Arc::new(|_, _| {}), Arc::new(|_| {}));
+        let a = Auction::new();
+        let send = |name: &str, decoded: DynamicMessage, t: f64| {
+            let mut m = Message { id: 1, raw: RawMessage { t, srv: "x".into(), dir: "S->C", payload: vec![] }, env: None, type_name: None, name: name.into(), conf: None, decoded: Some(decoded), fmt: None };
+            m.fmt = a.format(&m, &hub.ctx);
+            a.on_message(&m, &hub.ctx);
+        };
+        send(AH_TYPE, t, 10.0);
+        let s = a.call("on_sale", Value::Null, &hub.ctx).unwrap();
+        assert_eq!((s["1"]["gids"].clone(), s["1"]["t"].as_f64()), (json!([11609, 31789]), Some(10.0)));
+        send(AH_GONE, g, 11.0);
+        let s = a.call("on_sale", Value::Null, &hub.ctx).unwrap();
+        assert_eq!((s["1"]["gids"].clone(), s["1"]["t"].as_f64()), (json!([31789]), Some(10.0)), "gone, category scan time kept");
     }
 
     #[test]

@@ -46,6 +46,15 @@
   "deleted": "fsmr",
   "deleted_list": "fssq"
  },
+ "ah_type": {
+  "_doc": "ExchangeTypesExchangerDescriptionForUserEvent (an AH category opened): gids = every item on sale in it, type = its item type.",
+  "gids": "fyju",
+  "type": "fyjv"
+ },
+ "ah_gone": {
+  "_doc": "ExchangeBidHouseGenericItemRemovedEvent (the last lot of an item left the AH): gid.",
+  "gid": "fyqx"
+ },
  "decraft": {
   "_doc": "DecraftResultEvent (breaking items into runes): results = DecraftedItem {coef_min, coef_max (floats, 0.529 = 52.9 %; equal for one item), uid (object uid of the broken item), runes: [{rune_gid, rune_qty}]}.",
   "results": "fyeo",

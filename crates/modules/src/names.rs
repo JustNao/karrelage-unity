@@ -1,7 +1,7 @@
 //! Developer tool: are the message names of the loaded data pack compatible with the game that is installed / running?
 //! Static checks on the pack, a fingerprint comparison with the installed game files (sizes only, nothing is read), a live
 //! check of the message types seen on the wire, and a button that recomputes the names (pipeline/update_names.py).
-use crate::auction::{AH_BUY, AH_LIST, AH_ROW_REMOVED, AH_ROW_UPDATED};
+use crate::auction::{AH_BUY, AH_GONE, AH_LIST, AH_ROW_REMOVED, AH_ROW_UPDATED, AH_TYPE};
 use crate::prices::AVG_PRICES;
 use crate::{brisage, inventory};
 use crate::{Ctx, Interest, Message, Module};
@@ -134,6 +134,13 @@ fn binding_checks(ctx: &Ctx) -> Vec<Value> {
     match &removed {
         Some(m) => out.push(fields_check("bindings.ah_row_removed (champs)", m, list_of(&b["ah_row_removed"]["ints"]), vec![])),
         None => out.push(check("bindings.ah_row_removed", false, format!("{AH_ROW_REMOVED} introuvable"))),
+    }
+    // AH category opened (items on sale) / item gone from the AH
+    for (clear, role, keys) in [(AH_TYPE, "ah_type", &["gids", "type"][..]), (AH_GONE, "ah_gone", &["gid"][..])] {
+        match ctx.proto.obf_for_clear(clear).and_then(|o| ctx.proto.message(&o)) {
+            Some(m) => out.push(fields_check(&format!("bindings.{role} (champs)"), &m, keys.iter().map(|k| s(&b[role][*k])).collect(), vec![])),
+            None => out.push(check(&format!("bindings.{role}"), false, format!("{clear} introuvable"))),
+        }
     }
     // average prices
     let avg = ctx.proto.obf_for_clear(AVG_PRICES).and_then(|o| ctx.proto.message(&o));
