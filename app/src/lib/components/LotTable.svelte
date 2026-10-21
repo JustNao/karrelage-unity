@@ -6,7 +6,7 @@
   import type { Opportunity } from "../transcend";
   import { unitPrice } from "../price";
   import { useSort } from "../sort.svelte";
-  import { iconOfStat } from "../stores/statIcons.svelte";
+  import { iconOfElement, iconOfStat } from "../stores/statIcons.svelte";
   import ItemCard from "./ItemCard.svelte";
   import SortTable from "./SortTable.svelte";
 
@@ -94,7 +94,7 @@
       const extras = [...shown.filter((e: any) => e.status === "added"), ...shown.filter((e: any) => e.status === "above")].map((e: any) => ({
         text: extra(e),
         action: e.action,
-        icon: iconOfStat(e.stat),
+        icon: e.group === "weapon" ? iconOfElement(e.text) : iconOfStat(e.stat),
         over: e.status === "above",
       }));
       const missing = shown.filter((e: any) => e.status === "removed").length;

@@ -2,7 +2,7 @@
   import { fmtInt, kamasFull } from "../fmt";
   import { unitPrice } from "../price";
   import { app } from "../app.svelte";
-  import { iconOfStat } from "../stores/statIcons.svelte";
+  import { iconOfElement, iconOfStat } from "../stores/statIcons.svelte";
   import { fmtDelta, pairRows } from "../compare";
   import { isLegendary, levelOf, xpOfLevel } from "../companion";
   import { HIDDEN_EFFECTS, LEGENDARY_EFFECT, isBelowMin, isNegative, isPerfectLine, isWeaponEffect, perfection, rangeLabel, sortEffects } from "../effects";
@@ -72,13 +72,13 @@
 </script>
 
 {#snippet icon(e: any)}
-  {@const src = iconOfStat(e.stat)}
+  {@const src = isWeaponEffect(e) ? iconOfElement(e.text) : iconOfStat(e.stat)}
   {#if src}<img class="sic" {src} alt="" />{:else}<span class="sic"></span>{/if}
 {/snippet}
 
 {#snippet line(e: any, mirror: boolean)}
   {#if isWeaponEffect(e)}
-    {e.text}
+    {#if mirror}{e.text}{@render icon(e)}{:else}{@render icon(e)}{e.text}{/if}
   {:else if mirror}
     {#if e.range && e.status !== "removed" && e.action !== LEGENDARY_EFFECT}<small class="rg">{rangeLabel(e.range)}</small>{/if}{e.text}{@render icon(e)}
   {:else if excessText(e)}
@@ -172,7 +172,7 @@
       {#if weaponEffs.length}
         <ul class="eff wpn">
           {#each weaponEffs as e}
-            <li class="ln {e.status === 'added' || e.status === 'removed' ? e.status : ''}" title={hint(e)}>{e.text}</li>
+            <li class="ln {e.status === 'added' || e.status === 'removed' ? e.status : ''}" title={hint(e)}>{@render icon(e)}{e.text}</li>
           {/each}
         </ul>
       {/if}
@@ -200,7 +200,7 @@
   .price { font-weight: 700; color: var(--fg); font-size: 14px; }
   .price.no { opacity: 0.4; }
   .eff { margin: 0; padding-left: 0; list-style: none; }
-  .eff.wpn { padding-left: 21px; }
+  .eff.wpn { padding-left: 0; } /* the element icon (or an empty .sic) lines the hits up with the stats */
   /* stat icon (or an empty slot of the same width, so the texts stay aligned) */
   .sic { display: inline-block; width: 16px; height: 16px; vertical-align: -3px; margin-right: 5px; }
   .cmp .r .sic { margin: 0 0 0 5px; }
