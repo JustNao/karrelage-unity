@@ -36,9 +36,9 @@
   // resizable panels: types | list (flexible) | formatted | detail
   const cols = new Columns("karrelage.cols.packets", { types: 170, fmt: 420, detail: 480 });
 
-  // resizable list columns (heure, sens, genre, nom; the summary takes the rest), widths remembered in localStorage
+  // resizable list columns (heure, sens, genre, nom, taille; the summary takes the rest), widths remembered in localStorage
   const RKEY = "karrelage.packets.rowcols";
-  const RDEF = [84, 44, 64, 190];
+  const RDEF = [84, 44, 64, 190, 62];
   const RMIN = 30;
   let rw = $state(
     (() => {
@@ -83,6 +83,8 @@
   });
 
   const nm = (p: any) => p.name || p.type || "?";
+  /** Payload size: "512 o", "12,3 ko". */
+  const fmtSize = (n: number | undefined) => (n == null ? "" : n < 1024 ? `${n} o` : `${(n / 1024).toFixed(n < 10240 ? 1 : 0).replace(".", ",")} ko`);
   const fmtT = (t: number) => {
     const d = new Date(t * 1000);
     return d.toTimeString().slice(0, 8) + "." + String(d.getMilliseconds()).padStart(3, "0");
@@ -283,7 +285,7 @@
   <Grip {cols} name="types" dir={1} />
   <div class="list" bind:this={listEl} style:--rowcols={rowCols}>
     <div class="tr th">
-      {#each ["Heure", "Sens", "Genre", "Nom", "Contenu"] as h, i}
+      {#each ["Heure", "Sens", "Genre", "Nom", "Taille", "Contenu"] as h, i}
         <div class="td">
           {h}
           {#if i < rw.length}
@@ -301,6 +303,7 @@
           <div class="td d {p.dir === 'C->S' ? 'c2s' : 's2c'}">{p.dir === "C->S" ? "→ S" : "← S"}</div>
           <div class="td k">{p.kind ?? ""}</div>
           <div class="td n">{nm(p)}{#if p.name && p.type && p.name !== p.type}<span class="badge {p.conf ?? 'none'}" title="obfusqué : {p.type}">{p.type} · {p.conf ?? "none"}</span>{/if}</div>
+          <div class="td sz" title="{p.len} octets">{fmtSize(p.len)}</div>
           <div class="td">{summary(p)}</div>
         </div>
       {/snippet}
@@ -368,6 +371,7 @@
   .tr { display: grid; grid-template-columns: var(--rowcols); cursor: pointer; border-bottom: 1px solid var(--line); }
   .td { padding: 2px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .td.t, .td.k { color: var(--mut); }
+  .td.sz { color: var(--mut); text-align: right; padding-right: 10px; }
   .tr:hover { background: var(--panel); }
   .tr.th { position: sticky; top: 0; z-index: 2; background: var(--bg); cursor: default; color: var(--mut); font-size: 11px; user-select: none; }
   .tr.th .td { position: relative; overflow: visible; }
