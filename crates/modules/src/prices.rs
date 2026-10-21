@@ -60,17 +60,21 @@ pub struct Prices {
     listings: Mutex<HashMap<i64, Vec<Value>>>,
 }
 
-/// Per-unit price of a listing: the highest stack size on sale (x1000 over x100 over x10 over x1), the cheapest such
-/// stack's price per unit. None when nobody sells it.
+/// Per-unit price of a listing: the cheapest price per unit of each stack size on sale (x1, x10, x100, x1000), then the
+/// median of those (the lower one of the two middle values for an even count: an actual offer, and one absurd stack —
+/// a x1000 at 5x the others — cannot set it). Equipment (one stack size) = its cheapest lot. None when nobody sells it.
 fn unit_price(rows: &[Value]) -> Option<f64> {
-    let offers: Vec<(f64, f64)> = rows
-        .iter()
-        .flat_map(|r| r["prices"].as_array().into_iter().flatten())
-        .filter_map(|p| Some((p["qty"].as_f64().filter(|q| *q > 0.0)?, p["price"].as_f64().filter(|x| *x > 0.0)?)))
-        .collect();
-    let top = offers.iter().map(|(q, _)| *q).fold(0.0, f64::max);
-    let unit = offers.iter().filter(|(q, _)| *q == top).map(|(q, p)| p / q).fold(f64::INFINITY, f64::min);
-    unit.is_finite().then_some(unit)
+    let mut by_qty: Vec<(f64, f64)> = vec![]; // (qty, cheapest unit price)
+    for p in rows.iter().flat_map(|r| r["prices"].as_array().into_iter().flatten()) {
+        let (Some(q), Some(x)) = (p["qty"].as_f64().filter(|q| *q > 0.0), p["price"].as_f64().filter(|x| *x > 0.0)) else { continue };
+        match by_qty.iter_mut().find(|(k, _)| *k == q) {
+            Some(e) => e.1 = e.1.min(x / q),
+            None => by_qty.push((q, x / q)),
+        }
+    }
+    let mut units: Vec<f64> = by_qty.into_iter().map(|(_, u)| u).collect();
+    units.sort_by(f64::total_cmp);
+    units.get(units.len().saturating_sub(1) / 2).copied()
 }
 
 /// Case / nbsp / apostrophe / accent insensitive item name, for `gids_by_name`.
@@ -322,6 +326,18 @@ mod tests {
     use loutil_data::Data;
     use loutil_proto::Proto;
     use std::sync::Arc;
+
+    #[test]
+    fn unit_price_is_the_median_stack() {
+        let row = |p: &[(i64, i64)]| json!({"prices": p.iter().map(|(q, x)| json!({"qty": q, "price": x})).collect::<Vec<_>>()});
+        // per unit 300 / 250 / 240 / 5,000: the overpriced x1000 is ignored -> lower of the middle two (250, 300) = 250
+        assert_eq!(unit_price(&[row(&[(1, 300), (10, 2500), (100, 24000), (1000, 5_000_000)])]), Some(250.0));
+        // three sizes, one without a price -> median of 3
+        assert_eq!(unit_price(&[row(&[(1, 300), (10, 0), (100, 20000), (1000, 150_000)])]), Some(200.0));
+        // equipment: one lot per row, all x1 -> the cheapest
+        assert_eq!(unit_price(&[row(&[(1, 900)]), row(&[(1, 700)]), row(&[(1, 800)])]), Some(700.0));
+        assert_eq!(unit_price(&[row(&[(1, 0)])]), None);
+    }
 
     #[test]
     fn average_prices_preload_but_never_override() {

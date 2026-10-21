@@ -86,7 +86,7 @@
 <div class="view">
   <SmoothScroll>
     <div class="head">
-      <div class="fh">Prix enregistrés <span class="mut">· à l'unité, d'après le plus gros lot en vente, mis à jour à chaque ouverture d'un objet</span></div>
+      <div class="fh">Prix enregistrés <span class="mut">· à l'unité, médiane des lots en vente (x1, x10, x100, x1000), mis à jour à chaque ouverture d'un objet</span></div>
       <SearchBar bind:value={q} placeholder="Rechercher un objet ou un type…" compact />
       <ConfirmButton label="Oublier tous les prix" title="Oublier tous les prix enregistrés" onconfirm={() => call("prices", "forget")} />
     </div>
