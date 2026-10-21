@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { FOODS, foodGids, levelBase } from "../../../../lib/familiar";
   import { prices } from "../../../../lib/stores/prices.svelte";
-  import { fmtNum, kamas } from "../../../../lib/fmt";
+  import { fmtNum, kamas, kamasFull } from "../../../../lib/fmt";
   import { useSort } from "../../../../lib/sort.svelte";
   import Banner from "../../../../lib/components/Banner.svelte";
   import SearchBar, { matcher } from "../../../../lib/components/SearchBar.svelte";
@@ -84,7 +84,7 @@
         <td class="n">{r.qty}</td>
         <td class="n">{r.unit != null ? kamas(r.unit) : "—"}</td>
         <td class="n">{r.meal != null ? kamas(Math.round(r.meal)) : "—"}</td>
-        <td class="n">{r.perXp != null ? fmtNum(r.perXp) + " K" : "—"}</td>
+        <td class="n">{r.perXp != null ? kamasFull(r.perXp) : "—"}</td>
         <td class="n">{need > 0 ? r.meals : "—"}</td>
         <td class="n"><b>{r.total != null && need > 0 ? kamas(Math.round(r.total)) : "—"}</b></td>
       {/snippet}

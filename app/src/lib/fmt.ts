@@ -3,6 +3,8 @@
 const nf = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 3 });
 const nf0 = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 });
 const nfs = new Map<number, Intl.NumberFormat>();
+/** Kamas: "," between thousands ("2,380,000"), "." for the rare decimals. */
+const nfk = new Intl.NumberFormat("en-US", { maximumFractionDigits: 3 });
 const MINUS = "−";
 
 /** "12 345" (rounded to an integer). */
@@ -14,18 +16,18 @@ export const fmtNum = (n: number, digits = 2) => {
   return (n < 0 ? MINUS : "") + f.format(Math.abs(Number(n)));
 };
 
-/** A price with its unit: "12 345 kamas"; from a million up, compacted: 1M3 = 1.3 million, 10M3 = 10.3 million. */
+/** A price with its unit: "12,345 kamas"; from a million up, compacted: 1M3 = 1.3 million, 10M3 = 10.3 million. */
 export const kamas = (n: number) => {
   const v = Number(n);
   const sign = v < 0 ? MINUS : "";
-  if (Math.abs(v) < 1e6) return `${sign}${nf.format(Math.abs(v))} kamas`;
+  if (Math.abs(v) < 1e6) return `${sign}${nfk.format(Math.abs(v))} kamas`;
   const tenths = Math.round(Math.abs(v) / 1e5); // millions, one decimal, as an integer
   const frac = tenths % 10;
   return `${sign}${Math.floor(tenths / 10)}M${frac || ""} kamas`;
 };
-/** Full price, no compaction, "K" as unit: "2 380 000 K". */
-export const kamasFull = (n: number) => `${Number(n) < 0 ? MINUS : ""}${nf.format(Math.abs(Number(n)))} K`;
-/** A gain or a loss: "+12 345 kamas" / "−3M2 kamas" (nothing in front of 0). */
+/** Full price, no compaction, "K" as unit: "2,380,000 K". */
+export const kamasFull = (n: number) => `${Number(n) < 0 ? MINUS : ""}${nfk.format(Math.abs(Number(n)))} K`;
+/** A gain or a loss: "+12,345 kamas" / "−3M2 kamas" (nothing in front of 0). */
 export const signedKamas = (n: number) => (n > 0 ? "+" : "") + kamas(n);
 /** A rate in percent, signed: "+12.3 %" / "−4.0 %". */
 export const pct = (n: number, digits = 1) => `${n > 0 ? "+" : n < 0 ? MINUS : ""}${Math.abs(n).toFixed(digits)} %`;
