@@ -66,10 +66,15 @@
         </div>
         <div class="row">
           <div class="lb">
-            <div>Fenêtre flottante au début d'un combat</div>
-            <div class="mut">Ouvre la petite fenêtre Combat, toujours au premier plan (sauf jeu en plein écran exclusif), dès qu'un combat commence.</div>
+            <div>Fenêtre flottante pendant les combats</div>
+            <div class="mut">
+              Petite fenêtre Combat toujours au premier plan (sauf jeu en plein écran exclusif) : elle s'ouvre au début d'un combat, là où
+              vous l'avez laissée, et se ferme à la fin.
+            </div>
           </div>
-          <div class="ctl"><input type="checkbox" bind:checked={settings.combat.overlayAuto} /></div>
+          <div class="ctl">
+            <button class="sw" class:on={settings.combat.overlay} role="switch" aria-checked={settings.combat.overlay} aria-label="Fenêtre flottante pendant les combats" onclick={() => (settings.combat.overlay = !settings.combat.overlay)}></button>
+          </div>
         </div>
       </section>
     </div>

@@ -29,6 +29,7 @@ export const TAGS: Record<string, { label: string; group: TagGroup }> = {
   summon: { label: "Invocateur", group: "control" },
   glyph: { label: "Glyphes", group: "control" },
   trap: { label: "Pièges", group: "control" },
+  boostShield: { label: "Bouclier", group: "control" },
 
   neutral: { label: "Neutre", group: "elem" },
   earth: { label: "Terre", group: "elem" },
@@ -42,7 +43,6 @@ export const TAGS: Record<string, { label: string; group: TagGroup }> = {
   boostMP: { label: "PM", group: "boost" },
   boostPO: { label: "PO", group: "boost" },
   boostPower: { label: "Puissance", group: "boost" },
-  boostShield: { label: "Bouclier", group: "boost" },
   boostElemDmg: { label: "Dommages élémentaires", group: "boost" },
   boostCC: { label: "Critique", group: "boost" },
   boostCCDmg: { label: "Dommages critiques", group: "boost" },
@@ -74,18 +74,22 @@ export const TAGS: Record<string, { label: string; group: TagGroup }> = {
 
 const ORDER: TagGroup[] = ["flag", "control", "elem", "boost"];
 
+/** Tags worth showing in a fight: the list Loutil_old showed (tag_mapping.yaml: AP / MP / range removal, poison, heals,
+ *  push, pull, summoner, erosion, -% resistances, debuff, shield) plus the "cannot be pushed / carried..." flags. The others
+ *  (elements, boosts, boss...) stay in the data for later use. */
+export const SHOWN = new Set(["noPush", "noSwitch", "noCarry", "noTackle", "retPA", "retPM", "retPO", "poison", "heal", "push", "pull", "summon", "erode", "malusRes", "debuff", "boostShield"]);
+
 export interface Tag {
   id: string;
   label: string;
   group: TagGroup;
 }
 
-/** A monster's tags, labelled and in display order (flags, control, elements, boosts); `groups` keeps only those groups. */
-export function tagsOf(ids: string[] | undefined, groups: TagGroup[] = ORDER): Tag[] {
+/** A monster's tags worth showing (`SHOWN`), labelled and in display order (flags, then the others). */
+export function tagsOf(ids: string[] | undefined): Tag[] {
   const seen = new Set<string>();
   return (ids ?? [])
-    .filter((id) => !seen.has(id) && seen.add(id))
+    .filter((id) => SHOWN.has(id) && !seen.has(id) && seen.add(id))
     .map((id) => ({ id, ...(TAGS[id] ?? { label: id, group: "boost" as TagGroup }) }))
-    .filter((t) => groups.includes(t.group))
     .sort((a, b) => ORDER.indexOf(a.group) - ORDER.indexOf(b.group));
 }

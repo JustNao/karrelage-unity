@@ -18,8 +18,8 @@ const DEFAULTS = {
     show: "all" as CombatShow,
     /** Open the Combat tab when a fight starts. */
     autoOpen: false,
-    /** Open the floating (always on top) fight window when a fight starts. */
-    overlayAuto: false,
+    /** Floating (always on top) fight window: shown while a fight runs, closed when it ends. */
+    overlay: false,
   },
 };
 export type CombatShow = "warning" | "invulnerable" | "all";

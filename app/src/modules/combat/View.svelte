@@ -33,16 +33,11 @@
   );
 
   const time = (t: number) => new Date(t * 1000).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
-  const lv = (g: Group) => {
-    const l = [...new Set(g.levels.filter((x) => x > 0))].sort((a, b) => a - b);
-    return l.length ? `niv. ${l.join(", ")}` : "";
-  };
 </script>
 
 {#snippet title(g: Group)}
   <span class="nm">{g.name}</span>
   {#if g.levels.length > 1}<span class="cnt">×{g.levels.length}</span>{/if}
-  <span class="mut lv">{lv(g)}</span>
   {#if g.summoned}<span class="tag" title="Apparu en cours de combat (invocation)">invoc.</span>{/if}
 {/snippet}
 
@@ -57,10 +52,10 @@
     <label class="mut chk" title="Afficher cet onglet dès qu'un combat commence">
       <input type="checkbox" bind:checked={settings.combat.autoOpen} /> Ouvrir au début d'un combat
     </label>
-    <button class="mini pop" onclick={openCombatOverlay} title="Fenêtre flottante, toujours au premier plan, à placer sur le jeu">⧉ Fenêtre flottante</button>
-    <label class="mut chk" title="Ouvrir la fenêtre flottante dès qu'un combat commence">
-      <input type="checkbox" bind:checked={settings.combat.overlayAuto} /> l'ouvrir au début d'un combat
+    <label class="mut chk" title="Fenêtre toujours au premier plan, ouverte au début d'un combat et fermée à sa fin">
+      <input type="checkbox" bind:checked={settings.combat.overlay} /> Fenêtre flottante pendant les combats
     </label>
+    <button class="mini pop" onclick={() => openCombatOverlay()} title="Afficher la fenêtre flottante maintenant (pour la placer sur le jeu : elle rouvrira au même endroit)">⧉ Afficher</button>
     <span class="st">
       {#if !settings.combat.enabled}
         <span class="mut">Désactivé</span>
@@ -92,7 +87,7 @@
               <header>{@render title(g)}</header>
               {#if g.tags.length}
                 <div class="tags">
-                  {#each tagsOf(g.tags) as t (t.id)}<span class="tg {t.group} {t.id}" title={t.group === "boost" ? `Boost : ${t.label}` : t.label}>{t.group === "boost" ? `+${t.label}` : t.label}</span>{/each}
+                  {#each tagsOf(g.tags) as t (t.id)}<span class="tg {t.group}">{t.label}</span>{/each}
                 </div>
               {/if}
               {#each notes as [kind, lines] (kind)}
@@ -139,7 +134,6 @@
   header { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
   .nm { font-weight: 600; font-size: 14px; }
   .cnt { font-weight: 600; color: var(--acc); }
-  .lv { font-size: 12px; }
   .tag { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--mut); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
   .note { display: flex; gap: 8px; align-items: flex-start; padding: 6px 8px; border-radius: 6px; font-size: 12.5px; }
   .note ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 3px; }
@@ -153,6 +147,4 @@
   .tg { font-size: 11px; padding: 0 6px; border-radius: 4px; border: 1px solid var(--line); line-height: 18px; white-space: nowrap; }
   .tg.flag { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, transparent); }
   .tg.control { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
-  .tg.boost { color: var(--mut); border-style: dashed; }
-  .tg.neutral { color: #b8a98c; } .tg.earth { color: #b9874c; } .tg.fire { color: #e5646e; } .tg.water { color: #5aa9ff; } .tg.air { color: #4cc38a; }
 </style>

@@ -56,22 +56,40 @@ export async function startCombat() {
         .then(() => !on && Object.assign(fight, { seen: false, active: false, started: 0, ended: null, fighters: [] }))
         .catch(() => {});
     });
+    // the floating window follows the fight: shown when it starts (or when the setting is switched on during one), closed when it ends
+    $effect(() => {
+      const want = settings.combat.enabled && settings.combat.overlay && fight.active;
+      void (want ? openCombatOverlay(false) : closeCombatOverlay());
+    });
   });
   await followFight(() => {
-    if (!settings.combat.enabled) return;
-    if (settings.combat.autoOpen) app.tab = "combat";
-    if (settings.combat.overlayAuto) void openCombatOverlay();
+    if (settings.combat.enabled && settings.combat.autoOpen) app.tab = "combat";
   });
 }
 
-/** The floating fight window (combat.html, src/CombatOverlay.svelte): frameless, transparent, always on top, like the scan list. */
-export async function openCombatOverlay() {
+/** Where the user left the floating window (logical px), remembered by the window itself. */
+export const OVERLAY_POS_KEY = "karrelage.combat.overlayPos";
+
+/** The floating fight window (combat.html, src/CombatOverlay.svelte): frameless, transparent, always on top, like the scan list;
+ *  its height follows its content. `focus` = false when it opens by itself (the game keeps the focus). */
+export async function openCombatOverlay(focus = true) {
   const open = await WebviewWindow.getByLabel("combat");
   if (open) {
-    await open.setFocus();
+    if (focus) await open.setFocus();
     return;
   }
-  new WebviewWindow("combat", { url: "combat.html", title: "Combat", width: 340, height: 420, decorations: false, transparent: true, shadow: false, alwaysOnTop: true, skipTaskbar: true, resizable: true });
+  let pos: { x: number; y: number } | null = null;
+  try {
+    pos = JSON.parse(localStorage.getItem(OVERLAY_POS_KEY) ?? "null");
+  } catch {}
+  new WebviewWindow("combat", {
+    url: "combat.html", title: "Combat", width: 340, height: 120, ...(pos ? { x: pos.x, y: pos.y } : {}),
+    decorations: false, transparent: true, shadow: false, alwaysOnTop: true, skipTaskbar: true, resizable: false, focus,
+  });
+}
+
+export async function closeCombatOverlay() {
+  await (await WebviewWindow.getByLabel("combat"))?.close();
 }
 
 /** The kinds of notes shown for a display level. */

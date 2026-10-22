@@ -1,12 +1,14 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { getCurrentWindow } from "@tauri-apps/api/window";
-  import { fight, followFight, groups, shown, type Group, type Notes } from "./lib/stores/combat.svelte";
+  import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
+  import { fight, followFight, groups, OVERLAY_POS_KEY, shown, type Group, type Notes } from "./lib/stores/combat.svelte";
   import { settings } from "./lib/stores/settings.svelte";
   import { tagsOf } from "./lib/monsterTags";
 
-  /** Floating fight window (combat.html): the Combat tab's monsters, notes (display level = the app's setting) and control
-   *  tags (push, pull, AP / MP removal...) in a small always-on-top window over the game. */
+  /** Floating fight window (combat.html): the Combat tab's monsters, their notes (display level = the app's setting) and the
+   *  tags worth showing, in a small always-on-top window over the game. Its height follows its content (up to 80 % of the
+   *  screen, then it scrolls); where the user drops it is remembered for the next fight. */
+  const WIDTH = 340;
   const ICON: Record<keyof Notes, string> = { warning: "⚠", invulnerable: "🛡", tips: "💡" };
 
   const all = $derived(groups(fight.fighters));
@@ -21,38 +23,63 @@
         a.name.localeCompare(b.name),
     ),
   );
-  const lv = (g: Group) => {
-    const l = [...new Set(g.levels.filter((x) => x > 0))].sort((a, b) => a - b);
-    return l.length ? `niv. ${l.join(", ")}` : "";
-  };
   const close = () => getCurrentWindow().close();
 
-  onMount(() => void followFight());
+  let top = $state<HTMLElement>();
+  let body = $state<HTMLElement>();
+
+  onMount(() => {
+    void followFight();
+    const win = getCurrentWindow();
+    // natural height = title bar + the list's content (+ the box's 2px border)
+    let last = 0;
+    const fit = () => {
+      if (!top || !body) return;
+      const h = Math.ceil(Math.min(top.offsetHeight + body.offsetHeight + 2, screen.availHeight * 0.8));
+      if (h !== last) void win.setSize(new LogicalSize(WIDTH, (last = h))).catch(() => {});
+    };
+    const ro = new ResizeObserver(fit);
+    if (top) ro.observe(top);
+    if (body) ro.observe(body);
+    fit();
+    const moved = win.onMoved(async ({ payload }) => {
+      const p = payload.toLogical(await win.scaleFactor());
+      try {
+        localStorage.setItem(OVERLAY_POS_KEY, JSON.stringify({ x: Math.round(p.x), y: Math.round(p.y) }));
+      } catch {}
+    });
+    return () => {
+      ro.disconnect();
+      void moved.then((f) => f());
+    };
+  });
 </script>
 
 <div class="box">
-  <div class="top" data-tauri-drag-region>
+  <div class="top" bind:this={top} data-tauri-drag-region>
     <span class="t" data-tauri-drag-region>
       {#if fight.active}<span class="dot" title="Combat en cours"></span>{/if}Combat
       {#if fight.seen && !fight.active}<span class="mut" data-tauri-drag-region>terminé</span>{/if}
     </span>
     <button class="x" onclick={close} title="Fermer">✕</button>
   </div>
-  <div class="list">
+  <div class="list"><div bind:this={body}>
     {#if !settings.combat.enabled}
       <div class="mut msg">Suivi des combats désactivé (onglet Combat).</div>
     {:else if !fight.fighters.length}
       <div class="mut msg">En attente d'un combat…</div>
     {/if}
     {#each list as g (g.key)}
+      {@const tags = tagsOf(g.tags)}
       <div class="mon" class:sum={g.summoned}>
         <div class="hd">
           <span class="nm">{g.name}</span>
           {#if g.levels.length > 1}<span class="cnt">×{g.levels.length}</span>{/if}
-          <span class="mut">{lv(g)}</span>
           {#if g.summoned}<span class="mut tag">invoc.</span>{/if}
-          {#each tagsOf(g.tags, ["flag", "control"]) as t (t.id)}<span class="tg {t.group}">{t.label}</span>{/each}
         </div>
+        {#if tags.length}
+          <div class="tags">{#each tags as t (t.id)}<span class="tg {t.group}">{t.label}</span>{/each}</div>
+        {/if}
         {#each notesOf(g) as [kind, lines] (kind)}
           {#each lines as l, i (i)}
             <div class="ln {kind}"><span class="ic">{ICON[kind]}</span><span>{l}</span></div>
@@ -60,25 +87,26 @@
         {/each}
       </div>
     {/each}
-  </div>
+  </div></div>
 </div>
 
 <style>
   .box { height: 100%; box-sizing: border-box; display: flex; flex-direction: column; background: rgba(28, 31, 38, 0.86); border: 1px solid rgba(90, 169, 255, 0.45); border-radius: 10px; overflow: hidden; font-family: var(--font); font-size: 12px; }
-  .top { display: flex; align-items: center; gap: 8px; padding: 9px 10px 9px 12px; background: rgba(20, 22, 26, 0.7); cursor: move; user-select: none; }
+  .top { flex: none; display: flex; align-items: center; gap: 8px; padding: 9px 10px 9px 12px; background: rgba(20, 22, 26, 0.7); cursor: move; user-select: none; }
   .t { flex: 1; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
   .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
   .x { border: 0; background: none; color: var(--mut); padding: 0 4px; font-size: 13px; }
   .x:hover { color: var(--bad); }
-  .list { flex: 1; overflow: auto; }
+  .list { flex: 1; min-height: 0; overflow: auto; }
   .msg { padding: 12px; text-align: center; }
-  .mon { padding: 6px 12px; border-top: 1px solid rgba(255, 255, 255, 0.07); display: flex; flex-direction: column; gap: 3px; }
+  .mon { padding: 6px 12px; border-top: 1px solid rgba(255, 255, 255, 0.07); display: flex; flex-direction: column; gap: 4px; }
   .mon:first-child { border-top: 0; }
   .mon.sum { opacity: 0.8; }
   .hd { display: flex; align-items: baseline; gap: 5px; flex-wrap: wrap; }
   .nm { font-weight: 600; font-size: 12.5px; }
   .cnt { font-weight: 600; color: var(--acc); }
   .tag { font-size: 10px; text-transform: uppercase; }
+  .tags { display: flex; flex-wrap: wrap; gap: 4px; }
   .ln { display: flex; gap: 6px; align-items: flex-start; padding: 2px 6px; border-radius: 4px; line-height: 1.35; }
   .ln .ic { flex: none; width: 14px; text-align: center; }
   .ln.warning { background: rgba(224, 176, 74, 0.16); }
