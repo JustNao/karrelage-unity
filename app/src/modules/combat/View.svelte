@@ -114,7 +114,7 @@
 <style>
   .view { flex: 1; min-height: 0; display: flex; flex-direction: column; font-family: var(--font); }
   .view > :global(.wrap) { flex: 1; }
-  .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 12px 0 10px; border-bottom: 1px solid var(--line); margin-bottom: 10px; }
+  .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 12px 16px 10px; border-bottom: 1px solid var(--line); margin-bottom: 10px; }
   .st { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 60%, transparent); animation: pulse 1.6s infinite; }
   @keyframes pulse { 70% { box-shadow: 0 0 0 6px transparent; } }
@@ -126,6 +126,7 @@
   .seg button + button { border-left: 1px solid var(--line); }
   .seg button.on { background: var(--panel); color: var(--fg); font-weight: 600; }
   .seg.off, .body.off { opacity: 0.5; }
+  .body { padding: 0 16px 16px; }
   .sw { position: relative; width: 44px; height: 24px; padding: 0; background: var(--line); border-radius: 12px; transition: 0.15s; flex: none; border: 0; }
   .sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: 0.15s; }
   .sw.on { background: var(--ok); }
