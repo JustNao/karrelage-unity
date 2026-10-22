@@ -64,7 +64,8 @@
   });
 </script>
 
-<div class="box">
+<!-- growing up (popup at the bottom of the screen): the title bar sits at the bottom, under the monsters -->
+<div class="box" class:up={settings.combat.overlayGrow === "up"}>
   <div class="top" bind:this={top} data-tauri-drag-region>
     <span class="t" data-tauri-drag-region>
       {#if fight.active}<span class="dot" title="Combat en cours"></span>{/if}Combat
@@ -73,7 +74,9 @@
     <button
       class="x grow"
       onclick={() => (settings.combat.overlayGrow = settings.combat.overlayGrow === "up" ? "down" : "up")}
-      title={settings.combat.overlayGrow === "up" ? "S'agrandit vers le haut (bord bas fixe) : cliquer pour vers le bas" : "S'agrandit vers le bas (bord haut fixe) : cliquer pour vers le haut"}
+      title={settings.combat.overlayGrow === "up"
+        ? "Fenêtre ancrée en bas (barre en bas, s'agrandit vers le haut) : cliquer pour l'ancrer en haut"
+        : "Fenêtre ancrée en haut (barre en haut, s'agrandit vers le bas) : cliquer pour l'ancrer en bas"}
     >{settings.combat.overlayGrow === "up" ? "⤒" : "⤓"}</button>
     <button class="x" onclick={close} title="Fermer">✕</button>
   </div>
@@ -106,6 +109,7 @@
 
 <style>
   .box { height: 100%; box-sizing: border-box; display: flex; flex-direction: column; background: rgba(28, 31, 38, 0.86); border: 1px solid rgba(90, 169, 255, 0.45); border-radius: 10px; overflow: hidden; font-family: var(--font); font-size: 12px; }
+  .box.up { flex-direction: column-reverse; }
   .top { flex: none; display: flex; align-items: center; gap: 8px; padding: 9px 10px 9px 12px; background: rgba(20, 22, 26, 0.7); cursor: move; user-select: none; }
   .t { flex: 1; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
   .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
