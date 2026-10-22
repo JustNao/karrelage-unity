@@ -65,6 +65,12 @@
   "rune_gid": "fyed",
   "rune_qty": "fyec"
  },
+ "fight": {
+  "_doc": "Fighters (FightFighterShowEvent / FightFighterRefreshEvent information, FightSynchronizeEvent fighters, summons of GameActionFightEvent): ActorPositionInformation {actor_id, actor_information -> fighter -> ai_fighter -> MonsterFighter {three unordered ints monster_gid / creature_grade / creature_level}, stats: FightCharacteristics {summoned}}. Found by walking the message.",
+  "actor_id": "gcaw",
+  "monster": ["gbyx", "gbyy", "gbyz"],
+  "summoned": "gdeo"
+ },
  "object_effect": {
   "action": ["gdmq", "gdmr"],
   "oneof": "gdng"

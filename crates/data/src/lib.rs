@@ -75,6 +75,27 @@ pub struct SpellRow {
     pub name_id: i64,
 }
 
+/// Monster: name, level of each grade, and the author's fight notes (warning / invulnerable / tips lines) when it has some.
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct MonsterRow {
+    pub name_id: i64,
+    #[serde(default)]
+    pub levels: Vec<i64>,
+    #[serde(default)]
+    pub notes: Option<MonsterNotes>,
+}
+
+#[derive(Debug, Deserialize, serde::Serialize, Clone, Default)]
+pub struct MonsterNotes {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warning: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub invulnerable: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tips: Vec<String>,
+}
+
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct EffectRow {
@@ -124,6 +145,8 @@ pub struct Data {
     pub recipes: HashMap<i64, Vec<Vec<(i64, i64)>>>,
     /// Item sets (panoplies): set id -> pieces and bonuses per piece count (absent in older packs).
     pub itemsets: HashMap<i64, ItemSet>,
+    /// Monsters: id -> name, grade levels, fight notes (absent in older packs).
+    pub monsters: HashMap<i64, MonsterRow>,
     pub strings: HashMap<i64, String>,
     /// Build-specific obfuscated names per role (bindings.json), see pipeline/bindings.json.
     pub bindings: Value,
@@ -159,6 +182,7 @@ impl Data {
             spells: read_map(dir, "spells.json").unwrap_or_default(),
             recipes: read_map(dir, "recipes.json").unwrap_or_default(),
             itemsets: read_map(dir, "itemsets.json").unwrap_or_default(),
+            monsters: read_map(dir, "monsters.json").unwrap_or_default(),
             equipment_effects,
             bindings: serde_json::from_slice(&std::fs::read(dir.join("bindings.json"))?)?,
             dir: dir.to_path_buf(),

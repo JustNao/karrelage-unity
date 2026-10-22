@@ -7,6 +7,7 @@
   import ProgressBar from "./lib/components/ProgressBar.svelte";
   import Notifications from "./lib/components/Notifications.svelte";
   import { startAutomation } from "./lib/automation";
+  import { startCombat } from "./lib/stores/combat.svelte";
 
   const tabs = $derived(modules.filter((m) => app.dev || !m.devOnly));
   const active = $derived(tabs.find((m) => m.id === app.tab) ?? tabs[0]);
@@ -83,6 +84,7 @@
     if (restored || !s.ready) return;
     restored = true;
     void startAutomation(); // automation rules watch every scan, whatever tab is open (needs the data pack)
+    void startCombat(); // the current fight is followed whatever tab is open
     if (app.capture && !s.on && !s.npcapError) captureSet(true).catch((e) => (err = String(e)));
   });
 

@@ -11,7 +11,16 @@ const DEFAULTS = {
     /** A lot this many residual standard deviations above the price / density trend is a good deal. */
     goodZ: 2,
   },
+  combat: {
+    /** Follow the monsters of the current fight (off: the fight messages are not even decoded). */
+    enabled: true,
+    /** Notes shown per monster: warnings only, + invulnerabilities, + tips. */
+    show: "all" as CombatShow,
+    /** Open the Combat tab when a fight starts. */
+    autoOpen: false,
+  },
 };
+export type CombatShow = "warning" | "invulnerable" | "all";
 export type Settings = typeof DEFAULTS;
 export const SETTING_DEFAULTS: Settings = DEFAULTS;
 

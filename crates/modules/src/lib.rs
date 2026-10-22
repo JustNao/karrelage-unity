@@ -4,6 +4,7 @@
 //! Adding a feature = one file here implementing `Module` + registering it in `all()` + a UI folder under app/ui/src/modules.
 pub mod auction;
 pub mod brisage;
+pub mod combat;
 pub mod inventory;
 pub mod names;
 pub mod packets;
@@ -120,6 +121,7 @@ pub fn all() -> Vec<Box<dyn Module>> {
         Box::new(stuff::Stuff::new()),
         Box::new(brisage::Brisage::new(uids)),
         Box::new(inventory),
+        Box::new(combat::Combat::new()),
         Box::new(names::NamesTab::new()),
         Box::new(update::Update::new()),
     ]

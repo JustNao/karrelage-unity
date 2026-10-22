@@ -1,6 +1,6 @@
 """Export the app's data pack -> datapack/ (small, build-specific; the Tauri app loads it instead of work/).
 Needs: work/pb/protocol.desc (build_protos.py), work/gamedata (extract_gamedata.py), work/mapping.json + overrides.json."""
-import json, pathlib, shutil, time, sys
+import csv, json, pathlib, re, shutil, time, sys, unicodedata
 import schema, gamedata as gd
 
 root = pathlib.Path(__file__).resolve().parent.parent
@@ -66,6 +66,39 @@ dump("recipes.json", {k: v for k, v in gd.recipes.items() if k in items})
 dump("itemsets.json", {k: v for k, v in gd.itemsets.items() if any(i in items for i in v["items"])})
 ids.update(v["nameId"] for v in gd.itemsets.values() if v.get("nameId"))
 dump("items.json", items); dump("effects.json", effects); dump("itemtypes.json", types)
+
+
+# monsters: name + grade levels, plus the fight notes of work/monster_notes.csv (local export of the author's "Strats monstres"
+# sheet: name, warning, invulnerable, tips; a cell may hold several lines). Notes are matched by name (accents / case ignored) and
+# apply to every monster of that name (variants share it).
+def norm(s):
+    s = unicodedata.normalize("NFKD", s)
+    return re.sub(r"[^a-z0-9 ]", "", "".join(c for c in s if not unicodedata.combining(c)).lower()).strip()
+
+
+monsters = {k: {"nameId": v["nameId"], "levels": v["levels"]} for k, v in gd.monsters.items()}
+ids.update(v["nameId"] for v in monsters.values())
+notes_csv = root / "work" / "monster_notes.csv"
+if notes_csv.exists() and monsters:
+    by_name = {}
+    for k, v in monsters.items():
+        by_name.setdefault(norm(gd.text(v["nameId"]) or ""), []).append(k)
+    noted, unmatched = 0, []
+    with open(notes_csv, newline="", encoding="utf-8-sig") as f:
+        for row in csv.DictReader(f):
+            note = {k: lines for k in ("warning", "invulnerable", "tips") if (lines := [l.strip() for l in (row.get(k) or "").splitlines() if l.strip()])}
+            if not note:
+                continue
+            ks = by_name.get(norm(row["name"]))
+            if not ks:
+                unmatched.append(row["name"])
+                continue
+            noted += 1
+            for k in ks:
+                for kind, lines in note.items():
+                    monsters[k].setdefault("notes", {}).setdefault(kind, []).extend(lines)
+    print(f"monster notes: {noted} names matched", f"unmatched: {unmatched}" if unmatched else "")
+dump("monsters.json", monsters)
 
 for lang in ("fr", "en"):
     f = gd.D / "i18n" / f"{lang}.bin"
