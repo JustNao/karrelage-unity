@@ -2,6 +2,7 @@ import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { call, on } from "../api";
 import { app } from "../app.svelte";
 import { settings, type CombatShow } from "./settings.svelte";
+import { TAGS } from "../monsterTags";
 
 /**
  * Current fight (crates/modules/src/combat.rs): the monsters fought and their notes, followed from startup whatever tab is
@@ -25,6 +26,15 @@ export interface Fighter {
   notes: Notes | null;
   /** DofusDB tags (lib/monsterTags.ts) */
   tags: string[];
+  /** the sheet's "intéraction dangereuse": tags that make the other monsters of the fight dangerous next to this one */
+  danger?: string[];
+}
+/** A PA / PM poison on the player ("X dommages <element> pour 1 PA / PM utilisé"). */
+export interface Poison {
+  action: number;
+  kind: "PA" | "PM";
+  element: string;
+  target: number;
 }
 export interface Fight {
   seen: boolean;
@@ -32,9 +42,12 @@ export interface Fight {
   started: number;
   ended: number | null;
   fighters: Fighter[];
+  poisons?: Poison[];
+  /** the player's character id (null until a login was seen: poisons on any player are shown) */
+  me?: number | null;
 }
 
-export const fight = $state<Fight>({ seen: false, active: false, started: 0, ended: null, fighters: [] });
+export const fight = $state<Fight>({ seen: false, active: false, started: 0, ended: null, fighters: [], poisons: [], me: null });
 
 /** Keep `fight` up to date (main window and the floating window); `onStart` runs when a new fight begins. */
 export async function followFight(onStart?: () => void) {
@@ -55,7 +68,7 @@ export async function startCombat() {
     $effect(() => {
       const on = settings.combat.enabled;
       call("combat", "set_enabled", { on }, true)
-        .then(() => !on && Object.assign(fight, { seen: false, active: false, started: 0, ended: null, fighters: [] }))
+        .then(() => !on && Object.assign(fight, { seen: false, active: false, started: 0, ended: null, fighters: [], poisons: [] }))
         .catch(() => {});
     });
     // the floating window follows the fight: shown when it starts (or when the setting is switched on during one), closed when it ends
@@ -116,17 +129,40 @@ export interface Group {
   tags: string[];
 }
 
-/** The groups worth listing at this display level: a monster without any note shown is dropped once all its copies died. */
+/** The groups worth listing at this display level: a monster without any note shown is dropped once all its copies died.
+ *  Dangerous interactions: a living monster whose sheet says e.g. "poussée" puts a warning on every other monster of the
+ *  fight that can push ("Poussée : dangereux avec Glourséleste"). */
 export function groups(list: Fighter[], show: CombatShow): Group[] {
   const by = new Map<string, Group>();
+  // tag -> the living monsters that make it dangerous
+  const danger = new Map<string, Set<string>>();
   for (const f of list) {
     const key = `${f.gid}:${f.summoned ? 1 : 0}`;
     const g = by.get(key) ?? { key, gid: f.gid, name: f.name, summoned: f.summoned, levels: [], alive: 0, notes: f.notes, tags: f.tags ?? [] };
     g.levels.push(f.level);
-    if (!f.dead) g.alive++;
+    if (!f.dead) {
+      g.alive++;
+      for (const t of f.danger ?? []) {
+        if (!danger.has(t)) danger.set(t, new Set());
+        danger.get(t)!.add(f.name);
+      }
+    }
     by.set(key, g);
   }
+  for (const g of by.values()) {
+    if (!g.alive) continue;
+    const lines = g.tags.flatMap((t) => {
+      const who = [...(danger.get(t) ?? [])].filter((n) => n !== g.name);
+      return who.length ? [`${TAGS[t]?.label ?? t} : dangereux avec ${who.join(", ")}`] : [];
+    });
+    if (lines.length) g.notes = { ...g.notes, warning: [...lines, ...(g.notes?.warning ?? [])] };
+  }
   return [...by.values()].filter((g) => g.alive > 0 || shown(g.notes, show).length > 0);
+}
+
+/** The poisons to warn about: "Poison PA (Terre)" lines. */
+export function poisonText(p: Poison): string {
+  return `Poison ${p.kind} ${p.element} : chaque ${p.kind} utilisé inflige des dommages ${p.element}`;
 }
 
 /** Notes of a group kept by the display level (empty kinds dropped). */

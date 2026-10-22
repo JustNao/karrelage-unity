@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { getCurrentWindow, LogicalPosition, LogicalSize } from "@tauri-apps/api/window";
-  import { fight, followFight, groups, OVERLAY_POS_KEY, shown, type Group, type Notes } from "./lib/stores/combat.svelte";
+  import { fight, followFight, groups, OVERLAY_POS_KEY, poisonText, shown, type Group, type Notes } from "./lib/stores/combat.svelte";
   import { settings } from "./lib/stores/settings.svelte";
   import { tagsOf } from "./lib/monsterTags";
 
@@ -87,6 +87,11 @@
     {:else if !fight.fighters.length}
       <div class="mut msg">En attente d'un combat…</div>
     {/if}
+    {#if settings.combat.enabled}
+      {#each fight.poisons ?? [] as p (p.action + ":" + p.target)}
+        <div class="poison" title={fight.me == null ? "Personnage pas encore identifié (reconnectez-vous) : poisons de tous les joueurs" : ""}>☠ {poisonText(p)}{fight.me == null ? " (un joueur)" : ""}</div>
+      {/each}
+    {/if}
     {#each list as g (g.key)}
       {@const tags = tagsOf(g.tags)}
       <div class="mon" class:sum={g.summoned} class:gone={!g.alive}>
@@ -139,4 +144,5 @@
   .tg.control { color: var(--warn); border-color: rgba(224, 176, 74, 0.45); }
   .mon.gone { opacity: 0.45; }
   .dead { font-size: 10px; text-transform: uppercase; color: var(--bad); }
+  .poison { margin: 6px 8px; padding: 5px 8px; border-radius: 6px; background: rgba(229, 100, 110, 0.22); border: 1px solid rgba(229, 100, 110, 0.6); color: #ffd7da; font-weight: 600; }
 </style>

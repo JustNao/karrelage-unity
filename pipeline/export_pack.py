@@ -76,6 +76,9 @@ def norm(s):
     return re.sub(r"[^a-z0-9 ]", "", "".join(c for c in s if not unicodedata.combining(c)).lower()).strip()
 
 
+# sheet values of the "intéraction dangereuse" column (accent-free, lower case) -> the DofusDB tag of the monsters that trigger it
+DANGER_TAGS = {"poussee": "push", "attirance": "pull", "teleportation": "tp", "retrait pa": "retPA", "retrait pm": "retPM",
+               "retrait po": "retPO", "poison": "poison", "soins": "heal", "soin": "heal", "invocation": "summon", "erosion": "erode"}
 monsters = {k: {"nameId": v["nameId"], "levels": v["levels"]} for k, v in gd.monsters.items()}
 ids.update(v["nameId"] for v in monsters.values())
 notes_csv = root / "work" / "monster_notes.csv"
@@ -83,11 +86,20 @@ if notes_csv.exists() and monsters:
     by_name = {}
     for k, v in monsters.items():
         by_name.setdefault(norm(gd.text(v["nameId"]) or ""), []).append(k)
-    noted, unmatched = 0, []
+    noted, unmatched, unknown_danger = 0, [], set()
     with open(notes_csv, newline="", encoding="utf-8-sig") as f:
         for row in csv.DictReader(f):
             note = {k: lines for k in ("warning", "invulnerable", "tips") if (lines := [l.strip() for l in (row.get(k) or "").splitlines() if l.strip()])}
-            if not note:
+            # "intéraction dangereuse": what the other monsters of the fight must not do near this one -> monster tags
+            danger = []
+            for v in re.split(r"[,\n]", next((row[c] for c in row if c and norm(c) == "interaction dangereuse"), "") or ""):
+                if norm(v):
+                    t = DANGER_TAGS.get(norm(v))
+                    if t:
+                        danger.append(t)
+                    else:
+                        unknown_danger.add(v.strip())
+            if not note and not danger:
                 continue
             ks = by_name.get(norm(row["name"]))
             if not ks:
@@ -97,7 +109,11 @@ if notes_csv.exists() and monsters:
             for k in ks:
                 for kind, lines in note.items():
                     monsters[k].setdefault("notes", {}).setdefault(kind, []).extend(lines)
+                if danger:
+                    monsters[k]["danger"] = sorted(set(monsters[k].get("danger", []) + danger))
     print(f"monster notes: {noted} names matched", f"unmatched: {unmatched}" if unmatched else "")
+    if unknown_danger:
+        print("unknown 'intéraction dangereuse' values (add them to DANGER_TAGS):", sorted(unknown_danger))
 # DofusDB tags (what a monster's spells do: push, pull, retPM, poison, summon, elements...) + flags, from the local
 # work/dofusdb_monsters.json; flags become tags too: boss, miniBoss, and noPush / noSwitch / noCarry / noTackle when it cannot be.
 DB_FLAGS = {"isBoss": ("boss", True), "isMiniBoss": ("miniBoss", True), "canBePushed": ("noPush", False),

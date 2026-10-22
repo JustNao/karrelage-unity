@@ -11,5 +11,23 @@
    "fybz": "prices",
    "fycc": "effects"
   }
+ },
+ "juh": {
+  "name": "FightBoostAddEvent",
+  "fields": {
+   "fxet": "effect"
+  }
+ },
+ "juu": {
+  "fields": {
+   "fxhi": "boost_uid",
+   "fxhj": "target_id"
+  }
+ },
+ "llg": {
+  "fields": {
+   "gdpw": "uid",
+   "gdqh": "spell_id"
+  }
  }
 }

@@ -73,6 +73,16 @@
   "death": "fwuz",
   "summoner": "gdep"
  },
+ "boost": {
+  "_doc": "Fight buffs (confirmed on a capture). FightBoostAddEvent / FightJoinRunningEvent effects carry FightRemovableEffectExtendedInformation {effect: FightRemovableEffect {uid, target_id, ...}, action_id (= effects table id: 1131-1140 = PA / PM poisons), source_id}; FightBoostRemoveEvent {boost_uid, target_id} ends one. character = character_id of CharacterSelectionRequest / CharacterFirstSelectionRequest (client -> server at login: the player's own fighter id).",
+  "effect": "gdzl",
+  "action": "gdzm",
+  "uid": "gdpw",
+  "target": "gdpz",
+  "remove_uid": "fxhi",
+  "remove_target": "fxhj",
+  "character": ["gatq", "garh"]
+ },
  "object_effect": {
   "action": ["gdmq", "gdmr"],
   "oneof": "gdng"

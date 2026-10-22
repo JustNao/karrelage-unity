@@ -87,6 +87,9 @@ pub struct MonsterRow {
     /// DofusDB tags: what its spells do (push, pull, retPM, poison, summon, earth...) and boss / miniBoss / noPush... flags.
     #[serde(default)]
     pub tags: Vec<String>,
+    /// The sheet's "intéraction dangereuse": tags (push...) that make the other monsters of the fight dangerous next to this one.
+    #[serde(default)]
+    pub danger: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, serde::Serialize, Clone, Default)]

@@ -29,6 +29,66 @@ pub const SYNC: &str = "FightSynchronizeEvent";
 /// Fight actions: only the summons (new fighters) are read.
 pub const ACTION: &str = "GameActionFightEvent";
 pub const END: &str = "FightEndEvent";
+/// A buff / debuff put on a fighter (PA / PM poisons are watched), and its end.
+pub const BOOST_ADD: &str = "FightBoostAddEvent";
+pub const BOOST_REMOVE: &str = "FightBoostRemoveEvent";
+/// Client requests at login: the character's id = the player's fighter id.
+pub const SELECT: &str = "CharacterSelectionRequest";
+pub const FIRST_SELECT: &str = "CharacterFirstSelectionRequest";
+
+/// PA / PM poisons: effects table ids ("#2 dommages <element> pour #1 PA / PM utilisé") -> (PA | PM, element).
+const POISONS: [(i64, &str, &str); 10] = [
+    (1131, "PA", "Air"),
+    (1132, "PA", "Eau"),
+    (1133, "PA", "Feu"),
+    (1134, "PA", "Neutre"),
+    (1135, "PA", "Terre"),
+    (1136, "PM", "Air"),
+    (1137, "PM", "Eau"),
+    (1138, "PM", "Feu"),
+    (1139, "PM", "Neutre"),
+    (1140, "PM", "Terre"),
+];
+
+/// Obfuscated field names of the buff messages (bindings.json `boost`).
+#[derive(Deserialize, Clone)]
+struct BoostBindings {
+    /// FightRemovableEffectExtendedInformation: the effect (FightRemovableEffect) and its action id
+    effect: String,
+    action: String,
+    /// FightRemovableEffect
+    uid: String,
+    target: String,
+    /// FightBoostRemoveEvent
+    remove_uid: String,
+    /// CharacterSelectionRequest / CharacterFirstSelectionRequest character_id
+    character: Vec<String>,
+}
+
+/// A PA / PM poison running on a fighter: target and effect id (see `POISONS`).
+#[derive(Clone, Debug, PartialEq)]
+struct Poison {
+    target: i64,
+    action: i64,
+}
+
+/// The PA / PM poisons put by a message (every FightRemovableEffectExtendedInformation in it) into `out` (by buff uid).
+fn boosts_added(b: &BoostBindings, m: &DynamicMessage, out: &mut BTreeMap<i64, Poison>) -> bool {
+    let mut changed = false;
+    if m.descriptor().get_field_by_name(&b.action).is_some() {
+        let action = int(m, &b.action);
+        if POISONS.iter().any(|p| p.0 == action) {
+            if let Some(PbValue::Message(e)) = m.get_field_by_name(&b.effect).as_deref() {
+                changed |= out.insert(int(e, &b.uid), Poison { target: int(e, &b.target), action }).is_none();
+            }
+        }
+        return changed;
+    }
+    for c in children(m) {
+        changed |= boosts_added(b, &c, out);
+    }
+    changed
+}
 
 /// Obfuscated field names of the fighter messages (bindings.json `fight`).
 #[derive(Deserialize, Clone)]
@@ -121,6 +181,8 @@ struct Fight {
     fighters: BTreeMap<i64, Fighter>,
     /// actor ids of the monsters that died (death action, or left out of a synchronisation)
     dead: BTreeSet<i64>,
+    /// PA / PM poisons running, by buff uid (FightBoostRemoveEvent names that uid when one ends)
+    poisons: BTreeMap<i64, Poison>,
 }
 
 pub struct Combat {
@@ -128,6 +190,9 @@ pub struct Combat {
     enabled: AtomicBool,
     fight: Mutex<Fight>,
     layout: Mutex<Layout>,
+    boost_bind: OnceLock<Option<BoostBindings>>,
+    /// the player's character id (seen at login, kept in `me.json`)
+    me: Mutex<Option<i64>>,
 }
 
 impl Default for Combat {
@@ -175,7 +240,18 @@ fn fighters(b: &Bindings, m: &DynamicMessage, out: &mut Vec<(i64, Fighter)>) {
 
 impl Combat {
     pub fn new() -> Self {
-        Self { bind: OnceLock::new(), enabled: AtomicBool::new(true), fight: Mutex::new(Fight::default()), layout: Default::default() }
+        Self {
+            bind: OnceLock::new(),
+            enabled: AtomicBool::new(true),
+            fight: Mutex::new(Fight::default()),
+            layout: Default::default(),
+            boost_bind: OnceLock::new(),
+            me: Mutex::new(None),
+        }
+    }
+
+    fn boosts(&self, ctx: &Ctx) -> Option<&BoostBindings> {
+        self.boost_bind.get_or_init(|| serde_json::from_value(ctx.data.bindings.get("boost")?.clone()).ok()).as_ref()
     }
 
     fn bindings(&self, ctx: &Ctx) -> Option<&Bindings> {
@@ -227,10 +303,20 @@ impl Combat {
                     "name": m.and_then(|m| data.text(m.name_id)).map(str::to_owned).unwrap_or_else(|| format!("monstre #{gid}")),
                     "notes": m.and_then(|m| m.notes.as_ref()),
                     "tags": m.map(|m| m.tags.as_slice()).unwrap_or_default(),
+                    "danger": m.map(|m| m.danger.as_slice()).unwrap_or_default(),
                 }))
             })
             .collect();
-        json!({"seen": f.seen, "active": f.seen && f.ended.is_none(), "started": f.started, "ended": f.ended, "fighters": list})
+        // PA / PM poisons on the player (on any player while the character is unknown: no login seen yet)
+        let me = *self.me.lock();
+        let poisons: Vec<Value> = f
+            .poisons
+            .values()
+            .filter(|p| me.map_or(p.target > 0, |me| p.target == me))
+            .filter_map(|p| POISONS.iter().find(|x| x.0 == p.action).map(|&(a, kind, element)| json!({"action": a, "kind": kind, "element": element, "target": p.target})))
+            .collect();
+        json!({"seen": f.seen, "active": f.seen && f.ended.is_none(), "started": f.started, "ended": f.ended, "fighters": list,
+               "poisons": poisons, "me": me})
     }
 }
 
@@ -240,7 +326,7 @@ impl Module for Combat {
     }
 
     fn interest(&self) -> Interest {
-        Interest::Types(&[JOIN, JOIN_RUNNING, SHOW, REFRESH, SYNC, ACTION, END])
+        Interest::Types(&[JOIN, JOIN_RUNNING, SHOW, REFRESH, SYNC, ACTION, END, BOOST_ADD, BOOST_REMOVE, SELECT, FIRST_SELECT])
     }
 
     fn wants(&self) -> bool {
@@ -248,6 +334,7 @@ impl Module for Combat {
     }
 
     fn init(&self, ctx: &Ctx) {
+        *self.me.lock() = load_json(&ctx.module_dir("combat").join("me.json")).and_then(|v| v["id"].as_i64());
         let Some(b) = self.bindings(ctx) else { return };
         let mut l = self.layout.lock();
         l.fields = b.monster.clone();
@@ -263,12 +350,34 @@ impl Module for Combat {
 
     fn on_message(&self, m: &Message, ctx: &Ctx) {
         let t = m.raw.t;
+        // the character the player logs in with (client request): its id is the player's fighter id
+        if m.name == SELECT || m.name == FIRST_SELECT {
+            let id = self.boosts(ctx).zip(m.decoded.as_ref()).and_then(|(b, d)| b.character.iter().find(|f| d.has_field_by_name(f)).map(|f| int(d, f)));
+            if let Some(id) = id.filter(|id| *id != 0) {
+                *self.me.lock() = Some(id);
+                let _ = save_json(&ctx.module_dir("combat").join("me.json"), &json!({"id": id}));
+                ctx.emit("combat", "fight", self.state(&ctx.data));
+            }
+            return;
+        }
         let changed = {
             let mut f = self.fight.lock();
             match m.name.as_str() {
                 JOIN | JOIN_RUNNING => {
                     *f = Fight { seen: true, started: t, ..Default::default() };
+                    // reconnection: the buffs already running come with it
+                    if let (Some(b), Some(d)) = (self.boosts(ctx), &m.decoded) {
+                        boosts_added(b, d, &mut f.poisons);
+                    }
                     true
+                }
+                BOOST_ADD => {
+                    let (Some(b), Some(d)) = (self.boosts(ctx), &m.decoded) else { return };
+                    boosts_added(b, d, &mut f.poisons)
+                }
+                BOOST_REMOVE => {
+                    let (Some(b), Some(d)) = (self.boosts(ctx), &m.decoded) else { return };
+                    f.poisons.remove(&int(d, &b.remove_uid)).is_some()
                 }
                 END => {
                     let open = f.seen && f.ended.is_none();
@@ -355,6 +464,95 @@ mod tests {
     use loutil_core::RawMessage;
     use loutil_proto::{FieldDescriptor, MessageDescriptor, Proto};
     use std::sync::Arc;
+
+    /// A real fight recorded with pipeline/sniff.py (work/capture_poison.jsonl: local only, it holds the players' ids), replayed
+    /// through the hub: monsters found, doubles / deaths applied, buffs read without error. Skipped without the file.
+    #[test]
+    fn replays_a_recorded_fight() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let (pack, rec) = (root.join("datapack"), root.join("work/capture_poison.jsonl"));
+        if !pack.join("manifest.json").exists() || !rec.exists() {
+            return;
+        }
+        let dir = std::env::temp_dir().join("loutil-combat-replay");
+        let _ = std::fs::remove_dir_all(&dir);
+        let data = Arc::new(Data::load(&pack, "fr").unwrap());
+        let proto = Arc::new(Proto::load(&pack, dir.join("o.json")).unwrap());
+        let hub = crate::Hub::new(data, proto, dir, Arc::new(|_, _| {}), Arc::new(|_| {}));
+        let hex = |s: &str| (0..s.len() / 2).map(|i| u8::from_str_radix(&s[2 * i..2 * i + 2], 16).unwrap()).collect::<Vec<u8>>();
+        for line in std::fs::read_to_string(&rec).unwrap().lines() {
+            let r: Value = serde_json::from_str(line).unwrap();
+            let (Some(h), Some(len)) = (r["hex"].as_str(), r["len"].as_u64()) else { continue };
+            if h.len() / 2 < len as usize {
+                continue; // truncated record (> 4 KB)
+            }
+            let dir = if r["dir"] == "C->S" { "C->S" } else { "S->C" };
+            hub.handle(RawMessage { t: r["t"].as_f64().unwrap_or(0.0), srv: "x".into(), dir, payload: hex(h) });
+        }
+        let s = hub.call("combat", "state", Value::Null).unwrap();
+        let names: Vec<String> = s["fighters"].as_array().unwrap().iter().map(|f| format!("{} dead={}", f["name"], f["dead"])).collect();
+        eprintln!("recorded fight: {names:?} poisons={}", s["poisons"]);
+        assert!(!names.is_empty(), "the recorded fight's monsters are found");
+        assert!(names.iter().all(|n| !n.contains("monstre #")), "every monster is known");
+    }
+
+    /// A PA poison put on the player, then its end (FightBoostRemoveEvent with the buff uid); one on a monster is ignored.
+    #[test]
+    fn follows_poisons_on_the_player() {
+        let pack = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../datapack");
+        if !pack.join("manifest.json").exists() {
+            return;
+        }
+        let dir = std::env::temp_dir().join("loutil-combat-poison");
+        let _ = std::fs::remove_dir_all(&dir);
+        let data = Arc::new(Data::load(&pack, "fr").unwrap());
+        let Ok(b) = serde_json::from_value::<BoostBindings>(data.bindings["boost"].clone()) else {
+            eprintln!("skipped: pack without the boost bindings");
+            return;
+        };
+        let proto = Arc::new(Proto::load(&pack, dir.join("o.json")).unwrap());
+        let (Some(add), Some(rem), Some(sel)) = (proto.obf_for_clear(BOOST_ADD), proto.obf_for_clear(BOOST_REMOVE), proto.obf_for_clear(SELECT)) else {
+            eprintln!("skipped: pack without the buff message names");
+            return;
+        };
+        let (add_md, rem_md, sel_md) = (proto.message(&add).unwrap(), proto.message(&rem).unwrap(), proto.message(&sel).unwrap());
+        let to_info = path(&add_md, &b.action, &mut vec![]).unwrap();
+        let boost = |uid: i64, target: i64, action: i64| {
+            let mut m = DynamicMessage::new(add_md.clone());
+            set(&mut m, &to_info, &b.action, PbValue::I32(action as i32));
+            let mut info_path = to_info.clone();
+            info_path.push(path(to_info.last().unwrap().kind().as_message().unwrap(), &b.uid, &mut vec![]).unwrap().into_iter().next().unwrap());
+            set(&mut m, &info_path, &b.uid, PbValue::I32(uid as i32));
+            set(&mut m, &info_path, &b.target, PbValue::I64(target));
+            m
+        };
+        let hub = crate::Hub::new(data, proto, dir, Arc::new(|_, _| {}), Arc::new(|_| {}));
+        let message = |name: &str, decoded: DynamicMessage| Message {
+            id: 1,
+            raw: RawMessage { t: 1.0, srv: "x".into(), dir: "S->C", payload: vec![] },
+            env: None,
+            type_name: None,
+            name: name.into(),
+            conf: None,
+            decoded: Some(decoded),
+            fmt: None,
+        };
+        let c = Combat::new();
+        c.init(&hub.ctx);
+        let mut login = DynamicMessage::new(sel_md);
+        login.set_field_by_name(b.character.iter().find(|f| login.descriptor().get_field_by_name(f).is_some()).unwrap(), PbValue::I64(42));
+        c.on_message(&message(SELECT, login), &hub.ctx);
+        c.on_message(&message(BOOST_ADD, boost(7, 42, 1135)), &hub.ctx);
+        c.on_message(&message(BOOST_ADD, boost(8, -3, 1136)), &hub.ctx);
+        let s = c.call("state", Value::Null, &hub.ctx).unwrap();
+        assert_eq!(s["me"], json!(42));
+        assert_eq!(s["poisons"], json!([{"action": 1135, "kind": "PA", "element": "Terre", "target": 42}]), "only the player's poison");
+
+        let mut end = DynamicMessage::new(rem_md);
+        end.set_field_by_name(&b.remove_uid, PbValue::I32(7));
+        c.on_message(&message(BOOST_REMOVE, end), &hub.ctx);
+        assert_eq!(c.call("state", Value::Null, &hub.ctx).unwrap()["poisons"], json!([]));
+    }
 
     /// Field path from `md` down to a message that has the field `target` (depth first, each message type once).
     fn path(md: &MessageDescriptor, target: &str, seen: &mut Vec<String>) -> Option<Vec<FieldDescriptor>> {

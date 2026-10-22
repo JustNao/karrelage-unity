@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { fight, groups, openCombatOverlay, shown, type Group, type Notes } from "../../lib/stores/combat.svelte";
+  import { fight, groups, openCombatOverlay, poisonText, shown, type Group, type Notes } from "../../lib/stores/combat.svelte";
   import { settings, type CombatShow } from "../../lib/stores/settings.svelte";
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
   import { call } from "../../lib/api";
@@ -74,6 +74,14 @@
 
   <SmoothScroll>
     <div class="body" class:off={!settings.combat.enabled}>
+      {#if settings.combat.enabled}
+        {#each fight.poisons ?? [] as p (p.action + ":" + p.target)}
+          <div class="poison">
+            ☠ {poisonText(p)}{fight.me == null ? " (un joueur)" : ""}
+            {#if fight.me == null}<span class="mut">— personnage pas encore identifié : reconnectez-vous pour ne voir que vos poisons</span>{/if}
+          </div>
+        {/each}
+      {/if}
       {#if !settings.combat.enabled}
         <p class="mut empty">Le suivi des combats est désactivé : activez-le avec l'interrupteur ci-dessus (ou dans Paramètres).</p>
       {:else if !fight.fighters.length}
@@ -151,4 +159,6 @@
   .tg.control { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
   .card.gone { opacity: 0.45; }
   .dead { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--bad); }
+  .poison { margin-bottom: 10px; padding: 8px 12px; border-radius: 8px; background: color-mix(in srgb, var(--bad) 16%, transparent); border: 1px solid var(--bad); font-weight: 600; }
+  .poison .mut { font-weight: 400; margin-left: 6px; }
 </style>
