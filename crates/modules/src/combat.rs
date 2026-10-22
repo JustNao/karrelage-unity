@@ -39,14 +39,26 @@ struct Bindings {
     /// GameActionFightEvent's `death` member (absent in older packs)
     #[serde(default)]
     death: Option<String>,
+    /// FightCharacteristics' summoner (actor id of whoever summoned it; absent in older packs)
+    #[serde(default)]
+    summoner: Option<String>,
 }
 
-/// A monster fighter: the three unordered ints of its MonsterFighter (gid / grade / level, see `Layout`) and whether it was
-/// summoned during the fight.
+/// A monster fighter: the three unordered ints of its MonsterFighter (gid / grade / level, see `Layout`), whether it was
+/// summoned during the fight, by whom (`summoner`, 0 = nobody) and whether it first appeared in a fight action (a summon).
 #[derive(Clone, Debug, PartialEq)]
 struct Fighter {
     ints: [i64; 3],
     summoned: bool,
+    summoner: i64,
+    spawned: bool,
+}
+
+impl Fighter {
+    /// It appeared during the fight (summon, double...), it was not placed at the start.
+    fn summon(&self) -> bool {
+        self.summoned || self.summoner != 0 || self.spawned
+    }
 }
 
 /// The six ways the three ints can be (gid, grade, level).
@@ -157,7 +169,8 @@ fn fighters(b: &Bindings, m: &DynamicMessage, out: &mut Vec<(i64, Fighter)>) {
     let Some(mon) = b.monster.first().and_then(|f| find(m, f)) else { return };
     let [Some(x), Some(y), Some(z)] = [0, 1, 2].map(|i| b.monster.get(i).map(|f| int(&mon, f))) else { return };
     let summoned = find(m, &b.summoned).and_then(|s| s.get_field_by_name(&b.summoned).and_then(|v| as_i64(&v))).unwrap_or(0) != 0;
-    out.push((int(m, &b.actor_id), Fighter { ints: [x, y, z], summoned }));
+    let summoner = b.summoner.as_deref().and_then(|f| Some(int(&find(m, f)?, f))).unwrap_or(0);
+    out.push((int(m, &b.actor_id), Fighter { ints: [x, y, z], summoned, summoner, spawned: false }));
 }
 
 impl Combat {
@@ -194,21 +207,27 @@ impl Combat {
     fn state(&self, data: &Data) -> Value {
         let f = self.fight.lock();
         let p = self.arrangement(data, &f);
+        let read = |x: &Fighter| match p {
+            Some(p) => PERMS[p].map(|i| x.ints[i]),
+            None => [x.ints.iter().copied().filter(|g| data.monsters.contains_key(g)).max().unwrap_or(x.ints[0]), 0, 0],
+        };
+        // doubles (Chafer Ronin...): summons of a monster that was placed at the start are left out
+        let placed: BTreeSet<i64> = f.fighters.values().filter(|x| !x.summon()).map(|x| read(x)[0]).collect();
         let list: Vec<Value> = f
             .fighters
             .iter()
-            .map(|(actor, x)| {
-                let [gid, grade, level] = match p {
-                    Some(p) => PERMS[p].map(|i| x.ints[i]),
-                    None => [x.ints.iter().copied().filter(|g| data.monsters.contains_key(g)).max().unwrap_or(x.ints[0]), 0, 0],
-                };
+            .filter_map(|(actor, x)| {
+                let [gid, grade, level] = read(x);
+                if x.summon() && placed.contains(&gid) {
+                    return None;
+                }
                 let m = data.monsters.get(&gid);
-                json!({
-                    "actor": actor, "gid": gid, "grade": grade, "level": level, "summoned": x.summoned, "dead": f.dead.contains(actor),
+                Some(json!({
+                    "actor": actor, "gid": gid, "grade": grade, "level": level, "summoned": x.summon(), "dead": f.dead.contains(actor),
                     "name": m.and_then(|m| data.text(m.name_id)).map(str::to_owned).unwrap_or_else(|| format!("monstre #{gid}")),
                     "notes": m.and_then(|m| m.notes.as_ref()),
                     "tags": m.map(|m| m.tags.as_slice()).unwrap_or_default(),
-                })
+                }))
             })
             .collect();
         json!({"seen": f.seen, "active": f.seen && f.ended.is_none(), "started": f.started, "ended": f.ended, "fighters": list})
@@ -290,7 +309,11 @@ impl Module for Combat {
                             dead.extend(f.fighters.keys().filter(|a| !listed.contains(a)));
                         }
                         let mut next = f.fighters.clone();
-                        next.extend(found);
+                        for (actor, mut x) in found {
+                            // first seen in a fight action = appeared during the fight (summon, double)
+                            x.spawned = next.get(&actor).map_or(m.name == ACTION, |old| old.spawned);
+                            next.insert(actor, x);
+                        }
                         let changed = next != f.fighters || dead != f.dead;
                         (f.fighters, f.dead) = (next, dead);
                         changed
@@ -384,7 +407,7 @@ mod tests {
         let proto = Arc::new(Proto::load(&pack, dir.join("o.json")).unwrap());
         let hub = crate::Hub::new(data.clone(), proto, dir, Arc::new(|_, _| {}), Arc::new(|_| {}));
         // field order of this imaginary build: (grade, level, gid)
-        let fighter = |gid: i64, grade: i64| Fighter { ints: [grade, 200, gid], summoned: false };
+        let fighter = |gid: i64, grade: i64| Fighter { ints: [grade, 200, gid], summoned: false, summoner: 0, spawned: false };
         let c = Combat::new();
         let found: Vec<(i64, Fighter)> = [(79, 3), (121, 2), (3462, 5), (1046, 1)].iter().enumerate().map(|(i, &(g, gr))| (-(i as i64) - 1, fighter(g, gr))).collect();
         c.vote(&hub.ctx, &found);
@@ -423,6 +446,9 @@ mod tests {
         // a noted monster with several grades, and its grade 2 (ints given in a scrambled order)
         let (&gid, mon) = data.monsters.iter().filter(|(_, m)| m.notes.is_some() && m.levels.len() >= 2).min_by_key(|(g, _)| **g).unwrap();
         let level = mon.levels[1];
+        // another monster, the summon
+        let (&gid2, mon2) = data.monsters.iter().filter(|(g, m)| **g != gid && m.levels.len() >= 2).min_by_key(|(g, _)| **g).unwrap();
+        let level2 = mon2.levels[1];
 
         let sync_md = proto.message(&proto.obf_for_clear(SYNC).unwrap()).unwrap();
         let list_field = sync_md.fields().next().unwrap();
@@ -433,7 +459,7 @@ mod tests {
         let actor = |id: i64, g: i64, summoned: bool| {
             let mut a = DynamicMessage::new(actor_md.clone());
             a.set_field_by_name(&b.actor_id, PbValue::I64(id));
-            for (f, v) in b.monster.iter().zip([level, g, 2]) {
+            for (f, v) in b.monster.iter().zip([if g == gid { level } else { level2 }, g, 2]) {
                 set(&mut a, &to_monster, f, PbValue::I32(v as i32));
             }
             set(&mut a, &to_summoned, &b.summoned, PbValue::Bool(summoned));
@@ -445,9 +471,10 @@ mod tests {
         show.set_field(&info, PbValue::Message(actor(-1, gid, false)));
         let proto_action = proto.message(&proto.obf_for_clear(ACTION).unwrap()).unwrap();
         let mut sync = DynamicMessage::new(sync_md);
-        sync.set_field(&list_field, PbValue::List(vec![PbValue::Message(actor(-1, gid, false)), PbValue::Message(actor(-2, gid, true))]));
+        // -2: a summon (another monster); -3: a double of -1 (same monster, summoned), left out of the list
+        sync.set_field(&list_field, PbValue::List(vec![PbValue::Message(actor(-1, gid, false)), PbValue::Message(actor(-2, gid2, true)), PbValue::Message(actor(-3, gid, true))]));
         let mut sync_one = DynamicMessage::new(sync.descriptor());
-        sync_one.set_field(&list_field, PbValue::List(vec![PbValue::Message(actor(-2, gid, true))]));
+        sync_one.set_field(&list_field, PbValue::List(vec![PbValue::Message(actor(-2, gid2, true)), PbValue::Message(actor(-3, gid, true))]));
         let end = DynamicMessage::new(proto.message(&proto.obf_for_clear(END).unwrap()).unwrap());
 
         let hub = crate::Hub::new(data, proto, dir, Arc::new(|_, _| {}), Arc::new(|_| {}));
@@ -472,7 +499,8 @@ mod tests {
 
         c.on_message(&message(SYNC, sync, 2.0), &hub.ctx);
         let s = c.call("state", Value::Null, &hub.ctx).unwrap();
-        assert_eq!(s["fighters"].as_array().unwrap().len(), 2);
+        let actors: Vec<i64> = s["fighters"].as_array().unwrap().iter().map(|f| f["actor"].as_i64().unwrap()).collect();
+        assert_eq!(actors, vec![-2, -1], "the double -3 is left out");
         assert_eq!(s["fighters"][0]["summoned"], json!(true), "actor -2 is the summon");
 
         // the summon dies (death action: its id in one of the two ints), then a synchronisation leaves the other one out
