@@ -75,7 +75,7 @@ pub struct SpellRow {
     pub name_id: i64,
 }
 
-/// Monster: name, level of each grade, and the author's fight notes (warning / invulnerable / tips lines) when it has some.
+/// Monster: name, level of each grade, the author's fight notes (warning / invulnerable / tips lines) when it has some, and tags.
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct MonsterRow {
@@ -84,6 +84,9 @@ pub struct MonsterRow {
     pub levels: Vec<i64>,
     #[serde(default)]
     pub notes: Option<MonsterNotes>,
+    /// DofusDB tags: what its spells do (push, pull, retPM, poison, summon, earth...) and boss / miniBoss / noPush... flags.
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, serde::Serialize, Clone, Default)]

@@ -3,9 +3,11 @@
   import { settings, type CombatShow } from "../../lib/stores/settings.svelte";
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
   import { call } from "../../lib/api";
+  import { tagsOf } from "../../lib/monsterTags";
 
   /** Combat: the monsters of the current fight (detected from the fight packets, lib/stores/combat.svelte.ts) with the notes
-   *  kept for them: warnings, invulnerabilities, tips (how many kinds are shown = `settings.combat.show`). */
+   *  kept for them: warnings, invulnerabilities, tips (how many kinds are shown = `settings.combat.show`), and their DofusDB
+   *  tags (push, pull, AP / MP removal..., lib/monsterTags.ts). */
   const SHOW: { id: CombatShow; label: string }[] = [
     { id: "warning", label: "Avertissements" },
     { id: "invulnerable", label: "+ Invulnérabilités" },
@@ -18,13 +20,17 @@
   };
 
   const all = $derived(groups(fight.fighters));
-  // monsters with something to show first (warnings first), the others as a compact list
-  const noted = $derived(
-    all
-      .filter((g) => shown(g.notes, settings.combat.show).length > 0)
-      .sort((a, b) => Number(a.summoned) - Number(b.summoned) || (b.notes?.warning?.length ?? 0) - (a.notes?.warning?.length ?? 0) || a.name.localeCompare(b.name)),
+  const notesOf = (g: Group) => shown(g.notes, settings.combat.show);
+  // summons last; warnings first, then monsters with notes, then by name
+  const cards = $derived(
+    [...all].sort(
+      (a, b) =>
+        Number(a.summoned) - Number(b.summoned) ||
+        (b.notes?.warning?.length ?? 0) - (a.notes?.warning?.length ?? 0) ||
+        Number(notesOf(b).length > 0) - Number(notesOf(a).length > 0) ||
+        a.name.localeCompare(b.name),
+    ),
   );
-  const quiet = $derived(all.filter((g) => !noted.includes(g)).sort((a, b) => Number(a.summoned) - Number(b.summoned) || a.name.localeCompare(b.name)));
 
   const time = (t: number) => new Date(t * 1000).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
   const lv = (g: Group) => {
@@ -79,31 +85,27 @@
           conseils connus pour chacun.
         </p>
       {:else}
-        {#if noted.length}
-          <div class="cards">
-            {#each noted as g (g.key)}
-              <article class="card" class:sum={g.summoned} class:hasw={!!g.notes?.warning?.length}>
-                <header>{@render title(g)}</header>
-                {#each shown(g.notes, settings.combat.show) as [kind, lines] (kind)}
-                  <div class="note {kind}">
-                    <span class="ic" title={KIND[kind].title}>{KIND[kind].icon}</span>
-                    <ul>
-                      {#each lines as l, i (i)}<li>{l}</li>{/each}
-                    </ul>
-                  </div>
-                {/each}
-              </article>
-            {/each}
-          </div>
-        {/if}
-        {#if quiet.length}
-          <h3>{noted.length ? "Sans remarque" : "Aucune remarque pour ces monstres"}</h3>
-          <div class="quiet">
-            {#each quiet as g (g.key)}
-              <span class="chip" class:sum={g.summoned}>{@render title(g)}</span>
-            {/each}
-          </div>
-        {/if}
+        <div class="cards">
+          {#each cards as g (g.key)}
+            {@const notes = notesOf(g)}
+            <article class="card" class:sum={g.summoned} class:hasw={!!g.notes?.warning?.length} class:bare={!notes.length}>
+              <header>{@render title(g)}</header>
+              {#if g.tags.length}
+                <div class="tags">
+                  {#each tagsOf(g.tags) as t (t.id)}<span class="tg {t.group} {t.id}" title={t.group === "boost" ? `Boost : ${t.label}` : t.label}>{t.group === "boost" ? `+${t.label}` : t.label}</span>{/each}
+                </div>
+              {/if}
+              {#each notes as [kind, lines] (kind)}
+                <div class="note {kind}">
+                  <span class="ic" title={KIND[kind].title}>{KIND[kind].icon}</span>
+                  <ul>
+                    {#each lines as l, i (i)}<li>{l}</li>{/each}
+                  </ul>
+                </div>
+              {/each}
+            </article>
+          {/each}
+        </div>
       {/if}
     </div>
   </SmoothScroll>
@@ -112,7 +114,7 @@
 <style>
   .view { flex: 1; min-height: 0; display: flex; flex-direction: column; font-family: var(--font); }
   .view > :global(.wrap) { flex: 1; }
-  .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 0 0 10px; border-bottom: 1px solid var(--line); margin-bottom: 10px; }
+  .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 12px 0 10px; border-bottom: 1px solid var(--line); margin-bottom: 10px; }
   .st { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 60%, transparent); animation: pulse 1.6s infinite; }
   @keyframes pulse { 70% { box-shadow: 0 0 0 6px transparent; } }
@@ -145,8 +147,11 @@
   .note.warning .ic { color: var(--warn); }
   .note.invulnerable { background: color-mix(in srgb, var(--acc) 12%, transparent); }
   .note.tips { background: color-mix(in srgb, var(--mut) 10%, transparent); }
-  .quiet { display: flex; flex-wrap: wrap; gap: 6px; }
-  .chip { display: inline-flex; align-items: baseline; gap: 6px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
-  .chip .nm { font-size: 12.5px; font-weight: 400; }
-  .chip.sum { opacity: 0.75; }
+  .card.bare { gap: 6px; }
+  .tags { display: flex; flex-wrap: wrap; gap: 4px; }
+  .tg { font-size: 11px; padding: 0 6px; border-radius: 4px; border: 1px solid var(--line); line-height: 18px; white-space: nowrap; }
+  .tg.flag { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, transparent); }
+  .tg.control { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+  .tg.boost { color: var(--mut); border-style: dashed; }
+  .tg.neutral { color: #b8a98c; } .tg.earth { color: #b9874c; } .tg.fire { color: #e5646e; } .tg.water { color: #5aa9ff; } .tg.air { color: #4cc38a; }
 </style>

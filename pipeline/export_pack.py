@@ -98,6 +98,20 @@ if notes_csv.exists() and monsters:
                 for kind, lines in note.items():
                     monsters[k].setdefault("notes", {}).setdefault(kind, []).extend(lines)
     print(f"monster notes: {noted} names matched", f"unmatched: {unmatched}" if unmatched else "")
+# DofusDB tags (what a monster's spells do: push, pull, retPM, poison, summon, elements...) + flags, from the local
+# work/dofusdb_monsters.json; flags become tags too: boss, miniBoss, and noPush / noSwitch / noCarry / noTackle when it cannot be.
+DB_FLAGS = {"isBoss": ("boss", True), "isMiniBoss": ("miniBoss", True), "canBePushed": ("noPush", False),
+            "canSwitchPos": ("noSwitch", False), "canBeCarried": ("noCarry", False), "canTackle": ("noTackle", False)}
+db_file = root / "work" / "dofusdb_monsters.json"
+if db_file.exists():
+    db = {int(k): v for k, v in json.loads(db_file.read_text(encoding="utf-8")).items()}
+    for k, v in monsters.items():
+        d = db.get(k)
+        if d:
+            tags = list(d.get("tags") or []) + [t for f, (t, when) in DB_FLAGS.items() if d.get(f) is when]
+            if tags:
+                v["tags"] = tags
+    print("monster tags:", sum(1 for v in monsters.values() if v.get("tags")), "monsters")
 dump("monsters.json", monsters)
 
 for lang in ("fr", "en"):

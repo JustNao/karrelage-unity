@@ -21,6 +21,8 @@ export interface Fighter {
   level: number;
   summoned: boolean;
   notes: Notes | null;
+  /** DofusDB tags (lib/monsterTags.ts) */
+  tags: string[];
 }
 export interface Fight {
   seen: boolean;
@@ -87,13 +89,14 @@ export interface Group {
   summoned: boolean;
   levels: number[];
   notes: Notes | null;
+  tags: string[];
 }
 
 export function groups(list: Fighter[]): Group[] {
   const by = new Map<string, Group>();
   for (const f of list) {
     const key = `${f.gid}:${f.summoned ? 1 : 0}`;
-    const g = by.get(key) ?? { key, gid: f.gid, name: f.name, summoned: f.summoned, levels: [], notes: f.notes };
+    const g = by.get(key) ?? { key, gid: f.gid, name: f.name, summoned: f.summoned, levels: [], notes: f.notes, tags: f.tags ?? [] };
     g.levels.push(f.level);
     by.set(key, g);
   }

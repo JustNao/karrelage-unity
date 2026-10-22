@@ -128,7 +128,7 @@ impl Combat {
         self.bind.get_or_init(|| serde_json::from_value(ctx.data.bindings.get("fight")?.clone()).ok()).as_ref()
     }
 
-    /// The fight for the UI: {active, started, ended, fighters: [{actor, gid, name, grade, level, summoned, notes}]}.
+    /// The fight for the UI: {active, started, ended, fighters: [{actor, gid, name, grade, level, summoned, notes, tags}]}.
     fn state(&self, data: &Data) -> Value {
         let f = self.fight.lock();
         let list: Vec<Value> = f
@@ -140,6 +140,7 @@ impl Combat {
                     "actor": actor, "gid": x.gid, "grade": x.grade, "level": x.level, "summoned": x.summoned,
                     "name": m.and_then(|m| data.text(m.name_id)).map(str::to_owned).unwrap_or_else(|| format!("monstre#{}", x.gid)),
                     "notes": m.and_then(|m| m.notes.as_ref()),
+                    "tags": m.map(|m| m.tags.as_slice()).unwrap_or_default(),
                 })
             })
             .collect();
