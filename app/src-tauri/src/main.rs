@@ -153,6 +153,13 @@ fn restart_app(app: AppHandle) {
     app.restart()
 }
 
+/// Quit so the app installer started by `update.app_install` can replace the files (it relaunches the app itself).
+#[tauri::command]
+fn quit_app(app: AppHandle) {
+    loutil_modules::flush_all();
+    app.exit(0)
+}
+
 /// Data folders (roaming: stores, overrides, packs; local: the webview profile with the UI preferences) used by versions that
 /// were still called "loutil": moved once to the new identifier's folders. Runs before any window creates its profile.
 fn migrate_legacy_dirs() {
@@ -196,7 +203,7 @@ fn main() {
                 w.app_handle().exit(0);
             }
         })
-        .invoke_handler(tauri::generate_handler![status, module_call, capture_set, splash_done, restart_app])
+        .invoke_handler(tauri::generate_handler![status, module_call, capture_set, splash_done, restart_app, quit_app])
         .build(tauri::generate_context!())
         .expect("error while running Karrelage")
         .run(|_, e| {

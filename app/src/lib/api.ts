@@ -40,3 +40,4 @@ export interface Status {
 export const getStatus = () => invoke<Status>("status");
 export const captureSet = (on: boolean) => invoke<Status>("capture_set", { on });
 export const restartApp = () => invoke("restart_app");
+export const quitApp = () => invoke("quit_app");

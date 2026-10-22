@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { app } from "./lib/app.svelte";
-  import { call, captureSet, on, restartApp } from "./lib/api";
+  import { call, captureSet, on, quitApp, restartApp } from "./lib/api";
   import { modules } from "./lib/registry";
   import Banner from "./lib/components/Banner.svelte";
   import ProgressBar from "./lib/components/ProgressBar.svelte";
@@ -26,8 +26,42 @@
     }
   }
 
+  /** App update: a newer GitHub release; its installer is downloaded, then run while the app quits (it relaunches it). */
+  type AppUpd = { state: "none" | "available" | "downloading" | "ready" | "installing" | "error"; version: string; notes: string; pct: number; label: string };
+  let appUpd = $state<AppUpd>({ state: "none", version: "", notes: "", pct: 0, label: "" });
+
+  async function downloadApp() {
+    appUpd = { ...appUpd, state: "downloading", pct: 0, label: "Téléchargement…" };
+    try {
+      await call("update", "app_download");
+    } catch (e) {
+      appUpd = { ...appUpd, state: "error", label: String(e) };
+    }
+  }
+
+  async function installApp() {
+    appUpd = { ...appUpd, state: "installing", label: "" };
+    try {
+      await call("update", "app_install");
+      await quitApp();
+    } catch (e) {
+      appUpd = { ...appUpd, state: "error", label: String(e) };
+    }
+  }
+
   onMount(() => {
     void app.init();
+    call<{ available: boolean; version?: string; notes?: string }>("update", "app_check", {}, true)
+      .then((r) => r.available && (appUpd = { state: "available", version: r.version ?? "", notes: r.notes ?? "", pct: 0, label: "" }))
+      .catch(() => {});
+    const offApp = on<{ phase: string; done?: number; total?: number; message?: string }>("update:app", (p) => {
+      if (p.phase === "error") appUpd = { ...appUpd, state: "error", label: p.message ?? "échec" };
+      else if (p.phase === "ready") appUpd = { ...appUpd, state: "ready", pct: 100 };
+      else {
+        const pct = Math.round(((p.done ?? 0) / Math.max(p.total ?? 1, 1)) * 100);
+        appUpd = { ...appUpd, state: "downloading", pct, label: `Téléchargement ${pct} %` };
+      }
+    });
     call<{ available: boolean }>("update", "check", {}, true)
       .then((r) => r.available && (upd = { state: "available", pct: 0, label: "" }))
       .catch(() => {}); // offline or no GitHub: nothing to show
@@ -37,7 +71,10 @@
       else if (p.phase === "download") upd = { state: "installing", pct: Math.round((p.done / Math.max(p.total, 1)) * 80), label: `Téléchargement ${Math.round((p.done / Math.max(p.total, 1)) * 100)} %` };
       else upd = { state: "installing", pct: 80 + Math.round((p.done / Math.max(p.total, 1)) * 20), label: "Installation…" };
     });
-    return () => void off.then((f) => f());
+    return () => {
+      void off.then((f) => f());
+      void offApp.then((f) => f());
+    };
   });
 
   // restore the capture state the user left at the last close (once, as soon as the backend is ready)
@@ -74,7 +111,20 @@
     <span class="mut">{s.on ? (s.tracking?.length ? "Connecté à Dofus" : "En attente de Dofus.exe…") : ""}</span>
     <Notifications />
     <span class="grow"></span>
-    {#if upd.state === "available"}
+    {#if appUpd.state === "available"}
+      <span class="upd warn" title={appUpd.notes || "Une nouvelle version est publiée sur GitHub"}>⬆ Karrelage {appUpd.version} disponible</span>
+      <button class="updbtn" onclick={downloadApp}>Mettre à jour</button>
+    {:else if appUpd.state === "downloading"}
+      <span class="upd"><ProgressBar value={appUpd.pct / 100} width="140px" />{appUpd.label}</span>
+    {:else if appUpd.state === "ready"}
+      <span class="upd ok">✓ Karrelage {appUpd.version} téléchargé</span>
+      <button class="updbtn" onclick={installApp} title="Ferme Karrelage, installe la nouvelle version puis la relance">Installer et redémarrer</button>
+    {:else if appUpd.state === "installing"}
+      <span class="upd">Installation…</span>
+    {:else if appUpd.state === "error"}
+      <span class="upd bad" title={appUpd.label}>⚠ Mise à jour de Karrelage impossible</span>
+      <button class="updbtn" onclick={downloadApp}>Réessayer</button>
+    {:else if upd.state === "available"}
       <span class="upd warn" title="Un pack de données plus récent est publié sur GitHub">⚠ Nouvelles données du jeu disponibles</span>
       <button class="updbtn" onclick={install}>Télécharger et mettre à jour</button>
     {:else if upd.state === "installing"}
