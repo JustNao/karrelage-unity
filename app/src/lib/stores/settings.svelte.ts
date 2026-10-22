@@ -20,6 +20,8 @@ const DEFAULTS = {
     autoOpen: false,
     /** Floating (always on top) fight window: shown while a fight runs, closed when it ends. */
     overlay: false,
+    /** Which way the floating window grows with its content: its top edge stays put ("down") or its bottom edge ("up"). */
+    overlayGrow: "down" as "down" | "up",
   },
 };
 export type CombatShow = "warning" | "invulnerable" | "all";

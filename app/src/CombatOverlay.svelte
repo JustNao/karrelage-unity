@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
+  import { getCurrentWindow, LogicalPosition, LogicalSize } from "@tauri-apps/api/window";
   import { fight, followFight, groups, OVERLAY_POS_KEY, shown, type Group, type Notes } from "./lib/stores/combat.svelte";
   import { settings } from "./lib/stores/settings.svelte";
   import { tagsOf } from "./lib/monsterTags";
@@ -31,21 +31,30 @@
   onMount(() => {
     void followFight();
     const win = getCurrentWindow();
-    // natural height = title bar + the list's content (+ the box's 2px border)
+    // natural height = title bar + the list's content (+ the box's 2px border); growing up keeps the bottom edge in place
     let last = 0;
-    const fit = () => {
+    const fit = async () => {
       if (!top || !body) return;
       const h = Math.ceil(Math.min(top.offsetHeight + body.offsetHeight + 2, screen.availHeight * 0.8));
-      if (h !== last) void win.setSize(new LogicalSize(WIDTH, (last = h))).catch(() => {});
+      if (h === last) return;
+      const before = last || window.innerHeight; // the height asked last (innerHeight can lag behind a resize)
+      last = h;
+      try {
+        if (settings.combat.overlayGrow === "up") {
+          const p = (await win.outerPosition()).toLogical(await win.scaleFactor());
+          await win.setPosition(new LogicalPosition(p.x, p.y + before - h));
+        }
+        await win.setSize(new LogicalSize(WIDTH, h));
+      } catch {}
     };
-    const ro = new ResizeObserver(fit);
+    const ro = new ResizeObserver(() => void fit());
     if (top) ro.observe(top);
     if (body) ro.observe(body);
-    fit();
+    void fit();
     const moved = win.onMoved(async ({ payload }) => {
       const p = payload.toLogical(await win.scaleFactor());
       try {
-        localStorage.setItem(OVERLAY_POS_KEY, JSON.stringify({ x: Math.round(p.x), y: Math.round(p.y) }));
+        localStorage.setItem(OVERLAY_POS_KEY, JSON.stringify({ x: Math.round(p.x), y: Math.round(p.y), bottom: Math.round(p.y + (last || window.innerHeight)) }));
       } catch {}
     });
     return () => {
@@ -61,6 +70,11 @@
       {#if fight.active}<span class="dot" title="Combat en cours"></span>{/if}Combat
       {#if fight.seen && !fight.active}<span class="mut" data-tauri-drag-region>terminé</span>{/if}
     </span>
+    <button
+      class="x grow"
+      onclick={() => (settings.combat.overlayGrow = settings.combat.overlayGrow === "up" ? "down" : "up")}
+      title={settings.combat.overlayGrow === "up" ? "S'agrandit vers le haut (bord bas fixe) : cliquer pour vers le bas" : "S'agrandit vers le bas (bord haut fixe) : cliquer pour vers le haut"}
+    >{settings.combat.overlayGrow === "up" ? "⤒" : "⤓"}</button>
     <button class="x" onclick={close} title="Fermer">✕</button>
   </div>
   <div class="list"><div bind:this={body}>
@@ -97,6 +111,7 @@
   .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
   .x { border: 0; background: none; color: var(--mut); padding: 0 4px; font-size: 13px; }
   .x:hover { color: var(--bad); }
+  .x.grow:hover { color: var(--acc); }
   .list { flex: 1; min-height: 0; overflow: auto; }
   .msg { padding: 12px; text-align: center; }
   .mon { padding: 6px 12px; border-top: 1px solid rgba(255, 255, 255, 0.07); display: flex; flex-direction: column; gap: 4px; }

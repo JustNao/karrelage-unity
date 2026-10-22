@@ -67,7 +67,7 @@ export async function startCombat() {
   });
 }
 
-/** Where the user left the floating window (logical px), remembered by the window itself. */
+/** Where the user left the floating window (logical px: x, y = top edge, bottom = bottom edge), remembered by the window itself. */
 export const OVERLAY_POS_KEY = "karrelage.combat.overlayPos";
 
 /** The floating fight window (combat.html, src/CombatOverlay.svelte): frameless, transparent, always on top, like the scan list;
@@ -78,12 +78,15 @@ export async function openCombatOverlay(focus = true) {
     if (focus) await open.setFocus();
     return;
   }
-  let pos: { x: number; y: number } | null = null;
+  let pos: { x: number; y: number; bottom?: number } | null = null;
   try {
     pos = JSON.parse(localStorage.getItem(OVERLAY_POS_KEY) ?? "null");
   } catch {}
+  const h = 120;
+  // growing up: the bottom edge is the anchor (the window then grows to its content upwards)
+  const y = pos && (settings.combat.overlayGrow === "up" && pos.bottom != null ? pos.bottom - h : pos.y);
   new WebviewWindow("combat", {
-    url: "combat.html", title: "Combat", width: 340, height: 120, ...(pos ? { x: pos.x, y: pos.y } : {}),
+    url: "combat.html", title: "Combat", width: 340, height: h, ...(pos ? { x: pos.x, y: y! } : {}),
     decorations: false, transparent: true, shadow: false, alwaysOnTop: true, skipTaskbar: true, resizable: false, focus,
   });
 }
