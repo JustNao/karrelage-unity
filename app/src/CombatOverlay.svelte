@@ -11,12 +11,13 @@
   const WIDTH = 340;
   const ICON: Record<keyof Notes, string> = { warning: "⚠", invulnerable: "🛡", tips: "💡" };
 
-  const all = $derived(groups(fight.fighters));
+  const all = $derived(groups(fight.fighters, settings.combat.show));
   const notesOf = (g: Group) => shown(g.notes, settings.combat.show);
-  // summons last; warnings first, then monsters with notes, then by name
+  // dead last, then summons; warnings first, then monsters with notes, then by name
   const list = $derived(
     [...all].sort(
       (a, b) =>
+        Number(!a.alive) - Number(!b.alive) ||
         Number(a.summoned) - Number(b.summoned) ||
         (b.notes?.warning?.length ?? 0) - (a.notes?.warning?.length ?? 0) ||
         Number(notesOf(b).length > 0) - Number(notesOf(a).length > 0) ||
@@ -88,10 +89,11 @@
     {/if}
     {#each list as g (g.key)}
       {@const tags = tagsOf(g.tags)}
-      <div class="mon" class:sum={g.summoned}>
+      <div class="mon" class:sum={g.summoned} class:gone={!g.alive}>
         <div class="hd">
           <span class="nm">{g.name}</span>
-          {#if g.levels.length > 1}<span class="cnt">×{g.levels.length}</span>{/if}
+          {#if g.alive > 1}<span class="cnt">×{g.alive}</span>{/if}
+          {#if !g.alive}<span class="dead">mort</span>{/if}
           {#if g.summoned}<span class="mut tag">invoc.</span>{/if}
         </div>
         {#if tags.length}
@@ -135,4 +137,6 @@
   .tg { font-size: 10px; padding: 0 5px; border-radius: 4px; line-height: 16px; white-space: nowrap; border: 1px solid; }
   .tg.flag { color: var(--bad); border-color: rgba(229, 100, 110, 0.45); }
   .tg.control { color: var(--warn); border-color: rgba(224, 176, 74, 0.45); }
+  .mon.gone { opacity: 0.45; }
+  .dead { font-size: 10px; text-transform: uppercase; color: var(--bad); }
 </style>

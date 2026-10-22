@@ -13,7 +13,7 @@ use loutil_proto::{DynamicMessage, PbValue, ReflectMessage};
 use parking_lot::Mutex;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
@@ -36,6 +36,9 @@ struct Bindings {
     actor_id: String,
     monster: Vec<String>,
     summoned: String,
+    /// GameActionFightEvent's `death` member (absent in older packs)
+    #[serde(default)]
+    death: Option<String>,
 }
 
 /// A monster fighter: the three unordered ints of its MonsterFighter (gid / grade / level, see `Layout`) and whether it was
@@ -104,6 +107,8 @@ struct Fight {
     ended: Option<f64>,
     /// actor id -> monster
     fighters: BTreeMap<i64, Fighter>,
+    /// actor ids of the monsters that died (death action, or left out of a synchronisation)
+    dead: BTreeSet<i64>,
 }
 
 pub struct Combat {
@@ -199,7 +204,7 @@ impl Combat {
                 };
                 let m = data.monsters.get(&gid);
                 json!({
-                    "actor": actor, "gid": gid, "grade": grade, "level": level, "summoned": x.summoned,
+                    "actor": actor, "gid": gid, "grade": grade, "level": level, "summoned": x.summoned, "dead": f.dead.contains(actor),
                     "name": m.and_then(|m| data.text(m.name_id)).map(str::to_owned).unwrap_or_else(|| format!("monstre #{gid}")),
                     "notes": m.and_then(|m| m.notes.as_ref()),
                     "tags": m.map(|m| m.tags.as_slice()).unwrap_or_default(),
@@ -255,22 +260,41 @@ impl Module for Combat {
                 }
                 _ => {
                     let (Some(b), Some(d)) = (self.bindings(ctx), &m.decoded) else { return };
-                    let mut found = vec![];
-                    fighters(b, d, &mut found);
-                    if found.is_empty() {
-                        return;
+                    // a death action: its ids (target, and an unnamed one) that are fighters of this fight
+                    let died: Vec<i64> = match (&b.death, m.name == ACTION) {
+                        (Some(death), true) if d.has_field_by_name(death) => match d.get_field_by_name(death).as_deref() {
+                            Some(PbValue::Message(x)) => x.fields().filter_map(|(_, v)| as_i64(v)).filter(|id| f.fighters.contains_key(id)).collect(),
+                            _ => vec![],
+                        },
+                        _ => vec![],
+                    };
+                    if !died.is_empty() {
+                        let before = f.dead.len();
+                        f.dead.extend(died);
+                        f.dead.len() != before
+                    } else {
+                        let mut found = vec![];
+                        fighters(b, d, &mut found);
+                        if found.is_empty() {
+                            return;
+                        }
+                        self.vote(ctx, &found);
+                        // fighters without a fight start (app opened mid-fight) or after its end: a new fight
+                        if !f.seen || f.ended.is_some() {
+                            *f = Fight { seen: true, started: t, ..Default::default() };
+                        }
+                        // the synchronisation lists the fighters still in: the monsters it leaves out are dead (kept, flagged)
+                        let mut dead = f.dead.clone();
+                        if m.name == SYNC {
+                            let listed: BTreeSet<i64> = found.iter().map(|(a, _)| *a).collect();
+                            dead.extend(f.fighters.keys().filter(|a| !listed.contains(a)));
+                        }
+                        let mut next = f.fighters.clone();
+                        next.extend(found);
+                        let changed = next != f.fighters || dead != f.dead;
+                        (f.fighters, f.dead) = (next, dead);
+                        changed
                     }
-                    self.vote(ctx, &found);
-                    // fighters without a fight start (app opened mid-fight) or after its end: a new fight
-                    if !f.seen || f.ended.is_some() {
-                        *f = Fight { seen: true, started: t, ..Default::default() };
-                    }
-                    // the synchronisation lists every fighter; the other messages add or update some
-                    let mut next = if m.name == SYNC { BTreeMap::new() } else { f.fighters.clone() };
-                    next.extend(found);
-                    let changed = next != f.fighters;
-                    f.fighters = next;
-                    changed
                 }
             }
         };
@@ -419,8 +443,11 @@ mod tests {
         let mut show = DynamicMessage::new(show_md.clone());
         let info = show_md.fields().find(|f| f.kind().as_message().is_some_and(|k| k.full_name() == actor_md.full_name())).unwrap();
         show.set_field(&info, PbValue::Message(actor(-1, gid, false)));
+        let proto_action = proto.message(&proto.obf_for_clear(ACTION).unwrap()).unwrap();
         let mut sync = DynamicMessage::new(sync_md);
         sync.set_field(&list_field, PbValue::List(vec![PbValue::Message(actor(-1, gid, false)), PbValue::Message(actor(-2, gid, true))]));
+        let mut sync_one = DynamicMessage::new(sync.descriptor());
+        sync_one.set_field(&list_field, PbValue::List(vec![PbValue::Message(actor(-2, gid, true))]));
         let end = DynamicMessage::new(proto.message(&proto.obf_for_clear(END).unwrap()).unwrap());
 
         let hub = crate::Hub::new(data, proto, dir, Arc::new(|_, _| {}), Arc::new(|_| {}));
@@ -447,6 +474,24 @@ mod tests {
         let s = c.call("state", Value::Null, &hub.ctx).unwrap();
         assert_eq!(s["fighters"].as_array().unwrap().len(), 2);
         assert_eq!(s["fighters"][0]["summoned"], json!(true), "actor -2 is the summon");
+
+        // the summon dies (death action: its id in one of the two ints), then a synchronisation leaves the other one out
+        let action_md = proto_action.clone();
+        let death_field = action_md.get_field_by_name(b.death.as_deref().unwrap()).unwrap();
+        let death_md = death_field.kind().as_message().unwrap().clone();
+        let mut death = DynamicMessage::new(death_md.clone());
+        for (f, v) in death_md.fields().zip([-2i64, 7]) {
+            death.set_field(&f, PbValue::I64(v));
+        }
+        let mut action = DynamicMessage::new(action_md);
+        action.set_field(&death_field, PbValue::Message(death));
+        c.on_message(&message(ACTION, action, 2.5), &hub.ctx);
+        let s = c.call("state", Value::Null, &hub.ctx).unwrap();
+        assert_eq!((s["fighters"][0]["dead"].clone(), s["fighters"][1]["dead"].clone()), (json!(true), json!(false)), "actor -2 died");
+        c.on_message(&message(SYNC, sync_one, 2.6), &hub.ctx);
+        let s = c.call("state", Value::Null, &hub.ctx).unwrap();
+        assert_eq!(s["fighters"].as_array().unwrap().len(), 2, "dead monsters stay listed (flagged)");
+        assert_eq!(s["fighters"][1]["dead"], json!(true), "actor -1, left out of the synchronisation = dead");
 
         c.on_message(&message(END, end, 3.0), &hub.ctx);
         let s = c.call("state", Value::Null, &hub.ctx).unwrap();

@@ -20,6 +20,8 @@ export interface Fighter {
   grade: number;
   level: number;
   summoned: boolean;
+  /** died during the fight (still sent: a monster with notes stays listed, dimmed) */
+  dead: boolean;
   notes: Notes | null;
   /** DofusDB tags (lib/monsterTags.ts) */
   tags: string[];
@@ -102,26 +104,29 @@ export const KINDS: Record<CombatShow, (keyof Notes)[]> = {
   all: ["warning", "invulnerable", "tips"],
 };
 
-/** One row per monster kind: the fighters of the same gid (and summoned or not) grouped, with their levels. */
+/** One row per monster kind: the fighters of the same gid (and summoned or not) grouped; `alive` = how many are still alive. */
 export interface Group {
   key: string;
   gid: number;
   name: string;
   summoned: boolean;
   levels: number[];
+  alive: number;
   notes: Notes | null;
   tags: string[];
 }
 
-export function groups(list: Fighter[]): Group[] {
+/** The groups worth listing at this display level: a monster without any note shown is dropped once all its copies died. */
+export function groups(list: Fighter[], show: CombatShow): Group[] {
   const by = new Map<string, Group>();
   for (const f of list) {
     const key = `${f.gid}:${f.summoned ? 1 : 0}`;
-    const g = by.get(key) ?? { key, gid: f.gid, name: f.name, summoned: f.summoned, levels: [], notes: f.notes, tags: f.tags ?? [] };
+    const g = by.get(key) ?? { key, gid: f.gid, name: f.name, summoned: f.summoned, levels: [], alive: 0, notes: f.notes, tags: f.tags ?? [] };
     g.levels.push(f.level);
+    if (!f.dead) g.alive++;
     by.set(key, g);
   }
-  return [...by.values()];
+  return [...by.values()].filter((g) => g.alive > 0 || shown(g.notes, show).length > 0);
 }
 
 /** Notes of a group kept by the display level (empty kinds dropped). */

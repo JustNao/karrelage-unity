@@ -19,12 +19,13 @@
     tips: { icon: "💡", title: "Conseil" },
   };
 
-  const all = $derived(groups(fight.fighters));
+  const all = $derived(groups(fight.fighters, settings.combat.show));
   const notesOf = (g: Group) => shown(g.notes, settings.combat.show);
-  // summons last; warnings first, then monsters with notes, then by name
+  // dead last, then summons; warnings first, then monsters with notes, then by name
   const cards = $derived(
     [...all].sort(
       (a, b) =>
+        Number(!a.alive) - Number(!b.alive) ||
         Number(a.summoned) - Number(b.summoned) ||
         (b.notes?.warning?.length ?? 0) - (a.notes?.warning?.length ?? 0) ||
         Number(notesOf(b).length > 0) - Number(notesOf(a).length > 0) ||
@@ -37,7 +38,8 @@
 
 {#snippet title(g: Group)}
   <span class="nm">{g.name}</span>
-  {#if g.levels.length > 1}<span class="cnt">×{g.levels.length}</span>{/if}
+  {#if g.alive > 1}<span class="cnt">×{g.alive}</span>{/if}
+  {#if !g.alive}<span class="dead">mort</span>{/if}
   {#if g.summoned}<span class="tag" title="Apparu en cours de combat (invocation)">invoc.</span>{/if}
 {/snippet}
 
@@ -83,7 +85,7 @@
         <div class="cards">
           {#each cards as g (g.key)}
             {@const notes = notesOf(g)}
-            <article class="card" class:sum={g.summoned} class:hasw={!!g.notes?.warning?.length} class:bare={!notes.length}>
+            <article class="card" class:sum={g.summoned} class:gone={!g.alive} class:hasw={!!g.notes?.warning?.length} class:bare={!notes.length}>
               <header>{@render title(g)}</header>
               {#if g.tags.length}
                 <div class="tags">
@@ -147,4 +149,6 @@
   .tg { font-size: 11px; padding: 0 6px; border-radius: 4px; border: 1px solid var(--line); line-height: 18px; white-space: nowrap; }
   .tg.flag { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, transparent); }
   .tg.control { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+  .card.gone { opacity: 0.45; }
+  .dead { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--bad); }
 </style>

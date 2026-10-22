@@ -66,10 +66,11 @@
   "rune_qty": "fyec"
  },
  "fight": {
-  "_doc": "Fighters (FightFighterShowEvent / FightFighterRefreshEvent information, FightSynchronizeEvent fighters, summons of GameActionFightEvent): ActorPositionInformation {actor_id, actor_information -> fighter -> ai_fighter -> MonsterFighter {three unordered ints monster_gid / creature_grade / creature_level}, stats: FightCharacteristics {summoned}}. Found by walking the message.",
+  "_doc": "Fighters (FightFighterShowEvent / FightFighterRefreshEvent information, FightSynchronizeEvent fighters, summons of GameActionFightEvent): ActorPositionInformation {actor_id, actor_information -> fighter -> ai_fighter -> MonsterFighter {three unordered ints monster_gid / creature_grade / creature_level}, stats: FightCharacteristics {summoned}}. Found by walking the message. death = GameActionFightEvent's Death member (two int64, target id + an unnamed one: the one that is a fighter of the fight died).",
   "actor_id": "gcaw",
   "monster": ["gbyx", "gbyy", "gbyz"],
-  "summoned": "gdeo"
+  "summoned": "gdeo",
+  "death": "fwuz"
  },
  "object_effect": {
   "action": ["gdmq", "gdmr"],
