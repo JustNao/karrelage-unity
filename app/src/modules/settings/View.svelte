@@ -64,6 +64,13 @@
           </div>
           <div class="ctl"><input type="checkbox" bind:checked={settings.combat.autoOpen} /></div>
         </div>
+        <div class="row">
+          <div class="lb">
+            <div>Fenêtre flottante au début d'un combat</div>
+            <div class="mut">Ouvre la petite fenêtre Combat, toujours au premier plan (sauf jeu en plein écran exclusif), dès qu'un combat commence.</div>
+          </div>
+          <div class="ctl"><input type="checkbox" bind:checked={settings.combat.overlayAuto} /></div>
+        </div>
       </section>
     </div>
   </SmoothScroll>

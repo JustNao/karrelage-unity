@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { fight, groups, shown, type Group, type Notes } from "../../lib/stores/combat.svelte";
+  import { fight, groups, openCombatOverlay, shown, type Group, type Notes } from "../../lib/stores/combat.svelte";
   import { settings, type CombatShow } from "../../lib/stores/settings.svelte";
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
   import { call } from "../../lib/api";
@@ -50,6 +50,10 @@
     </div>
     <label class="mut chk" title="Afficher cet onglet dès qu'un combat commence">
       <input type="checkbox" bind:checked={settings.combat.autoOpen} /> Ouvrir au début d'un combat
+    </label>
+    <button class="mini pop" onclick={openCombatOverlay} title="Fenêtre flottante, toujours au premier plan, à placer sur le jeu">⧉ Fenêtre flottante</button>
+    <label class="mut chk" title="Ouvrir la fenêtre flottante dès qu'un combat commence">
+      <input type="checkbox" bind:checked={settings.combat.overlayAuto} /> l'ouvrir au début d'un combat
     </label>
     <span class="st">
       {#if !settings.combat.enabled}
@@ -114,6 +118,7 @@
   @keyframes pulse { 70% { box-shadow: 0 0 0 6px transparent; } }
   .chk { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; }
   .chk input { margin: 0; }
+  .pop { font-size: 12px; padding: 3px 9px; }
   .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
   .seg button { border: 0; border-radius: 0; background: none; color: var(--mut); padding: 4px 10px; font-size: 12px; }
   .seg button + button { border-left: 1px solid var(--line); }

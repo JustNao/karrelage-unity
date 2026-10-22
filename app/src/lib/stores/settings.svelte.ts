@@ -18,6 +18,8 @@ const DEFAULTS = {
     show: "all" as CombatShow,
     /** Open the Combat tab when a fight starts. */
     autoOpen: false,
+    /** Open the floating (always on top) fight window when a fight starts. */
+    overlayAuto: false,
   },
 };
 export type CombatShow = "warning" | "invulnerable" | "all";
@@ -34,6 +36,15 @@ function load(): Settings {
 }
 
 export const settings = $state<Settings>(load());
+
+// another window (the floating fight window) changed a setting: follow it
+try {
+  window.addEventListener("storage", (e) => {
+    if (e.key !== KEY) return;
+    const next = load();
+    for (const s of Object.keys(next) as (keyof Settings)[]) Object.assign(settings[s], next[s]);
+  });
+} catch {}
 
 $effect.root(() => {
   $effect(() => {

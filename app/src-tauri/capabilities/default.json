@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default capabilities for Karrelage",
-  "windows": ["main", "splash", "scanlist"],
+  "windows": ["main", "splash", "scanlist", "combat"],
   "permissions": [
     "core:default",
     "core:webview:allow-create-webview-window",

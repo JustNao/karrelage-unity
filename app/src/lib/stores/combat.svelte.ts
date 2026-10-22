@@ -1,3 +1,4 @@
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { call, on } from "../api";
 import { app } from "../app.svelte";
 import { settings, type CombatShow } from "./settings.svelte";
@@ -31,10 +32,15 @@ export interface Fight {
 
 export const fight = $state<Fight>({ seen: false, active: false, started: 0, ended: null, fighters: [] });
 
-function set(f: Fight) {
-  const fresh = f.active && !(fight.active && fight.started === f.started);
-  Object.assign(fight, f);
-  if (fresh && settings.combat.enabled && settings.combat.autoOpen) app.tab = "combat";
+/** Keep `fight` up to date (main window and the floating window); `onStart` runs when a new fight begins. */
+export async function followFight(onStart?: () => void) {
+  const set = (f: Fight) => {
+    const fresh = f.active && !(fight.active && fight.started === f.started);
+    Object.assign(fight, f);
+    if (fresh) onStart?.();
+  };
+  await on<Fight>("combat:fight", set);
+  set(await call<Fight>("combat", "state", {}, true));
 }
 
 let started = false;
@@ -45,12 +51,25 @@ export async function startCombat() {
     $effect(() => {
       const on = settings.combat.enabled;
       call("combat", "set_enabled", { on }, true)
-        .then(() => !on && set({ seen: false, active: false, started: 0, ended: null, fighters: [] }))
+        .then(() => !on && Object.assign(fight, { seen: false, active: false, started: 0, ended: null, fighters: [] }))
         .catch(() => {});
     });
   });
-  await on<Fight>("combat:fight", set);
-  set(await call<Fight>("combat", "state", {}, true));
+  await followFight(() => {
+    if (!settings.combat.enabled) return;
+    if (settings.combat.autoOpen) app.tab = "combat";
+    if (settings.combat.overlayAuto) void openCombatOverlay();
+  });
+}
+
+/** The floating fight window (combat.html, src/CombatOverlay.svelte): frameless, transparent, always on top, like the scan list. */
+export async function openCombatOverlay() {
+  const open = await WebviewWindow.getByLabel("combat");
+  if (open) {
+    await open.setFocus();
+    return;
+  }
+  new WebviewWindow("combat", { url: "combat.html", title: "Combat", width: 340, height: 420, decorations: false, transparent: true, shadow: false, alwaysOnTop: true, skipTaskbar: true, resizable: true });
 }
 
 /** The kinds of notes shown for a display level. */
