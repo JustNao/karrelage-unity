@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { clickOutside } from "../actions/clickOutside";
   import { app } from "../app.svelte";
   import { ago } from "../fmt";
   import { notifications, RULE_TITLES, type Notification } from "../stores/automation.svelte";
@@ -21,13 +22,10 @@
     open = false;
     app.showLot(n.gid, n.lot);
   }
-  const close = (e: PointerEvent) => open && el && !el.contains(e.target as Node) && (open = false);
 </script>
 
-<svelte:window onpointerdown={close} onkeydown={(e) => e.key === "Escape" && (open = false)} />
-
 {#if notifications.list.length}
-  <div class="notif" bind:this={el}>
+  <div class="notif" bind:this={el} use:clickOutside={() => (open = false)}>
     <button class="nbtn" class:on={open} onclick={toggle} title="Règles d'automatisation déclenchées">
       {#if notifications.unread}<span class="dot"></span>{/if}
       Notifications <span class="mut">{notifications.list.length}</span>

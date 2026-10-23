@@ -1,12 +1,11 @@
 <script lang="ts">
+  import SubView from "../../../../lib/components/SubView.svelte";
   import { onMount } from "svelte";
   import { FOODS, foodGids, levelBase } from "../../../../lib/familiar";
   import { prices } from "../../../../lib/stores/prices.svelte";
-  import { fmtNum, kamas, kamasFull } from "../../../../lib/fmt";
+  import { fmtNum, kamas, kamasOr, kamasFull } from "../../../../lib/fmt";
   import { useSort } from "../../../../lib/sort.svelte";
-  import Banner from "../../../../lib/components/Banner.svelte";
   import SearchBar, { matcher } from "../../../../lib/components/SearchBar.svelte";
-  import SmoothScroll from "../../../../lib/components/SmoothScroll.svelte";
   import SortTable from "../../../../lib/components/SortTable.svelte";
 
   type SortKey = "name" | "xp" | "qty" | "unit" | "meal" | "perXp" | "meals" | "total";
@@ -60,29 +59,26 @@
   });
 </script>
 
-<div class="rv">
-  <div class="head">
-    <div class="fh">Familiers</div>
-  </div>
-  <div class="form">
-    <label>Niveau actuel <input type="number" min="1" max="100" value={level} oninput={(e) => (level = int(e))} /></label>
-    <label>XP dans ce niveau <input type="number" min="0" value={xp} oninput={(e) => (xp = int(e))} /></label>
-    <label>Niveau désiré <input type="number" min="1" max="100" value={target} oninput={(e) => (target = int(e))} /></label>
-    <div class="res">
-      <b>{fmtNum(need)}</b> XP à gagner
-      {#if best && need > 0}· avec <b>{best.name}</b> : <b>{best.meals}</b> repas ({fmtNum(best.meals * best.qty)} ressource{best.meals * best.qty > 1 ? "s" : ""}) pour <b class="good">{kamas(Math.round(best.total!))}</b>
-      {:else if need > 0}<span class="mut">· prix inconnus</span>{/if}
+<SubView title="Familiers" {err}>
+  {#snippet top()}
+    <div class="form">
+      <label>Niveau actuel <input type="number" min="1" max="100" value={level} oninput={(e) => (level = int(e))} /></label>
+      <label>XP dans ce niveau <input type="number" min="0" value={xp} oninput={(e) => (xp = int(e))} /></label>
+      <label>Niveau désiré <input type="number" min="1" max="100" value={target} oninput={(e) => (target = int(e))} /></label>
+      <div class="res">
+        <b>{fmtNum(need)}</b> XP à gagner
+        {#if best && need > 0}· avec <b>{best.name}</b> : <b>{best.meals}</b> repas ({fmtNum(best.meals * best.qty)} ressource{best.meals * best.qty > 1 ? "s" : ""}) pour <b class="good">{kamas(Math.round(best.total!))}</b>
+        {:else if need > 0}<span class="mut">· prix inconnus</span>{/if}
+      </div>
     </div>
-  </div>
-  <SearchBar bind:value={q} bind:priced={onlyPriced} placeholder="Rechercher une ressource…" />
-  {#if err}<Banner inset>Erreur : {err} (relancez l'application pour charger la dernière version)</Banner>{/if}
-  <SmoothScroll>
+    <SearchBar bind:value={q} bind:priced={onlyPriced} placeholder="Rechercher une ressource…" />
+  {/snippet}
     <SortTable columns={COLUMNS} rows={view} {sort} key={(r) => r.name}>
       {#snippet row(r)}
         <td><b>{r.name}</b></td>
         <td class="n">{fmtNum(r.xp)}</td>
         <td class="n">{r.qty}</td>
-        <td class="n">{r.unit != null ? kamas(r.unit) : "—"}</td>
+        <td class="n">{kamasOr(r.unit)}</td>
         <td class="n">{r.meal != null ? kamas(Math.round(r.meal)) : "—"}</td>
         <td class="n">{r.perXp != null ? kamasFull(r.perXp) : "—"}</td>
         <td class="n">{need > 0 ? r.meals : "—"}</td>
@@ -90,14 +86,9 @@
       {/snippet}
       {#snippet empty()}Aucune ressource à afficher : ouvrez-les à l'hôtel de vente pour enregistrer leur prix (ou désactivez « Prix connus seulement »).{/snippet}
     </SortTable>
-  </SmoothScroll>
-</div>
+</SubView>
 
 <style>
-  .rv { flex: 1; min-height: 0; display: flex; flex-direction: column; font-family: var(--font); padding: 8px 10px 0; }
-  .rv > :global(.wrap) { flex: 1; }
-  .head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
-  .head .fh { margin: 0; flex: 1; }
   .form { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; padding: 8px 10px; background: var(--panel); border: 1px solid var(--line); }
   .form label { display: flex; align-items: center; gap: 6px; }
   .form input { width: 90px; padding: 3px 6px; text-align: right; }

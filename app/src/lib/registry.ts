@@ -10,9 +10,13 @@ export interface UiModule {
   component: Component;
 }
 
-const found = import.meta.glob<{ default: UiModule }>("../modules/*/index.ts", { eager: true });
+/** The default exports of an eager `import.meta.glob` of index.ts files, sorted by `order`: tabs and sub-tabs register
+ *  themselves by existing. */
+export function discover<T extends { order: number }>(found: Record<string, { default: T }>): T[] {
+  return Object.values(found)
+    .map((m) => m.default)
+    .sort((a, b) => a.order - b.order);
+}
 
 /** All modules, auto-discovered: add a folder under src/modules and it shows up as a tab. */
-export const modules: UiModule[] = Object.values(found)
-  .map((m) => m.default)
-  .sort((a, b) => a.order - b.order);
+export const modules: UiModule[] = discover(import.meta.glob<{ default: UiModule }>("../modules/*/index.ts", { eager: true }));

@@ -1,6 +1,7 @@
 <script lang="ts">
+  import { clickOutside } from "../../lib/actions/clickOutside";
   import { onMount } from "svelte";
-  import { SvelteMap, SvelteSet } from "svelte/reactivity";
+  import { SvelteSet } from "svelte/reactivity";
   import { call, cached } from "../../lib/api";
   import { kamas } from "../../lib/fmt";
   import { auction } from "../../lib/stores/auction.svelte";
@@ -18,10 +19,12 @@
   import LotTable from "../../lib/components/LotTable.svelte";
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
   import {
-    CARAC, FM_STATS, className, FRESH_SECS, HP_STAT, PANELS, SLOT_LAYOUT, SLOT_TITLES, STAT_ICON_CODES, STAT_LABEL, compute, fmOf, itemStats, lotStats, slotPrices, solve, sumSlots,
+    CARAC, FM_STATS, className, FRESH_SECS, HP_STAT, PANELS, SLOT_LAYOUT, SLOT_TITLES, STAT_LABEL, compute, fmOf, itemStats, lotStats, slotPrices, solve, sumSlots,
     type Build, type Info, type Lot, type Resolved, type SolveResult, type StatRow,
   } from "../../lib/stuff";
   import { unitPriceOrNull } from "../../lib/price";
+  import { iconOfItem, requestIcon } from "../../lib/stores/itemIcons.svelte";
+  import { iconOfCode } from "../../lib/stores/statIcons.svelte";
 
   const cols = new Columns("karrelage.cols.stuff", { left: 230 });
 
@@ -34,7 +37,6 @@
   let draft = $state("");
   let info = $state.raw<Info>({ items: {}, sets: {} });
   let recipes = $state.raw<Recipes>({ recipes: {}, names: {} });
-  let icons = new SvelteMap<string, string>();
   let result = $state<SolveResult | null | "none">(null);
   let solving = $state(false);
   let progress = $state(0);
@@ -93,7 +95,8 @@
   /** Items of the build not scanned in the last hour (red border), one entry per item. */
   const toScan = $derived([...new Map(slotIds.filter((s) => !ignored.has(s) && !fresh(s)).map((s) => [build!.slots[s].gid, { gid: build!.slots[s].gid, name: build!.slots[s].name, group: s === "fa" || s === "mo" ? "companion" : "equip" } as ScanItem])).values()]);
   const caracCode = (stat: number) => CARAC.find(([, st]) => st === stat)?.[0];
-  const icon = (kind: "item" | "stat", key: string | number) => icons.get(`${kind}:${key}`);
+  /** Item icons (game iconId = Dofusbook picture) and stat icons come from the shared icon stores. */
+  const icon = (kind: "item" | "stat", key: string | number) => (kind === "item" ? iconOfItem(+key) : iconOfCode(String(key)));
   const val = (c: typeof real, s: number) => c?.totals.get(s) ?? 0;
 
   /** Request token: only the latest build's data is applied (clicking A then B quickly must not end up with A's items). */
@@ -104,11 +107,7 @@
     const got = await call<Info>("stuff", "item_info", { gids });
     if (req !== infoReq) return;
     info = got;
-    const pics = await call<Record<string, string>>("stuff", "icons", { item: Object.values(b.slots).map((s) => s.picture), stat: STAT_ICON_CODES });
-    if (req !== infoReq) return;
-    // only the current build's icons are kept (they are data URLs: the map would otherwise grow with every build opened)
-    for (const k of [...icons.keys()]) if (k.startsWith("item:") && !(k in pics)) icons.delete(k);
-    for (const [k, v] of Object.entries(pics)) icons.set(k, v);
+    for (const s of Object.values(b.slots)) requestIcon(s.picture);
   }
 
   async function select(id: string) {
@@ -219,7 +218,6 @@
     const below = window.innerHeight - r.bottom - 12;
     pop = below >= 260 || below >= r.top ? { slot, left, top: r.bottom + 4, maxH: below } : { slot, left, bottom: window.innerHeight - r.top + 4, maxH: r.top - 12 };
   }
-  const closePop = (e: Event) => { if (pop && !(e.target instanceof Element && e.target.closest(".pop, .slot .ic"))) pop = null; };
   /** PA / PM / PO minimums start at the Dofusbook value of the build (once per build, so clearing them sticks). */
   const AUTOFILL = [1, 23, 19];
   const AUTOFILL_KEY = "karrelage.stuff.autofilled";
@@ -507,12 +505,12 @@
   </main>
 </div>
 
-<svelte:window onpointerdown={closePop} onkeydown={(e) => e.key === "Escape" && (pop = null)} onresize={() => (pop = null)} />
+<svelte:window onresize={() => (pop = null)} />
 {#if pop && build?.slots[pop.slot]}
   {@const id = pop.slot}
   {@const sl = build.slots[id]}
   {@const mine = ownLot(id)}
-  <div class="pop" style:left="{pop.left}px" style:top={pop.top != null ? `${pop.top}px` : null} style:bottom={pop.bottom != null ? `${pop.bottom}px` : null} style:max-height="{pop.maxH}px" style:width="{POP_W}px">
+  <div class="pop" use:clickOutside={{ close: () => (pop = null), ignore: ".slot .ic" }} style:left="{pop.left}px" style:top={pop.top != null ? `${pop.top}px` : null} style:bottom={pop.bottom != null ? `${pop.bottom}px` : null} style:max-height="{pop.maxH}px" style:width="{POP_W}px">
     <div class="phd"><b>{sl.name}</b> <span class="mut">{SLOT_TITLES[id]}</span></div>
     <button class="opt" class:on={owned.has(id) && !mine} onclick={() => { setOwned(id, "perfect"); pop = null; }}>
       Jet parfait <span class="mut">— je l'ai déjà, compté au maximum</span>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SubView from "../../../../lib/components/SubView.svelte";
   import { onMount } from "svelte";
   import { call } from "../../../../lib/api";
   import { benefit } from "../../../../lib/craft";
@@ -6,11 +7,9 @@
   import { unitPriceOrNull as lotPrice } from "../../../../lib/price";
   import { auction } from "../../../../lib/stores/auction.svelte";
   import { prices } from "../../../../lib/stores/prices.svelte";
-  import { kamas, pct, signedKamas } from "../../../../lib/fmt";
+  import { kamas, kamasOr, pct, signedKamas } from "../../../../lib/fmt";
   import { useSort } from "../../../../lib/sort.svelte";
-  import Banner from "../../../../lib/components/Banner.svelte";
   import SearchBar, { matcher } from "../../../../lib/components/SearchBar.svelte";
-  import SmoothScroll from "../../../../lib/components/SmoothScroll.svelte";
   import SortTable from "../../../../lib/components/SortTable.svelte";
 
   /** Every mount of every family (dragodindes, muldos, volkornes): [game item name, generation, resources per extraction] from the guides (see `source` in mounts.json). */
@@ -92,36 +91,33 @@
   });
 </script>
 
-<div class="rv">
-  <div class="head">
-    <div class="fh">Montures</div>
-  </div>
-  <SearchBar bind:value={q} bind:priced={onlyPriced} placeholder="Rechercher une monture…">
-    {#snippet before()}
-      <select bind:value={fam}>
-        <option value="">Toutes les montures</option>
-        {#each FAMILIES as f (f.id)}<option value={f.id}>{f.title}</option>{/each}
-      </select>
-    {/snippet}
-  </SearchBar>
-  <div class="sum">
-    {#each FAMILIES.filter((f) => !fam || f.id === fam) as f (f.id)}
-      {@const u = unitOf(f.neurone)}
-      <div>
-        {#if u == null}<span class="mut">Prix de « {f.neurone} » inconnu : ouvrez-le à l'hôtel de vente.</span>
-        {:else}{f.neurone} : <b>{kamas(u)}</b> · {#if profitable(f.id)}<b class="good">{profitable(f.id)}</b> monture{profitable(f.id) > 1 ? "s" : ""} avec un lot rentable{:else}<span class="mut">aucun lot rentable pour l'instant</span>{/if}{/if}
-      </div>
-    {/each}
-  </div>
-  {#if err}<Banner inset>Erreur : {err} (relancez l'application pour charger la dernière version)</Banner>{/if}
-  <SmoothScroll>
+<SubView title="Montures" {err} class="mounts">
+  {#snippet top()}
+    <SearchBar bind:value={q} bind:priced={onlyPriced} placeholder="Rechercher une monture…">
+      {#snippet before()}
+        <select bind:value={fam}>
+          <option value="">Toutes les montures</option>
+          {#each FAMILIES as f (f.id)}<option value={f.id}>{f.title}</option>{/each}
+        </select>
+      {/snippet}
+    </SearchBar>
+    <div class="sum">
+      {#each FAMILIES.filter((f) => !fam || f.id === fam) as f (f.id)}
+        {@const u = unitOf(f.neurone)}
+        <div>
+          {#if u == null}<span class="mut">Prix de « {f.neurone} » inconnu : ouvrez-le à l'hôtel de vente.</span>
+          {:else}{f.neurone} : <b>{kamas(u)}</b> · {#if profitable(f.id)}<b class="good">{profitable(f.id)}</b> monture{profitable(f.id) > 1 ? "s" : ""} avec un lot rentable{:else}<span class="mut">aucun lot rentable pour l'instant</span>{/if}{/if}
+        </div>
+      {/each}
+    </div>
+  {/snippet}
     <SortTable columns={COLUMNS} rows={view} {sort} key={(r) => r.gid} rowProps={(r) => ({ class: r.good > 0 ? "hot" : "" })}>
       {#snippet row(r)}
         <td><b>{r.name}</b></td>
         <td class="n">{r.gen}</td>
         <td class="n">{r.neurons}{#if r.bestSenile} <span class="mut" title="Meilleur lot : monture sénile">sénile</span>{/if}</td>
-        <td class="n" title={r.scanned ? "" : "Prix enregistré : sénilité inconnue, ouvrez la monture à l'HDV"}>{r.buy != null ? kamas(r.buy) : "—"}{#if !r.scanned && r.buy != null} <span class="mut">?</span>{/if}</td>
-        <td class="n">{r.sale != null ? kamas(r.sale) : "—"}</td>
+        <td class="n" title={r.scanned ? "" : "Prix enregistré : sénilité inconnue, ouvrez la monture à l'HDV"}>{kamasOr(r.buy)}{#if !r.scanned && r.buy != null} <span class="mut">?</span>{/if}</td>
+        <td class="n">{kamasOr(r.sale)}</td>
         <td class="n" class:good={(r.profit ?? 0) > 0} class:bad={(r.profit ?? 0) < 0}>{r.profit != null ? signedKamas(r.profit) : "—"}</td>
         <td class="n" class:good={(r.pct ?? 0) > 0} class:bad={(r.pct ?? 0) < 0}><b>{r.pct != null ? pct(r.pct) : "—"}</b></td>
         <td class="n" class:good={r.good > 0}>{#if r.scanned}<b>{r.good}</b>{#if r.goodSenile} <span class="mut">(dont {r.goodSenile} sénile{r.goodSenile > 1 ? "s" : ""})</span>{/if}{:else}—{/if}</td>
@@ -141,16 +137,11 @@
       {/snippet}
       {#snippet empty()}Aucune monture à afficher : ouvrez-les et leur ressource (neurone, ambre, corne) à l'hôtel de vente pour enregistrer leurs prix (ou désactivez « Prix connus seulement »).{/snippet}
     </SortTable>
-  </SmoothScroll>
-</div>
+</SubView>
 
 <style>
-  .rv { flex: 1; min-height: 0; display: flex; flex-direction: column; font-family: var(--font); padding: 8px 10px 0; }
-  .rv > :global(.wrap) { flex: 1; }
-  .head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
-  .head .fh { margin: 0; flex: 1; min-width: 260px; }
-  .rv :global(select) { padding: 3px 6px; }
-  .rv :global(tr.lot td) { font-size: 0.92em; padding-top: 1px; padding-bottom: 1px; }
-  .rv :global(tr.lot td:first-child) { padding-left: 18px; }
+  :global(.mounts select) { padding: 3px 6px; }
+  :global(.mounts tr.lot td) { font-size: 0.92em; padding-top: 1px; padding-bottom: 1px; }
+  :global(.mounts tr.lot td:first-child) { padding-left: 18px; }
   .sum { margin-bottom: 10px; padding: 8px 10px; background: var(--panel); border: 1px solid var(--line); }
 </style>

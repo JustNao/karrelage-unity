@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { clickOutside } from "../../lib/actions/clickOutside";
   import { onMount, untrack } from "svelte";
   import { cached, call, listenAll } from "../../lib/api";
   import { persisted, readJSON, removeKey } from "../../lib/persist.svelte";
@@ -146,8 +147,6 @@
     return names.length <= 2 ? names.join(", ") : `${names.length} types`;
   });
   let typesOpen = $state(false);
-  let typesEl = $state<HTMLElement | null>(null);
-  const closeTypes = (e: PointerEvent) => typesOpen && typesEl && !typesEl.contains(e.target as Node) && (typesOpen = false);
   const num = (v: string) => (v.trim() === "" || !Number.isFinite(+v) ? null : +v);
   const filtered = $derived(!!(ui.q || ui.types.length || ui.lvMin != null || ui.lvMax != null || ui.noDrop || ui.absent));
   const resetFilters = () => Object.assign(ui, { q: "", types: [], lvMin: null, lvMax: null, noDrop: false, absent: false });
@@ -261,14 +260,13 @@
   });
 </script>
 
-<svelte:window onpointerdown={closeTypes} />
 
 <div class="view cgrid" class:anim={!cols.dragging} style:grid-template-columns="1fr 5px {cols.px("detail")}px">
   <div class="list">
     <div class="fh">Brisage</div>
     <SearchBar bind:value={ui.q} bind:priced={ui.priced} placeholder="Rechercher un objet…">
       {#snippet before()}
-        <div class="types" bind:this={typesEl}>
+        <div class="types" use:clickOutside={() => (typesOpen = false)}>
           <button class="tbtn" class:on={ui.types.length > 0} onclick={() => (typesOpen = !typesOpen)}>{typeLabel} ▾</button>
           {#if typesOpen}
             <div class="tpop">

@@ -8,17 +8,19 @@ import { STAT_ICON } from "../stuff";
 let icons = $state.raw<Record<string, string>>({});
 let asked = false;
 
-export function iconOfStat(stat: number | null | undefined): string | undefined {
+/** Icon of a Dofusbook stat code ("vi", "pa", "pv"...). */
+export function iconOfCode(code: string | null | undefined): string | undefined {
   if (!asked) {
     asked = true;
     call<Record<string, string>>("stuff", "stat_icons")
       .then((m) => (icons = m))
       .catch(() => (asked = false));
   }
-  if (stat == null) return undefined;
-  const code = STAT_ICON.get(stat);
   return code ? icons[code] : undefined;
 }
+
+/** Icon of a characteristic (stat id). */
+export const iconOfStat = (stat: number | null | undefined): string | undefined => iconOfCode(stat == null ? null : STAT_ICON.get(stat));
 
 /** Elemental damage stats (Do Neutre / Terre / Feu / Eau / Air), whose icons stand for the element. */
 const ELEMENT_STAT: Record<string, number> = { neutre: 92, terre: 88, feu: 89, eau: 90, air: 91 };

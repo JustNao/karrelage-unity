@@ -1,14 +1,13 @@
 <script lang="ts">
+  import SubView from "../../../../lib/components/SubView.svelte";
   import { onMount } from "svelte";
   import { call, cached } from "../../../../lib/api";
   import { readFlag, writeFlag } from "../../../../lib/persist.svelte";
   import { benefit, craftCost, type Recipes } from "../../../../lib/craft";
   import { prices } from "../../../../lib/stores/prices.svelte";
-  import { kamas, pct, signedKamas } from "../../../../lib/fmt";
+  import { kamas, kamasOr, pct, signedKamas } from "../../../../lib/fmt";
   import { useSort } from "../../../../lib/sort.svelte";
-  import Banner from "../../../../lib/components/Banner.svelte";
   import SearchBar, { matcher } from "../../../../lib/components/SearchBar.svelte";
-  import SmoothScroll from "../../../../lib/components/SmoothScroll.svelte";
   import SortTable from "../../../../lib/components/SortTable.svelte";
 
   const ASTRAL = ["mineure", "moyenne", "majeure", "épatante", "merveilleuse", "légendaire"]; // weakest to strongest
@@ -69,34 +68,24 @@
   });
 </script>
 
-<div class="rv">
-  <div class="head">
-    <div class="fh">Runes</div>
-  </div>
-  <SearchBar bind:value={q} bind:priced={onlyPriced} placeholder="Rechercher une rune…" width="180px">
-    {#snippet after()}<label><input type="checkbox" bind:checked={showTranscend} /> Runes de transcendance</label>{/snippet}
-  </SearchBar>
-  {#if err}<Banner inset>Erreur : {err} (relancez l'application pour charger la dernière version)</Banner>{/if}
-  <SmoothScroll>
+<SubView title="Runes" {err}>
+  {#snippet top()}
+    <SearchBar bind:value={q} bind:priced={onlyPriced} placeholder="Rechercher une rune…" width="180px">
+      {#snippet after()}<label><input type="checkbox" bind:checked={showTranscend} /> Runes de transcendance</label>{/snippet}
+    </SearchBar>
+  {/snippet}
     <SortTable columns={COLUMNS} rows={view} {sort} key={(r) => r.gid}>
       {#snippet row(r)}
         <td title={r.recipe}><b>{r.name}</b></td>
         <td>{r.effect ?? "—"}</td>
         <td>{r.astral ?? "—"}</td>
-        <td class="n">{r.craft != null ? kamas(r.craft) : "—"}</td>
-        <td class="n" title={r.missing.length ? "Prix manquant : " + r.missing.join(", ") : ""}>{r.cumul != null ? kamas(r.cumul) : "—"}{#if r.missing.length} <span class="warn">⚠</span>{/if}</td>
-        <td class="n">{r.sale != null ? kamas(r.sale) : "—"}</td>
+        <td class="n">{kamasOr(r.craft)}</td>
+        <td class="n" title={r.missing.length ? "Prix manquant : " + r.missing.join(", ") : ""}>{kamasOr(r.cumul)}{#if r.missing.length} <span class="warn">⚠</span>{/if}</td>
+        <td class="n">{kamasOr(r.sale)}</td>
         <td class="n" class:good={(r.profit ?? 0) > 0} class:bad={(r.profit ?? 0) < 0}>{r.profit != null ? signedKamas(r.profit) : "—"}</td>
         <td class="n" class:good={(r.pct ?? 0) > 0} class:bad={(r.pct ?? 0) < 0}><b>{r.pct != null ? pct(r.pct) : "—"}</b></td>
       {/snippet}
       {#snippet empty()}Aucune rune à afficher : ouvrez les runes et leurs ingrédients à l'hôtel de vente pour enregistrer leurs prix (ou désactivez « Prix connus seulement »).{/snippet}
     </SortTable>
-  </SmoothScroll>
-</div>
+</SubView>
 
-<style>
-  .rv { flex: 1; min-height: 0; display: flex; flex-direction: column; font-family: var(--font); padding: 8px 10px 0; }
-  .rv > :global(.wrap) { flex: 1; }
-  .head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
-  .head .fh { margin: 0; flex: 1; min-width: 260px; }
-</style>

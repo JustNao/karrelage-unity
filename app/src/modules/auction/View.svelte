@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ItemIcon from "../../lib/components/ItemIcon.svelte";
   import { onMount, tick, untrack } from "svelte";
   import { SvelteSet } from "svelte/reactivity";
   import { app } from "../../lib/app.svelte";
@@ -18,7 +19,6 @@
   import EffectPicker from "../../lib/components/EffectPicker.svelte";
   import ItemCard from "../../lib/components/ItemCard.svelte";
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
-  import { iconOfItem, lazyIcon } from "../../lib/stores/itemIcons.svelte";
   import { LEVEL_EFFECT, isLegendary, levelOf, xpOfLevel } from "../../lib/companion";
   import { analyse, isGoodDeal } from "../../lib/density";
   import { settings } from "../../lib/stores/settings.svelte";
@@ -466,7 +466,7 @@
           {@const dc = dealCount(i)}
           <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
           <div class="irow ii" class:sel={selGid === i.gid} onclick={() => (selGid = i.gid)}>
-            <span class="iic" use:lazyIcon={i.icon}>{#if iconOfItem(i.icon)}<img src={iconOfItem(i.icon)} alt="" />{/if}</span>
+            <ItemIcon icon={i.icon} class="iic" />
             <div class="itx">
               <b>{i.name}</b> <span class="mut">niv. {i.level ?? "?"}</span>
               {#if dc}<span class="deal-ico" title="{dc} {dc === 1 ? 'bonne affaire' : 'bonnes affaires'} dans cette liste">●</span>{/if}<br />
@@ -485,7 +485,7 @@
   <SmoothScroll toTop>
     {#if item}
       <div class="head">
-        <span class="hic" use:lazyIcon={item.icon}>{#if iconOfItem(item.icon)}<img src={iconOfItem(item.icon)} alt="" />{/if}</span>
+        <ItemIcon icon={item.icon} class="hic" />
         <div class="fh">{item.name} <span class="mut">{item.level != null ? "niv. " + item.level + " · " : ""}{item.type ?? ""}{app.dev ? " · gid " + item.gid : ""} · mis à jour {ago(item.updated)} · {rows.length}/{item.lots} lots</span></div>
         <button class="sort" onclick={() => (sortDir = -sortDir)} title="Cliquer pour inverser l'ordre des prix">
           Prix <span class="arrow" class:desc={sortDir === -1}>↑</span>
@@ -750,11 +750,9 @@
   .irow.ii { display: flex; gap: 8px; align-items: stretch; padding-left: 4px; }
   /* the icon never sizes the row: positioned over a box as tall as the row's two lines of text (and as wide);
      aspect-ratio cannot give the width here (a flex item's width is set before it is stretched) */
-  .iic { flex: none; position: relative; align-self: stretch; width: calc(2lh + 6px); margin: -3px 0; }
-  .iic img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+  :global(.ii.iic) { align-self: stretch; width: calc(2lh + 6px); margin: -3px 0; }
   .itx { min-width: 0; }
-  .hic { flex: none; width: 36px; height: 36px; margin: -6px 0; }
-  .hic img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  :global(.ii.hic) { width: 36px; height: 36px; margin: -6px 0; }
   .deal-ico { display: inline-block; width: 8px; height: 8px; margin-left: 4px; border-radius: 50%; background: var(--ok); vertical-align: middle; position: relative; top: -1px; font-size: 0; }
   .craft { margin: 0 0 10px; padding: 6px 10px; border: 1px solid var(--bad); border-radius: 8px; font-family: var(--font); font-size: 13px; }
   .craft.pos { border-color: var(--ok); }
