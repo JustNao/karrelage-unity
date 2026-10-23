@@ -1,27 +1,29 @@
 <script lang="ts">
-  import { clickOutside } from "../../lib/actions/clickOutside";
   import { onMount } from "svelte";
-  import { SvelteSet } from "svelte/reactivity";
   import { call, cached } from "../../lib/api";
   import { kamas } from "../../lib/fmt";
   import { auction } from "../../lib/stores/auction.svelte";
   import { prices } from "../../lib/stores/prices.svelte";
   import { inventory } from "../../lib/stores/inventory.svelte";
-  import ConfirmButton from "../../lib/components/ConfirmButton.svelte";
   import Grip from "../../lib/components/Grip.svelte";
-  import ProgressBar from "../../lib/components/ProgressBar.svelte";
-  import SideList from "../../lib/components/SideList.svelte";
   import { Columns } from "../../lib/columns.svelte";
   import { openScanList, type ScanItem } from "../../lib/scanlist";
   import { readJSON, writeJSON } from "../../lib/persist.svelte";
   import type { Recipes } from "../../lib/craft";
-  import ItemCard from "../../lib/components/ItemCard.svelte";
-  import LotTable from "../../lib/components/LotTable.svelte";
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
   import {
-    CARAC, FM_STATS, className, FRESH_SECS, HP_STAT, PANELS, SLOT_LAYOUT, SLOT_TITLES, STAT_LABEL, compute, fmOf, itemStats, lotStats, slotPrices, solve, sumSlots,
-    type Build, type Info, type Lot, type Resolved, type SolveResult, type StatRow,
+    CARAC, FM_STATS, className, FRESH_SECS, HP_STAT, PANELS, SLOT_LAYOUT, SLOT_TITLES, compute, fmOf, itemStats, lotStats, slotPrices, sumSlots,
+    type Build, type Info, type Lot, type Resolved, type StatRow,
   } from "../../lib/stuff";
+  import BuildList from "./BuildList.svelte";
+  import PricePanel, { type OutRow } from "./PricePanel.svelte";
+  import SlotPopup, { POP_W, type PopAt } from "./SlotPopup.svelte";
+  import { Solver } from "./solver.svelte";
+
+  /**
+   * Stuff tab: imported builds (BuildList) | the sheet (stats, slots, forgemagie), then prices and the cheapest-combination
+   * search (PricePanel, run by `solver`). Slot popup: SlotPopup.
+   */
   import { unitPriceOrNull } from "../../lib/price";
   import { iconOfItem, requestIcon } from "../../lib/stores/itemIcons.svelte";
   import { iconOfCode } from "../../lib/stores/statIcons.svelte";
@@ -30,18 +32,10 @@
 
   let builds = $state<Build[]>([]);
   let sel = $state<string | null>(null);
-  let link = $state("");
-  let busy = $state(false);
   let err = $state("");
-  let renaming = $state<string | null>(null);
-  let draft = $state("");
   let info = $state.raw<Info>({ items: {}, sets: {} });
   let recipes = $state.raw<Recipes>({ recipes: {}, names: {} });
-  let result = $state<SolveResult | null | "none">(null);
-  let solving = $state(false);
-  let progress = $state(0);
-  let cancelled = $state(false);
-  let worker: Worker | null = null;
+  const solver = new Solver();
   let now = $state(Date.now() / 1000);
 
   const build = $derived(builds.find((b) => b.id === sel) ?? null);
@@ -90,7 +84,6 @@
   const estSlots = $derived(slotIds.filter((s) => !ignored.has(s) && perSlot[s].estimated));
   const first = $derived(sumSlots(slotIds, ignored, (s) => perSlot[s].first));
   const picked = $derived(sumSlots(slotIds, ignored, (s) => perSlot[s].chosen));
-  const names = (l: string[]) => l.map((s) => SLOT_TITLES[s]).join(", ");
 
   /** Items of the build not scanned in the last hour (red border), one entry per item. */
   const toScan = $derived([...new Map(slotIds.filter((s) => !ignored.has(s) && !fresh(s)).map((s) => [build!.slots[s].gid, { gid: build!.slots[s].gid, name: build!.slots[s].name, group: s === "fa" || s === "mo" ? "companion" : "equip" } as ScanItem])).values()]);
@@ -111,37 +104,14 @@
   }
 
   async function select(id: string) {
-    sel = id; result = null;
+    sel = id; solver.result = null;
     try { await loadInfo(builds.find((b) => b.id === id)!); } catch (e) { if (sel === id) err = String(e); }
-  }
-
-  async function add() {
-    if (!link.trim() || busy) return;
-    busy = true; err = "";
-    try {
-      const b = await call<Build>("stuff", "import", { url: link });
-      builds = [...builds, b];
-      link = "";
-      await select(b.id);
-    } catch (e) { err = String(e); }
-    busy = false;
   }
 
   const patch = (p: Partial<Pick<Build, "targets" | "chosen" | "ignored" | "owned" | "own_uid" | "fm">>) => {
     if (!build) return;
     Object.assign(build, p);
     call("stuff", "save_state", { id: build.id, patch: p }).catch((e) => (err = String(e)));
-  };
-  const rename = async (b: Build) => {
-    const name = draft.trim();
-    renaming = null;
-    if (!name || name === b.name) return;
-    try { await call("stuff", "rename", { id: b.id, name }); b.name = name; } catch (e) { err = String(e); }
-  };
-  const del = async (b: Build) => {
-    await call("stuff", "delete", { id: b.id });
-    builds = builds.filter((x) => x.id !== b.id);
-    if (sel === b.id) sel = builds[0]?.id ?? null;
   };
   const refresh = async (b: Build) => {
     try {
@@ -157,7 +127,7 @@
     const rest = (build!.owned ?? []).filter((s) => !dofusSlots.includes(s));
     const own = { ...build!.own_uid };
     for (const s of dofusSlots) if (on && !owned.has(s)) setCopy(own, s, firstCopy(s)); else if (!on) delete own[s];
-    patch({ owned: on ? [...rest, ...dofusSlots] : rest, own_uid: own }); result = null;
+    patch({ owned: on ? [...rest, ...dofusSlots] : rest, own_uid: own }); solver.result = null;
   };
   /** The copy of a slot's item the character has (worn first), if any. */
   const firstCopy = (slot: string) => inventory.ofGid(build!.slots[slot].gid)[0]?.uid ?? null;
@@ -168,7 +138,7 @@
     const own = { ...build!.own_uid };
     setCopy(own, slot, typeof how === "number" ? how : null);
     patch({ owned: how == null ? o : [...o, slot], own_uid: own });
-    result = null;
+    solver.result = null;
   };
   /**
    * "Utiliser mes objets": the slots whose item the character has. One copy -> owned at that copy, automatically;
@@ -197,7 +167,7 @@
       }
     }
     patch({ owned: o, own_uid: own });
-    result = null;
+    solver.result = null;
   };
   /** Opens the popup of a slot to pick the copy (from the warning). */
   const pickSlot = (slot: string) => {
@@ -208,9 +178,8 @@
   /** ✕: owned (the character's own copy when it has one, else the perfect roll) or bought again. */
   const toggleOwned = (slot: string) => setOwned(slot, owned.has(slot) ? null : firstCopy(slot) ?? "perfect");
 
-  /** Popup of a slot (click on its item): perfect roll, one of the character's copies, or to buy. Fixed position, so the scroll area does not clip it. */
-  let pop = $state<{ slot: string; left: number; top?: number; bottom?: number; maxH: number } | null>(null);
-  const POP_W = 330;
+  /** Popup of a slot (click on its item): perfect roll, one of the character's copies, or to buy. */
+  let pop = $state<PopAt | null>(null);
   function openPop(slot: string, el: HTMLElement) {
     if (pop?.slot === slot) { pop = null; return; }
     const r = el.getBoundingClientRect();
@@ -235,7 +204,7 @@
     const n = parseInt(v, 10);
     if (Number.isFinite(n) && n > 0) t[stat] = n; else delete t[stat];
     patch({ targets: t });
-    result = null;
+    solver.result = null;
   };
 
   const setFm = (code: string, v: string) => {
@@ -243,43 +212,31 @@
     const n = parseInt(v, 10);
     if (Number.isFinite(n) && n !== 0) fm[code] = n; else delete fm[code];
     patch({ fm });
-    result = null;
+    solver.result = null;
   };
   let fmAdd = $state("");
   const fmRows = $derived(Object.entries(build?.fm ?? {}).filter(([c, v]) => v && FM_STATS[c]));
   const fmFree = $derived(Object.entries(FM_STATS).filter(([c]) => !build?.fm?.[c]));
 
-  /** The search runs in a worker (the UI stays responsive), reports its progress and can be cancelled. */
+  /** The search runs in a worker (Solver): the combination found is applied right away. */
   function run() {
-    solving = true; cancelled = false; progress = 0; result = null;
     const lots = Object.fromEntries(slotIds.map((s) => [s, lotsOf(s).map((l) => ({ uid: l.uid, gid: l.gid, prices: l.prices, effects: l.effects }))]));
-    worker = new Worker(new URL("../../lib/stuffWorker.ts", import.meta.url), { type: "module" });
-    worker.onmessage = (e: MessageEvent<{ progress?: number; done?: SolveResult | null }>) => {
-      if (e.data.progress != null) progress = e.data.progress;
-      else if ("done" in e.data) {
-        result = e.data.done ?? "none";
-        if (result !== "none") patch({ chosen: { ...build!.chosen, ...result.picks } }); // the combination found is applied right away
-        stop();
-      }
-    };
-    worker.onerror = (e) => { err = e.message || "erreur du calcul"; stop(); };
     const own = Object.fromEntries(slotIds.flatMap((s) => { const l = ownLot(s); return l ? [[s, { uid: l.uid, gid: l.gid, prices: [], effects: l.effects }]] : []; }));
-    worker.postMessage({ build: { ...$state.snapshot(build!), ignored: [...ignored] }, info, lots, own, targets: $state.snapshot(build!.targets) });
+    solver.run(
+      { build: { ...$state.snapshot(build!), ignored: [...ignored] }, info, lots, own, targets: $state.snapshot(build!.targets) },
+      (r) => patch({ chosen: { ...build!.chosen, ...r.picks } }),
+      (msg) => (err = msg),
+    );
   }
-  function stop() { worker?.terminate(); worker = null; solving = false; }
-  function cancel() { cancelled = true; stop(); }
 
-  const rowsOf = (map: Record<string, number | null | undefined>) =>
+  const rowsOf = (map: Record<string, number | null | undefined>): OutRow[] =>
     slotIds.flatMap((s) => {
       if (ignored.has(s)) return []; // owned: own copy or perfect roll, not a lot of the output
       const lot = map[s] != null ? lotsOf(s).find((l) => l.uid === map[s]) : null;
       return lot ? [{ slot: s, name: build!.slots[s].name, picture: build!.slots[s].picture, price: unitPriceOrNull(lot)!, lot }] : [];
     });
   /** The lots of the combination found, else the lots chosen in the build. */
-  const tableRows = $derived(build ? rowsOf(result && result !== "none" ? result.picks : build.chosen) : []);
-  /** Lots of the output unfolded in the table (by slot). */
-  const openLots = new SvelteSet<string>();
-  const toggleLot = (slot: string) => (openLots.has(slot) ? openLots.delete(slot) : openLots.add(slot));
+  const tableRows = $derived(build ? rowsOf(solver.result && solver.result !== "none" ? solver.result.picks : build.chosen) : []);
 
   onMount(() => {
     const tick = setInterval(() => (now = Date.now() / 1000), 15000);
@@ -293,7 +250,7 @@
       alive = false;
       clearInterval(tick);
       infoReq++; // a pending item_info / icons answer is dropped
-      stop(); // the solver must not keep running (and patch the build) once the tab is gone
+      solver.stop(); // the solver must not keep running (and patch the build) once the tab is gone
     };
   });
 </script>
@@ -339,27 +296,7 @@
 {/snippet}
 
 <div class="grid cgrid" class:anim={!cols.dragging} style:grid-template-columns="{cols.px("left")}px 5px 1fr">
-  <SideList {cols} name="left" title="Stuffs">
-    {#snippet bar()}
-      <input class="link" type="search" placeholder="Lien Dofusbook…" bind:value={link} onkeydown={(e) => e.key === "Enter" && add()} />
-      <button class="mini" onclick={add} disabled={busy}>{busy ? "…" : "Ajouter"}</button>
-    {/snippet}
-    {#if err}<div class="bad err">{err}</div>{/if}
-    {#each builds as b, i (b.id)}
-      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-      <div class="irow brow" class:first={i === 0} class:sel={b.id === sel} onclick={() => renaming !== b.id && select(b.id)}>
-        {#if renaming === b.id}
-          <input class="rn" bind:value={draft} onclick={(e) => e.stopPropagation()} onkeydown={(e) => { if (e.key === "Enter") rename(b); if (e.key === "Escape") renaming = null; }} onblur={() => rename(b)} />
-        {:else}
-          <span class="nm"><b>{b.name}</b><br /><span class="mut">niv. {b.level} · {Object.keys(b.slots).length} objets</span></span>
-          <button class="mini" title="Renommer" onclick={(e) => { e.stopPropagation(); renaming = b.id; draft = b.name; }}>✎</button>
-          <ConfirmButton mini label="✕" confirmLabel="Supprimer ?" title="Supprimer ce stuff" onconfirm={() => del(b)} />
-        {/if}
-      </div>
-    {:else}
-      <div class="mut empty">Collez un lien Dofusbook ci-dessus pour charger un stuff.</div>
-    {/each}
-  </SideList>
+  <BuildList {cols} bind:builds bind:sel bind:err onselect={select} />
   <Grip {cols} name="left" dir={1} />
 
   <main class="main">
@@ -448,110 +385,41 @@
           </section>
         </div>
           <hr class="split" />
-          <section class="bottom">
-            <div class="box prices">
-              <div class="fh">Prix</div>
-              <div class="price" title={craft.missingSlots.length ? `Sans prix : ${names(craft.missingSlots)}` : ""}>
-          <span class="mut">Craft</span> <b>{kamas(craft.total)}</b>
-          {#if craft.missingSlots.length}<span class="bad">{craft.missingSlots.length} sans prix</span>{/if}
-          {#if estSlots.length}<span class="mut" title="Objets non craftables au prix moyen : {names(estSlots)}">dont {estSlots.length} estimé{estSlots.length > 1 ? "s" : ""}</span>{/if}</div>
-              <div class="price" title={first.missingSlots.length ? `Jamais scanné : ${names(first.missingSlots)}` : ""}>
-          <span class="mut">Premier jet</span> <b>{kamas(first.total)}</b>
-          {#if first.missingSlots.length}<span class="bad">{first.missingSlots.length} sans lot</span>{/if}</div>
-              {#if anyChosen}
-                <div class="price" title={picked.missingSlots.length ? `Pas de lot choisi : ${names(picked.missingSlots)}` : ""}>
-            <span class="mut">Sélection</span> <b>{kamas(picked.total)}</b>
-            {#if picked.missingSlots.length}<span class="mut">{picked.missingSlots.length} non choisi</span>{/if}</div>
-        {/if}
-              <label class="small"><input type="checkbox" checked={allDofusOwned} disabled={!dofusSlots.length} onchange={(e) => setDofusOwned(e.currentTarget.checked)} /> Sans les Dofus (hors trophées) dans le prix</label>
-                          </div>
-            <div class="box solver">
-              <div class="fh">Combinaison la moins chère</div>
-              <div class="mut small">Renseignez des minimums dans les cases « min » des stats, puis lancez la recherche parmi les lots scannés.</div>
-              {#if solving}
-                <div class="prog"><ProgressBar value={progress} height={6} speed={0.1} /></div>
-                <div class="small mut">Calcul… {Math.round(progress * 100)} %</div>
-                <button onclick={cancel}>Annuler</button>
-              {:else}
-                <button onclick={run} disabled={!Object.keys(build.targets).length || unscanned.length > 0}>Rechercher</button>
-                {#if unscanned.length}<div class="small bad">À scanner d'abord (ou à marquer comme possédé avec ✕) : {names(unscanned)}.</div>{/if}
-                {#if cancelled}<span class="small mut">Calcul annulé.</span>{/if}
-              {/if}
-              {#if result === "none"}<div class="bad small">Aucune combinaison ne satisfait ces minimums avec les lots scannés.</div>
-              {:else if result}
-                <div class="small">Coût : <b>{kamas(result.cost)}</b>{#if result.approx} <span class="mut">(recherche limitée, résultat approché)</span>{/if}</div>
-                <div class="small mut">{Object.keys(result.picks).length} emplacement(s) choisis{#if result.fixedSlots.length} · gardés tels quels : {names(result.fixedSlots)}{/if}</div>
-              {/if}
-                                      {#if tableRows.length}
-                <div class="fh tt">{result && result !== "none" ? "Combinaison trouvée" : "Lots choisis"}</div>
-                {#snippet itemCell(r: (typeof tableRows)[number])}
-                  {#if icon("item", r.picture)}<img class="lic" src={icon("item", r.picture)} alt="" />{/if}<span class="mut">{SLOT_TITLES[r.slot]}</span> <b>{r.name}</b>
-                {/snippet}
-                <LotTable
-                  lots={tableRows.map((r) => ({ row: r.lot, key: r.slot, meta: r }))}
-                  deals={false}
-                  transcend={false}
-                  leads={[{ key: "item", label: "Objet", cell: itemCell, sort: (r) => r.name }]}
-                  open={(k) => openLots.has(k)}
-                  ontoggle={toggleLot}
-                />
-                <div class="tot">Total <b>{kamas(tableRows.reduce((s, r) => s + r.price, 0))}</b></div>
-              {/if}
-            </div>
-          </section>
+          <PricePanel
+            {craft}
+            {first}
+            {picked}
+            {estSlots}
+            {anyChosen}
+            {dofusSlots}
+            {allDofusOwned}
+            onDofusOwned={setDofusOwned}
+            {solver}
+            canSearch={Object.keys(build.targets).length > 0}
+            {unscanned}
+            onrun={run}
+            rows={tableRows}
+          />
         </div>
       </SmoothScroll>
     {/if}
   </main>
 </div>
 
-<svelte:window onresize={() => (pop = null)} />
-{#if pop && build?.slots[pop.slot]}
-  {@const id = pop.slot}
-  {@const sl = build.slots[id]}
-  {@const mine = ownLot(id)}
-  <div class="pop" use:clickOutside={{ close: () => (pop = null), ignore: ".slot .ic" }} style:left="{pop.left}px" style:top={pop.top != null ? `${pop.top}px` : null} style:bottom={pop.bottom != null ? `${pop.bottom}px` : null} style:max-height="{pop.maxH}px" style:width="{POP_W}px">
-    <div class="phd"><b>{sl.name}</b> <span class="mut">{SLOT_TITLES[id]}</span></div>
-    <button class="opt" class:on={owned.has(id) && !mine} onclick={() => { setOwned(id, "perfect"); pop = null; }}>
-      Jet parfait <span class="mut">— je l'ai déjà, compté au maximum</span>
-    </button>
-    {#each inventory.ofGid(sl.gid) as it (it.uid)}
-      <!-- svelte-ignore a11y_click_events_have_key_events -->
-      <div class="opt copy" class:on={mine?.uid === it.uid} role="button" tabindex="0" onclick={() => { setOwned(id, it.uid); pop = null; }}>
-        <div>Mon objet <span class="mut">— {it.equipped ? "équipé" : "dans le sac"}</span></div>
-        <ItemCard row={it} flags={false} priced={false} />
-      </div>
-    {:else}
-      <div class="mut small">{inventory.updated ? "Le personnage n'a pas cet objet (équipé ou dans le sac)." : "Inventaire inconnu : connectez votre personnage pendant que Karrelage tourne."}</div>
-    {/each}
-    <button class="opt" class:on={!owned.has(id)} onclick={() => { setOwned(id, null); pop = null; }}>
-      À acheter <span class="mut">— je ne l'ai pas</span>
-    </button>
-  </div>
-{/if}
+{#if build}<SlotPopup bind:pop {build} {owned} mine={pop ? ownLot(pop.slot) : undefined} onset={setOwned} />{/if}
 
 <style>
   .grid { flex: 1; min-height: 0; display: grid; font-family: var(--font); }
   .main { min-height: 0; display: flex; flex-direction: column; padding: 8px 10px 0; min-width: 0; }
   .main > :global(.wrap) { flex: 1; }
-  /* builds list (SideList, same look as the HDV item list) */
-  .link { flex: 1; min-width: 0; padding: 3px 6px; }
-  .irow.brow { display: flex; align-items: center; gap: 4px; }
-  .err { padding: 0 10px 6px; }
-  .err { font-size: 12px; margin-bottom: 6px; }
-  .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .rn { flex: 1; min-width: 0; }
   /* icon buttons without a frame */
   .ghost { border: 0; background: none; padding: 0 4px; color: var(--mut); }
   .ghost:hover { color: var(--fg); }
   .pad { padding: 20px; }
   .bar { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; padding: 6px 10px; margin-bottom: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
   .ttl { flex: 1; min-width: 220px; }
-  .prog { margin: 6px 0 2px; line-height: 0; }
   .scan { margin-left: 10px; padding: 2px 8px; font-size: 12px; }
   .ttl a { margin-left: 8px; font-size: 12px; }
-  .price { white-space: nowrap; }
-  .price .bad { font-size: 11px; margin-left: 4px; }
   .sheetwrap { container-type: inline-size; }
   .sheet { display: grid; grid-template-columns: 460px max-content 620px; justify-content: safe center; gap: 14px; align-items: start; padding-bottom: 12px; }
   /* medium: stats + build on top, damage and resistances on one row, prices and forgemagie at the bottom */
@@ -589,12 +457,6 @@
   .two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 12px; }
   .two > div { min-width: 0; }
   .split { border: 0; border-top: 1px solid var(--line); margin: 6px 0 12px; }
-  .bottom { display: grid; grid-template-columns: minmax(260px, 320px) minmax(0, 1fr); gap: 14px; align-items: start; padding-bottom: 16px; }
-  .lic { width: 22px; height: 22px; vertical-align: middle; margin-right: 6px; }
-  .tot { margin-top: 8px; text-align: right; }
-  .tt { margin-top: 12px; }
-  @container (max-width: 920px) { .bottom { grid-template-columns: minmax(0, 1fr); } }
-  .prices .price { margin: 2px 0; }
   .small { font-size: 12px; margin: 4px 0; }
   .usemine { margin: 8px 0 2px; font-size: 13px; }
   .usemine .link { border: 0; background: none; padding: 0; color: var(--acc); text-decoration: underline; font: inherit; }
@@ -615,12 +477,6 @@
   .slot.mine .ic { border-color: #4aa3ff; }
   .inv { position: absolute; right: 4px; top: 4px; width: 8px; height: 8px; border-radius: 50%; background: #4aa3ff; }
   .dot.inv { background: #4aa3ff; }
-  .pop { position: fixed; z-index: 50; overflow-y: auto; box-sizing: border-box; padding: 8px; display: flex; flex-direction: column; gap: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45); font-size: 12px; font-family: var(--font); }
-  .phd { padding: 0 2px 2px; }
-  .opt { text-align: left; padding: 5px 8px; font: inherit; border: 1px solid var(--line); border-radius: 6px; background: none; cursor: pointer; }
-  .opt:hover { border-color: var(--mut); }
-  .opt.on { border-color: #4aa3ff; }
-  .copy { display: flex; flex-direction: column; gap: 4px; }
   .slot img { max-width: 100%; max-height: 100%; }
   .ow { position: absolute; left: -4px; bottom: -4px; width: 18px; height: 18px; padding: 0; border-radius: 9px; font-size: 10px; line-height: 1; color: var(--mut); }
   .ow.on { background: var(--mut); color: #000; border-color: var(--mut); }
