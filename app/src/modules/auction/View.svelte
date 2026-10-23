@@ -1,40 +1,40 @@
 <script lang="ts">
-  import ItemIcon from "../../lib/components/ItemIcon.svelte";
   import { onMount, tick, untrack } from "svelte";
   import { SvelteSet } from "svelte/reactivity";
   import { app } from "../../lib/app.svelte";
-  import Grip from "../../lib/components/Grip.svelte";
-  import PanelHead from "../../lib/components/PanelHead.svelte";
+  import { cached } from "../../lib/api";
   import { Columns } from "../../lib/columns.svelte";
-  import { call, cached } from "../../lib/api";
+  import { ago, kamas } from "../../lib/fmt";
   import { readJSON, writeJSON } from "../../lib/persist.svelte";
-  import { ago, kamas, kamasFull, pct, signedKamas, runeShort } from "../../lib/fmt";
   import { auction } from "../../lib/stores/auction.svelte";
   import { prices } from "../../lib/stores/prices.svelte";
-  import Collapsible from "../../lib/components/Collapsible.svelte";
-  import ConfirmButton from "../../lib/components/ConfirmButton.svelte";
-  import SearchBar, { matcher } from "../../lib/components/SearchBar.svelte";
-  import SideList from "../../lib/components/SideList.svelte";
-  import DensityChart from "../../lib/components/DensityChart.svelte";
-  import EffectPicker from "../../lib/components/EffectPicker.svelte";
-  import ItemCard from "../../lib/components/ItemCard.svelte";
-  import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
-  import { LEVEL_EFFECT, isLegendary, levelOf, xpOfLevel } from "../../lib/companion";
-  import { analyse, isGoodDeal } from "../../lib/density";
   import { settings } from "../../lib/stores/settings.svelte";
+  import { isLegendary, levelOf, xpOfLevel } from "../../lib/companion";
+  import { analyse, isGoodDeal } from "../../lib/density";
   import { feeder, foodGids, levelBase } from "../../lib/familiar";
-  import CompanionTable from "../../lib/components/CompanionTable.svelte";
-  import LotTable from "../../lib/components/LotTable.svelte";
-  import SortTable from "../../lib/components/SortTable.svelte";
-  import { useSort } from "../../lib/sort.svelte";
   import { mountInfo, neuroneGids, neuronsOf, resourcePlural } from "../../lib/mounts";
-  import { FLAG_EFFECTS, rangeLabel, sections, type EffectMeta } from "../../lib/effects";
-  import { iconOfStat } from "../../lib/stores/statIcons.svelte";
-  import { benefit, craftCost, type CraftLine, type Recipes } from "../../lib/craft";
-  import { isTranscended, targetKey, transcendance, type Rune, type Target } from "../../lib/transcend";
-  import { byUnitPrice, lotKeys, unitPrice, AH_TAX } from "../../lib/price";
+  import type { EffectMeta } from "../../lib/effects";
+  import { benefit, craftCost, type Recipes } from "../../lib/craft";
+  import { isTranscended, transcendance, type Rune } from "../../lib/transcend";
+  import { byUnitPrice, lotKeys, unitPrice } from "../../lib/price";
+  import Collapsible from "../../lib/components/Collapsible.svelte";
+  import CompanionTable from "../../lib/components/CompanionTable.svelte";
+  import DensityChart from "../../lib/components/DensityChart.svelte";
+  import Grip from "../../lib/components/Grip.svelte";
+  import ItemCard from "../../lib/components/ItemCard.svelte";
+  import ItemIcon from "../../lib/components/ItemIcon.svelte";
+  import LotTable from "../../lib/components/LotTable.svelte";
+  import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
+  import CraftSummary from "./CraftSummary.svelte";
+  import FilterPanel from "./FilterPanel.svelte";
+  import ItemList from "./ItemList.svelte";
+  import TranscendView from "./TranscendView.svelte";
+  import { effectLabel, Filters } from "./filters.svelte";
 
-  interface Filter { a: number; min: string | number; max: string | number }
+  /**
+   * HDV tab: scanned items (ItemList) | the open item's lots: craft summary, price / density graph, good deals, lot table or
+   * Transcendance tab (TranscendView) | filters and the pinned lot (FilterPanel). The filters live in `filt` (filters.svelte.ts).
+   */
 
   const cols = new Columns("karrelage.cols.items", { list: 280, filter: 470 }); // resizable: list | listing (flexible) | filter
   const items = auction.items; // shared store: every scanned listing, kept up to date for the whole session
@@ -42,9 +42,8 @@
   let selGid = $state<number | null>(readJSON<number | null>(SEL_KEY, null));
   $effect(() => writeJSON(SEL_KEY, selGid));
   let picker = $state.raw<EffectMeta[]>([]); // effects found on level 150-200 equipment (what the picker offers)
-  const iconOf = (a: number) => iconOfStat(meta[a]?.stat); // Dofusbook stat icons (shared store)
   let meta = $state.raw<Record<number, EffectMeta>>({}); // every labelled effect (labels/groups of whatever shows up in a lot)
-  let filters = $state<Record<number, Filter[]>>({}); // gid -> filters
+  const filt = new Filters(() => item);
   let openSet = new SvelteSet<string | number>(); // lot keys
   let picked = $state<string | number | null>(null); // lot chosen from the graph
   let fade = $state<number | null>(null); // effect id: lots without it are faded out (list, graph, good deals)
@@ -75,25 +74,6 @@
 
   let legendOnly = $state(false); // companions: only legendary ones
   const list = $derived([...items.values()].sort((a, b) => b.updated - a.updated));
-  /** Left panel: items grouped by type, each group collapsible (collapsed groups are remembered). */
-  const COLLAPSE_KEY = "karrelage.collapsedTypes";
-  const collapsed = new SvelteSet<string>(readJSON<string[]>(COLLAPSE_KEY, []));
-  function toggleType(t: string) {
-    collapsed.has(t) ? collapsed.delete(t) : collapsed.add(t);
-    writeJSON(COLLAPSE_KEY, [...collapsed]);
-  }
-  let search = $state(""); // left list: filter by item or type name
-  const typeGroups = $derived.by(() => {
-    const m = new Map<string, any[]>();
-    const match = matcher(search);
-    for (const i of list) {
-      if (!match(i.name, i.type)) continue;
-      const t = i.type ?? "?";
-      if (!m.has(t)) m.set(t, []);
-      m.get(t)!.push(i);
-    }
-    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], "fr")).map(([type, items]) => ({ type, items }));
-  });
   const item = $derived(selGid != null ? items.get(selGid) : undefined);
 
   /** Familier / montilier listing: tracked by level (price follows the xp curve), no stats / pin / transcendance. */
@@ -127,49 +107,20 @@
     const best = opts[0] ?? null;
     return { target, direct, opts: opts.slice(0, 1), best, deal: !!best && (!direct || best.total < direct.price), saving: best && direct ? direct.price - best.total : null, priced: f.priced };
   });
-  const effLabel = (a: number) => meta[a]?.label ?? `effect ${a}`;
+  const effLabel = (a: number) => effectLabel(meta, a);
   /** Craft cost of the open item (recursive, from the stored prices) and what selling it would earn. */
   const craft = $derived(item && !comp ? craftCost(item.gid, recipes, stored) : null);
   const sale = $derived(item ? Math.min(Infinity, ...item.rows.map(unitPrice)) : Infinity);
   const gain = $derived(craft?.cost != null && Number.isFinite(sale) ? benefit(sale, craft.cost) : null);
-  const lotVal = (r: any, a: number) => Math.max(0, ...r.effects.filter((e: any) => e.action === a && e.status !== "removed").map((e: any) => e.hi ?? 0));
-  const flist = (gid: number) => filters[gid] ?? [];
 
   /** Stable key of each lot of the open item (uid, else a content hash): independent of the filters and the sort. */
   const keyMap = $derived(item ? lotKeys(item.rows) : new Map<any, string>());
   const keyOf = (r: any) => keyMap.get(r) ?? "";
 
-  /** Effects the item has by default (filterable ones only), then the ones the user added himself. */
-  const effectRows = $derived.by(() => {
-    if (!item) return [];
-    const seen = new Map<number, { a: number; def: number[] | null }>();
-    for (const d of item.defaults ?? []) if (meta[d.a]?.filterable) seen.set(d.a, { a: d.a, def: [d.min, d.max] });
-    for (const x of flist(item.gid)) if (!seen.has(x.a)) seen.set(x.a, { a: x.a, def: null });
-    return [...seen.values()];
-  });
-
-  /** Weapon-damage effects are only offered for weapons (items whose default effects include weapon hits). */
-  const isWeapon = $derived(!!item && (item.defaults ?? []).some((d: any) => meta[d.a]?.group === "weapon"));
-  const pickable = $derived(picker.filter((e) => isWeapon || e.group !== "weapon"));
-
-  /** Filter rows grouped like the in-game characteristics panel. */
-  const groups = $derived([
-    // the effects the user added come first, in their own section
-    ...(effectRows.some((x) => x.def == null) ? [{ key: "added", label: "Effets ajoutés", items: effectRows.filter((x) => x.def == null).map((x) => ({ ...x, label: effLabel(x.a) })) }] : []),
-    ...sections(effectRows.filter((x) => x.def != null).map((x) => ({ ...x, group: meta[x.a]?.group ?? "other", order: meta[x.a]?.order ?? 9999, label: effLabel(x.a) }))),
-  ]
-  );
-
   const rows = $derived.by(() => {
     if (!item) return [];
-    const f = flist(item.gid).filter((x) => x.min !== "" || x.max !== "");
     return item.rows
-      .filter((r: any) => !(comp && legendOnly) || isLegendary(r))
-      .filter((r: any) => f.every((x) => {
-        if (FLAG_EFFECTS.has(x.a)) return x.min === "" || r.effects.some((e: any) => e.action === x.a && e.status !== "removed");
-        const v = lotVal(r, x.a);
-        return (x.min === "" || v >= +x.min) && (x.max === "" || v <= +x.max);
-      }))
+      .filter((r: any) => (!(comp && legendOnly) || isLegendary(r)) && filt.matches(item.gid, r))
       .sort(byUnitPrice(sortDir));
   });
   const rowSet = $derived(new Set(rows));
@@ -192,64 +143,6 @@
   async function pickLot(id: string | number) {
     picked = id;
     await revealLot(id);
-  }
-
-
-  function filterOf(gid: number, a: number): Filter {
-    filters[gid] ??= [];
-    const f = filters[gid]; // re-read: `??=` yields the raw array, not the reactive proxy
-    let x = f.find((y) => y.a === a);
-    if (!x) {
-      f.push({ a, min: "", max: "" });
-      x = f[f.length - 1]; // the reactive proxy, so later edits trigger updates
-    }
-    return x;
-  }
-  const active = (a: number) => {
-    const y = item && flist(item.gid).find((z) => z.a === a);
-    return !!y && (y.min !== "" || y.max !== "");
-  };
-
-  function preset(p: string) {
-    if (!item) return;
-    if (p === "clear") return void (filters[item.gid] = []);
-    for (const x of effectRows) {
-      if (!x.def) continue; // presets only touch the item's default effects (perfect = default max)
-      const y = filterOf(item.gid, x.a);
-      if (p === "min") y.min = x.def[0];
-      else if (p === meta[x.a]?.group) y.min = x.def[1];
-    }
-  }
-
-  /** Fill the min field of one effect: the low end of its default range (or the lowest value seen in the lots); flags: lots that have it. */
-  function setMin(a: number, def: number[] | null) {
-    if (!item) return;
-    if (FLAG_EFFECTS.has(a)) return void (filterOf(item.gid, a).min = "1");
-    const seen = item.rows.map((r: any) => lotVal(r, a)).filter((v: number) => v > 0);
-    const v = def ? def[0] : seen.length ? Math.min(...seen) : null;
-    if (v !== null) filterOf(item.gid, a).min = v;
-  }
-
-  /** Fill the min field with the top of the default range (or the highest value seen): only perfect rolls remain. */
-  function setPerf(a: number, def: number[] | null) {
-    if (!item) return;
-    const seen = item.rows.map((r: any) => lotVal(r, a)).filter((v: number) => v > 0);
-    const v = def ? def[1] : seen.length ? Math.max(...seen) : null;
-    if (v !== null) filterOf(item.gid, a).min = v;
-  }
-
-  /** Clicking an effect (or a section title): fill its min, or clear it when it already filters. */
-  const toggleEffect = (a: number, def: number[] | null) => (active(a) ? clearEffect(a) : setMin(a, def));
-  function toggleGroup(g: { items: { a: number; def: number[] | null }[] }) {
-    if (g.items.some((x) => active(x.a))) g.items.forEach((x) => clearEffect(x.a));
-    else g.items.forEach((x) => setMin(x.a, x.def));
-  }
-
-  function clearEffect(a: number) {
-    if (!item) return;
-    const y = filterOf(item.gid, a);
-    y.min = "";
-    y.max = "";
   }
 
   function toggleOpen(key: string | number) {
@@ -323,68 +216,11 @@
       .slice(0, 6);
   });
 
-  // ---- saved transcendance candidates: a snapshot kept across scans (the lot may be sold by the time you come back)
-  /** `row` is a summary of the lot (uid, priced stacks, lock and what the card shows of each effect), not the whole row. */
-  interface Saved { key: string; gid: number; itemName: string; savedAt: number; row: any; label: string; value: number; rune: string; buy: number; runeCost: number; sale: number; profit: number }
-  const SAVED_KEY = "karrelage.savedCandidates";
-  const lotSummary = (r: any) => ({
-    uid: r.uid ?? null,
-    gid: r.gid ?? null,
-    locked: !!r.locked,
-    prices: (r.prices ?? []).filter((p: any) => p.price > 0),
-    effects: (r.effects ?? []).map(({ action, text, status, hi, range, group, order, density, stat, known }: any) => ({ action, text, status, hi, range, group, order, density, stat, known })),
-  });
-  const loadSaved = (): Saved[] => {
-    const l = readJSON<Saved[]>(SAVED_KEY, []).map((s) => ({ ...s, row: lotSummary(s.row) })); // older entries kept the full row
-    if (l.length) writeJSON(SAVED_KEY, l);
-    return l;
-  };
-  let saved = $state.raw<Saved[]>(loadSaved());
-  const persistSaved = (l: Saved[]) => {
-    saved = l;
-    writeJSON(SAVED_KEY, l);
-  };
-  const candKey = (o: any) => `${item.gid}:${keyOf(o.row)}`;
-  const isSaved = (o: any) => saved.some((s) => s.key === candKey(o));
-  function toggleSaved(o: any) {
-    const key = candKey(o);
-    if (isSaved(o)) return persistSaved(saved.filter((s) => s.key !== key));
-    const t = o.best.target;
-    persistSaved([
-      { key, gid: item.gid, itemName: item.name, savedAt: Date.now() / 1000, row: lotSummary(o.row), label: effLabel(t.a), value: t.value, rune: t.rune?.name ?? "?", buy: o.buy, runeCost: t.runeCost ?? 0, sale: t.sale, profit: o.best.profit },
-      ...saved,
-    ]);
-  }
-  /** Is the saved lot still in the latest scan of its item? null = the item has not been scanned (here) since. */
-  const stillListed = (sv: Saved) => {
-    const it = items.get(sv.gid);
-    return it && sv.row.uid != null && it.updated > sv.savedAt ? it.rows.some((r: any) => r.uid === sv.row.uid) : null;
-  };
   /** Only computed when read (deriveds are lazy): the Transcendance tab, the deals' "similar item" hint, and the tab count when some lot is transcended. */
   const trans = $derived(transcendance(comp ? [] : rows, runes, stored, focus));
   const transCount = $derived(!comp && rows.some(isTranscended) ? trans.opportunities.length : 0);
   /** Table view: the good deals (green lines). */
   const goodKeys = $derived(new Set<string>(fit ? points.filter((_: any, i: number) => isGoodDeal(fit!, i, points.length)).map((p: any) => p.id) : []));
-
-  // ---- Transcendance tab tables
-  /** Unfolding a candidate also puts it (and the lots with the same rune) forward on the graph; folding it clears that. */
-  function toggleCand(key: string, o: any) {
-    toggleOpen(key);
-    const cid = keyOf(o.row);
-    const t = o.best!.target;
-    cand = openSet.has(key) ? { id: cid, a: t.a, value: t.value } : cand?.id === cid ? null : cand;
-  }
-  type TargetKey = "effect" | "lots" | "sale" | "rune" | "cost";
-  const targetSort = useSort<TargetKey>(null, false, (k) => k === "lots");
-  const TARGET_COLUMNS: { key: TargetKey; label: string; num?: boolean; title?: string }[] = [
-    { key: "effect", label: "Effet ajouté" },
-    { key: "lots", label: "Lots", num: true },
-    { key: "sale", label: "À partir de", num: true, title: "Lot transcendé le moins cher avec cet effet" },
-    { key: "rune", label: "Rune" },
-    { key: "cost", label: "Prix de la rune", num: true },
-  ];
-  const targetValue = (t: Target, k: TargetKey) => (k === "effect" ? effLabel(t.a) : k === "lots" ? t.lots : k === "sale" ? t.sale : k === "rune" ? (t.rune?.name ?? null) : t.runeCost);
-
 
   /** Clicking a dot: unroll the lot and scroll the list down to it (nothing is filtered out). */
   async function focusLot(id: string | number) {
@@ -401,12 +237,13 @@
     if (f && listed) untrack(() => void showFocus(f));
   });
   async function showFocus(f: { gid: number; lot: string }) {
-    app.hdvFocus = null;    if (!items.has(f.gid)) return;
+    app.hdvFocus = null;
+    if (!items.has(f.gid)) return;
     selGid = f.gid;
     tab = "listing";
     legendOnly = false;
     await tick(); // the selection effect resets the highlight and the rune focus first
-    if (!rows.some((r: any) => keyOf(r) === f.lot)) filters[f.gid] = [];
+    if (!rows.some((r: any) => keyOf(r) === f.lot)) filt.reset(f.gid);
     if (!item?.rows.some((r: any) => keyOf(r) === f.lot)) return; // sold since: the item alone
     openSet.add(f.lot);
     picked = f.lot;
@@ -454,31 +291,7 @@
 </script>
 
 <div class="view cgrid" class:anim={!cols.dragging} style:grid-template-columns="{cols.px("list")}px 5px 1fr 5px {cols.px("filter")}px">
-  <SideList {cols} name="list" title="Objets">
-    {#snippet bar()}
-      <SearchBar bind:value={search} placeholder="Rechercher un objet…" grow compact>
-        {#snippet after()}<ConfirmButton mini label="Nettoyer" title="Oublier tous les objets enregistrés" onconfirm={() => call("auction", "clear")} />{/snippet}
-      </SearchBar>
-    {/snippet}
-    {#each typeGroups as g (g.type)}
-      <Collapsible head="thead" title={g.type} count={g.items.length} open={!collapsed.has(g.type)} ontoggle={() => toggleType(g.type)}>
-        {#each g.items as i (i.gid)}
-          {@const dc = dealCount(i)}
-          <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-          <div class="irow ii" class:sel={selGid === i.gid} onclick={() => (selGid = i.gid)}>
-            <ItemIcon icon={i.icon} class="iic" />
-            <div class="itx">
-              <b>{i.name}</b> <span class="mut">niv. {i.level ?? "?"}</span>
-              {#if dc}<span class="deal-ico" title="{dc} {dc === 1 ? 'bonne affaire' : 'bonnes affaires'} dans cette liste">●</span>{/if}<br />
-              <span class="mut">{i.lots} lots · {i.min_price ? "min " + kamas(i.min_price) : "—"} · {ago(i.updated)}{i.demo ? " · demo" : ""}</span>
-            </div>
-          </div>
-        {/each}
-      </Collapsible>
-    {:else}
-      <div class="mut empty">{search ? "Aucun objet ne correspond à la recherche." : "Ouvrez un objet à l'hôtel de vente : il apparaît ici (dernière liste par objet)."}</div>
-    {/each}
-  </SideList>
+  <ItemList {cols} bind:sel={selGid} {dealCount} />
 
   <Grip {cols} name="list" dir={1} />
 
@@ -493,35 +306,7 @@
         <button onclick={() => ((allOpen = !allOpen), openSet.clear())}>{allOpen ? "Tout replier" : "Tout déplier"}</button>
         {#if pin}<button class="on" onclick={() => (pin = null)} title="Arrêter de comparer les lots avec le lot épinglé">Désépingler {pin.item.name}</button>{/if}
       </div>
-      {#if craft}
-        <div class="craft" class:pos={!!gain && gain.profit >= 0}>
-          <div class="crow">
-            <span>Craft <b>{craft.cost != null ? kamas(Math.round(craft.cost)) : "—"}</b></span>
-            {#if Number.isFinite(sale)}<span class="mut">Vente min {kamas(Math.round(sale))}</span>{/if}
-            {#if gain}
-              <span class={gain.profit >= 0 ? "gain" : "loss"} title="Après {AH_TAX * 100} % de taxe de vente : prix de vente − coût de craft">
-                Bénéfice <b>{signedKamas(gain.profit)}</b> ({pct(gain.pct)})
-              </span>
-            {/if}
-            {#if craft.missing.length}<span class="warn" title={craft.missing.join(", ")}>prix manquant : {craft.missing.slice(0, 3).join(", ")}{craft.missing.length > 3 ? "…" : ""}</span>{/if}
-          </div>
-          <details>
-            <summary class="mut">Ingrédients</summary>
-            {#snippet tree(lines: CraftLine[])}
-              <ul>
-                {#each lines as l}
-                  <li>
-                    {l.qty}× {l.name}
-                    <span class="mut">{l.unit != null ? kamas(Math.round(l.unit)) + " l'unité" + (l.how === "craft" ? " · crafté" : "") : "prix inconnu"}</span>
-                    {#if l.sub}{@render tree(l.sub)}{/if}
-                  </li>
-                {/each}
-              </ul>
-            {/snippet}
-            {@render tree(craft.lines)}
-          </details>
-        </div>
-      {/if}
+      {#if craft}<CraftSummary {craft} {sale} {gain} />{/if}
       {#if points.length >= 3}
         <div class="graph" bind:offsetHeight={graphH}><DensityChart {points} {fit} faded={fadedIds} equipment={!comp && !mount} selected={tab === "trans" && cand ? cand.id : picked} onselect={focusLot} /></div>
       {/if}
@@ -530,100 +315,19 @@
         <button class:on={tab === "trans"} onclick={() => (tab = "trans")}>Transcendance{transCount ? ` · ${transCount}` : ""}</button>
       </div>{/if}
       {#if tab === "trans" && !comp}
-        <div class="trans">
-          <!-- saved candidates: a snapshot kept across scans -->
-          {#snippet svRemove(sv: Saved)}<button class="mini" title="Retirer ce candidat" onclick={(ev) => (ev.stopPropagation(), persistSaved(saved.filter((x) => x.key !== sv.key)))}>✕</button>{/snippet}
-          {#snippet svProfit(sv: Saved)}<b class="ok">+{kamasFull(sv.profit)}</b>{/snippet}
-          {#snippet svInvest(sv: Saved)}<span title="Prix du lot + prix de la rune">{kamasFull(sv.buy + sv.runeCost)}</span>{/snippet}
-          {#snippet svItem(sv: Saved)}<button class="link" onclick={(ev) => (ev.stopPropagation(), (selGid = sv.gid))}>{sv.itemName}</button>{/snippet}
-          {#snippet svRune(sv: Saved)}+{sv.value} {sv.label} <span class="mut">{runeShort(sv.rune)}</span>{/snippet}
-          {#snippet svState(sv: Saved)}
-            {@const live = stillListed(sv)}
-            {#if live === true}<span class="ok">en vente</span>{:else if live === false}<span class="warn">absent du dernier scan</span>{:else}<span class="mut">pas rescanné</span>{/if}
-            <span class="mut"> · {ago(sv.savedAt)}</span>
-          {/snippet}
-          {#if saved.length}
-            <div class="ghead">Candidats enregistrés</div>
-            <LotTable
-              lots={saved.map((sv) => ({ row: sv.row, key: "s" + sv.key, meta: sv }))}
-              deals={false}
-              transcend={false}
-              alignPrice={false}
-              leads={[
-                { key: "rm", label: "", cell: svRemove },
-                { key: "profit", label: "Bénéfice", cell: svProfit, sort: (sv) => sv.profit, num: true, desc: true },
-                { key: "invest", label: "Investissement", cell: svInvest, sort: (sv) => sv.buy + sv.runeCost, num: true, title: "Prix du lot + prix de la rune" },
-                { key: "item", label: "Objet", cell: svItem, sort: (sv) => sv.itemName },
-                { key: "rune", label: "Rune", cell: svRune, sort: (sv) => sv.label },
-                { key: "state", label: "Statut", cell: svState, sort: (sv) => sv.savedAt, desc: true },
-              ]}
-              open={(k) => openSet.has(k)}
-              ontoggle={toggleOpen}
-            />
-          {/if}
-          {#if trans.targets.length === 0}
-            <div class="mut">Aucun lot transcendé de cet objet dans la liste : rien à comparer.</div>
-          {:else}
-            <div class="ghead">Lots transcendés vus <span class="hint">· cliquer sur une ligne pour ne voir que les candidats de cette rune</span></div>
-            <div class="ttable">
-              <SortTable
-                columns={TARGET_COLUMNS}
-                rows={targetSort.apply(trans.targets, targetValue)}
-                sort={targetSort}
-                key={(t) => targetKey(t)}
-                rowProps={(t) => ({ class: focus === targetKey(t) ? "picked" : "", onclick: () => (focus = focus === targetKey(t) ? null : targetKey(t)) })}
-              >
-                {#snippet row(t)}
-                  <td><b>+{t.value} {effLabel(t.a)}</b></td>
-                  <td class="n">{t.lots}</td>
-                  <td class="n">{kamasFull(t.sale)}</td>
-                  <td>{#if t.rune}{t.rune.name}{:else}<span class="warn">aucune rune correspondante</span>{/if}</td>
-                  <td class="n">
-                    {#if t.rune && t.runeCost == null}<span class="warn" title="Ouvrez la rune à l'hôtel de vente">prix inconnu</span>
-                    {:else if t.runeCost != null}{kamasFull(t.runeCost)}
-                      {#if t.avgOnly}<span class="warn" title="Prix moyen sur 7 jours seulement : ouvrez la rune à l'hôtel de vente pour relever son prix"> ⚠</span>{:else if t.stale}<span class="warn" title="Prix de la rune vieux de plus d'un jour : ouvrez-la à l'hôtel de vente pour l'actualiser"> ⚠</span>{/if}
-                    {/if}
-                  </td>
-                {/snippet}
-              </SortTable>
-            </div>
-            {#if trans.unpricedCount}<div class="mut note">{trans.unpricedCount} lots candidats ne peuvent pas être classés tant que leur rune n'a pas de prix enregistré.</div>{/if}
-            <div class="ghead">Candidats rentables{#if focus} <button class="mini" onclick={() => (focus = null)}>Toutes les runes ✕</button>{/if}</div>
-            {#snippet oSave(o: any)}<button class="mini star" class:on={isSaved(o)} title={isSaved(o) ? "Enregistré : cliquer pour l'oublier" : "Garder ce candidat pour y revenir plus tard"} onclick={(ev) => (ev.stopPropagation(), toggleSaved(o))}>{isSaved(o) ? "★" : "☆"}</button>{/snippet}
-            {#snippet oProfit(o: any)}<b class="ok">+{kamasFull(o.best.profit)}</b>{/snippet}
-            {#snippet oInvest(o: any)}<span title="Prix du lot + prix de la rune">{kamasFull(o.buy + (o.best.target.runeCost ?? 0))}</span>{/snippet}
-            {#snippet oRune(o: any)}
-              {@const t = o.best.target}
-              +{t.value} {effLabel(t.a)} <span class="mut">{runeShort(t.rune?.name) ?? ""}</span>
-              {#if t.avgOnly}<span class="warn" title="Prix moyen sur 7 jours, jamais relevé à l'hôtel de vente"> ⚠</span>{:else if t.stale}<span class="warn" title="Prix de la rune vieux de plus d'un jour"> ⚠</span>{/if}
-            {/snippet}
-            {#snippet oSale(o: any)}~{kamasFull(o.best.target.sale)}{/snippet}
-            {#snippet oDensity(o: any)}<span class="mut">{o.z >= 0 ? "+" : ""}{o.z.toFixed(1)}σ</span>{/snippet}
-            {#if trans.opportunities.length}
-              <LotTable
-                lots={trans.opportunities.map((o) => ({ row: o.row, key: "t" + keyOf(o.row), meta: o }))}
-                deals={false}
-                transcend={false}
-                alignPrice={false}
-                picked={cand ? "t" + cand.id : null}
-                leads={[
-                  { key: "save", label: "", cell: oSave },
-                  { key: "profit", label: "Bénéfice", cell: oProfit, sort: (o) => o.best.profit, num: true, desc: true },
-                  { key: "invest", label: "Investissement", cell: oInvest, sort: (o) => o.buy + (o.best.target.runeCost ?? 0), num: true, title: "Prix du lot + prix de la rune" },
-                  { key: "rune", label: "Rune à ajouter", cell: oRune, sort: (o) => effLabel(o.best.target.a) },
-                  { key: "sale", label: "Revente", cell: oSale, sort: (o) => o.best.target.sale, num: true, title: "Lot transcendé le moins cher avec le même effet (avant taxe)" },
-                  { key: "z", label: "Densité", cell: oDensity, sort: (o) => o.z, num: true, desc: true, title: "Écart du lot à la tendance prix / densité (> 0 = plus de stats que son prix ne le laisse penser)" },
-                ]}
-                open={(k) => openSet.has(k)}
-                ontoggle={(k) => toggleCand(k, trans.opportunities.find((o) => "t" + keyOf(o.row) === k))}
-                {fade}
-                onfade={toggleFade}
-              />
-            {:else}
-              <div class="mut">Aucun candidat rentable pour le moment.</div>
-            {/if}
-          {/if}
-        </div>
+        <TranscendView
+          {trans}
+          {item}
+          {keyOf}
+          {effLabel}
+          open={(k) => openSet.has(k)}
+          ontoggle={toggleOpen}
+          bind:focus
+          bind:cand
+          {fade}
+          onfade={toggleFade}
+          onselect={(gid) => (selGid = gid)}
+        />
       {:else}
       {#if comp && levelling && levelling.deal}
         <div class="deals">
@@ -679,103 +383,18 @@
 
   <Grip {cols} name="filter" dir={-1} />
 
-  <div class="filter" class:cz={cols.collapsed.filter}>
-    <PanelHead {cols} name="filter" title="Filtres" dir={-1} />
-    {#if pin}
-      <div class="pinned">
-        <div class="fh">Objet épinglé <span class="mut">· {pin.item.name}{pin.item.level != null ? " niv. " + pin.item.level : ""}</span></div>
-        <ItemCard row={pin.row} companion={!!pin.item.companion} perfectFlags={false} pinned onpin={() => (pin = null)} />
-      </div>
-    {/if}
-    {#if item}
-      {#if comp}
-        <div class="fh">Filtrer les {item.type?.toLowerCase() ?? "compagnon"}s</div>
-        {@const lv = flist(item.gid).find((z) => z.a === LEVEL_EFFECT)}
-        <div class="frow lv" class:on={active(LEVEL_EFFECT)}>
-          <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-          <div class="lb" onclick={() => clearEffect(LEVEL_EFFECT)} title="Cliquer pour effacer">Niveau</div>
-          <input type="number" placeholder="min" value={lv?.min ?? ""} oninput={(e) => (filterOf(item.gid, LEVEL_EFFECT).min = e.currentTarget.value)} />
-          <input type="number" placeholder="max" value={lv?.max ?? ""} oninput={(e) => (filterOf(item.gid, LEVEL_EFFECT).max = e.currentTarget.value)} />
-        </div>
-        <label class="leg"><input type="checkbox" bind:checked={legendOnly} /> Statut légendaire uniquement</label>
-      {:else}
-      <div class="fh">Filtrer les effets</div>
-      <div class="btns">
-        <button onclick={() => preset("min")} title="min = valeur la plus basse de la plage de base de chaque effet">Valeurs min</button>
-        <button onclick={() => preset("damage")} title="parfait (max de base) pour les effets de dommages">Dommages</button>
-        <button onclick={() => preset("resist")} title="parfait (max de base) pour les % de résistance">Résistances</button>
-        <button onclick={() => preset("clear")}>Effacer</button>
-      </div>
-      <div class="btns"><EffectPicker effects={pickable} onpick={(id) => filterOf(item.gid, id)} /></div>
-      {#each groups as g (g.key)}
-        <div class="ghead">
-          <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-          <span class="glb" class:on={g.items.some((x) => active(x.a))} onclick={() => toggleGroup(g)} title="Cliquer pour remplir le min de chaque effet avec le bas de sa plage de base (encore une fois pour effacer)">{g.label}</span>
-          {#if g.key !== "added"}
-            <span class="gbtns">
-              <button class="mini" onclick={() => g.items.forEach((x) => setPerf(x.a, x.def))} title="Remplir le min de tous les effets de cette section avec le max de leur plage de base (jet parfait)">Perf</button>
-            </span>
-          {/if}
-        </div>
-        {#each g.items as x (x.a)}
-          {@const y = flist(item.gid).find((z) => z.a === x.a)}
-          <div class="frow" class:on={active(x.a)}>
-            <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-            <div class="lb" onclick={() => toggleEffect(x.a, x.def)} title="Cliquer pour remplir le min avec le bas de la plage de base (encore une fois pour effacer)">{#if iconOf(x.a)}<img class="sic" src={iconOf(x.a)} alt="" />{/if}{x.label}</div>
-            {#if FLAG_EFFECTS.has(x.a)}
-              <label class="tog"><input type="checkbox" checked={active(x.a)} onchange={(e) => (filterOf(item.gid, x.a).min = e.currentTarget.checked ? "1" : "")} /> Uniquement les lots qui l'ont</label>
-            {:else}
-            <small class="rg">{rangeLabel(x.def)}</small>
-            <input type="number" placeholder="min" value={y?.min ?? ""} oninput={(e) => (filterOf(item.gid, x.a).min = e.currentTarget.value)} />
-            <input type="number" placeholder="max" value={y?.max ?? ""} oninput={(e) => (filterOf(item.gid, x.a).max = e.currentTarget.value)} />
-            {#if x.def == null}
-              <button class="mini" onclick={() => (filterOf(item.gid, x.a).min = "1")} title="Remplir le min avec 1 (lots qui ont cet effet)">+1</button>
-            {:else}
-              <button class="mini" onclick={() => setPerf(x.a, x.def)} title="Remplir le min avec le max de la plage de base (jet parfait)">Perf</button>
-            {/if}
-            {/if}
-          </div>
-        {/each}
-      {:else}
-        <div class="mut">Aucun effet</div>
-      {/each}
-      {/if}
-    {/if}
-  </div>
+  <FilterPanel {cols} {item} {comp} {filt} {meta} {picker} {pin} onunpin={() => (pin = null)} bind:legendOnly />
 </div>
 
 <style>
   .view { flex: 1; min-height: 0; display: grid; }
-  /* item icon left of a list row, as tall as the row (fetched once on screen) */
-  .irow.ii { display: flex; gap: 8px; align-items: stretch; padding-left: 4px; }
-  /* the icon never sizes the row: positioned over a box as tall as the row's two lines of text (and as wide);
-     aspect-ratio cannot give the width here (a flex item's width is set before it is stretched) */
-  :global(.ii.iic) { align-self: stretch; width: calc(2lh + 6px); margin: -3px 0; }
-  .itx { min-width: 0; }
   :global(.ii.hic) { width: 36px; height: 36px; margin: -6px 0; }
-  .deal-ico { display: inline-block; width: 8px; height: 8px; margin-left: 4px; border-radius: 50%; background: var(--ok); vertical-align: middle; position: relative; top: -1px; font-size: 0; }
-  .craft { margin: 0 0 10px; padding: 6px 10px; border: 1px solid var(--bad); border-radius: 8px; font-family: var(--font); font-size: 13px; }
-  .craft.pos { border-color: var(--ok); }
-  .craft .crow { display: flex; gap: 14px; flex-wrap: wrap; align-items: baseline; }
-  .craft .gain b, .craft .gain { color: var(--ok); }
-  .craft .loss b, .craft .loss { color: var(--bad); }
-  .craft details { margin-top: 2px; font-size: 12px; }
-  .craft summary { cursor: pointer; }
-  .craft ul { margin: 2px 0; padding-left: 18px; }
-  /* item types of the left list: sticky under the search bar */
-  .view :global(.chd.thead) { border-bottom: 1px solid var(--line); background: var(--bg); padding: 5px 10px; font: 600 11px var(--font); letter-spacing: 0.04em; text-transform: uppercase; position: sticky; top: 66px; z-index: 1; }
   .view > :global(.wrap) { font-family: var(--font); }
   .sort { display: inline-flex; gap: 6px; align-items: center; }
   .arrow { display: inline-block; transition: transform 0.32s cubic-bezier(0.3, 1.4, 0.5, 1); }
   .arrow.desc { transform: rotate(180deg); }
   .head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
   .head .fh { margin: 0; flex: 1; }
-  .filter :global(.phead) { padding-left: 0; padding-right: 0; }
-  .filter { overflow: auto; background: var(--panel); border-left: 1px solid var(--line); padding: 0 10px 10px; font-family: var(--font); font-size: 12px; }
-  .filter .pinned { margin-bottom: 12px; }
-  .filter .ghead { display: flex; align-items: center; justify-content: flex-start; gap: 10px; }
-  .ghead { margin: 12px 0 2px; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--mut); }
-  .gbtns { display: flex; gap: 4px; text-transform: none; letter-spacing: 0; }
   /* the graph stays at the top of the scroll area (flush, over the scroller's padding) while the lots scroll under it */
   .graph { position: sticky; top: calc(-1 * var(--pad, 12px)); z-index: 3; margin-bottom: 6px; padding: 6px 0; background: var(--bg); }
   .head .on { border-color: var(--acc); color: var(--acc); }
@@ -792,28 +411,5 @@
   .deal.faded { opacity: 0.2; }
   .tabs { display: flex; gap: 6px; margin-bottom: 10px; }
   .tabs .on { border-color: var(--acc); color: var(--acc); }
-  .trans .note { margin: 4px 0 8px; font-size: 12px; }
-  .ttable :global(tbody tr) { cursor: pointer; }
-  .ttable :global(tbody tr:hover) { background: var(--panel); }
-  .ttable :global(tr.picked) { outline: 1px solid var(--acc); outline-offset: -1px; }
-  .ghead .hint { text-transform: none; letter-spacing: 0; }
-  .trans :global(.mini.star) { padding: 0 5px; font-size: 13px; line-height: 1.2; }
-  .trans :global(.mini.star.on) { color: var(--acc); border-color: var(--acc); }
   .altw { font-size: 12px; margin-bottom: 4px; }
-  .link { border: 0; background: none; color: var(--acc); padding: 0; text-decoration: underline; }
-  .trans .ok { color: var(--ok); }
-  .btns { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
-  .frow.lv { grid-template-columns: 1fr 52px 52px; }
-  .leg { display: block; margin: 8px 0; }
-  .frow { display: grid; grid-template-columns: 1fr auto 52px 52px auto; gap: 4px; align-items: center; margin: 3px 0; }
-  .frow input { width: 100%; padding: 2px 4px; }
-  .frow .tog { grid-column: 2 / -1; display: flex; gap: 6px; align-items: center; }
-  .frow .tog input { width: auto; }
-  .frow .sic { width: 16px; height: 16px; vertical-align: -3px; margin-right: 5px; }
-  .frow .lb { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
-  .frow .lb:hover, .glb:hover { color: var(--acc); }
-  .glb { cursor: pointer; }
-  .glb.on { color: var(--acc); }
-  .frow .rg { color: var(--mut); text-align: right; white-space: nowrap; padding-right: 2px; }
-  .frow.on .lb { font-weight: 700; color: var(--acc); }
 </style>
