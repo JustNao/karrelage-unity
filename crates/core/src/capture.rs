@@ -19,8 +19,9 @@ struct State {
     streams: HashMap<(ConnKey, &'static str), Stream>,
 }
 
-/// BPF filter matching nothing (no connection tracked yet).
-const NO_TRAFFIC: &str = "tcp and udp";
+/// BPF filter matching nothing (no connection tracked yet). Not a contradiction like "tcp and udp": libpcap's optimizer
+/// refuses those ("expression rejects all packets"), and the open fails. No captured frame is 1 byte long.
+const NO_TRAFFIC: &str = "less 1";
 
 /// The capture filter of every adapter: only the tracked connections, so the driver drops the rest of the machine's traffic
 /// before it is copied to the app. Sniff threads re-apply it when `gen` changes.
@@ -302,6 +303,19 @@ mod tests {
         let b: ConnKey = ("::ffff:5.6.7.8".parse().unwrap(), 443, 50001); // v4-mapped -> plain v4 (the packets are IPv4)
         let c: ConnKey = ("1.2.3.4".parse().unwrap(), 5555, 50002); // same server, other local port: one clause
         assert_eq!(filter_of([a, b, c].iter()), "tcp and ((host 1.2.3.4 and tcp port 5555) or (host 5.6.7.8 and tcp port 443))");
+    }
+
+    #[test]
+    fn filters_compile() {
+        // needs Npcap and an adapter: skipped without them
+        let Ok(api) = Pcap::load() else { return };
+        let Some(dev) = api.devices().ok().and_then(|d| d.into_iter().next()) else { return };
+        let a: ConnKey = ("1.2.3.4".parse().unwrap(), 5555, 50000);
+        for f in [NO_TRAFFIC.to_string(), filter_of([a].iter())] {
+            if let Err(e) = api.open(&dev.name, &f) {
+                assert!(!e.to_string().contains("filter"), "{f:?}: {e}");
+            }
+        }
     }
 
     #[test]
