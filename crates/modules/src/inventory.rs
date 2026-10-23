@@ -1,6 +1,8 @@
 //! Inventory: the character's equipment (worn and in the bag) with its real effects, read from the inventory sent at login
-//! and kept up to date by the object added / modified / deleted events. The Stuff tab uses it to count an owned item at its
-//! actual roll instead of the perfect one. Only equipment is kept; the last character seen wins.
+//! and kept up to date by the object added / modified / moved / deleted events (equipping = moving an object to a worn
+//! position). The Stuff tab uses it to count an owned item at its actual roll instead of the perfect one, and to export the
+//! worn equipment with the character's base points and scrolls (CharacterCharacteristicsEvent). Only equipment is kept; the
+//! last character seen wins.
 use crate::auction::{parse_effect, stat_effects, ObjectEffect};
 use crate::kit::{unknown, Role, Store};
 use crate::{Ctx, Interest, Message, Module};
@@ -19,6 +21,10 @@ pub const ADDED_LIST: &str = "ObjectsAddedEvent";
 pub const MODIFIED: &str = "ObjectModifiedEvent";
 pub const DELETED: &str = "ObjectDeletedEvent";
 pub const DELETED_LIST: &str = "ObjectsDeletedEvent";
+pub const MOVED: &str = "ObjectMovementEvent";
+pub const CHARACTERISTICS: &str = "CharacterCharacteristicsEvent";
+/// Characteristics kept for the export: vitality, wisdom, strength, intelligence, chance, agility.
+const KEPT_CHARACTERISTICS: [i64; 6] = [11, 12, 10, 15, 13, 14];
 
 /// `position` of an object that is in the bag (0-15: worn).
 const BAG: i64 = 63;
@@ -38,6 +44,24 @@ pub(crate) struct Bindings {
     pub modified: String,
     pub deleted: String,
     pub deleted_list: String,
+}
+
+/// ObjectMovementEvent fields (bindings.json `inventory_move`; a role of its own so that an older pack keeps the inventory).
+#[derive(Deserialize, Clone)]
+pub(crate) struct MoveBindings {
+    pub uid: String,
+    pub position: String,
+}
+
+/// CharacterCharacteristicsEvent path to each characteristic's base points and scrolls (bindings.json `characteristics`).
+#[derive(Deserialize, Clone)]
+pub(crate) struct CharacBindings {
+    pub stats: String,
+    pub list: String,
+    pub id: String,
+    pub detailed: String,
+    pub base: String,
+    pub additional: String,
 }
 
 /// An equipment piece as last seen in the inventory: its gid, stack size and effect values ([action, value]).
@@ -71,11 +95,13 @@ struct Content {
     updated: f64,
     /// object uid -> item (see `Inventory::item`)
     items: BTreeMap<i64, Value>,
+    /// the character's characteristics: {t, carac: {characteristic id: {base, scroll}}} (null = never seen)
+    character: Value,
 }
 
 impl Content {
     fn json(&self) -> Value {
-        json!({"updated": self.updated, "items": self.items.values().collect::<Vec<_>>()})
+        json!({"updated": self.updated, "items": self.items.values().collect::<Vec<_>>(), "character": self.character})
     }
 }
 
@@ -83,6 +109,8 @@ impl Content {
 pub struct Inventory {
     bind: Role<Bindings>,
     effect_bind: Role<ObjectEffect>,
+    move_bind: Role<MoveBindings>,
+    carac_bind: Role<CharacBindings>,
     store: Store<Content>,
     uids: UidMap,
 }
@@ -122,6 +150,21 @@ impl Inventory {
         ))
     }
 
+    /// CharacterCharacteristicsEvent -> {characteristic id: {base, scroll}} for `KEPT_CHARACTERISTICS`.
+    fn characteristics(b: &CharacBindings, msg: &DynamicMessage) -> Value {
+        let mut out = serde_json::Map::new();
+        let Some(stats) = msg.get_field_by_name(&b.stats).and_then(|v| v.as_message().cloned()) else { return Value::Null };
+        for c in messages(&stats, &b.list) {
+            let id = int(&c, &b.id);
+            if !KEPT_CHARACTERISTICS.contains(&id) {
+                continue;
+            }
+            let Some(d) = c.get_field_by_name(&b.detailed).and_then(|v| v.as_message().cloned()) else { continue };
+            out.insert(id.to_string(), json!({"base": int(&d, &b.base), "scroll": int(&d, &b.additional)}));
+        }
+        Value::Object(out)
+    }
+
     fn changed(&self, ctx: &Ctx) {
         self.store.touch();
         let list = self.store.lock().json();
@@ -135,13 +178,14 @@ impl Module for Inventory {
     }
 
     fn interest(&self) -> Interest {
-        Interest::Types(&[CONTENT, ADDED, ADDED_LIST, MODIFIED, DELETED, DELETED_LIST])
+        Interest::Types(&[CONTENT, ADDED, ADDED_LIST, MODIFIED, DELETED, DELETED_LIST, MOVED, CHARACTERISTICS])
     }
 
     fn init(&self, ctx: &Ctx) {
         let Some(saved) = self.store.open(ctx, "inventory", "items.json", Content::json) else { return };
         let mut s = self.store.lock();
         s.updated = saved["updated"].as_f64().unwrap_or(0.0);
+        s.character = saved["character"].clone();
         for it in saved["items"].as_array().into_iter().flatten() {
             if let Some(uid) = it["uid"].as_i64() {
                 if let Some(seen) = Seen::of(it) {
@@ -153,8 +197,48 @@ impl Module for Inventory {
     }
 
     fn on_message(&self, m: &Message, ctx: &Ctx) {
-        let (Some(msg), Some((b, eb))) = (m.decoded.as_ref(), self.bindings(ctx)) else { return };
+        let Some(msg) = m.decoded.as_ref() else { return };
         let t = m.raw.t;
+        match m.name.as_str() {
+            MOVED => {
+                let Some(b) = self.move_bind.get(ctx, "inventory_move") else { return };
+                let (uid, position) = (int(msg, &b.uid), int(msg, &b.position));
+                let moved = {
+                    let mut c = self.store.lock();
+                    // only equipment is kept: a resource moved to the shortcut bar is not found here
+                    c.items.get_mut(&uid).is_some_and(|it| {
+                        let was = it["position"].as_i64();
+                        it["position"] = json!(position);
+                        it["equipped"] = json!(position != BAG);
+                        was != Some(position)
+                    })
+                };
+                if moved {
+                    self.changed(ctx);
+                }
+                return;
+            }
+            CHARACTERISTICS => {
+                let Some(b) = self.carac_bind.get(ctx, "characteristics") else { return };
+                let carac = Self::characteristics(b, msg);
+                if carac.as_object().is_none_or(|o| o.is_empty()) {
+                    return;
+                }
+                let changed = {
+                    let mut c = self.store.lock();
+                    let same = c.character["carac"] == carac;
+                    c.character = json!({"t": t, "carac": carac});
+                    !same
+                };
+                // sent after every fight / level / scroll: saved only when the points or scrolls changed
+                if changed {
+                    self.changed(ctx);
+                }
+                return;
+            }
+            _ => {}
+        }
+        let Some((b, eb)) = self.bindings(ctx) else { return };
         let parse = |l: Vec<DynamicMessage>| -> Vec<(i64, Value)> {
             let out: Vec<(i64, Value)> = l.iter().filter_map(|x| Self::item(ctx, b, eb, x, t)).collect();
             let mut u = self.uids.lock();
@@ -245,7 +329,50 @@ mod tests {
         assert_eq!(l["items"][0]["equipped"], json!(true));
         assert_eq!(l["updated"], json!(5.0));
 
+        // unequipped (moved to the bag), then worn again in another slot
+        let mb: MoveBindings = serde_json::from_value(data.bindings["inventory_move"].clone()).unwrap();
+        let moved = |pos: i32| {
+            let mut m = DynamicMessage::new(proto.message(&proto.obf_for_clear(MOVED).unwrap()).unwrap());
+            m.set_field_by_name(&mb.uid, PbValue::I32(1001));
+            m.set_field_by_name(&mb.position, PbValue::I32(pos));
+            m
+        };
+        inv.on_message(&message(MOVED, moved(63)), &hub.ctx);
+        let l = inv.call("list", Value::Null, &hub.ctx).unwrap();
+        assert_eq!((l["items"][0]["position"].clone(), l["items"][0]["equipped"].clone()), (json!(63), json!(false)));
+        inv.on_message(&message(MOVED, moved(9)), &hub.ctx);
+        assert_eq!(inv.call("list", Value::Null, &hub.ctx).unwrap()["items"][0]["position"], json!(9));
+
         inv.on_message(&message(DELETED, del), &hub.ctx);
         assert!(inv.call("list", Value::Null, &hub.ctx).unwrap()["items"].as_array().unwrap().is_empty());
+    }
+
+    /// A synthetic CharacterCharacteristicsEvent: base points and scrolls of the six characteristics, nothing else.
+    #[test]
+    fn reads_characteristics() {
+        let Some((hub, proto)) = testkit::hub("loutil-inventory-carac") else { return };
+        let b: CharacBindings = serde_json::from_value(hub.ctx.data.bindings["characteristics"].clone()).unwrap();
+        let md = proto.message(&proto.obf_for_clear(CHARACTERISTICS).unwrap()).unwrap();
+        let sub = |m: &loutil_proto::MessageDescriptor, f: &str| m.get_field_by_name(f).unwrap().kind().as_message().unwrap().clone();
+        let stats_md = sub(&md, &b.stats);
+        let (c_md, d_md) = (sub(&stats_md, &b.list), sub(&sub(&stats_md, &b.list), &b.detailed));
+        let carac = |id: i32, base: i32, scroll: i32| {
+            let mut d = DynamicMessage::new(d_md.clone());
+            d.set_field_by_name(&b.base, PbValue::I32(base));
+            d.set_field_by_name(&b.additional, PbValue::I32(scroll));
+            let mut c = DynamicMessage::new(c_md.clone());
+            c.set_field_by_name(&b.id, PbValue::I32(id));
+            c.set_field_by_name(&b.detailed, PbValue::Message(d));
+            PbValue::Message(c)
+        };
+        let mut stats = DynamicMessage::new(stats_md.clone());
+        stats.set_field_by_name(&b.list, PbValue::List(vec![carac(10, 202, 100), carac(11, 1, 0), carac(1, 7, 0)]));
+        let mut msg = DynamicMessage::new(md);
+        msg.set_field_by_name(&b.stats, PbValue::Message(stats));
+        let inv = Inventory::new();
+        inv.on_message(&testkit::msg(CHARACTERISTICS, Some(msg), 7.0), &hub.ctx);
+        let c = &inv.call("list", Value::Null, &hub.ctx).unwrap()["character"];
+        assert_eq!(c["carac"], json!({"10": {"base": 202, "scroll": 100}, "11": {"base": 1, "scroll": 0}}), "PA is not kept");
+        assert_eq!(c["t"], json!(7.0));
     }
 }

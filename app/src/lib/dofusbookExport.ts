@@ -6,10 +6,10 @@
  *   "1": base points [vi sa fo in ch ag], "2": level, "3": exo flags (unused here: exos go in "0"),
  *   "4": item count per slot group (`GROUPS`; missing = 1), "5": game gids, group after group.
  * Dofusbook puts every item at its max roll; the exos the worn items carry (added effects, part above the base max) are sent as
- * forgemagie. The last group holds the familier or, without one, the mount (as in game: one or the other). Unknown to the app:
- * characteristic points (0), scrolls (100 assumed), level (200).
+ * forgemagie. The last group holds the familier or, without one, the mount (as in game: one or the other). Base points and
+ * scrolls are the character's (inventory `character`; without them: 0 points, 100 scrolls). The level is not captured: 200.
  */
-import type { InvItem } from "./stores/inventory.svelte";
+import type { Character, InvItem } from "./stores/inventory.svelte";
 import { EXO_BASE, FM_STATS, lotStats } from "./stuff";
 
 const URL = "https://www.dofusbook.net/fr/equipement/dofus-stuffer/objets?stuff=";
@@ -21,13 +21,16 @@ const KE = ["vi", "sa", "fo", "in", "ch", "ag", "pa", "pm", "ii", "pp", "po", "i
  *  game's worn positions (16 = mount). */
 const GROUPS = [[7], [6], [3], [5], [0], [2, 4], [9, 10, 11, 12, 13, 14], [15], [1], [8, 16]];
 /** Character base values Dofusbook subtracts from the "0" entries (its `characterStats`), by `KE` code. */
-const base = (level: number): Record<string, number> => ({ vi: (level - 1) * 5 + 55 + 100, pa: level < 100 ? 6 : 7, pm: 3, pp: 100, ic: 1, pd: 1000 });
-const SCROLLED = ["sa", "fo", "in", "ch", "ag"];
+const base = (level: number): Record<string, number> => ({ vi: (level - 1) * 5 + 55, pa: level < 100 ? 6 : 7, pm: 3, pp: 100, ic: 1, pd: 1000 });
+/** The six characteristics in the format's order ("1" and the first `KE` entries) as game characteristic ids. */
+const CARAC_IDS = [11, 12, 10, 15, 13, 14];
 
-export function dofusbookLink(worn: InvItem[], level = 200): string {
+export function dofusbookLink(worn: InvItem[], character: Character | null, level = 200): string {
   const at = new Map(worn.map((i) => [i.position, i]));
   const stats: Record<string, number> = base(level);
-  for (const c of SCROLLED) stats[c] = 100;
+  // scrolls: Dofusbook reads a value >= 100 as a 100 scroll + forgemagie, below as forgemagie only (same totals either way)
+  CARAC_IDS.forEach((id, i) => (stats[KE[i]] = (stats[KE[i]] ?? 0) + (character ? character.carac[id]?.scroll ?? 0 : 100)));
+  const points = CARAC_IDS.map((id) => character?.carac[id]?.base ?? 0);
   for (const it of worn) {
     for (const [s, v] of lotStats(it)) {
       if (s < EXO_BASE) continue;
@@ -45,7 +48,7 @@ export function dofusbookLink(worn: InvItem[], level = 200): string {
   });
   const s0: Record<string, number> = {};
   KE.forEach((c, i) => { if (stats[c]) s0[i] = stats[c]; });
-  const bytes = pack({ 0: s0, 1: [0, 0, 0, 0, 0, 0], 2: level, 3: 0, 4: counts, 5: gids });
+  const bytes = pack({ 0: s0, 1: points, 2: level, 3: 0, 4: counts, 5: gids });
   return URL + btoa(String.fromCharCode(...bytes)).replace(/=+$/, "");
 }
 

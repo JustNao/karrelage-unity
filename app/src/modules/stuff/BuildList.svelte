@@ -44,7 +44,7 @@
   /** Export link shown in its modal (null = closed). */
   let exported = $state<string | null>(null);
   let copied = $state<boolean | null>(false); // null = the clipboard refused
-  const exportWorn = () => ((exported = dofusbookLink(worn)), (copied = false));
+  const exportWorn = () => ((exported = dofusbookLink(worn, inventory.character)), (copied = false));
   async function copyExport() {
     try { await navigator.clipboard.writeText(exported!); copied = true; } catch { copied = null; }
   }
@@ -71,7 +71,7 @@
   {/snippet}
   <div class="exp">
     <button class="mini" onclick={exportWorn} disabled={!worn.length}
-      title={worn.length ? "Lien d'un stuff Dofusbook avec les objets portés (jets max + exos en forgemagie ; niveau 200, parchemins 100)" : "Équipement inconnu : il est lu à la connexion du personnage"}>
+      title={worn.length ? "Lien d'un stuff Dofusbook avec les objets portés (jets max + exos en forgemagie, caractéristiques du personnage ; niveau 200)" : "Équipement inconnu : il est lu à la connexion du personnage"}>
       Exporter mon équipement vers Dofusbook</button>
   </div>
   {#if err}<div class="bad err">{err}</div>{/if}
@@ -93,7 +93,7 @@
 
 {#if exported}
   <Modal title="Exporter mon équipement vers Dofusbook" width="520px" onclose={() => (exported = null)}>
-    <div class="mut small">Lien à ouvrir dans le navigateur : Dofusbook y crée un stuff avec les objets portés (jets max, exos en forgemagie ; niveau 200, parchemins 100, points de caractéristiques à 0).</div>
+    <div class="mut small">Lien à ouvrir dans le navigateur : Dofusbook y crée un stuff avec les objets portés (jets max, exos en forgemagie ; {inventory.character ? "points de caractéristiques et parchemins du personnage" : "caractéristiques pas encore lues : points à 0, parchemins 100"} ; niveau 200).</div>
     <input class="link" readonly value={exported} use:select />
     {#if copied === null}<div class="bad small">Copie refusée : le lien est sélectionné, Ctrl+C pour le copier.</div>{/if}
     <div class="acts">
