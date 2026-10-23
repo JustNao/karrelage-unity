@@ -1,155 +1,197 @@
 # Karrelage – passive Dofus 3 packet reader
 
-## Goal
-Read the messages the Dofus 3 (Unity / IL2CPP) client exchanges with Ankama's servers and present them usefully
-(currently: auction-house item lists, their effects and prices). **Strictly passive**: nothing is injected, hooked or
-automated on the client. Two halves: a **Tauri app** (what users run; shareable) and a **Python pipeline** (author only;
-turns the game files into a small *data pack* the app loads).
+Reads the protobuf messages the Dofus 3 (Unity / IL2CPP) client exchanges with Ankama's servers and turns them into
+tools (auction house, prices, crafting, stuff, combat…). Two halves: a **Tauri app** (what users run) and a **Python
+pipeline** (author only: game files → *data pack* the app loads).
 
 ## Hard rules
-- **NEVER modify the game folder or the Dofus process** (`C:\Users\nao3n\AppData\Local\Ankama\Dofus-dofus3`). Only *copy* files out
-  (`work/dump_input`, `work/gamedata`) and read the copies. Capture is Npcap sniffing only.
-- Treat everything under `work/` and `datapack/` as regenerable local data; `tools/` holds downloaded third-party tools (not our code).
-- Obfuscated names (messages `jzs`, fields `fycg`, …) **rotate on every game update** – they are build-specific. App code must
-  refer to clear names or to `pipeline/bindings.json` roles, never hard-code obfuscated names.
-- **Commit each feature** as its own commit once it works. **Claude must not appear as an author**: no `Co-Authored-By: Claude`
-  trailer, no "Generated with Claude Code" line in commit messages or PR descriptions (this overrides any default attribution).
+- **Strictly passive.** Never modify the game folder (`C:\Users\nao3n\AppData\Local\Ankama\Dofus-dofus3`) or the Dofus
+  process: only *copy* files out (`work/dump_input`, `work/gamedata`). Capture = Npcap sniffing only.
+- Obfuscated names (`jzs`, `fycg`…) **rotate every game update**. App code uses clear names or `pipeline/bindings.json`
+  roles, never obfuscated names.
+- **Commit each feature** once it works. **Claude must never appear as author**: no `Co-Authored-By: Claude` trailer, no
+  "Generated with Claude Code" line in commits or PRs (overrides any default attribution).
+- Never commit `tools/`, `work/` (except `work/overrides.json`), `datapack/`. Ignore `.claude/`.
+- Lightweight by default: no disk IO or heavy work on the capture thread, don't decode what no module reads, throttle
+  whole-list recomputations, give windows the fewest permissions, call Windows tools/DLLs by absolute path, restrict
+  user-typed URLs to their expected host. `CARGO_MANIFEST_DIR`-based paths/env overrides are debug-build only.
+- The data pack contains text extracted from Ankama's files – decide before publishing it publicly.
 
-## Protocol facts
-- Protobuf over plain TCP (no TLS). Frame = VarInt length + `GameMessage` envelope `oneof {1 request, 2 response, 3 event}`;
-  Request/Response/Event carry a `google.protobuf.Any` whose `typeUrl` (`type.ankama.com/<obf>`) names the message.
-- Connection server port 5555; the client's real connections are discovered from Dofus.exe's established TCP sockets
-  (sysinfo + netstat2 in Rust, process names only). The BPF filter of every adapter is rebuilt from them (`capture.rs` `filter_of`:
-  `tcp and ((host A and tcp port P) or ...)`, reject-all while none is tracked), so the rest of the machine's traffic never
-  reaches the app; a filter that fails to apply falls back to `tcp`.
-- Field numbers are reshuffled per build, so beta/clear protos can only be matched *structurally* (match_protos.py), never by number.
+## Protocol
+- Protobuf over plain TCP. Frame = VarInt length + `GameMessage` `oneof {1 request, 2 response, 3 event}`, each wrapping a
+  `google.protobuf.Any` (`type.ankama.com/<obf>`). Connection server port 5555.
+- Dofus.exe's established sockets are discovered (sysinfo + netstat2); each adapter's BPF filter is rebuilt from them
+  (`capture.rs` `filter_of`), reject-all while none is tracked, fallback `tcp` if the filter fails.
+- Field numbers are reshuffled per build: beta/clear protos are matched *structurally* only (`match_protos.py`).
 
-## Structure
+## Layout
 ```
-Cargo.toml               workspace
-crates/
-  core/                  wire.rs (varint, framing, envelope, resync), stream.rs (TCP reorder), pcap.rs (wpcap.dll loaded at
-                         runtime – no Npcap SDK, app starts without Npcap), capture.rs (Dofus.exe socket discovery + sniff threads)
-  proto/                 dynamic decode from datapack/protocol.desc (prost-reflect), names.rs (names.json + overrides -> clear labels), util.rs
-  data/                  data pack loader (items/effects/itemtypes/strings/bindings), effects.rs (templates, labels), items.rs (gid/type resolve, compare)
-  modules/               Module trait + Hub (lib.rs); one file per feature: packets.rs (inspector), auction.rs (AH list + store), prices.rs (stored per-unit prices + manual override)
-app/
-  src-tauri/             thin shell: loads the data pack, capture -> Hub -> events, generic `module_call` command
-  src/                   Svelte 5 + Vite UI; src/modules/<id>/{index.ts,View.svelte} auto-registered as tabs; src/lib shared components
-pipeline/                python, author only: extract_gamedata, build_protos (+protocol.desc), match_protos, export_pack,
-                         import_reference_names, reference/message_names.json (213 clear message names for this build), make_fixtures, bindings.json, schema/formatters/gamedata (reference implementation the Rust port is tested against),
-                         capture.py/sniff.py (CLI capture -> JSONL, handy to record fixtures)
-datapack/                generated by export_pack.py (gitignored): protocol.desc, names.json, bindings.json, items/effects/itemtypes, strings.<lang>.json
-fixtures/                synthetic AH packet + python-formatted expected output (golden test input)
-work/                    generated: dump/, proto/, pb/, beta/, gamedata/, mapping.json,
-                         overrides.json (hand-confirmed names – tracked, keep!), items_store.json (old python store)
-tools/                   Il2CppInspectorRedux, protodec, local .NET 10 (dotnet10), pylib/ (grpcio-tools, protobuf, UnityPy via pip --target)
+crates/core      wire.rs (varint, framing, resync), stream.rs (TCP reorder), pcap.rs (wpcap.dll loaded at runtime), capture.rs
+crates/proto     dynamic decode from datapack/protocol.desc (prost-reflect), names.rs, util.rs
+crates/data      pack loader, effects.rs, items.rs (gid/type resolve, compare)
+crates/modules   Module trait + Hub (lib.rs), kit.rs, one file per feature
+app/src-tauri    thin shell: loads pack, capture -> Hub -> events, generic `module_call`
+app/src          Svelte 5 + Vite; modules/<id>/{index.ts,View.svelte} = tabs (auto-registered); lib/ = shared
+pipeline/        python (author only): extract_gamedata, build_protos, script_names, match_protos, export_pack,
+                 update_names, package_pack, bindings.json, reference/message_names.json, reference formatters
+datapack/        generated by export_pack.py; dist/ = published pack (datapack.zip + pack.json, committed)
+fixtures/        golden test input (synthetic AH packet + python-formatted output)
+work/            generated (dump, protos, gamedata, mapping.json); overrides.json = hand-confirmed names (tracked)
+tools/           third-party: Il2CppInspectorRedux, protodec, dotnet10, pylib/ (grpcio-tools, protobuf, UnityPy, capstone)
 ```
+
+## Commands (repo root, Git Bash)
+```bash
+python pipeline/extract_gamedata.py --refresh   # after a game update (full block in README.md)
+python pipeline/build_protos.py                 # + work/pb/protocol.desc
+python pipeline/script_names.py                 # Unity script table -> work/script_names.json
+python pipeline/match_protos.py                 # -> work/mapping.json
+python pipeline/import_reference_names.py <list.txt>
+python pipeline/export_pack.py                  # -> datapack/
+python pipeline/make_fixtures.py                # only if demo packet / formatter changed
+cargo test                                      # unit + golden test (Rust == python formatter)
+cd app && npm install && npm run tauri dev
+cd app && npm run tauri build                   # NSIS installer, bundles datapack/
+```
+Set `PYTHONUTF8=1` for scripts handling accents. The "Développeur" header toggle reveals the Paquets and Proto tabs.
 
 ## Adding a feature
-1. Rust: new file in `crates/modules/src/` implementing `Module` (`interest` = clear message names, `on_message`, `call`, optional
-   `format`/`init`/`wants`/`needs_decoded`); register it in `all()` in `lib.rs`. Use the kit (below): `Role` for its bindings,
-   `Store` for its persisted state, `arg_*` / `unknown` in `call`, `testkit` in its tests. Shared helpers go in `crates/data`
-   (pure data) or `crates/proto/util.rs`.
-2. UI (tabs with side-by-side panels use `Columns` from `lib/columns.svelte.ts` + `Grip` dividers, like HDV / Paquets): new folder `app/src/modules/<id>/` with `index.ts` (`{id, title, order, devOnly?, component}`) and `View.svelte`; it
-   appears as a tab automatically. Talk to the backend with `call(module, method, args)` (`cached` for pack-derived answers) and
-   `listenAll({"<module>:<event>": fn})` returned from `onMount`. A view past ~400 lines gets split into components of its folder
-   (see `modules/auction`, `modules/stuff`).
-3. If it needs new messages: confirm their names in `work/overrides.json` (clear message/field names), add field roles to
-   `pipeline/bindings.json` if a field has no clear name yet, re-run `export_pack.py`.
+1. **Rust**: new file in `crates/modules/src/` implementing `Module` (`interest` = clear message names, `on_message`,
+   `call`, optional `format` / `init` / `wants` / `needs_decoded`), registered in `all()` in `lib.rs`.
+2. **UI**: `app/src/modules/<id>/index.ts` (`{id, title, order, devOnly?, component}`) + `View.svelte`. Split views past
+   ~400 lines into components of the folder. Side-by-side panels use `Columns` + `PanelHead` + `Grip`.
+3. **New messages**: confirm names in `work/overrides.json`, add field roles to `pipeline/bindings.json` for unnamed
+   fields, re-run `export_pack.py`.
 
-## Shared building blocks (use these, don't re-implement)
-Rust (`crates/modules/src`):
-- `kit::Role<T>`: a bindings.json role read once — `bind: Role<AhBuy>` then `self.bind.get(ctx, "ah_buy")?` (`root(ctx)` for a struct naming several roles). Missing role = `None`, the feature stays idle.
-- `kit::Store<T>`: module state persisted in the background under `<app data>/<module>/<file>` — `let saved = self.store.open(ctx, "prices", "prices.json", |s| json!(s))` in `init`, then `lock()` + `touch()`, `update(|s| ...)`, or `flush()` for user actions that must survive a crash. Never `save_json` on the capture thread (fsync per message).
-- `kit::arg_i64` / `arg_str` / `unknown(module, method)`: `call` arguments and the unknown-method error.
-- `Module::needs_decoded() -> false` for a module that only reads names / raw bytes (packets, names): a message only such modules want is never decoded. `wants() -> false` to skip a module entirely (tab closed, feature off).
-- `sys::system_tool("System32/curl.exe")` for Windows programs (absolute path, never PATH); `sys::http()` for HTTP; `sys::unix_secs_f64`.
-- Tests: `kit::testkit::hub(name)` (data pack hub, skipped without a pack), `testkit::msg(name, decoded, t)`, `testkit::pack()` / `temp_dir()`.
-UI (`app/src/lib`):
-- `persist.svelte.ts`: the only place that touches localStorage — `readJSON` / `writeJSON`, `readFlag` / `writeFlag`, `onStored` (other windows' writes), `persisted(key, defaults, {sections?, sync?})` = reactive object saved on change (settings, automation rules, Brisage filters). Keys `karrelage.<module>.<what>`; a rename needs a step in `lib/migrate.ts`.
-- `stores/synced.svelte.ts` `SyncedMap`: a backend list kept in sync for the session (list call + put / bulk / cleared events, `ensure()`, `subscribe()` → `{kind: "put", values, live}` / `{kind: "clear"}`). `auction` and `prices` extend it.
-- `api.ts`: `call`, `cached(module, method)` (pack-derived answers fetched once per session: recipes, runes, effect lists, breakable items), `listenAll({...})` (one synchronous cleanup, `.ready` before loading a snapshot), `on` for a single long-lived listener.
-- `floating.ts` `openFloating(label, {url, title, width, height, pos?, focus?})` / `closeFloating` / `savedPos(key)` + `components/FloatingShell.svelte` (title bar to drag, `actions` snippet, `up`, `bind:top` / `bind:body` to measure) for windows over the game; the label must be listed in `capabilities/overlay.json`.
-- Components: `Switch` (on/off, `bind:checked` or `onchange`), `Segmented` (one choice among a few), `ItemIcon` (lazy item icon), `SubView` (title + controls + error + scroll shell of a table page), `SideList` / `PanelHead` / `Grip` (panels), `SortTable` + `useSort`, `LotTable` / `ItemCard` (lots), `Collapsible`, `SearchBar`, `ConfirmButton`, `Banner`, `ProgressBar`, `Modal` (centred dialog over a backdrop, closes on outside press / Escape: the Stuff "Ajouter" link prompt). Action `actions/clickOutside` for popups (outside press / Escape, `ignore` selector).
-- `fmt.ts`: `kamas` / `kamasFull` / `kamasOr` / `signedKamas` / `pct` / `fmtNum` / `fmtInt` / `fmtDateTime` / `fmtTime` / `fmtSize` / `ago` / `runeShort`. `price.ts`: `AH_TAX` + `afterTax`, `effectivePrice` / `priceOf` (override > unit > avg), `unitPrice(OrNull)`, `lotKeys`. Icons: `stores/itemIcons.svelte.ts` (`iconOfItem`, `requestIcon`, `lazyIcon`) and `stores/statIcons.svelte.ts` (`iconOfStat`, `iconOfCode`, `iconOfElement`).
-- `registry.ts` `discover(glob)`: tabs and Crafting sub-tabs register themselves by existing.
-Windows permissions: `capabilities/default.json` (main window), `overlay.json` (floating windows: events + move / resize / close themselves), `splash.json` (events only); a new window needs its label in one of them, with the fewest permissions that work.
+## Shared building blocks (use, don't re-implement)
+**Rust** (`crates/modules/src/kit.rs` and co.)
+- `Role<T>`: a bindings.json role (`self.bind.get(ctx, "ah_buy")?`, `root(ctx)` for multi-role structs). Missing → `None`, feature idles.
+- `Store<T>`: persisted state under `<app data>/<module>/<file>`, written in the background (`open` in `init`, then
+  `lock()`+`touch()` / `update` / `flush()` for user actions). Never `save_json` on the capture thread.
+- `arg_i64` / `arg_str` / `unknown(module, method)` for `call`.
+- `needs_decoded() -> false` for modules reading only names / raw bytes; `wants() -> false` to skip a module (feature off).
+- `sys::system_tool("System32/curl.exe")`, `sys::http()`, `sys::unix_secs_f64`.
+- Tests: `testkit::hub(name)` (skipped without a pack), `testkit::msg`, `testkit::pack()`, `temp_dir()`.
+- `Proto::field_named` for exact clear-name paths.
 
-## Tools used
-- **Il2CppInspectorRedux** (needs .NET 10, installed locally in `tools/dotnet10`; set `DOTNET_ROOT`) – dumps `GameAssembly.dll` + `global-metadata.dat` (v39) to DummyDlls.
-- **protodec** – DummyDll → obfuscated `.proto` (single-file output; circular imports require one file; `Any` import is patched in by build_protos.py).
-- **grpcio-tools / protobuf** (in `tools/pylib`, put first on `sys.path`) – compile protos and the descriptor set; runtime must match generated code.
-- **Npcap** (runtime only; users install it themselves – its license forbids bundling) + the Rust crates `libloading`, `sysinfo`, `netstat2`.
-- **UnityPy** – read Unity 6 bundles (`FALLBACK_UNITY_VERSION = "6000.3.16f1"`, bundles have the version stripped).
-- Beta protos: LuaxY/dofus-unity-protocol-builder (Oct 2024, clear names) cloned in `work/beta`.
+**UI** (`app/src/lib`)
+- `persist.svelte.ts`: the only localStorage access (`readJSON`/`writeJSON`, flags, `onStored`, `persisted(key, defaults)`).
+  Keys `karrelage.<module>.<what>`; renames need a step in `migrate.ts`.
+- `api.ts`: `call`, `cached` (pack-derived answers, once per session), `listenAll({...})` (returns cleanup; `.ready`), `on`.
+- `stores/synced.svelte.ts` `SyncedMap`: backend list synced for the session (`auction`, `prices` extend it).
+- `floating.ts` `openFloating` / `closeFloating` / `savedPos` + `FloatingShell.svelte` for windows over the game
+  (label must be in `capabilities/overlay.json`; extra windows are extra vite inputs, e.g. `scanlist.html`, `combat.html`).
+- Components: `Switch`, `Segmented`, `ItemIcon`, `SubView`, `SideList`, `PanelHead`, `Grip`, `SortTable`+`useSort`,
+  `LotTable` (the only view of equipment lots; options `leads`, `deals`, `transcend`, `alignPrice`, `rowClass`), `ItemCard`,
+  `Collapsible`, `SearchBar`, `ConfirmButton`, `Banner`, `ProgressBar`, `Modal`; action `clickOutside`.
+- `fmt.ts` (kamas use "," thousands: "2,380,000 K"; other numbers French format), `price.ts` (`AH_TAX` 2 %, `afterTax`,
+  `effectivePrice`: override > AH unit > weekly avg), icon stores `itemIcons` / `statIcons` (`iconOfElement`).
+- `registry.ts` `discover(glob)`: tabs and Crafting sub-tabs register by existing.
+- Settings: `stores/settings.svelte.ts` (`DEFAULTS` + a row in the Paramètres tab, one section per tab).
+- Window capabilities: `default.json` (main), `overlay.json` (floating), `splash.json`. `setSize` & co. need explicit grants.
 
-## Common commands (from repo root; Git Bash)
-```bash
-# after a game update: re-copy files, re-dump, regenerate (see README.md for the full block)
-python pipeline/extract_gamedata.py --refresh
-python pipeline/build_protos.py           # also writes work/pb/protocol.desc
-python pipeline/script_names.py           # names from the game's Unity script table (MonoScriptData) -> work/script_names.json
-python pipeline/match_protos.py           # a few s, rewrites work/mapping.json (anchored on script names; reference names + overrides on top)
-python pipeline/import_reference_names.py <list.txt>   # obf type -> clear name list (e.g. community dump) -> pipeline/reference/message_names.json
-python pipeline/export_pack.py            # -> datapack/ (what the app loads)
-python pipeline/make_fixtures.py          # only if the demo packet / formatter changed
-# app
-cargo test                                # unit tests + golden test (Rust output == python formatter output)
-cd app && npm install && npm run tauri dev
-cd app && npm run tauri build             # NSIS installer, bundles datapack/ as a resource
-```
-Dev toggle in the UI header ("Développeur") reveals the Paquets and Proto tabs.
-A newer pack can be dropped in `%APPDATA%/fr.dofus.karrelage/datapack/` and wins over the bundled one.
+## Naming pipeline
+- Precedence: auto beta match < `reference/message_names.json` (`ref`) < script table (`script`) < `match_protos.py`
+  `ANCHORS` (`anchor`) < `work/overrides.json` (`manual`, keyed by obfuscated names → stale after updates; prefer an anchor
+  for messages that must survive updates). A `ref` name whose length contradicts the script table is dropped.
+- Script table (`script_names.py`, `dotnet_meta.py`): Unity's `MonoScriptData` in each protocol DummyDll lists source files
+  (one per .proto + class count) and classes as `namespace|name` in declaration order. The obfuscator blanks names with
+  underscores of the same length (still giving package + length), but leaves protoc's nested `Types` containers, some nested
+  classes and `decoy_*` fakes (never matched). Class blocks start with each file's `<File>Reflection`.
+- After an update, `bindings.json` field names and `overrides.json` keys may need updating.
+- Dead end: `pipeline/field_names.py` (field names from Core.dll data flow, unreliable; getters are folded/inlined).
+- Tools: Il2CppInspectorRedux needs `DOTNET_ROOT=tools/dotnet10`; protodec emits one file (circular imports; `Any` import
+  patched by build_protos.py); `tools/pylib` goes first on `sys.path`; UnityPy `FALLBACK_UNITY_VERSION = "6000.3.16f1"`.
+  Beta clear protos: `work/beta` (LuaxY/dofus-unity-protocol-builder, Oct 2024).
 
-## Conventions / gotchas
-- Windows: set `PYTHONUTF8=1` when python scripts read/write files with accents; the console may garble UTF-8 (display only).
-- After a client update: re-run the pipeline; `pipeline/bindings.json` (obfuscated field names per role) and `work/overrides.json` keys may need updating.
-- AH list row ints are unordered (uid / gid / type); `Data::resolve_gid_type` resolves them from game data.
-- Effect ids on the wire = `effects` table ids (= item `possibleEffects[].actionId`), not `baseEffectId`.
-- Item default effect range = `diceNum..diceSide` (`diceSide == 0` → fixed). Colours: blue = not a default effect, green = above default max, grey = default effect missing.
-- Svelte 5: plain `Map`/`Set` inside `$state` are not reactive – use `SvelteMap`/`SvelteSet`; `x ??= []` returns the raw value, re-read through the proxy.
-- Name precedence: auto beta match < `pipeline/reference/message_names.json` (conf `ref`) < script table (conf `script`) < anchors (`match_protos.py` `ANCHORS`, conf `anchor`: a blank script-table entry found again each build by the message declared before it, the name length and the shape) < `work/overrides.json` (conf `manual`, keyed by obfuscated names: stale after an update — prefer an anchor + values for messages that must survive updates); a `ref` name whose length contradicts the script table is dropped.
-- `pipeline/field_names.py` (needs capstone in tools/pylib) is a dead-end experiment: field names from Core.dll data flow (38 names, unreliable). Getters are identical-code-folded and inlined, so call xrefs say nothing either.
-- Script table (`pipeline/script_names.py`, `pipeline/dotnet_meta.py` = minimal .NET metadata reader): Unity's `MonoScriptData` in each protocol DummyDll lists the source files (one per .proto, with their class count) and every class as `namespace|name` in declaration order (enums excluded). The obfuscator blanks entries with underscores of the same length but leaves protoc's nested `Types` containers (they carry the parent's clear full name), some nested classes and `decoy_*` classes (fakes, conf `decoy`, never matched). Class blocks in the type table start with each file's `<File>Reflection` (only top-level class with one field), in compile order, and are given to files of the same size by an assignment on leaked structure + name lengths. Blank entries still give package + name length, which constrains `match_protos.py`.
-- Effects carry `group` (stats/main/secondary/damage/resist/other, from the game's characteristic categories), `order` (rank in the in-game panel) and `density` (= effectPowerRate: AP 100, MP 90, vitality 0.2 – kept for later features), all computed in `pipeline/export_pack.py`. The UI orders item effects: new first, then stats/main, damage, resistances, utility (secondary/other); filter list/picker sections: Main stats, Secondary stats, Damage, Resistances, Other.
-- `weapon` group = weapon hit effects ("dommages X", "vole X"); not offered in the HDV filter (rows or picker). Filter rows = the item's *default* effects that are `filterable` (no negative twins; from "other" only 795 Arme de chasse) plus whatever the user adds.
-- Item **density** (`Data::item_density`, per lot as `density`) = sum of effect value x effect density; negatives already carry half of their twin's rate. The HDV tab plots price vs density with a least-squares line (`DensityChart.svelte`); dots beyond 2σ above the line are likely underpriced lots.
-- Deal detection (`app/src/lib/density.ts`): lots >= 2 residual sigmas above the trend (needs >= 5 lots) are green dots and fill the "Good deals" section; blue dot = has an added effect, orange = lacks a default effect. "Perfect" flags and line styles (`perfection()`, `isPerfectLine`, `isBelowMin`, `isNegative` in `lib/effects.ts`: bold = perfect, orange = below the default min, red = negative effect): default damage / resistance effects at their max (resistances: only the % ones, `PERCENT_RESIST`, when the item has some by default), main stats within 3 (force/int/agi/chance) or 10 (vitality) of it.
-- Effects also carry `stat` (the characteristic they modify, `Data::stat_of`; "+Force" and "-Force" share it). "Pin item" (`pairRows` in `lib/compare.ts`): every other lot, across items, shows its stats on the left, the pinned lot's stats mirrored on the right and the per-stat difference (and price) in between. Prospection is excluded from the item density (`DENSITY_EXCLUDED_STATS`).
-- The effect picker (`Data::filterable_effects`) lists only effects found on equipment (item type category 0) of levels 150-200.
-- The data pack contains text extracted from Ankama's files – decide before publishing it publicly.
-- Lightweight / safe by default: no disk IO or heavy work on the capture thread (stores write in the background), no decoding
-  a module does not read, recomputations of whole lists throttled (see Brisage `changed`), floating windows and the splash get
-  only their own permissions, Windows tools / DLLs by absolute path, URLs the user types restricted to their expected host
-  (`stuff.rs` `short_link`). The compile-time checkout path (`CARGO_MANIFEST_DIR`: pipeline runner, dev data pack, env
-  `KARRELAGE_RELEASE_URL`) is honoured in debug builds only.
-- Ignore `.claude/`; do not commit `tools/`, `work/` (except `overrides.json`) or `datapack/`.
-- Stored prices (`prices.rs`, "Stored prices" tab): on every AH listing, per-unit price = median over the stack sizes on sale of each size's cheapest price / qty (lower middle for an even count, so one absurd stack — a x1000 at 5x the others — cannot set it; equipment = cheapest lot), stored per gid (every listing / listing change / weekly-average batch is also appended to `<app data>/prices/history.jsonl` — `{t, gid, kind: "ah", unit, offers: [[qty, price]]}` or `{t, kind: "avg", prices: {gid: price}}`, call `history` {gid?, since?}; not shown in the UI yet), grouped category (itemtypes.categoryId 0 equipment, 1 consumable, 2 resource) > type > item; `override` is a manual price. The HDV tab's left list groups items by type, collapsible (state in localStorage); each row starts with the item icon (`lib/stores/itemIcons.svelte.ts`: game `iconId` = Dofusbook picture id, fetched through `stuff.icons` in batches of 8 once the row is on screen — `use:lazyIcon`; positioned so it never grows the row), also shown left of the item name in the centre. Filter panel: clicking an effect (or a section title) fills its min with the base minimum, clicking again clears it; "Perf" fills the base max; the hovered graph shows a dashed vertical line with the price under the mouse.
-- Packet inspector (`packets.rs`) records all the time but keeps only the last 20 packets per message type (`PER_TYPE`), as bytes: nothing is decoded for it (`needs_decoded` false) until the tab lists or streams them; new packets are streamed to the UI only while its tab is open (`set_active` from the view's mount/destroy). Types can be hidden with the eye buttons (or shift+click on a type / a packet). Transcendance (`lib/transcend.ts`, HDV > Transcendance tab): a lot with the lock (2825) + an `added` effect was runed; targets = those (effect, value) pairs, rune = type 211 item with that effect/value (`prices.runes`), cost from stored prices; candidates = unlocked lots without `above`/`added` effects; profit = cheapest transcended lot x (1 - 2% tax) - lot - rune. Good deals start collapsed.
-- Companions (Familier 18 / Montilier 121, `COMPANION_TYPES`, row `companion` flag): tracked by level only (`lib/companion.ts`: effect 2821 "X niveau", effect 2862 "Statut légendaire" -> flag/blue dot). No perfect/lock flags, pin or Transcendance tab. The graph plots price against the *total xp* of the level (`xpOfLevel`, the non-linear xp curve), so deals = lots well below the price/xp trend.
-- Average prices: `ObjectAveragePricesEvent` (bindings role `avg_prices`: items / gid / price; the entry's third int is unused) preloads the Stored prices tab (`avg`, 7-day per-unit average). Priority everywhere: manual `override` > price read in the AH (`unit`) > `avg`; a rune known only by its average is flagged in the Transcendance tab.
-- Developer tab "Proto" (was "Noms"; `names.rs`, `pipeline/update_names.py`): checks the pack against the game (bindings resolve in protocol.desc, required clear names, stale names, `manifest.game` file-size fingerprint vs the installed game, live share of unknown message types while the tab is open) and runs `update_names.py` (names only, `--repack` = export_pack + package_pack only (button "Repack data"), or `--from-game` for the whole dump -> protos -> game data -> names -> export chain) from a dev checkout. Restart after it.
-- Pack updates (`update.rs`, `pipeline/package_pack.py`): `dist/datapack.zip` + `dist/pack.json` (generated, size, sha256) are committed; at startup the app fetches `pack.json` from `raw.githubusercontent.com/JustNao/karrelage-unity/main/dist` (override: env `KARRELAGE_PACK_URL`) and, if `generated` is newer than the loaded pack, the top bar offers download -> verify -> unpack into `%APPDATA%/<app>/datapack` (newest pack wins in `pick_pack`) -> restart (`restart_app`). `update_names.py` re-packages dist/ and commits it (`Data pack for Dofus <version>`, only those two files; not pushed): push to publish a new pack. Game version = the Ankama launcher's `%APPDATA%/zaap/repositories/production/dofus/dofus3/release.json` (`6.0_3.7.12.12` -> `3.7.12.12`; `pipeline/game_version.py`, `loutil_data::installed_game_version`), stamped in `work/dump_input/version.txt` when the game files are copied, stored in `manifest.game.version` / `pack.json` `game` and compared in the Proto tab.
-- App updates (`update.rs` `app_check` / `app_download` / `app_install`, event `update:app`): at startup the latest GitHub release (`api.github.com/repos/JustNao/karrelage-unity/releases/latest`, override env `KARRELAGE_RELEASE_URL`; drafts / prereleases ignored) is compared with the build's `CARGO_PKG_VERSION` (tag `vX.Y.Z`, numeric compare); if newer, the top bar offers it (shown instead of the pack update): its `*-setup.exe` asset is downloaded to `<app data>/app-update/`, checked against the asset's size and `digest` (sha256; a release without a digest is refused), then run with `/P /UPDATE /R` (passive, relaunches the app) and the app quits (`quit_app`). Publishing = bump the version (workspace `Cargo.toml`, `tauri.conf.json`, `app/package.json`), build, create a release with the NSIS installer attached.
-- Montures (Crafting > Montures, `subs/montures`, data `mounts.json`, shared helpers `lib/mounts.ts`): extracting a dragodinde / muldo / volkorne gives N resources (Neurone de dragodinde / Ambre de muldo / Corne de volkorne; N = generation; generation 1 yields nothing and is left out). Generation = highest base-colour generation (+1 for two colours; verified against the guidactik.com dragodinde and muldo tables; volkorne base generations from dafous.app, Ivoire/Turquoise = 3 inferred), so tables can be rebuilt from the game item names. Profit = N x stored resource price x (1 - tax) - mount price. A lot is **senile** when it carries effect 3836 (`effect 3836: [0]`, no readable label) and then gives only 1 resource; per scanned lot the profit uses 1 or N, the row shows the best lot (stored price, flagged "?", when never scanned) and is highlighted when some lot is profitable. The HDV lot table (`CompanionTable`, sortable columns) shows the same per lot for mounts (types 331-333 are `COMPANION_TYPES`). Every profitable scanned lot is listed under its mount's row (`SortTable` `sub` snippet).
-- Stuff tab (`stuff.rs`, `app/src/modules/stuff`, `lib/stuff.ts`): imports a Dofusbook build (`https://www.dofusbook.net/api/stuffs/dofus/public/<id>`; link forms `/equipement/<id>-db/...`, bare id, `d-bk.net` short link = 301). Cloudflare 403s ureq (TLS fingerprint): `get_bytes` falls back to the system `curl` with a browser UA (Referer only for dofusbook.net hosts). Item `official` = game gid; slots `ar bo am ce br ch ca a1 a2 d1-d6 fa mo`. Only slot -> gid / icon picture / base+scroll / exo are kept: item stats and set bonuses come from the data pack (`stuff.item_info`; `itemsets.json` = set id -> items + bonus per piece count, `items.json` has `setId`), stat totals computed in TS (`compute`: HP = 50 + 5 x level + vitality; initiative = force+int+chance+agility; dodge/withdrawal from wisdom/10, tackle/escape from agility/10, pods = 1000 + 5 x force — verified against a Dofusbook sheet). Icons (items from `www.dofusbook.net/static/dist/items/<picture>-100.webp` — Ankama's CDN lacks recent items —, stats from `dofusbook.net/assets/img/elements/<code>.png`) are cached under `<app data>/stuff/icons` and returned as data URLs (CSP); the views get them through the shared `itemIcons` / `statIcons` stores. Layout: familier under anneau 2, mount at the start of the bottom row. `fm` (= Dofusbook fmGlobal, code -> value; `FM_STATS` maps codes to stat ids) is editable in the Forgemagie panel and shown as a blue +X per stat; per-item forgemagie (`fmItems`) and weapon fm are not read. PA / PM / PO minimums are prefilled once per build with the Dofusbook (theoretical max) value (localStorage `karrelage.stuff.autofilled`). "Max" fills a stat target with the max reachable from the items (PdV too: its target `HP_STAT` is turned into a vitality target for the solver). Craft price uses weekly averages for ingredients (no scan of the item needed); uncraftable items (Dofus...) use their own stored price, average included, flagged "estimé". Prices + the cheapest-combination solver live in their own part under the sheet (after a divider), with the lots found (or chosen) shown as HDV `ItemCard`s (all effects, not clickable) and their total. Stats: prospection = 100 + 1 per 10 chance. Characteristic rows show total, +⚡ (total + puissance, force/int/chance/agi only), base, parcho like Dofusbook. Layout is responsive (container queries on `.sheetwrap`): >=1720px three columns (needs ~1650px: 460 + centre + 620; `justify-content: safe center` so nothing is clipped on the left); 921-1719px stats + build on top, damage and resistances on one row, forgemagie below; <=920px one column; `.two` panels are single-column under 1100px. Slot border green = item scanned < 1 h ago (`auction.items[gid].updated`). Prices are real only (override / AH-read price, never the weekly average): Craft (recursive `craftCost`), Premier jet (cheapest scanned lot), Selection (chosen lots); "✕" (bottom left of a slot) marks an item the user already owns: it counts at its perfect roll (max level for familiars / mounts), is left out of the prices and of the lots output, and the slot is shaded with a grey border (clicking the item does the same); the "Sans les Dofus" checkbox just marks / unmarks every slot holding a Dofus (type 23, trophées untouched) as owned, and the search is disabled while a bought item is not scanned (`unscanned`) (an ignored item is taken at its perfect roll — max level for familiars / mounts — and is not a lot of the output). Solver (`solve`, run in a web worker `lib/stuffWorker.ts` with a progress bar and an "Annuler" button): branch and bound over scanned lots with set bonuses and a fractional lower bound, node-limited (result flagged approximate); the combination found is applied automatically (no "Appliquer" button). The build forgemagie (`fm`, e.g. +1 PA +1 PM) is searched as exo on the items: `EXO_BASE + stat` pseudo-stats count the exo of a lot (an "added" effect, or the part of an "above" effect over its base max), each fm stat becomes a minimum on them and the free fm bonus is dropped from the solver base; in `compute` the free fm bonus is reduced by the exo the chosen lots already carry (no double counting)..
+## Updates & versions
+- **Pack**: `dist/pack.json` fetched from `raw.githubusercontent.com/JustNao/karrelage-unity/main/dist` (env
+  `KARRELAGE_PACK_URL`); if newer, download → verify sha256 → unpack to `%APPDATA%/fr.dofus.karrelage/datapack` (newest pack
+  wins, `pick_pack`) → restart. `update_names.py` re-packages and commits dist/ (not pushed: push to publish).
+- **App**: latest GitHub release (env `KARRELAGE_RELEASE_URL`) vs `CARGO_PKG_VERSION`; its `*-setup.exe` is checked against
+  size + `digest` (no digest = refused) and run with `/P /UPDATE /R`. Release = bump version in workspace `Cargo.toml`,
+  `tauri.conf.json`, `app/package.json`, build, attach the NSIS installer.
+- Game version from the launcher's `%APPDATA%/zaap/repositories/production/dofus/dofus3/release.json`
+  (`6.0_3.7.12.12` → `3.7.12.12`), stamped in `work/dump_input/version.txt`, `manifest.game`, `pack.json`.
+- Proto tab (`names.rs`): checks bindings / required names / game fingerprint, runs `update_names.py`
+  (`--repack`, `--from-game`) from a dev checkout.
 
-- Stuff export to Dofusbook (`lib/dofusbookExport.ts`, button in the build list): the character's worn equipment (inventory positions 0-15: 0 amulette, 1 arme, 2/4 anneaux, 3 ceinture, 5 bottes, 6 coiffe, 7 cape, 8 familier, 9-14 Dofus, 15 bouclier) as Dofusbook's Dofus Stuffer import `https://www.dofusbook.net/fr/equipement/dofus-stuffer/objets?stuff=<base64 msgpack>` (format read from Dofusbook's decoder, documented in the file: stat index -> scroll / character base + fm, base points, level, items per slot group + gids). Dofusbook puts items at their max roll, so the worn items' exos (`lotStats` `EXO_BASE`) are sent as forgemagie; the last group is the familier (position 8) or else the mount (16); base points + scrolls from the inventory `character` (else 0 points / 100 scrolls), level 200. Dofusbook reads a characteristic value >= 100 as a 100 scroll + fm, so an unscrolled vitality shows "parcho 100" with -100 fm (total right). The button shows the link in a `Modal` (read-only field + "Copier"); nothing launches the browser. Dofusbook slot codes: `bo` = bottes, `br` = bouclier.
-- Combat, dangerous interactions + poisons: the sheet's column "intéraction dangereuse" (values -> tags through `DANGER_TAGS` in export_pack.py: poussée = push...) becomes monsters.json `danger`; while such a monster is alive, `groups()` (lib/stores/combat.svelte.ts) adds a warning "Poussée : dangereux avec <it>" to every other monster of the fight carrying that tag. PA / PM poisons (effects 1131-1140, `POISONS` in combat.rs) on the player: `FightBoostAddEvent` (= `juh`, confirmed on a capture: every FightBoostRemoveEvent {boost_uid, target_id} matched an added buff's uid / target) and FightJoinRunningEvent effects add them (FightRemovableEffectExtendedInformation, bindings role `boost`), FightBoostRemoveEvent ends them (the server sends the end, no turn counting); the player = the character id of the client's CharacterSelectionRequest / CharacterFirstSelectionRequest (kept in `<app data>/combat/me.json`; until a login was seen, poisons on any player are shown); red banner on top of the tab and the popup. Poison damage / duration are not read (no poison in a capture yet). `replays_a_recorded_fight` replays `work/capture_poison.jsonl` (local only: player ids) through the hub when it exists.
-- Inventory (`inventory.rs`, `lib/stores/inventory.svelte.ts`): the character's equipment (category 0 only) from `InventoryContentEvent` (sent at login only; replaces the store, last character wins), kept up to date by ObjectAdded/ObjectsAdded/ObjectModified/ObjectDeleted/ObjectsDeleted and ObjectMovementEvent (equipping / unequipping moves an object, e.g. a Dofus swap = uid -> 63 then uid -> 9 on a capture; no bindings: the message is named by its script-table anchor in `match_protos.py` `ANCHORS`, its ints are told apart by their values — uid = a stored item's uid, position = the other int in 1..=63, learned and reused when 0 / ambiguous); bindings role `inventory` (ObjectItemInventory `position` 0-15 worn, 63 bag; ObjectItem gid/uid/quantity/effects = the same ObjectEffect as AH lots). Items are shaped like AH lots (`compare_effects`, empty `prices`), persisted in `<app data>/inventory/items.json`, with `character` = the six characteristics' base points + scrolls from CharacterCharacteristicsEvent (path stats -> characteristics -> characteristic_id / detailed by exact clear names, `Proto::field_named`; the CharacterCharacteristicDetailed ints are unnamed and told apart by their values: base = the field with invocations 1, prospection >= 100 and the six characteristics costing <= 995 points (`points_cost`: vitality 1 / point, wisdom 3, elements 1 / 2 / 3 / 4 from 0 / 100 / 200 / 300); scroll = <= 100 on the six, 0 on range / invocations / prospection, one set — on a capture: force 202 + chance 200 + agility 144 + intelligence 150 + vitality 1 = 995 points = level 200) and `learned` = the fields told apart (`move_position`, `carac_base`, `carac_scroll`; reused when a message is ambiguous). The level is not read (only experience). Stuff tab: clicking a slot opens a popup (fixed position) to choose perfect roll / one of the character's copies (ItemCard, `priced={false}`) / to buy; `Build.own_uid` (slot -> inventory uid) makes an owned slot count at that copy's stats in `compute` and in the solver (`solve(..., ownLot)`, worker `own`); ✕ and "Sans les Dofus" pick the character's copy (worn first) when there is one. Blue dot on a slot = the character has that item; blue border = its copy is used.
-- Collapsible panels: every `Columns` panel (HDV list + filter, Crafting list, Paquets types + detail, Stuff list) starts with `lib/components/PanelHead.svelte` (title + « / » button on one row; `Columns.toggle/px/collapsed`, remembered in localStorage under `<key>.collapsed`); a collapsed panel shrinks to a 34px strip (`.cz` in app.css hides everything but `.phead`) and the grid animates (`.cgrid.anim`, disabled while dragging a grip). Dividers are `lib/components/Grip.svelte`. New resizable panels: add `class:cz`, a `PanelHead`, `cols.px(name)` in the template and `cgrid`/`anim` on the grid.
-- Floating scan list (Stuff > "À scanner (N)"): `scanlist.html` + `src/ScanList.svelte` (extra vite input, like splash.html), opened by `openScanList(items)` (`lib/scanlist.ts` → `openFloating`; `FloatingShell`; capability `overlay.json`). The Stuff tab writes the unscanned items (red border) to localStorage `karrelage.scanlist` (shared by all windows, `onStored` refreshes an open window); the window removes an item when `auction:item` for its gid arrives, copies names per item, groups them (Équipement / Familier-monture), closes itself once everything is scanned, and "Vider" closes it. `main.rs` exits the app when the main window is destroyed. Always-on-top does not show over exclusive-fullscreen games.
-- Brisage tab (`brisage.rs`, `lib/brisage.ts`, `app/src/modules/brisage`): breaking equipment into forgemagie runes. The backend serves the breakable items (types in `BREAKABLE_TYPES`: no Dofus / trophée / familier / monture / prysmaradite / percepteur gear), their rune-yielding default effects, the `drop` flag (items.json `drop` = game `dropMonsterIds` non-empty, Temporis-only drops ignored) and per effect the base rune (weakest type-78 rune; weight = effectPowerRate x points: Fo 1, Vi 5 x 0.2, Pod 10 x 0.25, Ga Pa 100). Formula (from kamamaster.fr's code, verified on a real break: Talisman Doline at 52.9 %): runes = round2(3 x unit x jet x level / 200 + 1) x coef / 100 / rune weight; focus = own runes + half the weight of every other effect converted into it; an exo (lot effect with status `added`) gives its runes but cannot be focused. Fractions are kept (expected value), rune sales after the 2 % tax. List: per item, the source (craft at mean roll, or each scanned lot with its own effects) with the lowest break-even coefficient (= cost / value at 100 %); filters (search, several types, level range, priced, hide droppable) and the selected item are remembered (localStorage `karrelage.brisage.ui`). Coefficients live in the backend (`<app data>/brisage/coefs.json`, gid -> {coef, t, source brisage|manuel}; the latest wins): typed in the tab or read from `DecraftResultEvent` (bindings role `decraft`: one entry per stack of identical items, coef_min/coef_max = last/first item's coefficient as a 0-1 float, stored = coef_min; `uid` = object uid, resolved through the inventory's uid -> gid map `inventory::UidMap`, which keeps deleted items; else guessed from the runes received (same effects, rune quantity ratios consistent, at least two kinds of rune, unambiguous); a focus break of an unknown uid waits in `pending` and the tab offers to assign it to the selected item). Every break result is also appended to `<app data>/brisage/breaks.json` ({t, uid, gid, how inventaire|runes|manuel, first / last coefficient %, qty + effects as last seen in the inventory (`inventory::Seen`), focus (one kind of rune from an item yielding several), runes}): the data to fit how the coefficient evolves (not predicted yet: it is server-wide, falls with every break of the item and rises with breaks of other items of its level band). The detail panel lists the item's breaks; clicking a list row also copies the item's name. Column HDV / filter "Absents de l'HDV seulement": items not on sale when their AH category was last opened (`auction.on_sale`, see below). The profit cell counts the scanned lots that pay at the known coefficient (exo lots apart: an exo's runes count without focus, so a cheap exo lot can pay).
-- Items on sale per AH category (`auction.rs`, call `on_sale`, event `auction:on_sale`, `<app data>/auction/on_sale.json`): `ExchangeTypesExchangerDescriptionForUserEvent` (role `ah_type`: gids + item type) is sent when a category is opened and lists every gid on sale in it; `ExchangeBidHouseGenericItemRemovedEvent` (role `ah_gone`: gid) removes an item whose last lot left. Never seen in a capture yet. The Paquets list shows each packet's payload size.
-- Listing changes (`auction.rs` `format` -> `apply_change`, used by `auction.rs` for stored equipment listings and by `prices.rs` on the last listing of every item seen this session, kept in memory): `ExchangeBidHouseBuyResultEvent` (role `ah_buy`: object_uid = the listing row's `uid`, bought) removes a bought lot with a single offer (equipment); `ExchangeBidHouseInListUpdatedEvent` (role `ah_row`, same shape as an AH row) replaces a row (resources: new cheapest stacks after a purchase); `ExchangeBidHouseInListRemovedEvent` (role `ah_row_removed`, 3 unordered ints) removes one. Stored listings keep their scan time, stored prices are recomputed (a listing left empty keeps its last price). Never seen in a capture yet: uid matching assumed.
-- HDV lot table (`lib/components/LotTable.svelte`, the only view of equipment lots; the pinned lot's row is yellow, and the pinned card in the filter panel has no perfection flags, `perfectFlags={false}`): columns good deal (green line), full price, perfect damage / resistances / characteristics, Over / EXO chips (stat icon, blue EXO, green part above the base max, orange missing effects; clicking one highlights the lots having that stat as EXO or over max — `lacksFade` — without unfolding). Clicking a row unfolds its `ItemCard` (`inTable`: no price, no perfection flags; grid-rows 0fr→1fr animation, aligned on the row's price, 📌 pin button in the left gutter) and marks it on the graph; clicking the card folds it. The graph is sticky at the top of the scroll area and the table header sticks under it (`stickTop`). Headers stay on one line from ~1000px of table width, else wrap between words.
-- Paramètres tab (`app/src/modules/settings`, store `lib/stores/settings.svelte.ts`, localStorage `karrelage.settings`): one section per tab (general UI settings to come first); add a setting = a default in `DEFAULTS` + a row in the tab. HDV: good-deal threshold `settings.hdv.goodZ` (σ, default 2) read by `goodZ()` / `isGoodDeal` in `lib/density.ts` (green dots and lines, Bonnes affaires, left-list markers, the graph band).
-- Stuff tab output ("Combinaison trouvée" / "Lots choisis") uses `LotTable` too: a leading column (`leads`: slot icon, slot, item; sortable by name), `deals={false}` / `transcend={false}`, unfolded lots by slot (`openLots`); no pin or highlight there.
-- Weapon hit lines (cards, table chips) carry their element's icon: `iconOfElement(text)` in `lib/stores/statIcons.svelte.ts` reads the element of "dommages X" / "vol X" and uses the Do Neutre / Terre / Feu / Eau / Air stat icons; heals and best / worst element get none (an empty `.sic` keeps the lines aligned).
-- Stuff "Utiliser mes objets" (under the slots, shown when some item of the build is in the inventory): slots whose item the character has exactly one copy of are set owned at that copy (`owned` + `own_uid`); slots with several copies are listed in a warning (click = the slot's popup) for the user to pick; switching it off releases only the slots it set (same copy).
-- Automation tab (`app/src/modules/automation`, rules in `lib/stores/automation.svelte.ts`, localStorage `karrelage.automation`; engine `lib/automation.ts`, started by App.svelte once the pack is ready, checks every *live* `auction:item` whatever tab is open): one section per tab like Paramètres; each rule has `enabled`, `sound` (id from the shared pool `lib/sounds.ts`, files in `app/public/sounds`) and `volume`. Rule `exoDo`: a lot with an exo whose effect a "Rune Ta Do Per …" transcendance rune adds (% dommages sorts / armes / distance / mêlée), cheaper than that rune (stored price), with a break-even coefficient (Brisage `breakEven`, best focus) <= `maxEven` (default 500 %) and a unit price <= `maxPrice` (null = no limit; typed as "2,500,000", "2.5M" or "500k"); one sound per scan, one notification per lot, a lot rings once per session. Notifications (`notifications` store, session only) show in the header (`lib/components/Notifications.svelte`, right of the capture switch, hidden while empty, pulsing green dot while unread); clicking one calls `app.showLot(gid, lotKey)` (`app.tab` / `app.hdvFocus`): the HDV tab opens the item, clears its filters if they hide the lot, unfolds and scrolls to it.
-- Loot (`loot.rs`, event `loot:fight` {t, items: [{fighter, gid, name, type_id}]}): FightEndEvent -> `results` (exact clear name) -> each entry's `fighter_list_entry.fighter_id` and every `Loot` message under it (found by its script-table name, whatever unnamed fields lead to it); Loot's 3 ints (id / quantity / priority hint in the beta) are unnamed: the item = the largest int that is a known gid. Automation section « Songes », rule `songes`: a looted « Légende … » (item type 219 Ressource des Songes) plays `sound` (applause) when the best one's stored price >= `threshold` (default 8M), else `soundLow` (disappointed crowd; unknown price = below), one notification per Légende (`lot: null`: not clickable). Checked on a captured FightEndEvent (test `reads_a_captured_fight_end`, Dofus 3.7.12.12: Loot ints = quantity 1 + gid 6897, under results -> rewards -> FightLoot; monsters' entries have empty rewards).
-- Kamas amounts (`kamas`, `kamasFull` in `lib/fmt.ts`) use "," between thousands ("2,380,000 K"); other numbers keep the French format.
-- Transcendance tab (HDV) in tables: "Lots transcendés vus" = `SortTable` of the targets (click = rune focus); "Candidats rentables" and "Candidats enregistrés" = `LotTable` with `leads` columns (☆ save / ✕ remove, profit, investment, rune to add, resale, density σ / item, status) before the lot columns, `alignPrice={false}`; unfolding a candidate marks it and the lots with the same rune on the graph (`toggleCand`). `LotTable` options: `leads` ({key, label, cell snippet on `meta`, sort, num, desc}), `deals` / `transcend` columns, `alignPrice`, `rowClass`.
-- Combat tab (`combat.rs`, store `lib/stores/combat.svelte.ts` started by App.svelte, `app/src/modules/combat`): the monsters of the current fight with the author's notes (⚠ warning / 🛡 invulnerable / 💡 tips, ported from Loutil_old). Fighters = every ActorPositionInformation (bindings role `fight`: actor_id, MonsterFighter's three unordered ints gid / grade / level, summoned). Which int is which is learnt: a message whose fighters fit a single arrangement (gid = a monster, grade = one of its grades, level <= 99th percentile of grade levels + 100, exact grade levels first) votes for it, votes saved in `<app data>/combat/layout.json` per field names; levels are often scaled (a real fight had every monster at 200), so the old "largest monster int" guess read Pissenlit 79 / Minotoror 121 as monster 200 found by walking FightFighterShowEvent / FightFighterRefreshEvent / FightSynchronizeEvent (replaces the list) / GameActionFightEvent (summons); deaths: GameActionFightEvent's `death` member (role `fight.death`; its two unnamed int64, the one that is a fighter of the fight died) or a monster left out of a FightSynchronizeEvent (which no longer replaces the list) -> `dead`; doubles (Chafer Ronin...) are left out by `state`: a fighter that appeared during the fight (`summoned`, a `summoner` — role `fight.summoner` —, or first seen in a GameActionFightEvent) with the gid of a monster placed at the start; the UI (`groups(list, show)`) drops a monster with no note shown once all its copies died, keeps one with notes dimmed ("mort", last), ×N = living copies; FightJoinEvent / FightJoinRunningEvent start a fight (so do fighters seen outside one), FightEndEvent ends it (the last fight stays shown, "Effacer" clears it). Not checked on a real capture yet. Data: `extract_gamedata.py` exports `monsters` (nameId, grade levels); `export_pack.py` writes `monsters.json` with `notes` from `work/monster_notes.csv` (local CSV export of the author's "Strats monstres" sheet: name, warning, invulnerable, tips, one line per note; matched by accent-free name, applied to every monster of that name; not committed — only the pack ships it) and `tags` from `work/dofusdb_monsters.json` (written by the local, uncommitted `work/fetch_dofusdb_monsters.py`; the API returns empty `tags` since mid-2026, so tags fall back to Loutil_old's June dump `data/monsters_raw.json` (`--merge-only` re-merges without fetching), flags are fresh: DofusDB tags = what the monster's spells do — push, pull, retPA/PM/PO, poison, summon, elements, boost* — plus flags turned into tags boss / miniBoss / noPush / noSwitch / noCarry / noTackle; labels and groups flag / control / elem / boost in `lib/monsterTags.ts`, only `SHOWN` ones displayed = Loutil_old's tag_mapping list (retPA/PM/PO, poison, heal, push, pull, summon, erode, malusRes, debuff, boostShield) + the no* flags (red); meant for later cross-monster warnings, e.g. pushers next to a monster with a push strat). Every monster is a card (tags, then notes; no level, fights are often scaled). Settings `settings.combat` (switch `enabled` -> `set_enabled`, the fight messages are not decoded when off; `show` warning / invulnerable / all; `autoOpen` opens the tab when a fight starts; `overlay` = floating window shown while a fight runs: an effect in `startCombat` opens it (without focus) when a fight starts and closes it when it ends), in the tab bar and in Paramètres. Floating fight window ("⧉ Fenêtre flottante"): `combat.html` + `src/CombatOverlay.svelte` (extra vite input, `FloatingShell`, capability `overlay.json`), opened by `openCombatOverlay` like the scan list (`openFloating`, 340px wide, height = its content up to 80 % of the screen through `setSize`; its position is saved on move in localStorage `karrelage.combat.overlayPos` {x, y, bottom} and reused); the ⤓ / ⤒ button in its title bar = `settings.combat.overlayGrow` down / up: anchored at the top or the bottom of the screen; "up" puts the title bar under the monsters (`.box.up`, column-reverse) and moves the window so its bottom edge stays put (`setPosition`) and it reopens from that bottom edge; "⧉ Afficher" in the tab opens it by hand; it follows `combat:fight` itself (`followFight`), shows the flag / control tags and the notes at the app's `settings.combat.show` (the settings store follows other windows' changes through the `storage` event).
+## Game data facts
+- AH row ints are unordered (uid / gid / type): `Data::resolve_gid_type`.
+- Effect ids on the wire = `effects` table ids (= `possibleEffects[].actionId`), not `baseEffectId`.
+- Default range = `diceNum..diceSide` (`diceSide == 0` → fixed).
+- Effects carry `group` (stats/main/secondary/damage/resist/weapon/other), `order` (in-game panel rank), `density`
+  (effectPowerRate: AP 100, MP 90, vitality 0.2) and `stat` (+X and -X share it), computed in `export_pack.py`.
+- Item **density** = Σ value × effect density (negatives at half their twin's rate; prospection excluded).
+- Filterable effects: found on equipment (category 0) of levels 150–200; `weapon` group never offered.
+- Item type categories: 0 equipment, 1 consumable, 2 resource. Companions = types 18, 121, 331–333 (`COMPANION_TYPES`).
+- Svelte 5: plain `Map`/`Set` in `$state` aren't reactive (use `SvelteMap`/`SvelteSet`); `x ??= []` returns the raw value.
+
+## Features (non-obvious facts only)
+**HDV / auction** (`auction.rs`, `modules/auction`)
+- Lot colours: blue = added effect, green = above default max, grey/orange = default effect missing. Perfect = default
+  damage / % resistances at max, main stats within 3 (vitality 10). Line styles in `lib/effects.ts`.
+- Price vs density chart with least-squares line; good deal = ≥ `settings.hdv.goodZ` σ (default 2) above trend, needs ≥ 5
+  lots (`lib/density.ts`). Companions plot price vs total xp of the level (`lib/companion.ts`; effects 2821 level, 2862 legendary).
+- Pin (`lib/compare.ts` `pairRows`): other lots shown against the pinned one per stat.
+- Transcendance (`lib/transcend.ts`): lock 2825 + `added` effect = runed lot; rune = type 211 with that effect/value;
+  profit = cheapest transcended × (1 − tax) − lot − rune.
+- On sale per category (role `ah_type`, removed by `ah_gone`) and listing changes (`ah_buy` removes a lot by uid, `ah_row`
+  replaces a row, `ah_row_removed` removes one): never seen in a capture yet, uid matching assumed.
+
+**Stored prices** (`prices.rs`)
+- Per-unit price = median over stack sizes of each size's cheapest price / qty (lower middle on even counts); equipment =
+  cheapest lot. Every listing / weekly-average batch is appended to `<app data>/prices/history.jsonl` (call `history`).
+- `ObjectAveragePricesEvent` (role `avg_prices`) gives the 7-day average. Priority: override > AH unit > avg.
+
+**Packets** (`packets.rs`): keeps the last 20 raw packets per type, decoded only when the tab lists/streams them.
+
+**Brisage** (`brisage.rs`, `lib/brisage.ts`)
+- Formula (kamamaster.fr, verified on a real break): runes = round2(3 × unit × jet × level / 200 + 1) × coef / 100 / rune
+  weight; focus = own runes + half the weight of every other effect. Exo runes can't be focused. Expected values kept.
+- Coefficients in `<app data>/brisage/coefs.json` (typed, or from `DecraftResultEvent` role `decraft`: per stack, coef 0–1
+  float, stored = coef_min; uid resolved through `inventory::UidMap`, else guessed from runes). Every break appended to
+  `breaks.json` (data to later model coefficient evolution).
+- `drop` = `dropMonsterIds` non-empty (Temporis ignored). Breakable types in `BREAKABLE_TYPES`.
+
+**Crafting > Montures** (`lib/mounts.ts`): extraction gives N resources, N = generation (highest base-colour generation,
++1 for two colours; gen 1 left out). Effect 3836 = senile → 1 resource.
+
+**Stuff** (`stuff.rs`, `modules/stuff`, `lib/stuff.ts`)
+- Dofusbook import `https://www.dofusbook.net/api/stuffs/dofus/public/<id>` (link forms + `d-bk.net` 301). Cloudflare
+  403s ureq → falls back to system curl with a browser UA. Only slot → gid / picture / scroll / exo are kept; stats and
+  set bonuses come from the pack (`itemsets.json`).
+- Totals (`compute`, verified vs Dofusbook): HP = 50 + 5 × level + vitality; initiative = Σ elements; dodge/withdrawal =
+  wisdom / 10; tackle/escape = agility / 10; pods = 1000 + 5 × force; prospection = 100 + chance / 10.
+- Icons from Dofusbook (Ankama's CDN lacks recent items), cached under `<app data>/stuff/icons`, served as data URLs (CSP).
+- Prices are real only (override / AH price, never weekly avg) except craft ingredients (avg allowed). Owned items count
+  at their perfect roll or the chosen inventory copy (`own_uid`) and are left out of prices.
+- Solver (`solve`, web worker `lib/stuffWorker.ts`): branch and bound over scanned lots with set bonuses, node-limited.
+  Build fm is searched as exo on lots (`EXO_BASE + stat` pseudo-stats) and not double-counted in `compute`.
+- Dofusbook export (`lib/dofusbookExport.ts`, format documented there): worn positions 0–15 (0 amulette, 1 arme, 2/4
+  anneaux, 3 ceinture, 5 bottes, 6 coiffe, 7 cape, 8 familier, 9–14 Dofus, 15 bouclier; 16 mount, 63 bag); exos sent as fm.
+- Floating scan list (`ScanList.svelte`, localStorage `karrelage.scanlist`) of unscanned items.
+
+**Inventory** (`inventory.rs`): equipment from `InventoryContentEvent` (login only), updated by Object* events and
+`ObjectMovementEvent` (named by anchor; uid / position told apart by value). Role `inventory`. Characteristics from
+`CharacterCharacteristicsEvent`: unnamed ints told apart by value (base = invocations 1, prospection ≥ 100, six stats
+costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
+
+**Combat** (`combat.rs`, `lib/stores/combat.svelte.ts`, `modules/combat`)
+- Fighters from ActorPositionInformation (role `fight`); MonsterFighter's gid / grade / level ints are unordered and learnt by
+  voting (`<app data>/combat/layout.json`) — levels are often scaled, so no "largest int" guess.
+- Fight start: FightJoin(Running)Event; end: FightEndEvent; deaths: GameActionFightEvent `death` (role `fight.death`) or
+  absence from FightSynchronizeEvent. Summoned copies of starting monsters (doubles) are ignored.
+- Poisons (effects 1131–1140): added by FightBoostAddEvent / FightJoinRunningEvent (role `boost`), removed by
+  FightBoostRemoveEvent. Player = id from CharacterSelectionRequest (`<app data>/combat/me.json`).
+- Monster notes from `work/monster_notes.csv` (author's sheet, not committed) and tags from `work/dofusdb_monsters.json`
+  (DofusDB API returns empty tags since mid-2026 → fallback Loutil_old dump); `danger` column → cross-monster warnings.
+  Only `SHOWN` tags displayed (`lib/monsterTags.ts`). Floating window `CombatOverlay.svelte`.
+- Not checked on a real capture yet (except poison boost uids).
+
+**Loot** (`loot.rs`): FightEndEvent → results → fighter id + `Loot` messages; item = the largest int that is a known gid
+(verified 3.7.12.12). Automation « Songes »: sound when a « Légende » (type 219) is looted, by price threshold.
+
+**Automation** (`lib/automation.ts`, `stores/automation.svelte.ts`): rules checked on every live `auction:item`, each with
+`enabled` / `sound` (`lib/sounds.ts`, `app/public/sounds`) / `volume`. `exoDo`: exo matching a "Rune Ta Do Per" rune,
+cheaper than it, break-even ≤ `maxEven`. Notifications (session only) open the lot via `app.showLot`.
