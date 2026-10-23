@@ -4,14 +4,16 @@
 //! UI (`app/src/lib/brisage.ts`). Coefficients (gid -> %) come from the break results the game sends (`DecraftResultEvent`)
 //! or are typed in the tab; the latest one wins.
 use crate::inventory::UidMap;
-use crate::{Ctx, Interest, Message, Module, Persist};
+use crate::kit::{arg_i64, unknown, Role, Store};
+use crate::sys::unix_secs_f64 as now;
+use crate::{Ctx, Interest, Message, Module};
 use anyhow::{anyhow, Result};
 use loutil_proto::util::{int, messages};
 use parking_lot::Mutex;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 
 /// Clear name of the break result (one entry per item broken: its coefficient, its uid and the runes received).
 pub const DECRAFT: &str = "DecraftResultEvent";
@@ -26,10 +28,6 @@ const BREAKABLE_TYPES: [i64; 20] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 16, 17, 1
 
 fn breakable(type_id: i64) -> bool {
     BREAKABLE_TYPES.contains(&type_id)
-}
-
-fn now() -> f64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f64())
 }
 
 /// Obfuscated field names of the break result (bindings.json `decraft`).
@@ -71,14 +69,12 @@ struct Pack {
 
 pub struct Brisage {
     pack: OnceLock<Pack>,
-    bind: OnceLock<Option<Bindings>>,
+    bind: Role<Bindings>,
     /// gid -> {gid, coef (%), t, source: "brisage" | "manuel", uid?, guessed?, runes?: [[rune gid, qty]]}
-    coefs: Arc<Mutex<BTreeMap<i64, Value>>>,
-    persist: OnceLock<Persist>,
+    coefs: Store<BTreeMap<i64, Value>>,
     uids: UidMap,
     /// Every break result seen, oldest first (see `record`): the data a model of the coefficient will be fitted on.
-    history: Arc<Mutex<Vec<Value>>>,
-    history_persist: OnceLock<Persist>,
+    history: Store<Vec<Value>>,
     /// Break results whose item could not be told (latest last; same shape as `history`): to assign to an item by hand.
     pending: Mutex<Vec<Value>>,
 }
@@ -97,16 +93,7 @@ impl Default for Brisage {
 impl Brisage {
     /// `uids`: object uid -> gid of the equipment seen in the inventory (shared with the inventory module).
     pub fn new(uids: UidMap) -> Self {
-        Self {
-            pack: OnceLock::new(),
-            bind: OnceLock::new(),
-            coefs: Default::default(),
-            persist: OnceLock::new(),
-            uids,
-            history: Default::default(),
-            history_persist: OnceLock::new(),
-            pending: Default::default(),
-        }
+        Self { pack: OnceLock::new(), bind: Role::new(), coefs: Store::default(), uids, history: Store::default(), pending: Default::default() }
     }
 
     /// The effect focused in a break: a single kind of rune received from an item that yields several.
@@ -126,18 +113,15 @@ impl Brisage {
     }
 
     fn push_history(&self, rec: Value) {
-        let mut h = self.history.lock();
-        h.push(rec);
-        let extra = h.len().saturating_sub(MAX_HISTORY);
-        h.drain(..extra);
-        drop(h);
-        if let Some(p) = self.history_persist.get() {
-            p.touch();
-        }
+        self.history.update(|h| {
+            h.push(rec);
+            let extra = h.len().saturating_sub(MAX_HISTORY);
+            h.drain(..extra);
+        });
     }
 
     fn bindings(&self, ctx: &Ctx) -> Option<&Bindings> {
-        self.bind.get_or_init(|| serde_json::from_value(ctx.data.bindings.get("decraft")?.clone()).ok()).as_ref()
+        self.bind.get(ctx, "decraft")
     }
 
     fn pack(&self, ctx: &Ctx) -> &Pack {
@@ -237,9 +221,7 @@ impl Brisage {
     }
 
     fn changed(&self, ctx: &Ctx, e: Value) {
-        if let Some(p) = self.persist.get() {
-            p.touch();
-        }
+        self.coefs.touch();
         ctx.emit("brisage", "coef", e);
     }
 }
@@ -254,19 +236,15 @@ impl Module for Brisage {
     }
 
     fn init(&self, ctx: &Ctx) {
-        let coefs = self.coefs.clone();
-        let (persist, saved) =
-            Persist::open(ctx.module_dir("brisage").join("coefs.json"), ctx.logger(), move || json!(coefs.lock().values().cloned().collect::<Vec<_>>()));
-        let _ = self.persist.set(persist);
+        let saved = self.coefs.open(ctx, "brisage", "coefs.json", |s| json!(s.values().collect::<Vec<_>>()));
         let mut s = self.coefs.lock();
         for e in saved.as_ref().and_then(Value::as_array).into_iter().flatten() {
             if let Some(g) = e["gid"].as_i64() {
                 s.insert(g, e.clone());
             }
         }
-        let history = self.history.clone();
-        let (persist, saved) = Persist::open(ctx.module_dir("brisage").join("breaks.json"), ctx.logger(), move || Value::Array(history.lock().clone()));
-        let _ = self.history_persist.set(persist);
+        drop(s);
+        let saved = self.history.open(ctx, "brisage", "breaks.json", |h| json!(h));
         if let Some(Value::Array(l)) = saved {
             *self.history.lock() = l;
         }
@@ -321,7 +299,7 @@ impl Module for Brisage {
             "coefs" => Ok(Value::Object(self.coefs.lock().iter().map(|(g, e)| (g.to_string(), e.clone())).collect())),
             // args: {gid, coef: number | null} (%); null forgets the item's coefficient
             "set_coef" => {
-                let gid = args["gid"].as_i64().ok_or_else(|| anyhow!("brisage: gid required"))?;
+                let gid = arg_i64(&args, "gid")?;
                 let e = match args["coef"].as_f64().filter(|c| *c >= 0.0) {
                     Some(c) => {
                         let e = json!({"gid": gid, "coef": c, "t": now(), "source": "manuel"});
@@ -352,12 +330,11 @@ impl Module for Brisage {
                     rec["gid"] = json!(gid);
                     rec["how"] = json!("manuel");
                     rec["focus"] = json!(Self::focus_of(self.pack(ctx), gid, &runes));
-                    if let Some(h) = self.history.lock().iter_mut().rev().find(|h| same(h)) {
-                        *h = rec.clone();
-                    }
-                    if let Some(p) = self.history_persist.get() {
-                        p.touch();
-                    }
+                    self.history.update(|l| {
+                        if let Some(h) = l.iter_mut().rev().find(|h| same(h)) {
+                            *h = rec.clone();
+                        }
+                    });
                     let e = Self::coef_entry(&rec);
                     self.coefs.lock().insert(gid, e.clone());
                     self.changed(ctx, e);
@@ -370,7 +347,7 @@ impl Module for Brisage {
                 let gid = args["gid"].as_i64();
                 Ok(Value::Array(self.history.lock().iter().filter(|h| gid.is_none() || h["gid"].as_i64() == gid).cloned().collect()))
             }
-            _ => Err(anyhow!("brisage: unknown method {method}")),
+            _ => Err(unknown("brisage", method)),
         }
     }
 }
@@ -378,22 +355,7 @@ impl Module for Brisage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use loutil_core::RawMessage;
-    use loutil_data::Data;
-    use loutil_proto::Proto;
-    use std::path::Path;
-
-    fn hub(name: &str) -> Option<(crate::Hub, Arc<Proto>)> {
-        let pack = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../datapack");
-        if !pack.join("manifest.json").exists() {
-            return None;
-        }
-        let dir = std::env::temp_dir().join(name);
-        let _ = std::fs::remove_dir_all(&dir);
-        let data = Arc::new(Data::load(&pack, "fr").unwrap());
-        let proto = Arc::new(Proto::load(&pack, dir.join("o.json")).unwrap());
-        Some((crate::Hub::new(data, proto.clone(), dir, Arc::new(|_, _| {}), Arc::new(|_| {})), proto))
-    }
+    use crate::kit::testkit::{hub, msg};
 
     /// Needs the generated data pack; skipped otherwise.
     #[test]
@@ -428,16 +390,7 @@ mod tests {
         }
         let hex = "0a630db971073f15b971073f189bdcc9022205080110950c2205080910915b2205082210ef0b2205080b10a33a2205080710895b22050808108f5b2205081d10f30b22050816109b3a2205080910875b2205081410f10b2205082c10f40b22050809109c3a";
         let payload: Vec<u8> = (0..hex.len()).step_by(2).map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap()).collect();
-        let msg = Message {
-            id: 1,
-            raw: RawMessage { t: 1792528239.1, srv: "x".into(), dir: "S->C", payload: vec![] },
-            env: None,
-            type_name: Some("kag".into()),
-            name: DECRAFT.into(),
-            conf: None,
-            decoded: proto.decode("kag", &payload),
-            fmt: None,
-        };
+        let msg = msg(DECRAFT, proto.decode("kag", &payload), 1792528239.1);
         let b = Brisage::new(Default::default());
         b.on_message(&msg, &hub.ctx);
         let c = b.call("coefs", Value::Null, &hub.ctx).unwrap();

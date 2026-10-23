@@ -365,7 +365,7 @@ impl Module for NamesTab {
                 spawn_pipeline(root, mode, ctx.emitter(), self.running.clone(), self.job.clone());
                 Ok(json!({"started": true, "mode": mode}))
             }
-            _ => Err(anyhow!("names: unknown method {method}")),
+            _ => Err(crate::kit::unknown("names", method)),
         }
     }
 }
@@ -373,22 +373,11 @@ impl Module for NamesTab {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use loutil_data::Data;
-    use loutil_proto::Proto;
 
     /// The freshly exported pack must be self-consistent: every binding and required name resolves.
     #[test]
     fn current_pack_passes_the_static_checks() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let pack = root.join("datapack");
-        if !pack.join("manifest.json").exists() {
-            return;
-        }
-        let dir = std::env::temp_dir().join("loutil-names-check");
-        let _ = std::fs::remove_dir_all(&dir);
-        let data = Arc::new(Data::load(&pack, "fr").unwrap());
-        let proto = Arc::new(Proto::load(&pack, dir.join("o.json")).unwrap());
-        let hub = crate::Hub::new(data, proto, dir, Arc::new(|_, _| {}), Arc::new(|_| {}));
+        let Some((hub, _)) = crate::kit::testkit::hub("loutil-names-check") else { return };
         let r = hub.call("names", "check", Value::Null).unwrap();
         let failed: Vec<&Value> = r["bindings"].as_array().unwrap().iter().filter(|c| c["ok"] == false).collect();
         assert!(failed.is_empty(), "{failed:?}");

@@ -2,15 +2,16 @@
 //! and kept up to date by the object added / modified / deleted events. The Stuff tab uses it to count an owned item at its
 //! actual roll instead of the perfect one. Only equipment is kept; the last character seen wins.
 use crate::auction::{parse_effect, stat_effects, ObjectEffect};
-use crate::{Ctx, Interest, Message, Module, Persist};
-use anyhow::{anyhow, Result};
+use crate::kit::{unknown, Role, Store};
+use crate::{Ctx, Interest, Message, Module};
+use anyhow::Result;
 use loutil_proto::util::{int, int_list, messages};
 use loutil_proto::DynamicMessage;
 use parking_lot::Mutex;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 pub const CONTENT: &str = "InventoryContentEvent";
 pub const ADDED: &str = "ObjectAddedEvent";
@@ -64,24 +65,31 @@ impl Seen {
 /// module resolves the uids of broken items with it (the item is gone from the inventory by then).
 pub type UidMap = Arc<Mutex<HashMap<i64, Seen>>>;
 
-pub struct Inventory {
-    bind: OnceLock<Option<(Bindings, ObjectEffect)>>,
-    /// object uid -> item (see `item`)
-    items: Arc<Mutex<BTreeMap<i64, Value>>>,
-    updated: Arc<Mutex<f64>>,
-    persist: OnceLock<Persist>,
-    uids: UidMap,
+/// What `items.json` holds: when the game last sent the whole inventory (login) and the equipment, by object uid.
+#[derive(Default)]
+struct Content {
+    updated: f64,
+    /// object uid -> item (see `Inventory::item`)
+    items: BTreeMap<i64, Value>,
 }
 
-impl Default for Inventory {
-    fn default() -> Self {
-        Self::new()
+impl Content {
+    fn json(&self) -> Value {
+        json!({"updated": self.updated, "items": self.items.values().collect::<Vec<_>>()})
     }
+}
+
+#[derive(Default)]
+pub struct Inventory {
+    bind: Role<Bindings>,
+    effect_bind: Role<ObjectEffect>,
+    store: Store<Content>,
+    uids: UidMap,
 }
 
 impl Inventory {
     pub fn new() -> Self {
-        Self { bind: OnceLock::new(), items: Default::default(), updated: Default::default(), persist: OnceLock::new(), uids: Default::default() }
+        Self::default()
     }
 
     /// Shared uid -> item map (see `UidMap`).
@@ -89,13 +97,8 @@ impl Inventory {
         self.uids.clone()
     }
 
-    fn bindings(&self, ctx: &Ctx) -> Option<&(Bindings, ObjectEffect)> {
-        self.bind
-            .get_or_init(|| {
-                let b = &ctx.data.bindings;
-                Some((serde_json::from_value(b.get("inventory")?.clone()).ok()?, serde_json::from_value(b.get("object_effect")?.clone()).ok()?))
-            })
-            .as_ref()
+    fn bindings(&self, ctx: &Ctx) -> Option<(&Bindings, &ObjectEffect)> {
+        Some((self.bind.get(ctx, "inventory")?, self.effect_bind.get(ctx, "object_effect")?))
     }
 
     /// ObjectItemInventory -> (uid, item) for equipment, shaped like an auction lot (`effects` compared with the item's defaults)
@@ -120,14 +123,9 @@ impl Inventory {
     }
 
     fn changed(&self, ctx: &Ctx) {
-        if let Some(p) = self.persist.get() {
-            p.touch();
-        }
-        ctx.emit("inventory", "changed", self.list());
-    }
-
-    fn list(&self) -> Value {
-        json!({"updated": *self.updated.lock(), "items": self.items.lock().values().cloned().collect::<Vec<_>>()})
+        self.store.touch();
+        let list = self.store.lock().json();
+        ctx.emit("inventory", "changed", list);
     }
 }
 
@@ -141,23 +139,15 @@ impl Module for Inventory {
     }
 
     fn init(&self, ctx: &Ctx) {
-        let (items, updated) = (self.items.clone(), self.updated.clone());
-        let (persist, saved) = Persist::open(
-            ctx.module_dir("inventory").join("items.json"),
-            ctx.logger(),
-            move || json!({"updated": *updated.lock(), "items": items.lock().values().cloned().collect::<Vec<_>>()}),
-        );
-        let _ = self.persist.set(persist);
-        if let Some(saved) = saved {
-            *self.updated.lock() = saved["updated"].as_f64().unwrap_or(0.0);
-            let mut s = self.items.lock();
-            for it in saved["items"].as_array().into_iter().flatten() {
-                if let Some(uid) = it["uid"].as_i64() {
-                    if let Some(seen) = Seen::of(it) {
-                        self.uids.lock().insert(uid, seen);
-                    }
-                    s.insert(uid, it.clone());
+        let Some(saved) = self.store.open(ctx, "inventory", "items.json", Content::json) else { return };
+        let mut s = self.store.lock();
+        s.updated = saved["updated"].as_f64().unwrap_or(0.0);
+        for it in saved["items"].as_array().into_iter().flatten() {
+            if let Some(uid) = it["uid"].as_i64() {
+                if let Some(seen) = Seen::of(it) {
+                    self.uids.lock().insert(uid, seen);
                 }
+                s.items.insert(uid, it.clone());
             }
         }
     }
@@ -181,18 +171,21 @@ impl Module for Inventory {
             l.into_iter().fold(false, |ch, (uid, it)| s.insert(uid, it.clone()).as_ref() != Some(&it) || ch)
         };
         let changed = {
-            let mut s = self.items.lock();
-            match m.name.as_str() {
+            let mut c = self.store.lock();
+            if m.name == CONTENT {
                 // a new login (maybe another character): the whole inventory
+                c.updated = t;
+            }
+            let s = &mut c.items;
+            match m.name.as_str() {
                 CONTENT => {
                     s.clear();
                     s.extend(parse(messages(msg, &b.objects)));
-                    *self.updated.lock() = t;
                     true
                 }
-                ADDED => put(&mut s, parse(one(&b.added))),
-                ADDED_LIST => put(&mut s, parse(messages(msg, &b.added_list))),
-                MODIFIED => put(&mut s, parse(one(&b.modified))),
+                ADDED => put(s, parse(one(&b.added))),
+                ADDED_LIST => put(s, parse(messages(msg, &b.added_list))),
+                MODIFIED => put(s, parse(one(&b.modified))),
                 DELETED => s.remove(&int(msg, &b.deleted)).is_some(),
                 DELETED_LIST => int_list(msg, &b.deleted_list).iter().filter(|uid| s.remove(uid).is_some()).count() > 0,
                 _ => return,
@@ -205,8 +198,8 @@ impl Module for Inventory {
 
     fn call(&self, method: &str, _args: Value, _ctx: &Ctx) -> Result<Value> {
         match method {
-            "list" => Ok(self.list()),
-            _ => Err(anyhow!("inventory: unknown method {method}")),
+            "list" => Ok(self.store.lock().json()),
+            _ => Err(unknown("inventory", method)),
         }
     }
 }
@@ -214,22 +207,14 @@ impl Module for Inventory {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use loutil_core::RawMessage;
-    use loutil_data::Data;
-    use loutil_proto::{PbValue, Proto};
+    use crate::kit::testkit;
+    use loutil_proto::PbValue;
 
     /// A synthetic InventoryContentEvent (one worn item, one bag resource), then the item's deletion.
     #[test]
     fn reads_inventory_and_follows_deletions() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let pack = root.join("datapack");
-        if !pack.join("manifest.json").exists() {
-            return;
-        }
-        let dir = std::env::temp_dir().join("loutil-inventory");
-        let _ = std::fs::remove_dir_all(&dir);
-        let data = Arc::new(Data::load(&pack, "fr").unwrap());
-        let proto = Arc::new(Proto::load(&pack, dir.join("o.json")).unwrap());
+        let Some((hub, proto)) = testkit::hub("loutil-inventory") else { return };
+        let data = hub.ctx.data.clone();
         let b: Bindings = serde_json::from_value(data.bindings["inventory"].clone()).unwrap();
         let (content, deleted) = (proto.obf_for_clear(CONTENT).unwrap(), proto.obf_for_clear(DELETED).unwrap());
         let md = proto.message(&content).unwrap();
@@ -251,18 +236,7 @@ mod tests {
         msg.set_field_by_name(&b.objects, PbValue::List(vec![entry(equip, 1001, 6), entry(resource, 1002, 63)]));
         let mut del = DynamicMessage::new(proto.message(&deleted).unwrap());
         del.set_field_by_name(&b.deleted, PbValue::I32(1001));
-
-        let hub = crate::Hub::new(data, proto, dir, Arc::new(|_, _| {}), Arc::new(|_| {}));
-        let message = |name: &str, decoded: DynamicMessage| Message {
-            id: 1,
-            raw: RawMessage { t: 5.0, srv: "x".into(), dir: "S->C", payload: vec![] },
-            env: None,
-            type_name: None,
-            name: name.into(),
-            conf: None,
-            decoded: Some(decoded),
-            fmt: None,
-        };
+        let message = |name: &str, decoded: DynamicMessage| testkit::msg(name, Some(decoded), 5.0);
         let inv = Inventory::new();
         inv.on_message(&message(CONTENT, msg), &hub.ctx);
         let l = inv.call("list", Value::Null, &hub.ctx).unwrap();

@@ -1,14 +1,16 @@
 //! Stored prices: the cheapest per-unit price seen for every item opened in the auction house, grouped by item
 //! category / type, with a manual override that wins over the captured price.
 use crate::auction::{apply_change, AH_BUY, AH_LIST, AH_ROW_REMOVED, AH_ROW_UPDATED};
-use crate::{Ctx, Interest, Message, Module, Persist};
+use crate::kit::{arg_i64, unknown, Store};
+use crate::sys::unix_secs_f64 as now;
+use crate::{Ctx, Interest, Message, Module};
 use anyhow::{anyhow, Result};
 use loutil_data::items::RUNE_MARKER_EFFECTS;
 use loutil_proto::util::{int, messages};
 use parking_lot::Mutex;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 
 /// `itemtypes.categoryId` -> label shown in the UI.
 fn category_name(id: Option<i64>) -> &'static str {
@@ -29,10 +31,6 @@ const RUNE_TYPE: i64 = 211;
 /// A price read in the auction house is forgotten after this long (seconds); the weekly average and manual overrides stay.
 const UNIT_MAX_AGE: f64 = 2.0 * 86400.0;
 
-fn now() -> f64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f64())
-}
-
 /// Drop the AH-read price of every entry older than `UNIT_MAX_AGE`, then the entries left with no price at all.
 fn expire(s: &mut BTreeMap<i64, Value>, now: f64) -> bool {
     let mut changed = false;
@@ -48,10 +46,10 @@ fn expire(s: &mut BTreeMap<i64, Value>, now: f64) -> bool {
     changed || s.len() != before
 }
 
+#[derive(Default)]
 pub struct Prices {
     /// gid -> {gid, name, type_id, type, category, unit, updated, override}
-    store: Arc<Mutex<BTreeMap<i64, Value>>>,
-    persist: OnceLock<Persist>,
+    store: Store<BTreeMap<i64, Value>>,
     /// pack-derived answers, constant once the pack is loaded
     runes: OnceLock<Value>,
     craft_runes: OnceLock<Value>,
@@ -144,33 +142,9 @@ fn norm_name(s: &str) -> String {
         .collect()
 }
 
-impl Default for Prices {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl Prices {
     pub fn new() -> Self {
-        Self {
-            store: Default::default(),
-            persist: OnceLock::new(),
-            runes: OnceLock::new(),
-            craft_runes: OnceLock::new(),
-            by_name: OnceLock::new(),
-            listings: Default::default(),
-        }
-    }
-
-    fn path(ctx: &Ctx) -> std::path::PathBuf {
-        ctx.module_dir("prices").join("prices.json")
-    }
-
-    /// Written in the background (see `Persist`).
-    fn save(&self) {
-        if let Some(p) = self.persist.get() {
-            p.touch();
-        }
+        Self::default()
     }
 
     /// Fill the display fields from the data pack (names may change with the pack, so they are never trusted from disk).
@@ -209,7 +183,7 @@ impl Prices {
             return;
         }
         append_history(ctx, &json!({"t": m.raw.t, "kind": "avg", "prices": hist}));
-        self.save();
+        self.store.touch();
         ctx.emit("prices", "bulk", Value::Array(changed));
     }
 }
@@ -224,10 +198,7 @@ impl Module for Prices {
     }
 
     fn init(&self, ctx: &Ctx) {
-        let store = self.store.clone();
-        let (persist, saved) =
-            Persist::open(Self::path(ctx), ctx.logger(), move || Value::Object(store.lock().iter().map(|(k, v)| (k.to_string(), v.clone())).collect()));
-        let _ = self.persist.set(persist);
+        let saved = self.store.open(ctx, "prices", "prices.json", |s| Value::Object(s.iter().map(|(k, v)| (k.to_string(), v.clone())).collect()));
         if let Some(Value::Object(saved)) = saved {
             let mut s = self.store.lock();
             for (k, mut v) in saved {
@@ -238,7 +209,7 @@ impl Module for Prices {
             }
             if expire(&mut s, now()) {
                 drop(s);
-                self.save();
+                self.store.touch();
             }
         }
     }
@@ -275,7 +246,7 @@ impl Module for Prices {
         Self::describe(ctx, gid, ent);
         let ent = ent.clone();
         drop(s);
-        self.save();
+        self.store.touch();
         ctx.emit("prices", "price", ent);
     }
 
@@ -287,7 +258,7 @@ impl Module for Prices {
                 let out = Value::Array(s.values().cloned().collect());
                 drop(s);
                 if changed {
-                    self.save();
+                    self.store.touch();
                 }
                 Ok(out)
             }
@@ -351,24 +322,23 @@ impl Module for Prices {
             }
             // args: {gid, value: number | null}; null removes the override
             "set_override" => {
-                let gid = args["gid"].as_i64().ok_or_else(|| anyhow!("prices: gid required"))?;
+                let gid = arg_i64(&args, "gid")?;
                 let value = args["value"].as_f64().filter(|v| *v >= 0.0).map(|v| v.round() as i64);
                 let mut s = self.store.lock();
                 let ent = s.get_mut(&gid).ok_or_else(|| anyhow!("prices: unknown item {gid}"))?;
                 ent["override"] = json!(value);
                 let ent = ent.clone();
                 drop(s);
-                self.save();
+                self.store.touch();
                 ctx.emit("prices", "price", ent.clone());
                 Ok(ent)
             }
             "forget" => {
-                self.store.lock().clear();
-                self.save();
+                self.store.update(|s| s.clear());
                 ctx.emit("prices", "cleared", json!({}));
                 Ok(json!({"ok": true}))
             }
-            _ => Err(anyhow!("prices: unknown method {method}")),
+            _ => Err(unknown("prices", method)),
         }
     }
 }
@@ -376,10 +346,7 @@ impl Module for Prices {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use loutil_core::RawMessage;
-    use loutil_data::Data;
-    use loutil_proto::Proto;
-    use std::sync::Arc;
+    use crate::kit::testkit::{hub, msg};
 
     #[test]
     fn unit_price_is_the_median_stack() {
@@ -395,29 +362,11 @@ mod tests {
 
     #[test]
     fn average_prices_preload_but_never_override() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let pack = root.join("datapack");
-        if !pack.join("manifest.json").exists() {
-            return;
-        }
-        let dir = std::env::temp_dir().join("loutil-avgprices");
-        let _ = std::fs::remove_dir_all(&dir);
-        let data = Arc::new(Data::load(&pack, "fr").unwrap());
-        let proto = Arc::new(Proto::load(&pack, dir.join("o.json")).unwrap());
-        let hub = crate::Hub::new(data, proto.clone(), dir, Arc::new(|_, _| {}), Arc::new(|_| {}));
+        let Some((hub, proto)) = hub("loutil-avgprices") else { return };
         // two entries: gid 1711 -> 5000, gid 1728 -> 300 (third field unused)
         let payload = vec![0x1a, 0x06, 0x08, 0xaf, 0x0d, 0x10, 0x88, 0x27, 0x1a, 0x08, 0x08, 0xc0, 0x0d, 0x10, 0xac, 0x02, 0x18, 0x01];
         let decoded = proto.decode("isr", &payload);
-        let msg = |t| Message {
-            id: 1,
-            raw: RawMessage { t, srv: "x".into(), dir: "S->C", payload: vec![] },
-            env: None,
-            type_name: Some("isr".into()),
-            name: AVG_PRICES.into(),
-            conf: None,
-            decoded: decoded.clone(),
-            fmt: None,
-        };
+        let msg = |t| msg(AVG_PRICES, decoded.clone(), t);
         let p = Prices::new();
         p.on_message(&msg(1.0), &hub.ctx);
         let list = p.call("list", Value::Null, &hub.ctx).unwrap();
@@ -437,16 +386,7 @@ mod tests {
 
     #[test]
     fn gids_by_name_finds_foods() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let pack = root.join("datapack");
-        if !pack.join("manifest.json").exists() {
-            return;
-        }
-        let dir = std::env::temp_dir().join("loutil-gids");
-        let _ = std::fs::remove_dir_all(&dir);
-        let data = Arc::new(Data::load(&pack, "fr").unwrap());
-        let proto = Arc::new(Proto::load(&pack, dir.join("o.json")).unwrap());
-        let hub = crate::Hub::new(data, proto, dir, Arc::new(|_, _| {}), Arc::new(|_| {}));
+        let Some((hub, _)) = hub("loutil-gids") else { return };
         let r = Prices::new().call("gids_by_name", json!({"names": ["Croquette enrichie", "Queue d'Ecumouth", "Eau calme"]}), &hub.ctx).unwrap();
         println!("{r}");
         assert_eq!(r["Croquette enrichie"], 20125);

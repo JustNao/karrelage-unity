@@ -5,8 +5,9 @@
 //! a monster, grade = one of its grades, level = a plausible level) votes for it; the winner is kept in `layout.json` (per
 //! field names, so a game update starts over) and then used for every fighter, even an unknown gid. Levels are often scaled
 //! (dungeons, dimensions...), so they are not required to match the grade. Strictly passive, like everything else.
-use crate::{Ctx, Interest, Message, Module, Persist};
-use anyhow::{anyhow, Result};
+use crate::kit::{unknown, Role, Store};
+use crate::{Ctx, Interest, Message, Module};
+use anyhow::Result;
 use loutil_data::Data;
 use loutil_proto::util::{as_i64, int};
 use loutil_proto::{DynamicMessage, PbValue, ReflectMessage};
@@ -15,7 +16,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 
 /// The player enters a fight (placement starts): a new fight.
 pub const JOIN: &str = "FightJoinEvent";
@@ -186,16 +187,14 @@ struct Fight {
 }
 
 pub struct Combat {
-    bind: OnceLock<Option<Bindings>>,
+    bind: Role<Bindings>,
     enabled: AtomicBool,
     fight: Mutex<Fight>,
-    layout: Arc<Mutex<Layout>>,
-    boost_bind: OnceLock<Option<BoostBindings>>,
+    /// `layout.json`, written in the background (a vote comes with most fighter messages)
+    layout: Store<Layout>,
+    boost_bind: Role<BoostBindings>,
     /// the player's character id (seen at login, kept in `me.json`)
-    me: Arc<Mutex<Option<i64>>>,
-    /// `layout.json` / `me.json`, written in the background (a vote comes with most fighter messages)
-    layout_persist: OnceLock<Persist>,
-    me_persist: OnceLock<Persist>,
+    me: Store<Option<i64>>,
 }
 
 impl Default for Combat {
@@ -244,23 +243,21 @@ fn fighters(b: &Bindings, m: &DynamicMessage, out: &mut Vec<(i64, Fighter)>) {
 impl Combat {
     pub fn new() -> Self {
         Self {
-            bind: OnceLock::new(),
+            bind: Role::new(),
             enabled: AtomicBool::new(true),
             fight: Mutex::new(Fight::default()),
-            layout: Default::default(),
-            boost_bind: OnceLock::new(),
-            me: Default::default(),
-            layout_persist: OnceLock::new(),
-            me_persist: OnceLock::new(),
+            layout: Store::default(),
+            boost_bind: Role::new(),
+            me: Store::default(),
         }
     }
 
     fn boosts(&self, ctx: &Ctx) -> Option<&BoostBindings> {
-        self.boost_bind.get_or_init(|| serde_json::from_value(ctx.data.bindings.get("boost")?.clone()).ok()).as_ref()
+        self.boost_bind.get(ctx, "boost")
     }
 
     fn bindings(&self, ctx: &Ctx) -> Option<&Bindings> {
-        self.bind.get_or_init(|| serde_json::from_value(ctx.data.bindings.get("fight")?.clone()).ok()).as_ref()
+        self.bind.get(ctx, "fight")
     }
 
     /// A message's fighters fit a single arrangement: one vote for it (saved).
@@ -275,9 +272,8 @@ impl Combat {
         if before != l.best() && l.fields.len() == 3 {
             ctx.log(format!("combat: monster fields (gid, grade, level) = {:?}", PERMS[ok[0]].map(|i| l.fields[i].clone())));
         }
-        if let Some(p) = self.layout_persist.get() {
-            p.touch();
-        }
+        drop(l);
+        self.layout.touch();
     }
 
     /// The arrangement to read the fighters with: the learnt one, else the best fitting them all.
@@ -343,16 +339,9 @@ impl Module for Combat {
     }
 
     fn init(&self, ctx: &Ctx) {
-        let me = self.me.clone();
-        let (persist, saved) = Persist::open(ctx.module_dir("combat").join("me.json"), ctx.logger(), move || json!({"id": *me.lock()}));
-        let _ = self.me_persist.set(persist);
+        let saved = self.me.open(ctx, "combat", "me.json", |me| json!({"id": me}));
         *self.me.lock() = saved.and_then(|v| v["id"].as_i64());
-        let layout = self.layout.clone();
-        let (persist, saved) = Persist::open(ctx.module_dir("combat").join("layout.json"), ctx.logger(), move || {
-            let l = layout.lock();
-            json!({"fields": l.fields, "votes": l.votes})
-        });
-        let _ = self.layout_persist.set(persist);
+        let saved = self.layout.open(ctx, "combat", "layout.json", |l| json!({"fields": l.fields, "votes": l.votes}));
         let Some(b) = self.bindings(ctx) else { return };
         let mut l = self.layout.lock();
         l.fields = b.monster.clone();
@@ -372,10 +361,7 @@ impl Module for Combat {
         if m.name == SELECT || m.name == FIRST_SELECT {
             let id = self.boosts(ctx).zip(m.decoded.as_ref()).and_then(|(b, d)| b.character.iter().find(|f| d.has_field_by_name(f)).map(|f| int(d, f)));
             if let Some(id) = id.filter(|id| *id != 0) {
-                *self.me.lock() = Some(id);
-                if let Some(p) = self.me_persist.get() {
-                    p.touch();
-                }
+                self.me.update(|me| *me = Some(id));
                 ctx.emit("combat", "fight", self.state(&ctx.data));
             }
             return;
@@ -473,7 +459,7 @@ impl Module for Combat {
                 ctx.emit("combat", "fight", s.clone());
                 Ok(s)
             }
-            _ => Err(anyhow!("unknown method {method}")),
+            _ => Err(unknown("combat", method)),
         }
     }
 }
@@ -481,24 +467,20 @@ impl Module for Combat {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kit::testkit;
     use loutil_core::RawMessage;
-    use loutil_proto::{FieldDescriptor, MessageDescriptor, Proto};
-    use std::sync::Arc;
+    use loutil_proto::{FieldDescriptor, MessageDescriptor};
 
     /// A real fight recorded with pipeline/sniff.py (work/capture_poison.jsonl: local only, it holds the players' ids), replayed
     /// through the hub: monsters found, doubles / deaths applied, buffs read without error. Skipped without the file.
     #[test]
     fn replays_a_recorded_fight() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let (pack, rec) = (root.join("datapack"), root.join("work/capture_poison.jsonl"));
-        if !pack.join("manifest.json").exists() || !rec.exists() {
+        let Some(pack) = testkit::pack() else { return };
+        let rec = pack.join("../work/capture_poison.jsonl");
+        if !rec.exists() {
             return;
         }
-        let dir = std::env::temp_dir().join("loutil-combat-replay");
-        let _ = std::fs::remove_dir_all(&dir);
-        let data = Arc::new(Data::load(&pack, "fr").unwrap());
-        let proto = Arc::new(Proto::load(&pack, dir.join("o.json")).unwrap());
-        let hub = crate::Hub::new(data, proto, dir, Arc::new(|_, _| {}), Arc::new(|_| {}));
+        let (hub, _) = testkit::hub("loutil-combat-replay").unwrap();
         let hex = |s: &str| (0..s.len() / 2).map(|i| u8::from_str_radix(&s[2 * i..2 * i + 2], 16).unwrap()).collect::<Vec<u8>>();
         for line in std::fs::read_to_string(&rec).unwrap().lines() {
             let r: Value = serde_json::from_str(line).unwrap();
@@ -519,18 +501,11 @@ mod tests {
     /// A PA poison put on the player, then its end (FightBoostRemoveEvent with the buff uid); one on a monster is ignored.
     #[test]
     fn follows_poisons_on_the_player() {
-        let pack = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../datapack");
-        if !pack.join("manifest.json").exists() {
-            return;
-        }
-        let dir = std::env::temp_dir().join("loutil-combat-poison");
-        let _ = std::fs::remove_dir_all(&dir);
-        let data = Arc::new(Data::load(&pack, "fr").unwrap());
-        let Ok(b) = serde_json::from_value::<BoostBindings>(data.bindings["boost"].clone()) else {
+        let Some((hub, proto)) = testkit::hub("loutil-combat-poison") else { return };
+        let Ok(b) = serde_json::from_value::<BoostBindings>(hub.ctx.data.bindings["boost"].clone()) else {
             eprintln!("skipped: pack without the boost bindings");
             return;
         };
-        let proto = Arc::new(Proto::load(&pack, dir.join("o.json")).unwrap());
         let (Some(add), Some(rem), Some(sel)) = (proto.obf_for_clear(BOOST_ADD), proto.obf_for_clear(BOOST_REMOVE), proto.obf_for_clear(SELECT)) else {
             eprintln!("skipped: pack without the buff message names");
             return;
@@ -546,17 +521,7 @@ mod tests {
             set(&mut m, &info_path, &b.target, PbValue::I64(target));
             m
         };
-        let hub = crate::Hub::new(data, proto, dir, Arc::new(|_, _| {}), Arc::new(|_| {}));
-        let message = |name: &str, decoded: DynamicMessage| Message {
-            id: 1,
-            raw: RawMessage { t: 1.0, srv: "x".into(), dir: "S->C", payload: vec![] },
-            env: None,
-            type_name: None,
-            name: name.into(),
-            conf: None,
-            decoded: Some(decoded),
-            fmt: None,
-        };
+        let message = |name: &str, decoded: DynamicMessage| testkit::msg(name, Some(decoded), 1.0);
         let c = Combat::new();
         c.init(&hub.ctx);
         let mut login = DynamicMessage::new(sel_md);
@@ -611,19 +576,12 @@ mod tests {
     /// sauvage (200 = their level). Only one arrangement fits the four; it is learnt and then reads a fight of the small ids alone.
     #[test]
     fn learns_the_monster_fields_from_a_scaled_fight() {
-        let pack = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../datapack");
-        if !pack.join("manifest.json").exists() {
-            return;
-        }
-        let data = Arc::new(Data::load(&pack, "fr").unwrap());
+        let Some((hub, _)) = testkit::hub("loutil-combat-layout") else { return };
+        let data = hub.ctx.data.clone();
         if [79, 121, 3462, 1046, 200].iter().any(|g| !data.monsters.contains_key(g)) {
             eprintln!("skipped: pack without these monsters");
             return;
         }
-        let dir = std::env::temp_dir().join("loutil-combat-layout");
-        let _ = std::fs::remove_dir_all(&dir);
-        let proto = Arc::new(Proto::load(&pack, dir.join("o.json")).unwrap());
-        let hub = crate::Hub::new(data.clone(), proto, dir, Arc::new(|_, _| {}), Arc::new(|_| {}));
         // field order of this imaginary build: (grade, level, gid)
         let fighter = |gid: i64, grade: i64| Fighter { ints: [grade, 200, gid], summoned: false, summoner: 0, spawned: false };
         let c = Combat::new();
@@ -648,19 +606,12 @@ mod tests {
     /// A synthetic fight: placement shows a monster, the turn synchronisation lists it plus a summon, then the fight ends.
     #[test]
     fn follows_the_fight_monsters() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let pack = root.join("datapack");
-        if !pack.join("manifest.json").exists() {
-            return;
-        }
-        let dir = std::env::temp_dir().join("loutil-combat");
-        let _ = std::fs::remove_dir_all(&dir);
-        let data = Arc::new(Data::load(&pack, "fr").unwrap());
+        let Some((hub, proto)) = testkit::hub("loutil-combat") else { return };
+        let data = hub.ctx.data.clone();
         if data.monsters.is_empty() {
             eprintln!("skipped: pack without monsters.json");
             return;
         }
-        let proto = Arc::new(Proto::load(&pack, dir.join("o.json")).unwrap());
         let b: Bindings = serde_json::from_value(data.bindings["fight"].clone()).unwrap();
         // a noted monster with several grades, and its grade 2 (ints given in a scrambled order)
         let (&gid, mon) = data.monsters.iter().filter(|(_, m)| m.notes.is_some() && m.levels.len() >= 2).min_by_key(|(g, _)| **g).unwrap();
@@ -699,17 +650,7 @@ mod tests {
         sync_one.set_field(&list_field, PbValue::List(vec![PbValue::Message(actor(-2, gid2, true)), PbValue::Message(actor(-3, gid, true))]));
         let end = DynamicMessage::new(proto.message(&proto.obf_for_clear(END).unwrap()).unwrap());
 
-        let hub = crate::Hub::new(data, proto, dir, Arc::new(|_, _| {}), Arc::new(|_| {}));
-        let message = |name: &str, decoded: DynamicMessage, t: f64| Message {
-            id: 1,
-            raw: RawMessage { t, srv: "x".into(), dir: "S->C", payload: vec![] },
-            env: None,
-            type_name: None,
-            name: name.into(),
-            conf: None,
-            decoded: Some(decoded),
-            fmt: None,
-        };
+        let message = |name: &str, decoded: DynamicMessage, t: f64| testkit::msg(name, Some(decoded), t);
         let c = Combat::new();
         c.on_message(&message(SHOW, show, 1.0), &hub.ctx);
         let s = c.call("state", Value::Null, &hub.ctx).unwrap();

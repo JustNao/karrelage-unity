@@ -1,14 +1,12 @@
 //! Stuff: equipment builds imported from Dofusbook links. The build (slots -> game item ids, base characteristics, scrolls,
 //! exo bonuses) is stored locally; item / stat icons are downloaded once and cached on disk (the webview CSP forbids remote
 //! images, so they are handed to the UI as `data:` URLs). Item stats and set bonuses come from the data pack, not from Dofusbook.
+use crate::kit::{arg_str, Store};
 use crate::store::write_atomic;
 use crate::sys::{http, no_window, system_tool, unix_millis, unix_secs};
-use crate::{Ctx, Interest, Module, Persist};
+use crate::{Ctx, Interest, Module};
 use anyhow::{anyhow, bail, Context, Result};
-use parking_lot::Mutex;
 use serde_json::{json, Map, Value};
-use std::path::PathBuf;
-use std::sync::{Arc, OnceLock};
 
 const API: &str = "https://www.dofusbook.net/api/stuffs/dofus/public";
 const ITEM_ICON: &str = "https://www.dofusbook.net/static/dist/items"; // <picture>-100.webp (also has the recent items Ankama's CDN lacks)
@@ -25,32 +23,19 @@ const STAT_CODES: &[&str] = &[
     "rw",
 ];
 
+#[derive(Default)]
 pub struct Stuff {
-    builds: Arc<Mutex<Vec<Value>>>,
-    persist: OnceLock<Persist>,
-}
-
-impl Default for Stuff {
-    fn default() -> Self {
-        Self::new()
-    }
+    builds: Store<Vec<Value>>,
 }
 
 impl Stuff {
     pub fn new() -> Self {
-        Self { builds: Default::default(), persist: OnceLock::new() }
-    }
-
-    fn path(ctx: &Ctx) -> PathBuf {
-        ctx.module_dir("stuff").join("builds.json")
+        Self::default()
     }
 
     /// Builds change only on user actions: written right away (outside the lock).
     fn save(&self) {
-        if let Some(p) = self.persist.get() {
-            p.touch();
-            p.flush();
-        }
+        self.builds.flush();
     }
 }
 
@@ -210,16 +195,13 @@ impl Module for Stuff {
     }
 
     fn init(&self, ctx: &Ctx) {
-        let builds = self.builds.clone();
-        let (persist, saved) = Persist::open(Self::path(ctx), ctx.logger(), move || Value::Array(builds.lock().clone()));
-        let _ = self.persist.set(persist);
-        if let Some(Value::Array(saved)) = saved {
+        if let Some(Value::Array(saved)) = self.builds.open(ctx, "stuff", "builds.json", |b| json!(b)) {
             *self.builds.lock() = saved;
         }
     }
 
     fn call(&self, method: &str, args: Value, ctx: &Ctx) -> Result<Value> {
-        let id_arg = || args["id"].as_str().map(str::to_owned).ok_or_else(|| anyhow!("stuff: id requis"));
+        let id_arg = || arg_str(&args, "id").map(str::to_owned);
         match method {
             "list" => Ok(Value::Array(self.builds.lock().clone())),
             // args: {url}
@@ -338,7 +320,7 @@ impl Module for Stuff {
                 }
                 Ok(Value::Object(out))
             }
-            _ => Err(anyhow!("stuff: méthode inconnue {method}")),
+            _ => Err(crate::kit::unknown("stuff", method)),
         }
     }
 }
@@ -369,11 +351,7 @@ mod tests {
     #[test]
     fn dump_sample() {
         let (Ok(api), Ok(out)) = (std::env::var("STUFF_API"), std::env::var("STUFF_OUT")) else { return };
-        let pack = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../datapack");
-        let dir = std::env::temp_dir().join("loutil-stuff");
-        let data = std::sync::Arc::new(loutil_data::Data::load(&pack, "fr").unwrap());
-        let proto = std::sync::Arc::new(loutil_proto::Proto::load(&pack, dir.join("o.json")).unwrap());
-        let hub = crate::Hub::new(data, proto, dir, std::sync::Arc::new(|_, _| {}), std::sync::Arc::new(|_| {}));
+        let Some((hub, _)) = crate::kit::testkit::hub("loutil-stuff") else { return };
         let b = trim_build(&serde_json::from_slice(&std::fs::read(api).unwrap()).unwrap()).unwrap();
         let gids: Vec<Value> = b["slots"].as_object().unwrap().values().map(|s| s["gid"].clone()).collect();
         let info = Stuff::new().call("item_info", json!({"gids": gids}), &hub.ctx).unwrap();
@@ -389,11 +367,7 @@ mod tests {
         let b = trim_build(&fetch_build(17833105).unwrap()).unwrap();
         assert_eq!(b["slots"].as_object().unwrap().len(), 16);
         assert_eq!(b["slots"]["a1"]["gid"], 14092);
-        let dir = std::env::temp_dir().join("loutil-stuff-icons");
-        let pack = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../datapack");
-        let data = std::sync::Arc::new(loutil_data::Data::load(&pack, "fr").unwrap());
-        let proto = std::sync::Arc::new(loutil_proto::Proto::load(&pack, dir.join("o.json")).unwrap());
-        let hub = crate::Hub::new(data, proto, dir, std::sync::Arc::new(|_, _| {}), std::sync::Arc::new(|_| {}));
+        let (hub, _) = crate::kit::testkit::hub("loutil-stuff-icons").expect("data pack");
         assert!(icon(&hub.ctx, "item", "9272").unwrap().starts_with("data:image/webp;base64,"));
         assert!(icon(&hub.ctx, "item", "17657").is_ok());
         assert!(icon(&hub.ctx, "stat", "vi").unwrap().len() > 100);

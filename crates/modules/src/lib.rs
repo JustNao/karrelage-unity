@@ -6,6 +6,7 @@ pub mod auction;
 pub mod brisage;
 pub mod combat;
 pub mod inventory;
+pub mod kit;
 pub mod names;
 pub mod packets;
 pub mod prices;

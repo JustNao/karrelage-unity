@@ -294,7 +294,7 @@ impl Module for Update {
                 std::process::Command::new(&path).args(["/P", "/UPDATE", "/R"]).spawn().context("lancement de l'installeur")?;
                 Ok(json!({"started": true}))
             }
-            _ => Err(anyhow!("update: unknown method {method}")),
+            _ => Err(crate::kit::unknown("update", method)),
         }
     }
 }

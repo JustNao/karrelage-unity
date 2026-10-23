@@ -201,7 +201,7 @@ impl Module for Packets {
                 Ok(json!({"ok": true}))
             }
             "overrides" => Ok(ctx.proto.overrides()),
-            _ => Err(anyhow!("packets: unknown method {method}")),
+            _ => Err(crate::kit::unknown("packets", method)),
         }
     }
 }

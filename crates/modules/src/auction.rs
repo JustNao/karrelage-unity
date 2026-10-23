@@ -1,16 +1,16 @@
 //! Auction house: renders the AH item-list message (prices per lot size, effects vs the item's defaults)
 //! and keeps the latest listing per item. Port of formatters.format_ah_list + webapp.update_store.
-use crate::{Ctx, Interest, Message, Module, Persist};
-use anyhow::{anyhow, Result};
+use crate::kit::{unknown, Role, Store};
+use crate::{Ctx, Interest, Message, Module};
+use anyhow::Result;
 use loutil_data::items::{info_key, Effect, ELEMENT_CHANGE_EFFECT, LOCK_EFFECT, LOT_SIZES};
 use loutil_data::Data;
 use loutil_proto::util::{as_i64, int, int_list, messages, oneof_value};
 use loutil_proto::{DynamicMessage, Kind, PbValue, ReflectMessage};
-use parking_lot::Mutex;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use std::collections::BTreeMap;
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 
 /// Clear name pinned in pipeline overrides (work/overrides.json) for the AH listing event.
 pub const AH_LIST: &str = "ExchangeTypesItemsExchangerDescriptionForUserEvent";
@@ -75,67 +75,32 @@ struct AhGone {
     gid: String,
 }
 
+#[derive(Default)]
 pub struct Auction {
-    bind: OnceLock<Option<Bindings>>,
-    buy_bind: OnceLock<Option<AhBuy>>,
-    row_bind: OnceLock<Option<AhRow>>,
-    removed_bind: OnceLock<Option<AhRowRemoved>>,
-    type_bind: OnceLock<Option<AhType>>,
-    gone_bind: OnceLock<Option<AhGone>>,
-    store: Arc<Mutex<BTreeMap<String, Value>>>,
-    persist: OnceLock<Persist>,
+    bind: Role<Bindings>,
+    buy_bind: Role<AhBuy>,
+    row_bind: Role<AhRow>,
+    removed_bind: Role<AhRowRemoved>,
+    type_bind: Role<AhType>,
+    gone_bind: Role<AhGone>,
+    /// gid -> latest listing of an equipment item (`items.json`)
+    store: Store<BTreeMap<String, Value>>,
     /// item type -> {type, t, gids}: what was on sale in that AH category when it was last opened (minus the items whose
     /// last lot left since)
-    on_sale: Arc<Mutex<BTreeMap<i64, Value>>>,
-    on_sale_persist: OnceLock<Persist>,
+    on_sale: Store<BTreeMap<i64, Value>>,
     /// pack-derived answers, constant once the pack is loaded
     effects: OnceLock<Value>,
     recipes: OnceLock<Value>,
     effect_meta: OnceLock<Value>,
 }
 
-impl Default for Auction {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl Auction {
     pub fn new() -> Self {
-        Self {
-            bind: OnceLock::new(),
-            buy_bind: OnceLock::new(),
-            row_bind: OnceLock::new(),
-            removed_bind: OnceLock::new(),
-            type_bind: OnceLock::new(),
-            gone_bind: OnceLock::new(),
-            store: Default::default(),
-            persist: OnceLock::new(),
-            on_sale: Default::default(),
-            on_sale_persist: OnceLock::new(),
-            effects: OnceLock::new(),
-            recipes: OnceLock::new(),
-            effect_meta: OnceLock::new(),
-        }
+        Self::default()
     }
 
     fn bindings(&self, ctx: &Ctx) -> Option<&Bindings> {
-        self.bind.get_or_init(|| serde_json::from_value(ctx.data.bindings.clone()).ok()).as_ref()
-    }
-
-    fn role<'a, T: serde::de::DeserializeOwned>(cell: &'a OnceLock<Option<T>>, ctx: &Ctx, role: &str) -> Option<&'a T> {
-        cell.get_or_init(|| serde_json::from_value(ctx.data.bindings.get(role)?.clone()).ok()).as_ref()
-    }
-
-    fn store_path(ctx: &Ctx) -> std::path::PathBuf {
-        ctx.module_dir("auction").join("items.json")
-    }
-
-    /// Written in the background (see `Persist`).
-    fn save(&self) {
-        if let Some(p) = self.persist.get() {
-            p.touch();
-        }
+        self.bind.root(ctx)
     }
 
     /// Keep the latest listing per item; a new packet for the same item replaces the old one.
@@ -157,8 +122,7 @@ impl Auction {
             "companion": ctx.data.is_companion(Some(gid)), "feedable": ctx.data.is_feedable(Some(gid)), "level": rows[0]["level"], "icon": rows[0]["icon"], "updated": m.raw.t, "lots": rows.len(),
             "min_price": mins.iter().min(), "rows": rows, "defaults": f["defaults"], "demo": m.raw.srv == "demo",
         });
-        self.store.lock().insert(gid.to_string(), ent.clone());
-        self.save();
+        self.store.update(|s| s.insert(gid.to_string(), ent.clone()));
         ctx.emit("auction", "item", ent);
     }
 
@@ -183,9 +147,7 @@ impl Auction {
             }
             _ => return,
         };
-        if let Some(p) = self.on_sale_persist.get() {
-            p.touch();
-        }
+        self.on_sale.touch();
         ctx.emit("auction", "on_sale", ent);
     }
 
@@ -206,7 +168,7 @@ impl Auction {
         ent["min_price"] = json!(min);
         let ent = ent.clone();
         drop(s);
-        self.save();
+        self.store.touch();
         ctx.emit("auction", "item", ent);
     }
 }
@@ -368,21 +330,15 @@ impl Module for Auction {
     }
 
     fn init(&self, ctx: &Ctx) {
-        let on_sale = self.on_sale.clone();
-        let (persist, saved) =
-            Persist::open(ctx.module_dir("auction").join("on_sale.json"), ctx.logger(), move || json!(on_sale.lock().values().cloned().collect::<Vec<_>>()));
-        let _ = self.on_sale_persist.set(persist);
+        let saved = self.on_sale.open(ctx, "auction", "on_sale.json", |s| json!(s.values().collect::<Vec<_>>()));
         for e in saved.as_ref().and_then(Value::as_array).into_iter().flatten() {
             if let Some(t) = e["type"].as_i64() {
                 self.on_sale.lock().insert(t, e.clone());
             }
         }
-        let store = self.store.clone();
-        let (persist, saved) = Persist::open(Self::store_path(ctx), ctx.logger(), move || {
-            let s = store.lock();
+        let saved = self.store.open(ctx, "auction", "items.json", |s| {
             Value::Object(s.iter().filter(|(_, v)| v["demo"] != json!(true)).map(|(k, v)| (k.clone(), v.clone())).collect())
         });
-        let _ = self.persist.set(persist);
         if let Some(Value::Object(saved)) = saved {
             let mut s = self.store.lock();
             for (k, mut v) in saved {
@@ -430,31 +386,31 @@ impl Module for Auction {
         match m.name.as_str() {
             AH_LIST => Some(format_ah_list(&ctx.data, self.bindings(ctx)?, msg)),
             AH_BUY => {
-                let b = Self::role(&self.buy_bind, ctx, "ah_buy")?;
+                let b = self.buy_bind.get(ctx, "ah_buy")?;
                 let bought = msg.get_field_by_name(&b.bought).and_then(|v| v.as_bool()).unwrap_or(false);
                 Some(json!({"kind": "auction_bought", "uid": int(msg, &b.uid), "bought": bought}))
             }
             AH_ROW_UPDATED => {
-                let (b, oe) = (Self::role(&self.row_bind, ctx, "ah_row")?, &self.bindings(ctx)?.object_effect);
+                let (b, oe) = (self.row_bind.get(ctx, "ah_row")?, &self.bindings(ctx)?.object_effect);
                 let ints: Vec<i64> = b.ints.iter().map(|n| int(msg, n)).collect();
                 let row = format_row(&ctx.data, oe, msg, ints, &b.prices, &b.effects, (None, None));
                 Some(json!({"kind": "auction_row", "uid": row["uid"], "gid": row["gid"], "row": row}))
             }
             AH_ROW_REMOVED => {
-                let b = Self::role(&self.removed_bind, ctx, "ah_row_removed")?;
+                let b = self.removed_bind.get(ctx, "ah_row_removed")?;
                 let ints: Vec<i64> = b.ints.iter().map(|n| int(msg, n)).collect();
                 let (gid, _, uid) = ctx.data.resolve_gid_type(&ints);
                 Some(json!({"kind": "auction_row_removed", "uid": uid, "gid": gid, "ints": ints}))
             }
             AH_TYPE => {
-                let b = Self::role(&self.type_bind, ctx, "ah_type")?;
+                let b = self.type_bind.get(ctx, "ah_type")?;
                 let gids = int_list(msg, &b.gids);
                 Some(
                     json!({"kind": "auction_type", "type": int(msg, &b.type_id), "type_name": ctx.data.type_name(Some(int(msg, &b.type_id))), "count": gids.len(), "gids": gids}),
                 )
             }
             AH_GONE => {
-                let b = Self::role(&self.gone_bind, ctx, "ah_gone")?;
+                let b = self.gone_bind.get(ctx, "ah_gone")?;
                 let gid = int(msg, &b.gid);
                 Some(json!({"kind": "auction_gone", "gid": gid, "name": ctx.data.item_name(gid)}))
             }
@@ -481,12 +437,11 @@ impl Module for Auction {
             "recipes" => Ok(self.recipes.get_or_init(|| ctx.data.recipes_json()).clone()),
             "effect_meta" => Ok(self.effect_meta.get_or_init(|| ctx.data.effect_meta()).clone()),
             "clear" => {
-                self.store.lock().clear();
-                self.save();
+                self.store.update(|s| s.clear());
                 ctx.emit("auction", "cleared", json!({}));
                 Ok(json!({"ok": true}))
             }
-            _ => Err(anyhow!("auction: unknown method {method}")),
+            _ => Err(unknown("auction", method)),
         }
     }
 }
@@ -494,8 +449,10 @@ impl Module for Auction {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kit::testkit;
     use loutil_core::RawMessage;
     use loutil_proto::Proto;
+    use parking_lot::Mutex;
     use std::sync::Arc;
 
     fn strip_keys(v: &mut Value, keys: &[&str]) {
@@ -523,14 +480,8 @@ mod tests {
     /// A category opened (gids on sale in "Amulette"), then one of them gone from the AH. Needs the data pack.
     #[test]
     fn items_on_sale_per_category() {
-        let pack = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../datapack");
-        if !pack.join("manifest.json").exists() {
-            return;
-        }
-        let dir = std::env::temp_dir().join("loutil-onsale");
-        let _ = std::fs::remove_dir_all(&dir);
-        let data = Arc::new(loutil_data::Data::load(&pack, "fr").unwrap());
-        let proto = Arc::new(Proto::load(&pack, dir.join("o.json")).unwrap());
+        let Some((hub, proto)) = crate::kit::testkit::hub("loutil-onsale") else { return };
+        let data = hub.ctx.data.clone();
         let (tb, gb) = (data.bindings["ah_type"].clone(), data.bindings["ah_gone"].clone());
         let (Some(t_obf), Some(g_obf)) = (proto.obf_for_clear(AH_TYPE), proto.obf_for_clear(AH_GONE)) else { return };
         let mut t = DynamicMessage::new(proto.message(&t_obf).unwrap());
@@ -538,20 +489,9 @@ mod tests {
         t.set_field_by_name(tb["type"].as_str().unwrap(), PbValue::I32(1));
         let mut g = DynamicMessage::new(proto.message(&g_obf).unwrap());
         g.set_field_by_name(gb["gid"].as_str().unwrap(), PbValue::I32(11609));
-
-        let hub = crate::Hub::new(data, proto, dir, Arc::new(|_, _| {}), Arc::new(|_| {}));
         let a = Auction::new();
         let send = |name: &str, decoded: DynamicMessage, t: f64| {
-            let mut m = Message {
-                id: 1,
-                raw: RawMessage { t, srv: "x".into(), dir: "S->C", payload: vec![] },
-                env: None,
-                type_name: None,
-                name: name.into(),
-                conf: None,
-                decoded: Some(decoded),
-                fmt: None,
-            };
+            let mut m = testkit::msg(name, Some(decoded), t);
             m.fmt = a.format(&m, &hub.ctx);
             a.on_message(&m, &hub.ctx);
         };
@@ -582,13 +522,8 @@ mod tests {
 
     #[test]
     fn backfills_density_of_stored_lots() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let pack = root.join("datapack");
-        if !pack.join("manifest.json").exists() {
-            return;
-        }
-        let dir = std::env::temp_dir().join("loutil-backfill");
-        let _ = std::fs::remove_dir_all(&dir);
+        let Some(pack) = testkit::pack() else { return };
+        let dir = testkit::temp_dir("loutil-backfill");
         let store = json!({"25222": {"gid": 25222, "updated": 0, "rows": [{"effects": [
             {"action": 125, "params": [5], "status": "normal"},
             {"action": 118, "params": [10], "status": "removed"}, // default effect missing on the lot: not counted
@@ -610,21 +545,15 @@ mod tests {
     /// Needs the generated data pack (`python pipeline/export_pack.py`), otherwise it is skipped.
     #[test]
     fn matches_python_formatter() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let pack = root.join("datapack");
-        if !pack.join("manifest.json").exists() {
-            eprintln!("skipped: no datapack/");
-            return;
-        }
+        let Some(pack) = testkit::pack() else { return };
+        let root = pack.join("..");
         let data = Arc::new(Data::load(&pack, "fr").unwrap());
         let tmp = std::env::temp_dir().join("loutil-golden-overrides.json");
         let proto = Arc::new(Proto::load(&pack, tmp).unwrap());
         let events = Arc::new(Mutex::new(vec![]));
         let ev = events.clone();
         let emit: Arc<dyn Fn(&str, Value) + Send + Sync> = Arc::new(move |n, v| ev.lock().push((n.to_string(), v)));
-        let dir = std::env::temp_dir().join("loutil-golden");
-        let _ = std::fs::remove_dir_all(&dir);
-        let hub = crate::Hub::new(data, proto, dir, emit, Arc::new(|_| {}));
+        let hub = crate::Hub::new(data, proto, testkit::temp_dir("loutil-golden"), emit, Arc::new(|_| {}));
         hub.call("packets", "set_active", json!({"on": true})).unwrap(); // the inspector only records while its tab is open
 
         let payload = std::fs::read(root.join("fixtures/ah_demo.bin")).unwrap();
