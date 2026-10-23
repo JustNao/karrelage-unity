@@ -41,10 +41,14 @@
     busy = false;
   }
   const worn = $derived(inventory.items.filter((i) => i.equipped));
-  async function exportWorn() {
-    err = "";
-    try { await call("stuff", "open_export", { url: dofusbookLink(worn) }); } catch (e) { err = String(e); }
+  /** Export link shown in its modal (null = closed). */
+  let exported = $state<string | null>(null);
+  let copied = $state<boolean | null>(false); // null = the clipboard refused
+  const exportWorn = () => ((exported = dofusbookLink(worn)), (copied = false));
+  async function copyExport() {
+    try { await navigator.clipboard.writeText(exported!); copied = true; } catch { copied = null; }
   }
+  const select = (n: HTMLInputElement) => { n.focus(); n.select(); };
   const focus = (n: HTMLElement) => n.focus();
   const rename = async (b: Build) => {
     const name = draft.trim();
@@ -67,8 +71,8 @@
   {/snippet}
   <div class="exp">
     <button class="mini" onclick={exportWorn} disabled={!worn.length}
-      title={worn.length ? "Ouvre dans le navigateur un stuff Dofusbook avec les objets portés (jets max + exos en forgemagie ; niveau 200, parchemins 100, sans la monture)" : "Équipement inconnu : il est lu à la connexion du personnage"}>
-      Exporter mon équipement vers Dofusbook ↗</button>
+      title={worn.length ? "Lien d'un stuff Dofusbook avec les objets portés (jets max + exos en forgemagie ; niveau 200, parchemins 100)" : "Équipement inconnu : il est lu à la connexion du personnage"}>
+      Exporter mon équipement vers Dofusbook</button>
   </div>
   {#if err}<div class="bad err">{err}</div>{/if}
   {#each shown as b, i (b.id)}
@@ -86,6 +90,18 @@
     <div class="mut empty">{builds.length ? "Aucun stuff ne correspond au filtre." : "« Ajouter » charge un stuff depuis un lien Dofusbook."}</div>
   {/each}
 </SideList>
+
+{#if exported}
+  <Modal title="Exporter mon équipement vers Dofusbook" width="520px" onclose={() => (exported = null)}>
+    <div class="mut small">Lien à ouvrir dans le navigateur : Dofusbook y crée un stuff avec les objets portés (jets max, exos en forgemagie ; niveau 200, parchemins 100, points de caractéristiques à 0).</div>
+    <input class="link" readonly value={exported} use:select />
+    {#if copied === null}<div class="bad small">Copie refusée : le lien est sélectionné, Ctrl+C pour le copier.</div>{/if}
+    <div class="acts">
+      <button class="mini" onclick={() => (exported = null)}>Fermer</button>
+      <button class="mini" onclick={copyExport}>{copied ? "Copié ✓" : "Copier"}</button>
+    </div>
+  </Modal>
+{/if}
 
 {#if adding}
   <Modal title="Ajouter un stuff Dofusbook" onclose={() => !busy && (adding = false)}>

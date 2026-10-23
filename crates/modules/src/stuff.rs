@@ -72,13 +72,6 @@ fn short_link(s: &str) -> Option<String> {
     (matches!(host, "d-bk.net" | "www.d-bk.net") && path.len() > 1).then(|| format!("https://d-bk.net{}", &s[s.len() - path.len()..]))
 }
 
-/// Dofusbook's Dofus Stuffer import with a base64 build: the only address `open_export` hands to the browser (the shell
-/// would also open files or other programs).
-fn is_export_link(url: &str) -> bool {
-    url.strip_prefix("https://www.dofusbook.net/fr/equipement/dofus-stuffer/objets?stuff=")
-        .is_some_and(|b| !b.is_empty() && b.len() < 8192 && b.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'+' || c == b'/'))
-}
-
 fn after_equipement(url: &str) -> Result<i64> {
     let i = url.find("/equipement/").ok_or_else(|| anyhow!("lien Dofusbook non reconnu"))? + "/equipement/".len();
     let d: String = url[i..].chars().take_while(char::is_ascii_digit).collect();
@@ -327,15 +320,6 @@ impl Module for Stuff {
                 }
                 Ok(Value::Object(out))
             }
-            // args: {url}: opens a build export (app/src/lib/dofusbookExport.ts) in the default browser
-            "open_export" => {
-                let url = arg_str(&args, "url")?;
-                if !is_export_link(url) {
-                    bail!("lien d'export Dofusbook invalide");
-                }
-                std::process::Command::new(system_tool("explorer.exe")).arg(url).spawn().context("ouverture du navigateur")?;
-                Ok(json!({"ok": true}))
-            }
             _ => Err(crate::kit::unknown("stuff", method)),
         }
     }
@@ -360,20 +344,6 @@ mod tests {
         assert_eq!(short_link("http://www.d-bk.net/fr/d/x").as_deref(), Some("https://d-bk.net/fr/d/x"));
         for bad in ["http://192.168.1.1/x?d-bk.net/", "https://d-bk.net.evil.com/x", "https://evil.com/d-bk.net/x", "https://user@d-bk.net/x", "d-bk.net"] {
             assert_eq!(short_link(bad), None, "{bad}");
-        }
-    }
-
-    #[test]
-    fn opens_only_export_links() {
-        assert!(is_export_link("https://www.dofusbook.net/fr/equipement/dofus-stuffer/objets?stuff=h6Ewi6Ew+/zQR"));
-        for bad in [
-            "https://www.dofusbook.net/fr/equipement/dofus-stuffer/objets?stuff=",
-            "https://www.dofusbook.net/fr/equipement/dofus-stuffer/objets?stuff=a&b=c",
-            "https://www.dofusbook.net/fr/equipement/dofus-stuffer/objets?stuff=a\" & calc",
-            "https://evil.com/?https://www.dofusbook.net/fr/equipement/dofus-stuffer/objets?stuff=a",
-            "C:\\Windows\\System32\\calc.exe",
-        ] {
-            assert!(!is_export_link(bad), "{bad}");
         }
     }
 

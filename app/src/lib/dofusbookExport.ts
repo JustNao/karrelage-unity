@@ -6,7 +6,8 @@
  *   "1": base points [vi sa fo in ch ag], "2": level, "3": exo flags (unused here: exos go in "0"),
  *   "4": item count per slot group (`GROUPS`; missing = 1), "5": game gids, group after group.
  * Dofusbook puts every item at its max roll; the exos the worn items carry (added effects, part above the base max) are sent as
- * forgemagie. Unknown to the app, so left out: the mount (not in the format), characteristic points (0), scrolls (100 assumed).
+ * forgemagie. The last group holds the familier or, without one, the mount (as in game: one or the other). Unknown to the app:
+ * characteristic points (0), scrolls (100 assumed), level (200).
  */
 import type { InvItem } from "./stores/inventory.svelte";
 import { EXO_BASE, FM_STATS, lotStats } from "./stuff";
@@ -16,8 +17,9 @@ const URL = "https://www.dofusbook.net/fr/equipement/dofus-stuffer/objets?stuff=
 const KE = ["vi", "sa", "fo", "in", "ch", "ag", "pa", "pm", "ii", "pp", "po", "ic", "rpa", "epa", "rpm", "epm", "cc", "so", "ta", "fu", "dmg", "pu", "dc", "pd",
   "dnf", "dtf", "dff", "def", "daf", "rv", "pi", "pip", "dp", "ds", "dw", "dm", "dd", "rn", "rnp", "rt", "rtp", "rf", "rfp", "re", "rep", "ra", "rap", "rc",
   "rp", "rd", "rm", "rw"];
-/** Slot groups of the format (cape, coiffe, ceinture, bottes, amulette, anneaux, Dofus, bouclier, arme, familier) as the game's worn positions. */
-const GROUPS = [[7], [6], [3], [5], [0], [2, 4], [9, 10, 11, 12, 13, 14], [15], [1], [8]];
+/** Slot groups of the format (cape, coiffe, ceinture, bottes, amulette, anneaux, Dofus, bouclier, arme, familier / monture) as the
+ *  game's worn positions (16 = mount). */
+const GROUPS = [[7], [6], [3], [5], [0], [2, 4], [9, 10, 11, 12, 13, 14], [15], [1], [8, 16]];
 /** Character base values Dofusbook subtracts from the "0" entries (its `characterStats`), by `KE` code. */
 const base = (level: number): Record<string, number> => ({ vi: (level - 1) * 5 + 55 + 100, pa: level < 100 ? 6 : 7, pm: 3, pp: 100, ic: 1, pd: 1000 });
 const SCROLLED = ["sa", "fo", "in", "ch", "ag"];
@@ -36,7 +38,8 @@ export function dofusbookLink(worn: InvItem[], level = 200): string {
   const counts: Record<string, number> = {};
   const gids: number[] = [];
   GROUPS.forEach((ps, g) => {
-    const here = ps.map((p) => at.get(p)).filter((i): i is InvItem => !!i);
+    let here = ps.map((p) => at.get(p)).filter((i): i is InvItem => !!i);
+    if (g === GROUPS.length - 1) here = here.slice(0, 1); // one slot: the familier first
     if (here.length !== 1) counts[g] = here.length;
     gids.push(...here.map((i) => i.gid));
   });
