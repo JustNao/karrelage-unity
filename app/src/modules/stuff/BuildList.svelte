@@ -61,7 +61,7 @@
 
 <SideList {cols} name="left" title="Stuffs">
   {#snippet bar()}
-    <SearchBar bind:value={q} placeholder="Filtrer…" grow compact>
+    <SearchBar bind:value={q} placeholder="Rechercher un build…" grow compact>
       {#snippet after()}<button class="mini" onclick={() => ((adding = true), (addErr = ""))}>Ajouter</button>{/snippet}
     </SearchBar>
   {/snippet}

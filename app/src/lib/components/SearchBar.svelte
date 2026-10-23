@@ -30,7 +30,7 @@
     /** Bind it to show the "Prix connus seulement" checkbox. */
     priced?: boolean;
     width?: string;
-    /** The box takes the free width (side panels). */
+    /** The bar and its box take the free width (side panels). */
     grow?: boolean;
     /** No margin below (when the caller lays it out). */
     compact?: boolean;
@@ -39,7 +39,7 @@
   } = $props();
 </script>
 
-<div class="sbar" class:compact>
+<div class="sbar" class:compact class:grow>
   {@render before?.()}
   <input type="search" {placeholder} bind:value style:width={grow ? null : width} class:grow />
   {#if priced !== undefined}<label><input type="checkbox" bind:checked={priced} /> Prix connus seulement</label>{/if}
@@ -49,6 +49,7 @@
 <style>
   .sbar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
   .sbar.compact { margin-bottom: 0; gap: 6px; flex-wrap: nowrap; }
+  .sbar.grow { flex: 1; min-width: 0; }
   input[type="search"] { padding: 3px 6px; min-width: 0; }
   input.grow { flex: 1; }
 </style>
