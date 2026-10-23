@@ -4,8 +4,11 @@
   import type { Build } from "../../lib/stuff";
   import ConfirmButton from "../../lib/components/ConfirmButton.svelte";
   import SideList from "../../lib/components/SideList.svelte";
+  import { inventory } from "../../lib/stores/inventory.svelte";
+  import { dofusbookLink } from "../../lib/dofusbookExport";
 
-  /** Stuff left panel: the imported builds (Dofusbook link to add one), renamed in place, deleted with a confirmation. */
+  /** Stuff left panel: the imported builds (Dofusbook link to add one), renamed in place, deleted with a confirmation; export of the
+   *  character's worn equipment to Dofusbook. */
   let {
     cols,
     builds = $bindable(),
@@ -30,6 +33,11 @@
     } catch (e) { err = String(e); }
     busy = false;
   }
+  const worn = $derived(inventory.items.filter((i) => i.equipped));
+  async function exportWorn() {
+    err = "";
+    try { await call("stuff", "open_export", { url: dofusbookLink(worn) }); } catch (e) { err = String(e); }
+  }
   const rename = async (b: Build) => {
     const name = draft.trim();
     renaming = null;
@@ -48,6 +56,11 @@
     <input class="link" type="search" placeholder="Lien Dofusbook…" bind:value={link} onkeydown={(e) => e.key === "Enter" && add()} />
     <button class="mini" onclick={add} disabled={busy}>{busy ? "…" : "Ajouter"}</button>
   {/snippet}
+  <div class="exp">
+    <button class="mini" onclick={exportWorn} disabled={!worn.length}
+      title={worn.length ? "Ouvre dans le navigateur un stuff Dofusbook avec les objets portés (jets max + exos en forgemagie ; niveau 200, parchemins 100, sans la monture)" : "Équipement inconnu : il est lu à la connexion du personnage"}>
+      Exporter mon équipement vers Dofusbook ↗</button>
+  </div>
   {#if err}<div class="bad err">{err}</div>{/if}
   {#each builds as b, i (b.id)}
     <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
@@ -69,6 +82,8 @@
   /* builds list (SideList, same look as the HDV item list) */
   .link { flex: 1; min-width: 0; padding: 3px 6px; }
   .irow.brow { display: flex; align-items: center; gap: 4px; }
+  .exp { padding: 0 10px 6px; }
+  .exp button { width: 100%; }
   .err { padding: 0 10px 6px; font-size: 12px; margin-bottom: 6px; }
   .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .rn { flex: 1; min-width: 0; }
