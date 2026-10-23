@@ -36,18 +36,19 @@
   const iconOf = (a: number) => iconOfStat(meta[a]?.stat); // Dofusbook stat icons (shared store)
   const effLabel = (a: number) => effectLabel(meta, a);
 
+  /** Weapon hits ("dommages X", "vol X") are not filtered on. */
+  const filterable = (a: number) => !!meta[a]?.filterable && meta[a]?.group !== "weapon";
+
   /** Effects the item has by default (filterable ones only), then the ones the user added himself. */
   const effectRows = $derived.by<EffectRow[]>(() => {
     if (!item) return [];
     const seen = new Map<number, EffectRow>();
-    for (const d of item.defaults ?? []) if (meta[d.a]?.filterable) seen.set(d.a, { a: d.a, def: [d.min, d.max] });
+    for (const d of item.defaults ?? []) if (filterable(d.a)) seen.set(d.a, { a: d.a, def: [d.min, d.max] });
     for (const x of filt.list(item.gid)) if (!seen.has(x.a)) seen.set(x.a, { a: x.a, def: null });
     return [...seen.values()];
   });
 
-  /** Weapon-damage effects are only offered for weapons (items whose default effects include weapon hits). */
-  const isWeapon = $derived(!!item && (item.defaults ?? []).some((d: any) => meta[d.a]?.group === "weapon"));
-  const pickable = $derived(picker.filter((e) => isWeapon || e.group !== "weapon"));
+  const pickable = $derived(picker.filter((e) => e.group !== "weapon"));
 
   /** Filter rows grouped like the in-game characteristics panel. */
   const groups = $derived([

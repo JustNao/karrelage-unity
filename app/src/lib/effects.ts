@@ -17,7 +17,6 @@ export interface EffectMeta {
 
 /** Sections of the filter list / effect picker, following the in-game characteristics panel. */
 export const FILTER_GROUPS = [
-  { key: "weapon", label: "Dommages d'arme", members: ["weapon"] },
   { key: "main", label: "Caractéristiques principales", members: ["stats", "main"] },
   { key: "secondary", label: "Caractéristiques secondaires", members: ["secondary"] },
   { key: "damage", label: "Dommages", members: ["damage"] },
