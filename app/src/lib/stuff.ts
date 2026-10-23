@@ -34,12 +34,12 @@ export interface Info { items: Record<string, ItemInfo>; sets: Record<string, Se
 
 /** Layout of the slots around the character (screenshot): left column, right column, bottom row. */
 export const SLOT_LAYOUT = {
-  left: ["ar", "bo", "am", "ce", "br"],
+  left: ["ar", "br", "am", "ce", "bo"],
   right: ["ch", "ca", "a1", "a2", "fa"],
   bottom: ["mo", "d1", "d2", "d3", "d4", "d5", "d6"],
 };
 export const SLOT_TITLES: Record<string, string> = {
-  ar: "Arme", bo: "Bouclier", am: "Amulette", ce: "Ceinture", br: "Bottes", ch: "Coiffe", ca: "Cape", a1: "Anneau 1", a2: "Anneau 2",
+  ar: "Arme", br: "Bouclier", am: "Amulette", ce: "Ceinture", bo: "Bottes", ch: "Coiffe", ca: "Cape", a1: "Anneau 1", a2: "Anneau 2",
   fa: "Familier", mo: "Monture", d1: "Dofus 1", d2: "Dofus 2", d3: "Dofus 3", d4: "Dofus 4", d5: "Dofus 5", d6: "Dofus 6",
 };
 
