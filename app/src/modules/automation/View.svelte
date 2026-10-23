@@ -19,14 +19,22 @@
   const clampCoef = (v: number) => (Number.isFinite(v) ? Math.max(0, Math.round(v)) : RULE_DEFAULTS.exoDo.maxEven);
 </script>
 
+{#snippet pick(r: Record<string, any>, key: string, title: string)}
+  <select value={r[key]} onchange={(e) => (r[key] = e.currentTarget.value)} {title}>
+    {#each SOUNDS as s (s.id)}<option value={s.id}>{s.name}</option>{/each}
+  </select>
+  <button class="mini" title="Écouter" onclick={() => playSound(r[key], r.volume)}>▶</button>
+{/snippet}
+
+{#snippet volume(r: RuleBase)}
+  <input type="range" min="0" max="1" step="0.05" value={r.volume} oninput={(e) => (r.volume = e.currentTarget.valueAsNumber)} title="Volume" />
+  <span class="mut vol">{Math.round(r.volume * 100)} %</span>
+{/snippet}
+
 {#snippet sound(r: RuleBase)}
   <div class="snd">
-    <select value={r.sound} onchange={(e) => (r.sound = e.currentTarget.value)} title="Son joué quand la règle se déclenche">
-      {#each SOUNDS as s (s.id)}<option value={s.id}>{s.name}</option>{/each}
-    </select>
-    <button class="mini" title="Écouter" onclick={() => playSound(r.sound, r.volume)}>▶</button>
-    <input type="range" min="0" max="1" step="0.05" value={r.volume} oninput={(e) => (r.volume = e.currentTarget.valueAsNumber)} title="Volume" />
-    <span class="mut vol">{Math.round(r.volume * 100)} %</span>
+    {@render pick(r, "sound", "Son joué quand la règle se déclenche")}
+    {@render volume(r)}
   </div>
 {/snippet}
 
@@ -59,6 +67,37 @@
               <span class="mut">K</span>
             </label>
             {@render sound(rules.exoDo)}
+          </div>
+        </div>
+      </section>
+      <section>
+        <h2>Songes</h2>
+        <div class="rule" class:off={!rules.songes.enabled}>
+          <div class="rh">
+            <Switch bind:checked={rules.songes.enabled} label="Activer la règle" />
+            <div class="lb">
+              <div><b>{RULE_TITLES.songes}</b></div>
+              <div class="mut">
+                À la fin d'un combat, si quelqu'un du groupe a obtenu une « Légende … » (Ressource des Songes) : un son selon le prix
+                enregistré de la meilleure, au-dessus ou en dessous du seuil (prix inconnu = en dessous), et une notification par Légende.
+              </div>
+            </div>
+          </div>
+          <div class="params">
+            <label title="Prix enregistré (onglet Prix enregistrés) à partir duquel la Légende est une bonne nouvelle">
+              Seuil
+              <input class="price" type="text" inputmode="numeric" value={priceText(rules.songes.threshold)} onchange={(e) => (e.currentTarget.value = priceText((rules.songes.threshold = parsePrice(e.currentTarget.value) ?? RULE_DEFAULTS.songes.threshold)))} />
+              <span class="mut">K</span>
+            </label>
+            <div class="snd">
+              <span class="mut">Au-dessus</span>
+              {@render pick(rules.songes, "sound", "Son joué quand la Légende vaut au moins le seuil")}
+            </div>
+            <div class="snd">
+              <span class="mut">En dessous</span>
+              {@render pick(rules.songes, "soundLow", "Son joué quand la Légende vaut moins que le seuil")}
+            </div>
+            <div class="snd">{@render volume(rules.songes)}</div>
           </div>
         </div>
       </section>

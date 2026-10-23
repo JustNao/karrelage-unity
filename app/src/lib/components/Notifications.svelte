@@ -19,6 +19,7 @@
     if (open) notifications.seen();
   }
   function go(n: Notification) {
+    if (n.lot == null) return;
     open = false;
     app.showLot(n.gid, n.lot);
   }
@@ -39,7 +40,7 @@
         <div class="items">
           {#each notifications.list as n (n.id)}
             <div class="it">
-              <button class="go" onclick={() => go(n)} title="Voir le lot dans l'onglet HDV">
+              <button class="go" class:static={n.lot == null} onclick={() => go(n)} title={n.lot == null ? undefined : "Voir le lot dans l'onglet HDV"}>
                 <span class="rule">{RULE_TITLES[n.rule]} · {ago(n.t)}</span>
                 <span class="tt">{n.title}</span>
                 <span class="mut">{n.detail}</span>
@@ -70,6 +71,8 @@
   .it:last-child { border-bottom: 0; }
   .go { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; text-align: left; border: 0; background: none; padding: 6px 10px; cursor: pointer; }
   .go:hover { background: var(--bg); }
+  .go.static { cursor: default; }
+  .go.static:hover { background: none; }
   .rule { color: var(--ok); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
   .tt { font-weight: 600; color: var(--fg); }
   .x { border: 0; background: none; color: var(--mut); padding: 0 10px; }

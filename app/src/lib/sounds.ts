@@ -4,7 +4,11 @@
  */
 export interface Sound { id: string; name: string; src: string }
 
-export const SOUNDS: Sound[] = [{ id: "loot-coin", name: "Pièces (petit butin)", src: "/sounds/LootCoinSmall.ogg" }];
+export const SOUNDS: Sound[] = [
+  { id: "loot-coin", name: "Pièces (petit butin)", src: "/sounds/LootCoinSmall.ogg" },
+  { id: "crowd-applause", name: "Applaudissements", src: "/sounds/crowd-applause.mp3" },
+  { id: "crowd-disappointed", name: "Foule déçue", src: "/sounds/crowd-disappointed.mp3" },
+];
 export const DEFAULT_SOUND = SOUNDS[0].id;
 
 const cache = new Map<string, HTMLAudioElement>();

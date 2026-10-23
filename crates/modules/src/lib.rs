@@ -7,6 +7,7 @@ pub mod brisage;
 pub mod combat;
 pub mod inventory;
 pub mod kit;
+pub mod loot;
 pub mod names;
 pub mod packets;
 pub mod prices;
@@ -128,6 +129,7 @@ pub fn all() -> Vec<Box<dyn Module>> {
         Box::new(brisage::Brisage::new(uids)),
         Box::new(inventory),
         Box::new(combat::Combat::new()),
+        Box::new(loot::Loot::new()),
         Box::new(names::NamesTab::new()),
         Box::new(update::Update::new()),
     ]

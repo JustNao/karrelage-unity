@@ -16,16 +16,19 @@ const DEFAULTS = {
   /** HDV: a scanned lot with a "% dommages" exo cheaper than the transcendance rune of that stat, that pays back when broken
    *  from a low enough coefficient. */
   exoDo: { enabled: true, sound: DEFAULT_SOUND, volume: 0.6, /** Highest break-even coefficient (%, Brisage « Coef. rentable »). */ maxEven: 500, /** Highest lot price (kamas, per unit); null = no limit. */ maxPrice: null as number | null },
+  /** Songes: someone of the group looted a « Légende … » (Ressource des Songes) at the end of a fight. `sound` plays when the
+   *  best one is worth at least `threshold` (stored price), `soundLow` below it (or when its price is unknown). */
+  songes: { enabled: true, sound: "crowd-applause", soundLow: "crowd-disappointed", volume: 0.6, threshold: 8_000_000 },
 };
 export type Rules = typeof DEFAULTS;
 export type RuleId = keyof Rules;
 export const RULE_DEFAULTS: Rules = DEFAULTS;
-export const RULE_TITLES: Record<RuleId, string> = { exoDo: "Exo % dommages à briser" };
+export const RULE_TITLES: Record<RuleId, string> = { exoDo: "Exo % dommages à briser", songes: "Légende lootée" };
 
 export const rules = persisted<Rules>(KEY, DEFAULTS, { sections: true });
 
-/** A triggered rule. `gid` + `lot` (lotKeys key) lead to the lot in the HDV tab. */
-export interface Notification { id: number; t: number; rule: RuleId; title: string; detail: string; gid: number; lot: string }
+/** A triggered rule. `gid` + `lot` (lotKeys key) lead to the lot in the HDV tab; no `lot` = nothing to open. */
+export interface Notification { id: number; t: number; rule: RuleId; title: string; detail: string; gid: number; lot: string | null }
 
 /** Most recent first, at most MAX. */
 const MAX = 50;

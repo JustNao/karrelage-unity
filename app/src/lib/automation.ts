@@ -1,13 +1,13 @@
 /**
- * Automation engine: watches every auction listing captured live (whatever tab is open) and checks the enabled rules of
- * lib/stores/automation.svelte.ts; a match plays the rule's sound (once per scan) and raises one notification per lot.
- * Started once by App.svelte.
+ * Automation engine: watches every auction listing captured live (whatever tab is open) and the loot of every fight, and
+ * checks the enabled rules of lib/stores/automation.svelte.ts; a match plays the rule's sound (once per scan / fight) and
+ * raises one notification per lot / looted item. Started once by App.svelte.
  *
  * exoDo: a lot with an exo (added effect) on a "% dommages" stat (an effect some "Rune Ta Do Per …" transcendance rune
  * adds), cheaper than that rune, whose break-even coefficient (Brisage tab: price / runes value at 100 %, best focus) is
  * at most `maxEven`, and that costs at most `maxPrice` (when set).
  */
-import { call, cached } from "./api";
+import { cached, on } from "./api";
 import { breakEven, lotEffects, outcome, type BrisPack } from "./brisage";
 import { kamas } from "./fmt";
 import { lotKeys, unitPriceOrNull } from "./price";
@@ -68,6 +68,26 @@ function checkExoDo(item: any) {
   return hits;
 }
 
+/** A looted object, from `loot:fight` (crates/modules/src/loot.rs). */
+interface Looted { fighter: number | null; gid: number; name: string; type_id: number | null }
+/** Ressource des Songes (item type) and the names of the ones the songes rule rings for. */
+const SONGES_TYPE = 219;
+const isLegend = (l: Looted) => l.type_id === SONGES_TYPE && l.name.startsWith("Légende");
+
+/** songes: a « Légende … » looted by someone of the group; the best one's stored price picks the sound. */
+function checkSonges(items: Looted[]) {
+  const r = rules.songes;
+  const legends = items.filter(isLegend);
+  if (!r.enabled || !legends.length) return;
+  let best = 0;
+  for (const l of legends) {
+    const p = prices.price(l.gid);
+    best = Math.max(best, p ?? 0);
+    notifications.push({ rule: "songes", title: l.name, detail: p != null ? `Prix enregistré ${kamas(p)}` : "Prix inconnu", gid: l.gid, lot: null });
+  }
+  playSound(best >= r.threshold ? r.sound : r.soundLow, r.volume);
+}
+
 export async function startAutomation() {
   if (started) return;
   started = true;
@@ -77,6 +97,7 @@ export async function startAutomation() {
   cached<BrisPack>("brisage", "items")
     .then((p) => ((levels = new Map(p.items.map((i) => [i.gid, i.level]))), (brisRunes = p.runes)))
     .catch(() => {});
+  void on<{ items: Looted[] }>("loot:fight", (e) => checkSonges(e.items));
   auction.subscribe((c) => {
     if (c.kind !== "put" || !c.live) return;
     for (const item of c.values) if (checkExoDo(item)) playSound(rules.exoDo.sound, rules.exoDo.volume);
