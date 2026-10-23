@@ -186,9 +186,9 @@ impl Inventory {
         Some(out)
     }
 
-    /// The detail fields holding the base points and the scrolls, told by their values: the base is 1 for invocations,
-    /// >= 100 for prospection and the six characteristics cost at most `MAX_POINTS`; scrolls are <= 100 on the six, 0 on
-    /// range / invocations / prospection, and one is set. Several fit -> the field learned before. Returns (base, scroll
+    /// The detail fields holding the base points and the scrolls, told by their values: the base is 1 for invocations, at
+    /// least 100 for prospection, and the six characteristics cost at most `MAX_POINTS`; scrolls are at most 100 on the six,
+    /// 0 on range / invocations / prospection, and one is set. Several fit: the field learned before. Returns (base, scroll
     /// (None = the character has none), learned something new).
     fn base_and_scroll(c: &mut Content, det: &HashMap<i64, HashMap<String, i64>>) -> (Option<String>, Option<String>, bool) {
         let v = |id: i64, f: &str| det.get(&id).and_then(|m| m.get(f)).copied().unwrap_or(0);
