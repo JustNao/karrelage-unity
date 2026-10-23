@@ -5,7 +5,7 @@
 //! a monster, grade = one of its grades, level = a plausible level) votes for it; the winner is kept in `layout.json` (per
 //! field names, so a game update starts over) and then used for every fighter, even an unknown gid. Levels are often scaled
 //! (dungeons, dimensions...), so they are not required to match the grade. Strictly passive, like everything else.
-use crate::{load_json, save_json, Ctx, Interest, Message, Module};
+use crate::{Ctx, Interest, Message, Module, Persist};
 use anyhow::{anyhow, Result};
 use loutil_data::Data;
 use loutil_proto::util::{as_i64, int};
@@ -15,7 +15,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 /// The player enters a fight (placement starts): a new fight.
 pub const JOIN: &str = "FightJoinEvent";
@@ -85,7 +85,7 @@ fn boosts_added(b: &BoostBindings, m: &DynamicMessage, out: &mut BTreeMap<i64, P
         return changed;
     }
     for c in children(m) {
-        changed |= boosts_added(b, &c, out);
+        changed |= boosts_added(b, c, out);
     }
     changed
 }
@@ -189,10 +189,13 @@ pub struct Combat {
     bind: OnceLock<Option<Bindings>>,
     enabled: AtomicBool,
     fight: Mutex<Fight>,
-    layout: Mutex<Layout>,
+    layout: Arc<Mutex<Layout>>,
     boost_bind: OnceLock<Option<BoostBindings>>,
     /// the player's character id (seen at login, kept in `me.json`)
-    me: Mutex<Option<i64>>,
+    me: Arc<Mutex<Option<i64>>>,
+    /// `layout.json` / `me.json`, written in the background (a vote comes with most fighter messages)
+    layout_persist: OnceLock<Persist>,
+    me_persist: OnceLock<Persist>,
 }
 
 impl Default for Combat {
@@ -201,14 +204,14 @@ impl Default for Combat {
     }
 }
 
-/// Child messages of `m` (message fields, lists and map values).
-fn children(m: &DynamicMessage) -> Vec<DynamicMessage> {
+/// Child messages of `m` (message fields, lists and map values), borrowed: fight messages are walked for every action.
+fn children(m: &DynamicMessage) -> Vec<&DynamicMessage> {
     let mut out = vec![];
     for (_, v) in m.fields() {
         match v {
-            PbValue::Message(x) => out.push(x.clone()),
-            PbValue::List(l) => out.extend(l.iter().filter_map(|x| x.as_message().cloned())),
-            PbValue::Map(mp) => out.extend(mp.values().filter_map(|x| x.as_message().cloned())),
+            PbValue::Message(x) => out.push(x),
+            PbValue::List(l) => out.extend(l.iter().filter_map(PbValue::as_message)),
+            PbValue::Map(mp) => out.extend(mp.values().filter_map(PbValue::as_message)),
             _ => {}
         }
     }
@@ -216,25 +219,25 @@ fn children(m: &DynamicMessage) -> Vec<DynamicMessage> {
 }
 
 /// First message of the subtree (depth first, `m` included) that has the field `name` in its schema.
-fn find(m: &DynamicMessage, name: &str) -> Option<DynamicMessage> {
+fn find<'a>(m: &'a DynamicMessage, name: &str) -> Option<&'a DynamicMessage> {
     if m.descriptor().get_field_by_name(name).is_some() {
-        return Some(m.clone());
+        return Some(m);
     }
-    children(m).iter().find_map(|c| find(c, name))
+    children(m).into_iter().find_map(|c| find(c, name))
 }
 
 /// Every monster fighter of a message: (actor id, fighter). Actors that are not monsters (players, tax collectors) are left out.
 fn fighters(b: &Bindings, m: &DynamicMessage, out: &mut Vec<(i64, Fighter)>) {
     if m.descriptor().get_field_by_name(&b.actor_id).is_none() {
         for c in children(m) {
-            fighters(b, &c, out);
+            fighters(b, c, out);
         }
         return;
     }
     let Some(mon) = b.monster.first().and_then(|f| find(m, f)) else { return };
-    let [Some(x), Some(y), Some(z)] = [0, 1, 2].map(|i| b.monster.get(i).map(|f| int(&mon, f))) else { return };
+    let [Some(x), Some(y), Some(z)] = [0, 1, 2].map(|i| b.monster.get(i).map(|f| int(mon, f))) else { return };
     let summoned = find(m, &b.summoned).and_then(|s| s.get_field_by_name(&b.summoned).and_then(|v| as_i64(&v))).unwrap_or(0) != 0;
-    let summoner = b.summoner.as_deref().and_then(|f| Some(int(&find(m, f)?, f))).unwrap_or(0);
+    let summoner = b.summoner.as_deref().and_then(|f| Some(int(find(m, f)?, f))).unwrap_or(0);
     out.push((int(m, &b.actor_id), Fighter { ints: [x, y, z], summoned, summoner, spawned: false }));
 }
 
@@ -246,7 +249,9 @@ impl Combat {
             fight: Mutex::new(Fight::default()),
             layout: Default::default(),
             boost_bind: OnceLock::new(),
-            me: Mutex::new(None),
+            me: Default::default(),
+            layout_persist: OnceLock::new(),
+            me_persist: OnceLock::new(),
         }
     }
 
@@ -270,7 +275,9 @@ impl Combat {
         if before != l.best() && l.fields.len() == 3 {
             ctx.log(format!("combat: monster fields (gid, grade, level) = {:?}", PERMS[ok[0]].map(|i| l.fields[i].clone())));
         }
-        let _ = save_json(&ctx.module_dir("combat").join("layout.json"), &json!({"fields": l.fields, "votes": l.votes}));
+        if let Some(p) = self.layout_persist.get() {
+            p.touch();
+        }
     }
 
     /// The arrangement to read the fighters with: the learnt one, else the best fitting them all.
@@ -313,7 +320,9 @@ impl Combat {
             .poisons
             .values()
             .filter(|p| me.map_or(p.target > 0, |me| p.target == me))
-            .filter_map(|p| POISONS.iter().find(|x| x.0 == p.action).map(|&(a, kind, element)| json!({"action": a, "kind": kind, "element": element, "target": p.target})))
+            .filter_map(|p| {
+                POISONS.iter().find(|x| x.0 == p.action).map(|&(a, kind, element)| json!({"action": a, "kind": kind, "element": element, "target": p.target}))
+            })
             .collect();
         json!({"seen": f.seen, "active": f.seen && f.ended.is_none(), "started": f.started, "ended": f.ended, "fighters": list,
                "poisons": poisons, "me": me})
@@ -334,12 +343,21 @@ impl Module for Combat {
     }
 
     fn init(&self, ctx: &Ctx) {
-        *self.me.lock() = load_json(&ctx.module_dir("combat").join("me.json")).and_then(|v| v["id"].as_i64());
+        let me = self.me.clone();
+        let (persist, saved) = Persist::open(ctx.module_dir("combat").join("me.json"), ctx.logger(), move || json!({"id": *me.lock()}));
+        let _ = self.me_persist.set(persist);
+        *self.me.lock() = saved.and_then(|v| v["id"].as_i64());
+        let layout = self.layout.clone();
+        let (persist, saved) = Persist::open(ctx.module_dir("combat").join("layout.json"), ctx.logger(), move || {
+            let l = layout.lock();
+            json!({"fields": l.fields, "votes": l.votes})
+        });
+        let _ = self.layout_persist.set(persist);
         let Some(b) = self.bindings(ctx) else { return };
         let mut l = self.layout.lock();
         l.fields = b.monster.clone();
         // the votes of another build (other field names) are dropped
-        if let Some(saved) = load_json(&ctx.module_dir("combat").join("layout.json")) {
+        if let Some(saved) = saved {
             if saved["fields"] == json!(b.monster) {
                 if let Ok(v) = serde_json::from_value::<[u32; 6]>(saved["votes"].clone()) {
                     l.votes = v;
@@ -355,7 +373,9 @@ impl Module for Combat {
             let id = self.boosts(ctx).zip(m.decoded.as_ref()).and_then(|(b, d)| b.character.iter().find(|f| d.has_field_by_name(f)).map(|f| int(d, f)));
             if let Some(id) = id.filter(|id| *id != 0) {
                 *self.me.lock() = Some(id);
-                let _ = save_json(&ctx.module_dir("combat").join("me.json"), &json!({"id": id}));
+                if let Some(p) = self.me_persist.get() {
+                    p.touch();
+                }
                 ctx.emit("combat", "fight", self.state(&ctx.data));
             }
             return;
@@ -607,7 +627,8 @@ mod tests {
         // field order of this imaginary build: (grade, level, gid)
         let fighter = |gid: i64, grade: i64| Fighter { ints: [grade, 200, gid], summoned: false, summoner: 0, spawned: false };
         let c = Combat::new();
-        let found: Vec<(i64, Fighter)> = [(79, 3), (121, 2), (3462, 5), (1046, 1)].iter().enumerate().map(|(i, &(g, gr))| (-(i as i64) - 1, fighter(g, gr))).collect();
+        let found: Vec<(i64, Fighter)> =
+            [(79, 3), (121, 2), (3462, 5), (1046, 1)].iter().enumerate().map(|(i, &(g, gr))| (-(i as i64) - 1, fighter(g, gr))).collect();
         c.vote(&hub.ctx, &found);
         *c.fight.lock() = Fight { seen: true, fighters: found.into_iter().collect(), ..Default::default() };
         let s = c.call("state", Value::Null, &hub.ctx).unwrap();
@@ -670,7 +691,10 @@ mod tests {
         let proto_action = proto.message(&proto.obf_for_clear(ACTION).unwrap()).unwrap();
         let mut sync = DynamicMessage::new(sync_md);
         // -2: a summon (another monster); -3: a double of -1 (same monster, summoned), left out of the list
-        sync.set_field(&list_field, PbValue::List(vec![PbValue::Message(actor(-1, gid, false)), PbValue::Message(actor(-2, gid2, true)), PbValue::Message(actor(-3, gid, true))]));
+        sync.set_field(
+            &list_field,
+            PbValue::List(vec![PbValue::Message(actor(-1, gid, false)), PbValue::Message(actor(-2, gid2, true)), PbValue::Message(actor(-3, gid, true))]),
+        );
         let mut sync_one = DynamicMessage::new(sync.descriptor());
         sync_one.set_field(&list_field, PbValue::List(vec![PbValue::Message(actor(-2, gid2, true)), PbValue::Message(actor(-3, gid, true))]));
         let end = DynamicMessage::new(proto.message(&proto.obf_for_clear(END).unwrap()).unwrap());

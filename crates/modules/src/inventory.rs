@@ -176,7 +176,11 @@ impl Module for Inventory {
             out
         };
         let one = |name: &str| msg.get_field_by_name(name).and_then(|v| v.as_message().cloned()).into_iter().collect::<Vec<_>>();
-        {
+        // most object events are about resources (loot, quantities): only an actual change of the equipment is saved and sent
+        let put = |s: &mut BTreeMap<i64, Value>, l: Vec<(i64, Value)>| {
+            l.into_iter().fold(false, |ch, (uid, it)| s.insert(uid, it.clone()).as_ref() != Some(&it) || ch)
+        };
+        let changed = {
             let mut s = self.items.lock();
             match m.name.as_str() {
                 // a new login (maybe another character): the whole inventory
@@ -184,22 +188,19 @@ impl Module for Inventory {
                     s.clear();
                     s.extend(parse(messages(msg, &b.objects)));
                     *self.updated.lock() = t;
+                    true
                 }
-                ADDED => s.extend(parse(one(&b.added))),
-                ADDED_LIST => s.extend(parse(messages(msg, &b.added_list))),
-                MODIFIED => s.extend(parse(one(&b.modified))),
-                DELETED => {
-                    s.remove(&int(msg, &b.deleted));
-                }
-                DELETED_LIST => {
-                    for uid in int_list(msg, &b.deleted_list) {
-                        s.remove(&uid);
-                    }
-                }
+                ADDED => put(&mut s, parse(one(&b.added))),
+                ADDED_LIST => put(&mut s, parse(messages(msg, &b.added_list))),
+                MODIFIED => put(&mut s, parse(one(&b.modified))),
+                DELETED => s.remove(&int(msg, &b.deleted)).is_some(),
+                DELETED_LIST => int_list(msg, &b.deleted_list).iter().filter(|uid| s.remove(uid).is_some()).count() > 0,
                 _ => return,
             }
+        };
+        if changed {
+            self.changed(ctx);
         }
-        self.changed(ctx);
     }
 
     fn call(&self, method: &str, _args: Value, _ctx: &Ctx) -> Result<Value> {

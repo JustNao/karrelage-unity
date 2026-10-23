@@ -635,6 +635,7 @@ mod tests {
         let list = hub.call("packets", "list", Value::Null).unwrap();
         let pkt = &list[0];
         assert_eq!(pkt["name"], expected["name"]);
+        assert!(pkt["decoded"]["__t"].is_string(), "the inspector decodes the stored bytes when listing");
         let mut got = pkt["fmt"].clone();
         strip_keys(&mut got, &["group", "order", "density", "stat"]); // added after the python reference was written
         let mut want = expected["fmt"].take();

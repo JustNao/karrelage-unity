@@ -2,7 +2,6 @@
 use crate::{Ctx, Interest, Message, Module};
 use anyhow::{anyhow, Result};
 use loutil_core::wire;
-use loutil_proto::DynamicMessage;
 use parking_lot::Mutex;
 use serde_json::{json, Map, Value};
 use std::collections::{HashMap, VecDeque};
@@ -17,17 +16,18 @@ const HEX_BYTES: usize = 4096;
 /// New packets are sent to the UI in batches (one event per tick instead of one per packet).
 const BATCH_EVERY: Duration = Duration::from_millis(100);
 
-/// A buffered packet: the record without its decoded tree, plus the message, so names can be re-applied
-/// (a rename must show up in already captured packets).
+/// A buffered packet: the record without its decoded tree, plus the message bytes, decoded only when the packet is sent to
+/// the UI (names are applied then, so a rename shows up in already captured packets).
 struct Entry {
     rec: Map<String, Value>,
-    msg: Option<DynamicMessage>,
+    /// the envelope's message bytes (`Any.value`), when the envelope has a type
+    body: Option<Vec<u8>>,
     /// start of the raw payload, rendered as hex only when the packet is opened (`hex` call)
     raw: Vec<u8>,
 }
 
 /// Every packet is recorded, even with the inspector tab closed, but only the last `PER_TYPE` of each message type are
-/// kept; new packets are streamed to the UI only while the tab is open (`active`).
+/// kept, as bytes: nothing is decoded for the inspector until the tab lists or streams them (`active`).
 pub struct Packets {
     ring: Mutex<HashMap<String, VecDeque<Entry>>>,
     active: AtomicBool,
@@ -60,9 +60,6 @@ impl Packets {
                 r.insert("type".into(), m.type_name.clone().map_or(Value::Null, Value::from));
                 r.insert("name".into(), m.name.clone().into());
                 r.insert("conf".into(), m.conf.clone().map_or(Value::Null, Value::from));
-                if m.decoded.is_none() {
-                    r.insert("body".into(), if e.value.is_empty() { json!({}) } else { wire::to_obj(&e.value, 0) });
-                }
                 if let Some(f) = &m.fmt {
                     r.insert("fmt".into(), f.clone());
                 }
@@ -79,15 +76,24 @@ impl Packets {
         rec.get("type").and_then(Value::as_str).map_or_else(|| format!("?{}", rec.get("kind").and_then(Value::as_str).unwrap_or("")), str::to_owned)
     }
 
-    /// Record as sent to the UI, with names as they are *now*.
+    /// Record as sent to the UI, decoded now, with names as they are *now*. A body the schema cannot decode gets the
+    /// schemaless tree (`body`).
     fn render(entry: &Entry, ctx: &Ctx) -> Value {
         let mut r = entry.rec.clone();
-        if let Some(t) = r.get("type").and_then(Value::as_str) {
-            let (name, conf) = ctx.proto.message_name(t);
+        let mut decoded = Value::Null;
+        if let Some(t) = r.get("type").and_then(Value::as_str).map(str::to_owned) {
+            let (name, conf) = ctx.proto.message_name(&t);
             r.insert("name".into(), name.into());
             r.insert("conf".into(), conf.map_or(Value::Null, Value::from));
+            if let Some(d) = entry.body.as_deref().and_then(|b| ctx.proto.decode(&t, b)) {
+                decoded = ctx.proto.to_json(&d);
+            }
         }
-        r.insert("decoded".into(), entry.msg.as_ref().map_or(Value::Null, |d| ctx.proto.to_json(d)));
+        if decoded.is_null() && r.contains_key("kind") {
+            let body = entry.body.as_deref().unwrap_or_default();
+            r.insert("body".into(), if body.is_empty() { json!({}) } else { wire::to_obj(body, 0) });
+        }
+        r.insert("decoded".into(), decoded);
         Value::Object(r)
     }
 }
@@ -99,6 +105,10 @@ impl Module for Packets {
 
     fn interest(&self) -> Interest {
         Interest::All
+    }
+
+    fn needs_decoded(&self) -> bool {
+        false
     }
 
     fn init(&self, ctx: &Ctx) {
@@ -114,7 +124,8 @@ impl Module for Packets {
 
     fn on_message(&self, m: &Message, ctx: &Ctx) {
         let raw = m.raw.payload[..m.raw.payload.len().min(HEX_BYTES)].to_vec();
-        let entry = Entry { rec: self.record(m), msg: m.decoded.clone(), raw };
+        let body = m.env.as_ref().map(|e| e.value.clone());
+        let entry = Entry { rec: self.record(m), body, raw };
         let out = self.active.load(Ordering::Relaxed).then(|| Self::render(&entry, ctx));
         {
             let mut ring = self.ring.lock();

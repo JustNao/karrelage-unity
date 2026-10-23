@@ -6,7 +6,7 @@ use anyhow::Result;
 use netstat2::{get_sockets_info, AddressFamilyFlags, ProtocolFlags, ProtocolSocketInfo, TcpState};
 use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -19,18 +19,49 @@ struct State {
     streams: HashMap<(ConnKey, &'static str), Stream>,
 }
 
+/// BPF filter matching nothing (no connection tracked yet).
+const NO_TRAFFIC: &str = "tcp and udp";
+
+/// The capture filter of every adapter: only the tracked connections, so the driver drops the rest of the machine's traffic
+/// before it is copied to the app. Sniff threads re-apply it when `gen` changes.
+struct Filter {
+    gen: AtomicU64,
+    text: Mutex<String>,
+}
+
+/// BPF expression for a set of connections (remote ip + port; the local side is this machine anyway).
+fn filter_of<'a>(conns: impl Iterator<Item = &'a ConnKey>) -> String {
+    let mut parts: Vec<String> = conns.map(|(ip, port, _)| format!("(host {} and tcp port {port})", ip.to_canonical())).collect();
+    parts.sort();
+    parts.dedup();
+    if parts.is_empty() {
+        NO_TRAFFIC.to_string()
+    } else {
+        format!("tcp and ({})", parts.join(" or "))
+    }
+}
+
 pub struct Capture {
     process: String,
     on_message: Arc<dyn Fn(RawMessage) + Send + Sync>,
     on_log: Arc<dyn Fn(String) + Send + Sync>,
     state: Arc<Mutex<State>>,
+    filter: Arc<Filter>,
     stop: Arc<AtomicBool>,
     running: bool,
 }
 
 impl Capture {
     pub fn new(process: &str, on_message: Arc<dyn Fn(RawMessage) + Send + Sync>, on_log: Arc<dyn Fn(String) + Send + Sync>) -> Self {
-        Self { process: process.to_lowercase(), on_message, on_log, state: Default::default(), stop: Arc::new(AtomicBool::new(false)), running: false }
+        Self {
+            process: process.to_lowercase(),
+            on_message,
+            on_log,
+            state: Default::default(),
+            filter: Arc::new(Filter { gen: AtomicU64::new(0), text: Mutex::new(NO_TRAFFIC.into()) }),
+            stop: Arc::new(AtomicBool::new(false)),
+            running: false,
+        }
     }
 
     pub fn running(&self) -> bool {
@@ -60,13 +91,27 @@ impl Capture {
         // a fresh flag per run: threads of a previous run that have not noticed their stop yet must not resume
         self.stop = Arc::new(AtomicBool::new(false));
         *self.state.lock().unwrap_or_else(|e| e.into_inner()) = State::default();
+        *self.filter.text.lock().unwrap_or_else(|e| e.into_inner()) = NO_TRAFFIC.into();
+        self.filter.gen.fetch_add(1, Ordering::SeqCst);
 
         for dev in devices {
-            let (api, state, stop, on_msg, on_log) = (api.clone(), self.state.clone(), self.stop.clone(), self.on_message.clone(), self.on_log.clone());
-            std::thread::spawn(move || match api.open(&dev.name, "tcp") {
+            let (api, state, filter, stop, on_msg, on_log) =
+                (api.clone(), self.state.clone(), self.filter.clone(), self.stop.clone(), self.on_message.clone(), self.on_log.clone());
+            std::thread::spawn(move || match api.open(&dev.name, NO_TRAFFIC) {
                 Ok(mut h) => {
                     let link = h.datalink;
+                    let mut applied = 0;
                     while !stop.load(Ordering::Relaxed) {
+                        let gen = filter.gen.load(Ordering::Acquire);
+                        if gen != applied {
+                            applied = gen;
+                            let text = filter.text.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                            if let Err(e) = h.set_filter(&text) {
+                                // never lose the game's traffic over a filter: fall back to every TCP packet
+                                on_log(format!("{}: {e} (capturing all TCP)", dev.description));
+                                let _ = h.set_filter("tcp");
+                            }
+                        }
                         match h.next() {
                             Next::Packet(p) => {
                                 // a bad packet must never kill the sniff thread
@@ -88,8 +133,8 @@ impl Capture {
             });
         }
         {
-            let (state, stop, name, on_log) = (self.state.clone(), self.stop.clone(), self.process.clone(), self.on_log.clone());
-            std::thread::spawn(move || refresh_loop(state, stop, name, on_log));
+            let (state, filter, stop, name, on_log) = (self.state.clone(), self.filter.clone(), self.stop.clone(), self.process.clone(), self.on_log.clone());
+            std::thread::spawn(move || refresh_loop(state, filter, stop, name, on_log));
         }
         self.running = true;
         (self.on_log)("capture started".into());
@@ -111,10 +156,11 @@ fn now() -> f64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map_or(0.0, |d| (d.as_millis() as f64) / 1000.0)
 }
 
-fn refresh_loop(state: Arc<Mutex<State>>, stop: Arc<AtomicBool>, process: String, on_log: Arc<dyn Fn(String) + Send + Sync>) {
+fn refresh_loop(state: Arc<Mutex<State>>, filter: Arc<Filter>, stop: Arc<AtomicBool>, process: String, on_log: Arc<dyn Fn(String) + Send + Sync>) {
     let mut sys = sysinfo::System::new();
     while !stop.load(Ordering::Relaxed) {
-        sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+        // names only: no CPU / memory / disk / exe collection for every process of the machine
+        sys.refresh_processes_specifics(sysinfo::ProcessesToUpdate::All, true, sysinfo::ProcessRefreshKind::nothing());
         let pids: HashSet<u32> =
             sys.processes().iter().filter(|(_, p)| p.name().to_string_lossy().to_lowercase() == process).map(|(pid, _)| pid.as_u32()).collect();
         let mut found: HashMap<ConnKey, String> = HashMap::new();
@@ -137,6 +183,12 @@ fn refresh_loop(state: Arc<Mutex<State>>, stop: Arc<AtomicBool>, process: String
                 }
             }
             st.streams.retain(|(k, _), _| found.contains_key(k));
+            let next = filter_of(found.keys());
+            let mut text = filter.text.lock().unwrap_or_else(|e| e.into_inner());
+            if *text != next {
+                *text = next;
+                filter.gen.fetch_add(1, Ordering::Release);
+            }
             st.conns = found;
         }
         for _ in 0..10 {
@@ -241,6 +293,15 @@ mod tests {
         ip.extend_from_slice(tcp);
         p.extend(ip);
         p
+    }
+
+    #[test]
+    fn filter_keeps_only_tracked_connections() {
+        assert_eq!(filter_of(std::iter::empty()), NO_TRAFFIC);
+        let a: ConnKey = ("1.2.3.4".parse().unwrap(), 5555, 50000);
+        let b: ConnKey = ("::ffff:5.6.7.8".parse().unwrap(), 443, 50001); // v4-mapped -> plain v4 (the packets are IPv4)
+        let c: ConnKey = ("1.2.3.4".parse().unwrap(), 5555, 50002); // same server, other local port: one clause
+        assert_eq!(filter_of([a, b, c].iter()), "tcp and ((host 1.2.3.4 and tcp port 5555) or (host 5.6.7.8 and tcp port 443))");
     }
 
     #[test]

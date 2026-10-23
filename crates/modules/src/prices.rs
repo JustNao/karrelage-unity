@@ -346,11 +346,9 @@ impl Module for Prices {
                 Ok(Value::Object(out))
             }
             // args: {gid?, since?} -> history lines, oldest first (not used by the UI yet)
-            "history" => Ok(Value::Array(read_history(
-                &ctx.module_dir("prices").join("history.jsonl"),
-                args["gid"].as_i64(),
-                args["since"].as_f64().unwrap_or(0.0),
-            ))),
+            "history" => {
+                Ok(Value::Array(read_history(&ctx.module_dir("prices").join("history.jsonl"), args["gid"].as_i64(), args["since"].as_f64().unwrap_or(0.0))))
+            }
             // args: {gid, value: number | null}; null removes the override
             "set_override" => {
                 let gid = args["gid"].as_i64().ok_or_else(|| anyhow!("prices: gid required"))?;

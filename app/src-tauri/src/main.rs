@@ -9,8 +9,9 @@ use parking_lot::Mutex;
 use serde_json::{json, Value};
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, Manager};
 
 const LANG: &str = "fr";
 
@@ -73,9 +74,20 @@ fn core(s: &AppState) -> Result<&Core, String> {
     s.core.get().ok_or_else(|| s.error.get().cloned().unwrap_or_else(|| "not initialised".into()))
 }
 
+/// Why Npcap cannot be used, if it cannot: probed again only while it is missing (it may be installed while the app runs).
+fn npcap_error() -> Option<String> {
+    static FOUND: AtomicBool = AtomicBool::new(false);
+    if FOUND.load(Ordering::Relaxed) {
+        return None;
+    }
+    let e = Pcap::load().err().map(|e| e.to_string());
+    FOUND.store(e.is_none(), Ordering::Relaxed);
+    e
+}
+
 fn status_of(s: &AppState) -> Value {
     let log: Vec<String> = s.log.lock().iter().rev().take(5).rev().cloned().collect();
-    let npcap = Pcap::load().err().map(|e| e.to_string());
+    let npcap = npcap_error();
     match s.core.get() {
         Some(c) => {
             let cap = c.capture.lock();
@@ -90,15 +102,16 @@ fn status_of(s: &AppState) -> Value {
     }
 }
 
-#[tauri::command]
-fn status(s: State<AppState>) -> Value {
-    status_of(&s)
-}
-
 /// Run blocking work (module calls do disk and network IO: Dofusbook import, icon downloads, update check) on the
 /// blocking pool, so it ties up neither the UI thread nor an async worker.
 async fn blocking<T: Send + 'static>(app: AppHandle, f: impl FnOnce(&AppState) -> Result<T, String> + Send + 'static) -> Result<T, String> {
     tauri::async_runtime::spawn_blocking(move || f(&app.state::<AppState>())).await.map_err(|e| e.to_string())?
+}
+
+/// Polled by the UI: off the UI thread, since it waits for the capture lock (held while a capture start opens the adapters).
+#[tauri::command]
+async fn status(app: AppHandle) -> Result<Value, String> {
+    blocking(app, |s| Ok(status_of(s))).await
 }
 
 #[tauri::command]

@@ -288,6 +288,10 @@ impl Module for NamesTab {
         self.active.load(Ordering::Relaxed)
     }
 
+    fn needs_decoded(&self) -> bool {
+        false // counts types only
+    }
+
     fn on_message(&self, m: &Message, _ctx: &Ctx) {
         if let Some(t) = &m.type_name {
             *self.seen.lock().entry(t.clone()).or_default() += 1;

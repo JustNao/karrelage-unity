@@ -1,7 +1,7 @@
 //! Feature modules + the hub. A module declares which messages it wants (by clear name), reacts in `on_message`,
 //! may render messages into a shared "formatted" view (`format`), and exposes request/response `call`s to the UI.
 //!
-//! Adding a feature = one file here implementing `Module` + registering it in `all()` + a UI folder under app/ui/src/modules.
+//! Adding a feature = one file here implementing `Module` + registering it in `all()` + a UI folder under app/src/modules.
 pub mod auction;
 pub mod brisage;
 pub mod combat;
@@ -100,6 +100,11 @@ pub trait Module: Send + Sync {
     fn wants(&self) -> bool {
         true
     }
+    /// False = this module never reads `Message::decoded` (it decodes lazily itself): a message only such modules want is
+    /// not decoded at all. Default: true.
+    fn needs_decoded(&self) -> bool {
+        true
+    }
     fn init(&self, _ctx: &Ctx) {}
     /// Render a message into a UI-friendly structure (shown in the packet inspector's formatted column).
     fn format(&self, _m: &Message, _ctx: &Ctx) -> Option<Value> {
@@ -154,7 +159,7 @@ impl Hub {
         if interested.is_empty() {
             return;
         }
-        if let (Some(t), Some(e)) = (&msg.type_name, &msg.env) {
+        if let (Some(t), Some(e), true) = (&msg.type_name, &msg.env, interested.iter().any(|m| m.needs_decoded())) {
             msg.decoded = self.ctx.proto.decode(t, &e.value);
         }
         for m in &interested {
