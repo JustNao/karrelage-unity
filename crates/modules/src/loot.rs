@@ -142,4 +142,21 @@ mod tests {
         let items = Loot::items(&hub.ctx, &msg);
         assert_eq!(items, vec![json!({"fighter": 42, "gid": legend, "name": data.item_name(legend), "type_id": 219})]);
     }
+
+    /// A FightEndEvent captured on Dofus 3.7.12.12 (FightEndEvent = `jwp`; skipped on other builds, whose schema differs):
+    /// the player looted 1 Plume de Piou Bleu (6897), the monster nothing.
+    #[test]
+    fn reads_a_captured_fight_end() {
+        let Some((hub, proto)) = testkit::hub("loutil-loot-capture") else { return };
+        if proto.obf_for_clear(END).as_deref() != Some("jwp") {
+            return;
+        }
+        const FRAME: &str = "1a7f0a7d0a13747970652e616e6b616d612e636f6d2f6a7770126622430802122f10011a250a200a1e08011001189bbac6f5392095dea7dc39280130b9e2c5a33a38014077480110b60228a782b4a6491a0e0a0a1a05080118f13520eb0310052211120d100128ffffffffffffffffff011a0028ffffffffffffffffff0140e11e";
+        let bytes: Vec<u8> = (0..FRAME.len()).step_by(2).map(|i| u8::from_str_radix(&FRAME[i..i + 2], 16).unwrap()).collect();
+        // event (1a 7f) -> Any (0a 7d) -> type url (0a 13 + 19 bytes) -> value (12 66 + 102 bytes)
+        let msg = proto.decode("jwp", &bytes[27..]).expect("decodes");
+        let items = Loot::items(&hub.ctx, &msg);
+        let ty = hub.ctx.data.items[&6897].type_id;
+        assert_eq!(items, vec![json!({"fighter": 19676332327i64, "gid": 6897, "name": "Plume de Piou Bleu", "type_id": ty})]);
+    }
 }
