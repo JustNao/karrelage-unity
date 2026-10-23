@@ -86,19 +86,5 @@
  "object_effect": {
   "action": ["gdmq", "gdmr"],
   "oneof": "gdng"
- },
- "inventory_move": {
-  "_doc": "ObjectMovementEvent (iqn): an object changed position (equipped 63 -> slot, unequipped -> 63; seen as a Dofus swap on a capture: 63 then 9) -> object_uid, position.",
-  "uid": "fsmv",
-  "position": "fsmx"
- },
- "characteristics": {
-  "_doc": "CharacterCharacteristicsEvent -> stats: CharacterCharacteristics -> characteristics: [CharacterCharacteristic {characteristic_id, detailed: CharacterCharacteristicDetailed {base = points invested, additional = scrolls, objects_and_mount_bonus}}]. Checked on a capture: base force 202 / chance 200 / agility 144 / intelligence 150 / vitality 1 = 995 points (level 200), additional 100 on the scrolled ones.",
-  "stats": "ganp",
-  "list": "gbmz",
-  "id": "gboz",
-  "detailed": "gbpd",
-  "base": "gcss",
-  "additional": "gcso"
  }
 }

@@ -56,6 +56,11 @@ impl Proto {
         self.names.read().len()
     }
 
+    /// Obfuscated name of a field of message `msg` (descriptor full name) from its exact clear name.
+    pub fn field_named(&self, msg: &str, clear: &str) -> Option<String> {
+        self.names.read().field_named(msg, clear)
+    }
+
     /// Obfuscated type name for a clear message name (first match), if known in this build.
     pub fn obf_for_clear(&self, clear: &str) -> Option<String> {
         self.names.read().obf_for_clear(clear)

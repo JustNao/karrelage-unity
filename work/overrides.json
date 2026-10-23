@@ -29,20 +29,5 @@
    "gdpw": "uid",
    "gdqh": "spell_id"
   }
- },
- "iqn": {
-  "name": "ObjectMovementEvent",
-  "fields": {
-   "fsmv": "object_uid",
-   "fsmx": "position"
-  }
- },
- "lgi": {
-  "name": "CharacterCharacteristicDetailed",
-  "fields": {
-   "gcss": "base",
-   "gcso": "additional",
-   "gcsq": "objects_and_mount_bonus"
-  }
  }
 }

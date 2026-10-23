@@ -266,6 +266,36 @@ def field_assign(cm, bm, cmap, emap):
     return out
 
 
+# Messages the obfuscator blanked in the script table, found again on every build: the blank entry declared right after
+# `after` in the same .proto file, with the clear name's length, and `ints` integer fields (field names and numbers are
+# reshuffled per build, so the app tells the fields apart by their values: see crates/modules/src/inventory.rs).
+ANCHORS = [
+    {"name": "ObjectMovementEvent", "file": "Inventory", "after": "ObjectDeletedEvent", "ints": (2, 3)},
+]
+INT_TYPES = {F.TYPE_INT32, F.TYPE_INT64, F.TYPE_UINT32, F.TYPE_UINT64, F.TYPE_SINT32, F.TYPE_SINT64}
+
+
+def anchored_names(cur_msgs):
+    """{cur full name: clear name} for `ANCHORS` found in work/script_names.json (declaration order)."""
+    p = work / "script_names.json"
+    if not p.exists():
+        return {}
+    entries = list(json.loads(p.read_text(encoding="utf-8")).items())
+    by_short = {cn.rsplit(".", 1)[-1]: cn for cn in cur_msgs}
+    out = {}
+    for a in ANCHORS:
+        for i, (k, v) in enumerate(entries[:-1]):
+            nk, nv = entries[i + 1]
+            if v["name"] != a["after"] or v["file"] != a["file"] or nv["name"] or nv["file"] != a["file"] or nv["len"] != len(a["name"]):
+                continue
+            cn = by_short.get(nk)
+            if cn and all(f.type in INT_TYPES for f in cur_msgs[cn].field) and a["ints"][0] <= len(cur_msgs[cn].field) <= a["ints"][1]:
+                out[cn] = a["name"]
+        if a["name"] not in out.values():
+            print(f"anchor not found: {a['name']} (after {a['after']} in {a['file']})")
+    return out
+
+
 def message_short(full):
     return full.rsplit(".", 1)[-1]
 
@@ -285,6 +315,8 @@ if __name__ == "__main__":
             mapping[cn] = {"name": s["name"], "full": f"{s['pkg']}.{s['name']}" if s["pkg"] else None, "conf": "script", "fields": {}}
         elif s["name"] and mapping[cn]["name"] != s["name"]:
             mapping[cn].update(name=s["name"], conf="script")
+    for cn, name in anchored_names(cur_msgs).items():
+        mapping.setdefault(cn, {"fields": {}}).update(name=name, conf="anchor")
     ov = work / "overrides.json"
     if ov.exists():
         for k, v in json.loads(ov.read_text()).items():

@@ -197,6 +197,36 @@ fn binding_checks(ctx: &Ctx) -> Vec<Value> {
             if found { format!("{clear} ok") } else { format!("{clear} : champ {} introuvable", s(&inv[key])) },
         ));
     }
+    // equipment moves: the message is found by its script-table anchor (match_protos.py ANCHORS), its ints by their values
+    let ints =
+        |m: &MessageDescriptor| m.fields().filter(|f| !f.is_list() && matches!(f.kind(), Kind::Int32 | Kind::Int64 | Kind::Uint32 | Kind::Uint64)).count();
+    let moved = ctx.proto.obf_for_clear(inventory::MOVED).and_then(|o| ctx.proto.message(&o));
+    out.push(match &moved {
+        Some(m) if (2..=3).contains(&ints(m)) => {
+            check("Message déplacement d'objet", true, format!("{} → {} ({} entiers)", inventory::MOVED, m.full_name(), ints(m)))
+        }
+        Some(m) => check("Message déplacement d'objet", false, format!("{} → {} : {} entiers, 2 ou 3 attendus", inventory::MOVED, m.full_name(), ints(m))),
+        None => check("Message déplacement d'objet", false, format!("aucun nom pour {} (ancre de match_protos.py)", inventory::MOVED)),
+    });
+    // characteristics: stats -> characteristics -> characteristic_id / detailed by clear names, the detail's ints by their values
+    let named = |m: &MessageDescriptor, clear: &str| ctx.proto.field_named(m.full_name(), clear).and_then(|f| m.get_field_by_name(&f));
+    let carac = ctx.proto.obf_for_clear(inventory::CHARACTERISTICS).and_then(|o| ctx.proto.message(&o));
+    let detail = carac
+        .as_ref()
+        .and_then(|m| named(m, "stats")?.kind().as_message().cloned())
+        .and_then(|st| named(&st, "characteristics")?.kind().as_message().cloned())
+        .and_then(|c| named(&c, "characteristic_id").and(named(&c, "detailed"))?.kind().as_message().cloned());
+    out.push(match detail {
+        Some(d) if ints(&d) >= 2 => {
+            check("Message caractéristiques", true, format!("{} : détail {} ({} entiers)", inventory::CHARACTERISTICS, d.full_name(), ints(&d)))
+        }
+        Some(d) => check("Message caractéristiques", false, format!("{} : détail {} sans entiers", inventory::CHARACTERISTICS, d.full_name())),
+        None => check(
+            "Message caractéristiques",
+            false,
+            format!("{} : stats / characteristics / characteristic_id / detailed introuvables", inventory::CHARACTERISTICS),
+        ),
+    });
     out
 }
 

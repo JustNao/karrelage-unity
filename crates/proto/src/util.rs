@@ -18,6 +18,16 @@ pub fn int(m: &DynamicMessage, name: &str) -> i64 {
     m.get_field_by_name(name).and_then(|v| as_i64(&v)).unwrap_or(0)
 }
 
+/// Every single (not repeated) integer field of the message's type with its value (0 when unset): for messages whose
+/// integer fields have no reliable names and are told apart by their values.
+pub fn scalar_ints(m: &DynamicMessage) -> Vec<(String, i64)> {
+    m.descriptor()
+        .fields()
+        .filter(|f| !f.is_list() && matches!(f.kind(), Kind::Int32 | Kind::Int64 | Kind::Uint32 | Kind::Uint64 | Kind::Sint32 | Kind::Sint64))
+        .map(|f| (f.name().to_string(), int(m, f.name())))
+        .collect()
+}
+
 pub fn ints(m: &DynamicMessage, names: &[&str]) -> Vec<i64> {
     names.iter().map(|n| int(m, n)).collect()
 }

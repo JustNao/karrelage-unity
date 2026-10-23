@@ -78,6 +78,12 @@ impl Names {
         self.merged.iter().find(|(_, v)| v.get("name").and_then(Value::as_str) == Some(clear)).map(|(k, _)| k.clone())
     }
 
+    /// Obfuscated name of the field of `msg` whose clear name is exactly `clear` (beta match, script table or override).
+    pub fn field_named(&self, msg: &str, clear: &str) -> Option<String> {
+        let fields = self.merged.get(msg)?.get("fields")?.as_object()?;
+        fields.iter().find(|(_, f)| f.get("name").and_then(Value::as_str) == Some(clear)).map(|(k, _)| k.clone())
+    }
+
     /// Label of a field: its clear name, or "obf (a|b?)" with the candidates not already taken by a sibling.
     pub fn field_label(&self, msg: &str, field: &str) -> String {
         let fields = self.merged.get(msg).and_then(|m| m.get("fields")).and_then(Value::as_object);
