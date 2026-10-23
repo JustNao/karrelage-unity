@@ -21,8 +21,12 @@ fn game_dir() -> Option<PathBuf> {
     Some(PathBuf::from(std::env::var_os("LOCALAPPDATA")?).join("Ankama").join("Dofus-dofus3"))
 }
 
-/// Repo root when running from a development checkout (the pipeline lives there), else None.
+/// Repo root when running from a development checkout (the pipeline lives there), else None. Debug builds only: the path is
+/// the one the app was compiled in, and a release build must never run a python script from a folder found on a user's machine.
 fn repo_root() -> Option<PathBuf> {
+    if !cfg!(debug_assertions) {
+        return None;
+    }
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     root.join("pipeline").join("update_names.py").exists().then_some(root)
 }

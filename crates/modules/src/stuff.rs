@@ -2,7 +2,7 @@
 //! exo bonuses) is stored locally; item / stat icons are downloaded once and cached on disk (the webview CSP forbids remote
 //! images, so they are handed to the UI as `data:` URLs). Item stats and set bonuses come from the data pack, not from Dofusbook.
 use crate::store::write_atomic;
-use crate::sys::{http, no_window, unix_millis, unix_secs};
+use crate::sys::{http, no_window, system_tool, unix_millis, unix_secs};
 use crate::{Ctx, Interest, Module, Persist};
 use anyhow::{anyhow, bail, Context, Result};
 use parking_lot::Mutex;
@@ -69,12 +69,22 @@ fn parse_id(input: &str) -> Result<i64> {
     if let Some(id) = after("/equipement/").and_then(digits) {
         return Ok(id);
     }
-    if s.contains("d-bk.net/") {
-        let resp = agent(0).get(s).call().context("lien court Dofusbook")?;
+    if let Some(short) = short_link(s) {
+        let resp = agent(0).get(&short).call().context("lien court Dofusbook")?;
         let loc = resp.header("Location").ok_or_else(|| anyhow!("lien court sans redirection"))?.to_string();
         return after_equipement(&loc);
     }
     digits(s).ok_or_else(|| anyhow!("lien Dofusbook non reconnu"))
+}
+
+/// A Dofusbook short link (`[https://][www.]d-bk.net/...`) as the https URL to request, else None. Only that host is ever
+/// requested: the input is typed or pasted by the user, it must not make the app fetch any other address (LAN included).
+fn short_link(s: &str) -> Option<String> {
+    let lower = s.to_ascii_lowercase();
+    let rest = lower.strip_prefix("https://").or_else(|| lower.strip_prefix("http://")).unwrap_or(&lower);
+    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let (host, path) = rest.split_at(end);
+    (matches!(host, "d-bk.net" | "www.d-bk.net") && path.len() > 1).then(|| format!("https://d-bk.net{}", &s[s.len() - path.len()..]))
 }
 
 fn after_equipement(url: &str) -> Result<i64> {
@@ -100,7 +110,7 @@ fn get_bytes(url: &str) -> Result<Vec<u8>> {
         }
         Err(ureq::Error::Status(404, _)) => bail!("introuvable (404)"),
         Err(ureq::Error::Status(403, _)) => {
-            let mut cmd = std::process::Command::new("curl");
+            let mut cmd = std::process::Command::new(system_tool("System32/curl.exe"));
             cmd.args(["-sS", "-L", "--fail", "--max-time", "25", "-A", UA, "-H", "Accept: application/json, image/*"]);
             if !referer.is_empty() {
                 cmd.args(["-H", &format!("Referer: {referer}")]);
@@ -343,6 +353,16 @@ mod tests {
         assert_eq!(parse_id("https://www.dofusbook.net/fr/equipement/17833105-steamer-feu").unwrap(), 17833105);
         assert_eq!(parse_id("17833105").unwrap(), 17833105);
         assert!(parse_id("hello").is_err());
+    }
+
+    #[test]
+    fn short_links_only_reach_dofusbook() {
+        assert_eq!(short_link("https://d-bk.net/fr/d/1CpCj").as_deref(), Some("https://d-bk.net/fr/d/1CpCj"));
+        assert_eq!(short_link("D-BK.net/fr/d/1CpCj").as_deref(), Some("https://d-bk.net/fr/d/1CpCj"));
+        assert_eq!(short_link("http://www.d-bk.net/fr/d/x").as_deref(), Some("https://d-bk.net/fr/d/x"));
+        for bad in ["http://192.168.1.1/x?d-bk.net/", "https://d-bk.net.evil.com/x", "https://evil.com/d-bk.net/x", "https://user@d-bk.net/x", "d-bk.net"] {
+            assert_eq!(short_link(bad), None, "{bad}");
+        }
     }
 
     /// Dev helper: `STUFF_API=<api.json> STUFF_OUT=<dir> cargo test -p loutil-modules dump_sample` writes build.json + info.json for offline checks of lib/stuff.ts.

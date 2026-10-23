@@ -25,8 +25,9 @@ fn base_url() -> String {
 /// Latest release of the app. Override with KARRELAGE_RELEASE_URL (tests, forks).
 const DEFAULT_RELEASE: &str = "https://api.github.com/repos/JustNao/karrelage-unity/releases/latest";
 
+/// The override is honoured in debug builds only: the release names an installer that gets run.
 fn release_url() -> String {
-    std::env::var("KARRELAGE_RELEASE_URL").unwrap_or_else(|_| DEFAULT_RELEASE.to_string())
+    std::env::var("KARRELAGE_RELEASE_URL").ok().filter(|_| cfg!(debug_assertions)).unwrap_or_else(|| DEFAULT_RELEASE.to_string())
 }
 
 /// dist/pack.json
@@ -47,7 +48,7 @@ pub struct Release {
     pub url: String,
     pub name: String,
     pub size: u64,
-    /// hex sha256 of the installer (GitHub's asset `digest`), when published
+    /// hex sha256 of the installer (GitHub's asset `digest`); a release without one is never installed
     pub sha256: Option<String>,
 }
 
@@ -175,6 +176,8 @@ pub fn fetch_release(url: &str, local: &str) -> Result<Option<Release>> {
 
 /// Download the installer of `rel` into `<dir>/app-update/`, checking its size and digest. Returns its path.
 pub fn download_release(rel: &Release, dir: &Path, progress: &dyn Fn(u64, u64)) -> Result<PathBuf> {
+    // the installer gets run: without the release's checksum to compare it with, it is refused
+    let Some(expected) = rel.sha256.as_deref() else { bail!("la version publiée n'indique pas de somme de contrôle : installez-la à la main") };
     let name = Path::new(&rel.name).file_name().ok_or_else(|| anyhow!("nom d'installeur invalide"))?;
     let resp = agent().get(&rel.url).set("User-Agent", "karrelage").call().context("téléchargement de l'installeur")?;
     let total = resp.header("Content-Length").and_then(|v| v.parse().ok()).unwrap_or(rel.size).max(1);
@@ -198,7 +201,7 @@ pub fn download_release(rel: &Release, dir: &Path, progress: &dyn Fn(u64, u64)) 
         }
     }
     let digest = loutil_core::wire::hex(&hasher.finalize());
-    if (rel.size > 0 && bytes.len() as u64 != rel.size) || rel.sha256.as_ref().is_some_and(|s| !digest.eq_ignore_ascii_case(s)) {
+    if (rel.size > 0 && bytes.len() as u64 != rel.size) || !digest.eq_ignore_ascii_case(expected) {
         bail!("l'installeur téléchargé est corrompu (taille ou somme de contrôle incorrecte)");
     }
     let out = dir.join("app-update");
@@ -359,6 +362,8 @@ mod tests {
         let path = download_release(&r, &dir, &|_, _| {}).unwrap();
         assert_eq!(std::fs::read(path).unwrap(), exe);
 
+        let unchecked = Release { sha256: None, ..r.clone() };
+        assert!(download_release(&unchecked, &dir, &|_, _| {}).unwrap_err().to_string().contains("somme de contrôle"));
         let bad = Release { sha256: Some("0".repeat(64)), ..r };
         assert!(download_release(&bad, &dir, &|_, _| {}).unwrap_err().to_string().contains("corrompu"));
     }

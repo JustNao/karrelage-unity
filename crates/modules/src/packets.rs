@@ -189,7 +189,7 @@ impl Module for Packets {
                     .unwrap_or_else(std::env::temp_dir);
                 let path = dir.join(format!("karrelage-{name}-{id}.json"));
                 std::fs::write(&path, serde_json::to_string_pretty(&v)?)?;
-                let _ = std::process::Command::new("explorer").arg(format!("/select,{}", path.display())).spawn();
+                let _ = std::process::Command::new(crate::sys::system_tool("explorer.exe")).arg(format!("/select,{}", path.display())).spawn();
                 Ok(json!(path.display().to_string()))
             }
             // confirm/edit a decoded name; persisted in the user overrides file

@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capabilities for Karrelage",
-  "windows": ["main", "splash", "scanlist", "combat"],
+  "description": "Main window: opens the floating windows (scan list, fight popup) and drives its own window",
+  "windows": ["main"],
   "permissions": [
     "core:default",
     "core:webview:allow-create-webview-window",

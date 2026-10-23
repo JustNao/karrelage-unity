@@ -34,7 +34,10 @@ fn pick_pack(app: &AppHandle, user_dir: &Path) -> Option<PathBuf> {
     if let Ok(r) = app.path().resource_dir() {
         cands.push(r.join("datapack"));
     }
-    cands.push(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../datapack")); // dev checkout
+    if cfg!(debug_assertions) {
+        cands.push(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../datapack"));
+        // dev checkout (the path it was compiled in)
+    }
     cands.into_iter().filter_map(|d| Some((read_manifest(&d).ok()?.generated, d))).max_by_key(|x| x.0).map(|x| x.1)
 }
 
