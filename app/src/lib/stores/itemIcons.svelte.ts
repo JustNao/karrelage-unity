@@ -11,11 +11,14 @@ const asked = new Set<number>();
 let queue: number[] = [];
 let timer: ReturnType<typeof setTimeout> | null = null;
 const BATCH = 8; // small batches: the first icons show up while the others download
+const IN_FLIGHT = 2; // batches downloading at once (each holds a backend thread): fast scrolling queues the rest
+let running = 0;
 
 function flush() {
   timer = null;
-  while (queue.length) {
+  while (queue.length && running < IN_FLIGHT) {
     const ids = queue.splice(0, BATCH);
+    running++;
     call<Record<string, string>>("stuff", "icons", { item: ids })
       .then((m) => {
         for (const id of ids) {
@@ -23,7 +26,11 @@ function flush() {
           if (u) icons.set(id, u);
         }
       })
-      .catch(() => ids.forEach((id) => asked.delete(id))); // asked again next time it is shown
+      .catch(() => ids.forEach((id) => asked.delete(id))) // asked again next time it is shown
+      .finally(() => {
+        running--;
+        flush();
+      });
   }
 }
 
@@ -36,25 +43,31 @@ export function requestIcon(id: number | null | undefined) {
 
 export const iconOfItem = (id: number | null | undefined): string | undefined => (id == null ? undefined : icons.get(id));
 
-/** Svelte action: request the icon once the element is (nearly) on screen. */
-export function lazyIcon(node: Element, id: number | null | undefined) {
-  let cur = id;
-  const io = new IntersectionObserver(
+/** One observer for every element waiting for its icon (a list can hold hundreds of rows). */
+const waiting = new WeakMap<Element, number | null | undefined>();
+let observer: IntersectionObserver | null = null;
+const io = () =>
+  (observer ??= new IntersectionObserver(
     (es) => {
-      if (es.some((e) => e.isIntersecting)) {
-        requestIcon(cur);
-        io.disconnect();
+      for (const e of es) {
+        if (!e.isIntersecting) continue;
+        requestIcon(waiting.get(e.target));
+        observer!.unobserve(e.target);
       }
     },
     { rootMargin: "200px" },
-  );
-  io.observe(node);
+  ));
+
+/** Svelte action: request the icon once the element is (nearly) on screen. */
+export function lazyIcon(node: Element, id: number | null | undefined) {
+  waiting.set(node, id);
+  io().observe(node);
   return {
     update(n: number | null | undefined) {
-      cur = n;
-      io.disconnect();
-      io.observe(node);
+      waiting.set(node, n);
+      io().unobserve(node);
+      io().observe(node);
     },
-    destroy: () => io.disconnect(),
+    destroy: () => io().unobserve(node),
   };
 }

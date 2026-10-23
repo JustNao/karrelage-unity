@@ -32,10 +32,19 @@ export const storedPrice = (prices: Map<number, StoredPrice>, gid: number): numb
 export function craftCost(gid: number, r: Recipes, prices: Map<number, StoredPrice>): CraftResult | null {
   if (!r.recipes[gid]) return null;
   const missing = new Set<string>();
-  const memo = new Map<number, number | null>(); // gid -> cheapest unit cost (buy or craft)
+  type Best = { unit: number | null; how: CraftLine["how"]; sub?: CraftLine[] };
+  const memo = new Map<number, Best>(); // gid -> cheapest way to get one (buy or craft): shared ingredients are walked once
   const busy = new Set<number>(); // cycle guard
 
-  const best = (g: number): { unit: number | null; how: CraftLine["how"]; sub?: CraftLine[] } => {
+  const best = (g: number): Best => {
+    const hit = memo.get(g);
+    if (hit) return hit;
+    const b = cheapest(g);
+    memo.set(g, b);
+    return b;
+  };
+
+  const cheapest = (g: number): Best => {
     const buy = storedPrice(prices, g);
     let craft: number | null = null;
     let sub: CraftLine[] | undefined;
@@ -55,7 +64,6 @@ export function craftCost(gid: number, r: Recipes, prices: Map<number, StoredPri
   const line = (g: number, qty: number): CraftLine => {
     const b = best(g);
     if (b.unit == null) missing.add(r.names[g] ?? `#${g}`);
-    memo.set(g, b.unit);
     return { gid: g, name: r.names[g] ?? `#${g}`, qty, unit: b.unit, how: b.how, sub: b.sub };
   };
 

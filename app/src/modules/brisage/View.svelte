@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { call, on } from "../../lib/api";
   import { breakEven, lotEffects, meanRoll, outcome, type BrisItem, type BrisPack, type Outcome } from "../../lib/brisage";
   import { craftCost, type Recipes } from "../../lib/craft";
@@ -85,6 +85,24 @@
     return out.sort((a, b) => (a.even ?? Infinity) - (b.even ?? Infinity));
   }
 
+  /** Scanned listings and prices change by bursts while the player browses the AH: the list (every breakable item) is rebuilt
+   *  at most every `REBUILD_MS` (`dataVersion`), and only the items whose listing changed are recomputed, unless a price
+   *  changed (`priceVersion`: rune and ingredient prices count for every item). */
+  const REBUILD_MS = 300;
+  let dataVersion = $state(0);
+  let priceVersion = 0;
+  let rebuild: ReturnType<typeof setTimeout> | null = null;
+  const changed = () => (rebuild ??= setTimeout(() => ((rebuild = null), dataVersion++), REBUILD_MS));
+  const srcCache = new Map<number, { listing: unknown; pv: number; recipes: Recipes; pack: BrisPack; sources: Source[] }>();
+  function cachedSources(i: BrisItem): Source[] {
+    const listing = auction.items.get(i.gid);
+    const c = srcCache.get(i.gid);
+    if (c && c.listing === listing && c.pv === priceVersion && c.recipes === recipes && c.pack === pack) return c.sources;
+    const sources = sourcesOf(i);
+    srcCache.set(i.gid, { listing, pv: priceVersion, recipes, pack, sources });
+    return sources;
+  }
+
   /** What is on sale per item type, from the AH categories opened (`auction.on_sale`). */
   interface OnSale { type: number; t: number; gids: number[] }
   let onSale = $state.raw<Record<string, OnSale>>({});
@@ -99,17 +117,20 @@
   type SortKey = "name" | "level" | "sale" | "cost" | "even" | "profit";
   interface Row { item: BrisItem; gid: number; name: string; level: number; best: Source | null; cost: number | null; even: number | null; profit: number | null; coef: number | null; sale: boolean | null; good: number; goodExo: number }
 
-  const rows = $derived.by<Row[]>(() =>
-    pack.items.map((item) => {
-      const sources = sourcesOf(item);
+  const rows = $derived.by<Row[]>(() => {
+    void dataVersion; // listings / prices: through `changed`, never one dependency per item read
+    const items = pack.items;
+    void recipes;
+    const all = untrack(() => items.map((item) => [item, cachedSources(item)] as const));
+    return all.map(([item, sources]) => {
       const best = sources[0] ?? null;
       const coef = coefOf(item.gid);
       const profit = best && coef != null ? profitAt(best, coef) : null;
       // scanned lots that pay at the known coefficient (an exo makes a lot worth more without focus)
       const good = coef == null ? [] : sources.filter((s) => s.kind === "lot" && (profitAt(s, coef) ?? 0) > 0);
       return { item, gid: item.gid, name: item.name, level: item.level, best, cost: best?.cost ?? null, even: best?.even ?? null, profit, coef, sale: saleOf(item), good: good.length, goodExo: good.filter(hasExo).length };
-    }),
-  );
+    });
+  });
 
   // ---- filters ----
   /** Breakable types, weapons and worn equipment apart. */
@@ -237,9 +258,14 @@
     });
     void prices.ensure();
     void auction.ensure();
+    const offPrices = prices.subscribe(() => (priceVersion++, changed()));
+    const offAuction = auction.subscribe(changed);
     call<Record<string, OnSale>>("auction", "on_sale").then((o) => (onSale = { ...o, ...onSale })).catch(() => {});
     const offSale = on<OnSale>("auction:on_sale", (o) => (onSale = { ...onSale, [o.type]: o }));
     return () => {
+      offPrices();
+      offAuction();
+      if (rebuild) clearTimeout(rebuild);
       void offSale.then((f) => f());
       void off.then((f) => f());
       void offPending.then((f) => f());
