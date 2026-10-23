@@ -34,6 +34,21 @@ export const pct = (n: number, digits = 1) => `${n > 0 ? "+" : n < 0 ? MINUS : "
 /** Short axis label: 1.25M, 12.5k, 830. */
 export const fmtCompact = (n: number) => (n >= 1e6 ? +(n / 1e6).toFixed(2) + "M" : n >= 1e3 ? +(n / 1e3).toFixed(1) + "k" : String(Math.round(n)));
 
+/** A price or "—" when unknown. */
+export const kamasOr = (n: number | null | undefined, none = "—") => (n == null ? none : kamas(n));
+
+const dtf = new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+const hmf = new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" });
+/** Unix seconds -> "20/10/2026 22:30:39". */
+export const fmtDateTime = (t: number) => dtf.format(new Date(t * 1000));
+/** Unix seconds -> "22:30". */
+export const fmtTime = (t: number) => hmf.format(new Date(t * 1000));
+/** Bytes -> "512 o", "12,3 ko". */
+export const fmtSize = (n: number | null | undefined) => (n == null ? "" : n < 1024 ? `${n} o` : `${fmtNum(n / 1024, n < 10240 ? 1 : 0)} ko`);
+
+/** A rune's name without its "Rune " prefix: "Rune Pa Fo" -> "Pa Fo". */
+export const runeShort = (name: string | undefined) => name?.replace(/^Rune /, "");
+
 /** "il y a 12s / 5min / 3h". */
 export const ago = (t: number) => {
   const d = Math.round(Date.now() / 1000 - t);

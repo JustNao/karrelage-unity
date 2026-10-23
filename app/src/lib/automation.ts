@@ -7,7 +7,7 @@
  * adds), cheaper than that rune, whose break-even coefficient (Brisage tab: price / runes value at 100 %, best focus) is
  * at most `maxEven`, and that costs at most `maxPrice` (when set).
  */
-import { call } from "./api";
+import { call, cached } from "./api";
 import { breakEven, lotEffects, outcome, type BrisPack } from "./brisage";
 import { kamas } from "./fmt";
 import { lotKeys, unitPriceOrNull } from "./price";
@@ -73,12 +73,12 @@ export async function startAutomation() {
   started = true;
   void prices.ensure();
   void auction.ensure().catch(() => {});
-  call<Rune[]>("prices", "runes").then((l) => (doRunes = l.filter(isDoPerRune))).catch(() => {});
-  call<BrisPack>("brisage", "items")
+  cached<Rune[]>("prices", "runes").then((l) => (doRunes = l.filter(isDoPerRune))).catch(() => {});
+  cached<BrisPack>("brisage", "items")
     .then((p) => ((levels = new Map(p.items.map((i) => [i.gid, i.level]))), (brisRunes = p.runes)))
     .catch(() => {});
   auction.subscribe((c) => {
-    if (c.kind !== "item" || !c.live) return;
-    if (checkExoDo(c.item)) playSound(rules.exoDo.sound, rules.exoDo.volume);
+    if (c.kind !== "put" || !c.live) return;
+    for (const item of c.values) if (checkExoDo(item)) playSound(rules.exoDo.sound, rules.exoDo.volume);
   });
 }

@@ -6,67 +6,19 @@
  *   prices.map                       // gid -> StoredPrice (reactive SvelteMap)
  *   prices.effective(gid)            // { value, source } with the priority override > unit > avg
  *   prices.effective(gid, { avg: false })   // real prices only (Stuff)
+ *   prices.subscribe((c) => ...)     // { kind: "put", values, live } / { kind: "clear" } (see `SyncedMap`)
  */
-import { SvelteMap } from "svelte/reactivity";
-import { call, on } from "../api";
 import { effectivePrice, type StoredPrice } from "../price";
+import { SyncedMap } from "./synced.svelte";
 
 export type { StoredPrice } from "../price";
 export { effectivePrice } from "../price";
+export type { SyncChange as PriceChange } from "./synced.svelte";
 
-/** What a change listener is told: these prices were set (in arrival order), or everything was forgotten. */
-export type PriceChange<P = StoredPrice> = { kind: "put"; prices: P[] } | { kind: "clear" };
-
-class PriceStore<P extends StoredPrice = StoredPrice> {
-  readonly map = new SvelteMap<number, P>();
-  /** Resolves once the first list is in. */
-  ready: Promise<void> | null = null;
-  private subs = new Set<(c: PriceChange<P>) => void>();
-
-  /** Starts the store the first time it is called (listeners first, then the list, so nothing falls between the two). */
-  ensure(): Promise<void> {
-    return (this.ready ??= (async () => {
-      await (this.listening ??= this.listen());
-      const e = this.epoch;
-      try {
-        const l = await call<P[]>("prices", "list");
-        if (e !== this.epoch) return; // cleared while loading: the list is out of date
-        this.put(l.filter((p) => !this.map.has(p.gid))); // a price event received meanwhile is newer
-      } catch (err) {
-        this.ready = null; // try again next time
-        throw err;
-      }
-    })());
-  }
-
-  /** Listeners for the whole session, registered once. */
-  private listening: Promise<unknown> | null = null;
-  /** Bumped by each clear: a list requested before it is out of date. */
-  private epoch = 0;
-  private listen() {
-    return Promise.all([
-      on<P>("prices:price", (p) => this.put([p])),
-      on<P[]>("prices:bulk", (l) => this.put(l)), // weekly averages preloaded by the game
-      on("prices:cleared", () => {
-        this.epoch++;
-        this.map.clear();
-        this.emit({ kind: "clear" });
-      }),
-    ]);
-  }
-
-  private put(l: P[]) {
-    for (const p of l) this.map.set(p.gid, p);
-    if (l.length) this.emit({ kind: "put", prices: l });
-  }
-  private emit(c: PriceChange<P>) {
-    for (const f of this.subs) f(c);
-  }
-
-  /** Be told about every change (the Prices tab updates only the groups that changed). Returns the unsubscribe function. */
-  subscribe(f: (c: PriceChange<P>) => void) {
-    this.subs.add(f);
-    return () => void this.subs.delete(f);
+class PriceStore<P extends StoredPrice = StoredPrice> extends SyncedMap<number, P> {
+  constructor() {
+    // a price event received while the list loads is newer: the listed one is dropped (default `fromList`)
+    super({ list: ["prices", "list"], key: (p) => p.gid, put: ["prices:price"], bulk: ["prices:bulk"], cleared: "prices:cleared" });
   }
 
   /** The price used for an item and its source (see `effectivePrice`). */

@@ -5,8 +5,9 @@
   import Grip from "../../lib/components/Grip.svelte";
   import PanelHead from "../../lib/components/PanelHead.svelte";
   import { Columns } from "../../lib/columns.svelte";
-  import { call } from "../../lib/api";
-  import { ago, kamas, kamasFull, pct, signedKamas } from "../../lib/fmt";
+  import { call, cached } from "../../lib/api";
+  import { readJSON, writeJSON } from "../../lib/persist.svelte";
+  import { ago, kamas, kamasFull, pct, signedKamas, runeShort } from "../../lib/fmt";
   import { auction } from "../../lib/stores/auction.svelte";
   import { prices } from "../../lib/stores/prices.svelte";
   import Collapsible from "../../lib/components/Collapsible.svelte";
@@ -30,16 +31,16 @@
   import { FLAG_EFFECTS, rangeLabel, sections, type EffectMeta } from "../../lib/effects";
   import { iconOfStat } from "../../lib/stores/statIcons.svelte";
   import { benefit, craftCost, type CraftLine, type Recipes } from "../../lib/craft";
-  import { AH_TAX, isTranscended, targetKey, transcendance, type Rune, type Target } from "../../lib/transcend";
-  import { byUnitPrice, lotKeys, unitPrice } from "../../lib/price";
+  import { isTranscended, targetKey, transcendance, type Rune, type Target } from "../../lib/transcend";
+  import { byUnitPrice, lotKeys, unitPrice, AH_TAX } from "../../lib/price";
 
   interface Filter { a: number; min: string | number; max: string | number }
 
   const cols = new Columns("karrelage.cols.items", { list: 280, filter: 470 }); // resizable: list | listing (flexible) | filter
   const items = auction.items; // shared store: every scanned listing, kept up to date for the whole session
   const SEL_KEY = "karrelage.auction.sel"; // the open item is restored when the tab is opened again
-  let selGid = $state<number | null>((() => { try { return JSON.parse(localStorage.getItem(SEL_KEY) ?? "null"); } catch { return null; } })());
-  $effect(() => { try { localStorage.setItem(SEL_KEY, JSON.stringify(selGid)); } catch {} });
+  let selGid = $state<number | null>(readJSON<number | null>(SEL_KEY, null));
+  $effect(() => writeJSON(SEL_KEY, selGid));
   let picker = $state.raw<EffectMeta[]>([]); // effects found on level 150-200 equipment (what the picker offers)
   const iconOf = (a: number) => iconOfStat(meta[a]?.stat); // Dofusbook stat icons (shared store)
   let meta = $state.raw<Record<number, EffectMeta>>({}); // every labelled effect (labels/groups of whatever shows up in a lot)
@@ -76,15 +77,10 @@
   const list = $derived([...items.values()].sort((a, b) => b.updated - a.updated));
   /** Left panel: items grouped by type, each group collapsible (collapsed groups are remembered). */
   const COLLAPSE_KEY = "karrelage.collapsedTypes";
-  const collapsed = new SvelteSet<string>();
-  try {
-    JSON.parse(localStorage.getItem(COLLAPSE_KEY) ?? "[]").forEach((t: string) => collapsed.add(t));
-  } catch {}
+  const collapsed = new SvelteSet<string>(readJSON<string[]>(COLLAPSE_KEY, []));
   function toggleType(t: string) {
     collapsed.has(t) ? collapsed.delete(t) : collapsed.add(t);
-    try {
-      localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...collapsed]));
-    } catch {}
+    writeJSON(COLLAPSE_KEY, [...collapsed]);
   }
   let search = $state(""); // left list: filter by item or type name
   const typeGroups = $derived.by(() => {
@@ -339,20 +335,14 @@
     effects: (r.effects ?? []).map(({ action, text, status, hi, range, group, order, density, stat, known }: any) => ({ action, text, status, hi, range, group, order, density, stat, known })),
   });
   const loadSaved = (): Saved[] => {
-    try {
-      const l: Saved[] = JSON.parse(localStorage.getItem(SAVED_KEY) ?? "[]").map((s: Saved) => ({ ...s, row: lotSummary(s.row) })); // older entries kept the full row
-      if (l.length) localStorage.setItem(SAVED_KEY, JSON.stringify(l));
-      return l;
-    } catch {
-      return [];
-    }
+    const l = readJSON<Saved[]>(SAVED_KEY, []).map((s) => ({ ...s, row: lotSummary(s.row) })); // older entries kept the full row
+    if (l.length) writeJSON(SAVED_KEY, l);
+    return l;
   };
   let saved = $state.raw<Saved[]>(loadSaved());
   const persistSaved = (l: Saved[]) => {
     saved = l;
-    try {
-      localStorage.setItem(SAVED_KEY, JSON.stringify(l));
-    } catch {}
+    writeJSON(SAVED_KEY, l);
   };
   const candKey = (o: any) => `${item.gid}:${keyOf(o.row)}`;
   const isSaved = (o: any) => saved.some((s) => s.key === candKey(o));
@@ -373,7 +363,6 @@
   /** Only computed when read (deriveds are lazy): the Transcendance tab, the deals' "similar item" hint, and the tab count when some lot is transcended. */
   const trans = $derived(transcendance(comp ? [] : rows, runes, stored, focus));
   const transCount = $derived(!comp && rows.some(isTranscended) ? trans.opportunities.length : 0);
-  const runeName = (n: string) => n;
   /** Table view: the good deals (green lines). */
   const goodKeys = $derived(new Set<string>(fit ? points.filter((_: any, i: number) => isGoodDeal(fit!, i, points.length)).map((p: any) => p.id) : []));
 
@@ -436,12 +425,12 @@
   onMount(() => {
     let alive = true;
     const live = <T,>(f: (v: T) => void) => (v: T) => void (alive && f(v)); // answers after the tab closed are dropped
-    call<EffectMeta[]>("auction", "effects").then(live((e) => (picker = e)));
-    call<EffectMeta[]>("auction", "effect_meta").then(live((l) => (meta = Object.fromEntries(l.map((e) => [e.id, e])))));
-    call<Recipes>("auction", "recipes").then(live((r) => (recipes = r)));
+    cached<EffectMeta[]>("auction", "effects").then(live((e) => (picker = e))).catch(() => {});
+    cached<EffectMeta[]>("auction", "effect_meta").then(live((l) => (meta = Object.fromEntries(l.map((e) => [e.id, e]))))).catch(() => {});
+    cached<Recipes>("auction", "recipes").then(live((r) => (recipes = r))).catch(() => {});
     neuroneGids().then(live((m) => (neurGids = m))).catch(() => {});
     foodGids().then(live((m) => (foodIds = m))).catch(() => {});
-    call<Rune[]>("prices", "runes").then(live((l) => (runes = l)));
+    cached<Rune[]>("prices", "runes").then(live((l) => (runes = l))).catch(() => {});
     void prices.ensure();
     // the shared stores never let an older snapshot replace a newer scan / price (see lib/stores)
     auction.ensure().then(live(() => {
@@ -452,8 +441,10 @@
     }));
     const off = auction.subscribe((c) => {
       if (c.kind === "clear") selGid = null;
-      else if (c.live) void showNew(c.item);
-      else if (selGid === null) selGid = c.item.gid;
+      else for (const item of c.values) {
+        if (c.live) void showNew(item);
+        else if (selGid === null) selGid = item.gid;
+      }
     });
     return () => {
       alive = false;
@@ -545,7 +536,7 @@
           {#snippet svProfit(sv: Saved)}<b class="ok">+{kamasFull(sv.profit)}</b>{/snippet}
           {#snippet svInvest(sv: Saved)}<span title="Prix du lot + prix de la rune">{kamasFull(sv.buy + sv.runeCost)}</span>{/snippet}
           {#snippet svItem(sv: Saved)}<button class="link" onclick={(ev) => (ev.stopPropagation(), (selGid = sv.gid))}>{sv.itemName}</button>{/snippet}
-          {#snippet svRune(sv: Saved)}+{sv.value} {sv.label} <span class="mut">{sv.rune.replace(/^Rune /, "")}</span>{/snippet}
+          {#snippet svRune(sv: Saved)}+{sv.value} {sv.label} <span class="mut">{runeShort(sv.rune)}</span>{/snippet}
           {#snippet svState(sv: Saved)}
             {@const live = stillListed(sv)}
             {#if live === true}<span class="ok">en vente</span>{:else if live === false}<span class="warn">absent du dernier scan</span>{:else}<span class="mut">pas rescanné</span>{/if}
@@ -586,7 +577,7 @@
                   <td><b>+{t.value} {effLabel(t.a)}</b></td>
                   <td class="n">{t.lots}</td>
                   <td class="n">{kamasFull(t.sale)}</td>
-                  <td>{#if t.rune}{runeName(t.rune.name)}{:else}<span class="warn">aucune rune correspondante</span>{/if}</td>
+                  <td>{#if t.rune}{t.rune.name}{:else}<span class="warn">aucune rune correspondante</span>{/if}</td>
                   <td class="n">
                     {#if t.rune && t.runeCost == null}<span class="warn" title="Ouvrez la rune à l'hôtel de vente">prix inconnu</span>
                     {:else if t.runeCost != null}{kamasFull(t.runeCost)}
@@ -603,7 +594,7 @@
             {#snippet oInvest(o: any)}<span title="Prix du lot + prix de la rune">{kamasFull(o.buy + (o.best.target.runeCost ?? 0))}</span>{/snippet}
             {#snippet oRune(o: any)}
               {@const t = o.best.target}
-              +{t.value} {effLabel(t.a)} <span class="mut">{(t.rune?.name ?? "").replace(/^Rune /, "")}</span>
+              +{t.value} {effLabel(t.a)} <span class="mut">{runeShort(t.rune?.name) ?? ""}</span>
               {#if t.avgOnly}<span class="warn" title="Prix moyen sur 7 jours, jamais relevé à l'hôtel de vente"> ⚠</span>{:else if t.stale}<span class="warn" title="Prix de la rune vieux de plus d'un jour"> ⚠</span>{/if}
             {/snippet}
             {#snippet oSale(o: any)}~{kamasFull(o.best.target.sale)}{/snippet}

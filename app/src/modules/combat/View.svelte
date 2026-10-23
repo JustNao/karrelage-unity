@@ -1,9 +1,12 @@
 <script lang="ts">
-  import { fight, groups, openCombatOverlay, poisonText, shown, type Group, type Notes } from "../../lib/stores/combat.svelte";
+  import { fight, NOTE_KINDS, openCombatOverlay, poisonText, shown, sortedGroups, type Group } from "../../lib/stores/combat.svelte";
   import { settings, type CombatShow } from "../../lib/stores/settings.svelte";
+  import Segmented from "../../lib/components/Segmented.svelte";
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
+  import Switch from "../../lib/components/Switch.svelte";
   import { call } from "../../lib/api";
   import { tagsOf } from "../../lib/monsterTags";
+  import { fmtTime } from "../../lib/fmt";
 
   /** Combat: the monsters of the current fight (detected from the fight packets, lib/stores/combat.svelte.ts) with the notes
    *  kept for them: warnings, invulnerabilities, tips (how many kinds are shown = `settings.combat.show`), and their DofusDB
@@ -13,27 +16,8 @@
     { id: "invulnerable", label: "+ Invulnérabilités" },
     { id: "all", label: "+ Conseils" },
   ];
-  const KIND: Record<keyof Notes, { icon: string; title: string }> = {
-    warning: { icon: "⚠", title: "Avertissement" },
-    invulnerable: { icon: "🛡", title: "Invulnérabilité" },
-    tips: { icon: "💡", title: "Conseil" },
-  };
-
-  const all = $derived(groups(fight.fighters, settings.combat.show));
+  const cards = $derived(sortedGroups(fight.fighters, settings.combat.show));
   const notesOf = (g: Group) => shown(g.notes, settings.combat.show);
-  // dead last, then summons; warnings first, then monsters with notes, then by name
-  const cards = $derived(
-    [...all].sort(
-      (a, b) =>
-        Number(!a.alive) - Number(!b.alive) ||
-        Number(a.summoned) - Number(b.summoned) ||
-        (b.notes?.warning?.length ?? 0) - (a.notes?.warning?.length ?? 0) ||
-        Number(notesOf(b).length > 0) - Number(notesOf(a).length > 0) ||
-        a.name.localeCompare(b.name),
-    ),
-  );
-
-  const time = (t: number) => new Date(t * 1000).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
 </script>
 
 {#snippet title(g: Group)}
@@ -45,12 +29,8 @@
 
 <div class="view">
   <div class="bar">
-    <button class="sw" class:on={settings.combat.enabled} role="switch" aria-checked={settings.combat.enabled} aria-label="Suivre les combats" title="Suivre les monstres des combats" onclick={() => (settings.combat.enabled = !settings.combat.enabled)}></button>
-    <div class="seg" role="radiogroup" aria-label="Informations affichées" class:off={!settings.combat.enabled}>
-      {#each SHOW as s (s.id)}
-        <button role="radio" aria-checked={settings.combat.show === s.id} class:on={settings.combat.show === s.id} onclick={() => (settings.combat.show = s.id)}>{s.label}</button>
-      {/each}
-    </div>
+    <Switch bind:checked={settings.combat.enabled} label="Suivre les combats" title="Suivre les monstres des combats" />
+    <Segmented bind:value={settings.combat.show} options={SHOW} label="Informations affichées" disabled={!settings.combat.enabled} />
     <label class="mut chk" title="Afficher cet onglet dès qu'un combat commence">
       <input type="checkbox" bind:checked={settings.combat.autoOpen} /> Ouvrir au début d'un combat
     </label>
@@ -62,9 +42,9 @@
       {#if !settings.combat.enabled}
         <span class="mut">Désactivé</span>
       {:else if fight.active}
-        <span class="dot"></span> Combat en cours <span class="mut">depuis {time(fight.started)}</span>
+        <span class="dot"></span> Combat en cours <span class="mut">depuis {fmtTime(fight.started)}</span>
       {:else if fight.seen}
-        <span class="mut">Dernier combat, terminé à {time(fight.ended ?? fight.started)}</span>
+        <span class="mut">Dernier combat, terminé à {fmtTime(fight.ended ?? fight.started)}</span>
         <button class="mini" onclick={() => call("combat", "clear")} title="Effacer le dernier combat">Effacer</button>
       {:else}
         <span class="mut">En attente d'un combat</span>
@@ -102,7 +82,7 @@
               {/if}
               {#each notes as [kind, lines] (kind)}
                 <div class="note {kind}">
-                  <span class="ic" title={KIND[kind].title}>{KIND[kind].icon}</span>
+                  <span class="ic" title={NOTE_KINDS[kind].title}>{NOTE_KINDS[kind].icon}</span>
                   <ul>
                     {#each lines as l, i (i)}<li>{l}</li>{/each}
                   </ul>
@@ -126,16 +106,8 @@
   .chk { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; }
   .chk input { margin: 0; }
   .pop { font-size: 12px; padding: 3px 9px; }
-  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
-  .seg button { border: 0; border-radius: 0; background: none; color: var(--mut); padding: 4px 10px; font-size: 12px; }
-  .seg button + button { border-left: 1px solid var(--line); }
-  .seg button.on { background: var(--panel); color: var(--fg); font-weight: 600; }
-  .seg.off, .body.off { opacity: 0.5; }
+  .body.off { opacity: 0.5; }
   .body { padding: 0 16px 16px; }
-  .sw { position: relative; width: 44px; height: 24px; padding: 0; background: var(--line); border-radius: 12px; transition: 0.15s; flex: none; border: 0; }
-  .sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: 0.15s; }
-  .sw.on { background: var(--ok); }
-  .sw.on::after { left: 23px; }
   .empty { max-width: 640px; }
   .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; align-items: start; }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }

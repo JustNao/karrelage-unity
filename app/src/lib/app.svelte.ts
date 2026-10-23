@@ -1,34 +1,22 @@
 import { getStatus, on, type Status } from "./api";
-
-function persisted(key: string, fallback: boolean) {
-  try {
-    const v = localStorage.getItem(key);
-    return v === null ? fallback : v === "1";
-  } catch {
-    return fallback;
-  }
-}
+import { readFlag, writeFlag } from "./persist.svelte";
 
 /** App-wide reactive state shared by the shell and modules. */
 class AppState {
   status = $state<Status>({ ready: false, log: [] });
-  dev = $state(persisted("karrelage.dev", false));
+  dev = $state(readFlag("karrelage.dev", false));
 
   setDev(v: boolean) {
     this.dev = v;
-    try {
-      localStorage.setItem("karrelage.dev", v ? "1" : "0");
-    } catch {}
+    writeFlag("karrelage.dev", v);
   }
 
   /** Capture state the user left (restored at the next start, see App.svelte). */
-  capture = $state(persisted("karrelage.capture", false));
+  capture = $state(readFlag("karrelage.capture", false));
 
   setCapture(v: boolean) {
     this.capture = v;
-    try {
-      localStorage.setItem("karrelage.capture", v ? "1" : "0");
-    } catch {}
+    writeFlag("karrelage.capture", v);
   }
 
   /** Open tab (module id); null = the first one shown. */

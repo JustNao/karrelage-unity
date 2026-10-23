@@ -1,6 +1,6 @@
 /** Familiar / mount levelling: the resources that give xp (dofustool.com table + croquette enrichie) and the cheapest way to feed a given xp. */
 import { call } from "./api";
-import { storedPrice } from "./craft";
+import { priceOf } from "./price";
 import { xpOfLevel } from "./companion";
 import type { StoredPrice } from "./transcend";
 import table from "../modules/crafting/subs/familiers/familiar_xp.json";
@@ -37,7 +37,7 @@ export interface FeedPlan { cost: number; xp: number; feeds: Feed[] }
 export function feeder(gids: Record<string, number>, prices: Map<number, StoredPrice>) {
   const foods = FOODS.flatMap((f) => {
     const g = gids[f.name];
-    const unit = g != null ? storedPrice(prices, g) : null;
+    const unit = g != null ? priceOf(prices, g) : null;
     return unit != null ? [{ ...f, meal: unit * f.qty }] : [];
   }).sort((a, b) => a.meal / a.xp - b.meal / b.xp);
   const top = foods.slice(0, 40); // the bulk food is always among the best per xp

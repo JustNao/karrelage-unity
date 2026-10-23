@@ -2,6 +2,7 @@
   import { RULE_DEFAULTS, RULE_TITLES, rules, type RuleBase } from "../../lib/stores/automation.svelte";
   import { playSound, SOUNDS } from "../../lib/sounds";
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
+  import Switch from "../../lib/components/Switch.svelte";
   import { kamasFull } from "../../lib/fmt";
 
   /** Automation: rules checked on every scan (lib/automation.ts), one section per tab, like Paramètres. A triggered rule
@@ -36,7 +37,7 @@
         <h2>HDV</h2>
         <div class="rule" class:off={!rules.exoDo.enabled}>
           <div class="rh">
-            <button class="sw" class:on={rules.exoDo.enabled} role="switch" aria-checked={rules.exoDo.enabled} aria-label="Activer la règle" onclick={() => (rules.exoDo.enabled = !rules.exoDo.enabled)}></button>
+            <Switch bind:checked={rules.exoDo.enabled} label="Activer la règle" />
             <div class="lb">
               <div><b>{RULE_TITLES.exoDo}</b></div>
               <div class="mut">
@@ -82,8 +83,4 @@
   .snd { display: inline-flex; align-items: center; gap: 6px; }
   .snd input[type="range"] { width: 110px; }
   .vol { min-width: 38px; }
-  .sw { position: relative; width: 44px; height: 24px; padding: 0; background: var(--line); border-radius: 12px; transition: 0.15s; flex: none; border: 0; }
-  .sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: 0.15s; }
-  .sw.on { background: var(--ok); }
-  .sw.on::after { left: 23px; }
 </style>

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { SvelteMap, SvelteSet } from "svelte/reactivity";
-  import { call } from "../../lib/api";
+  import { call, cached } from "../../lib/api";
   import { kamas } from "../../lib/fmt";
   import { auction } from "../../lib/stores/auction.svelte";
   import { prices } from "../../lib/stores/prices.svelte";
@@ -10,17 +10,18 @@
   import Grip from "../../lib/components/Grip.svelte";
   import ProgressBar from "../../lib/components/ProgressBar.svelte";
   import SideList from "../../lib/components/SideList.svelte";
-  import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
   import { Columns } from "../../lib/columns.svelte";
-  import { SCAN_LIST_KEY, type ScanItem } from "../../lib/scanlist";
+  import { openScanList, type ScanItem } from "../../lib/scanlist";
+  import { readJSON, writeJSON } from "../../lib/persist.svelte";
   import type { Recipes } from "../../lib/craft";
   import ItemCard from "../../lib/components/ItemCard.svelte";
   import LotTable from "../../lib/components/LotTable.svelte";
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
   import {
-    CARAC, FM_STATS, className, FRESH_SECS, HP_STAT, PANELS, SLOT_LAYOUT, SLOT_TITLES, STAT_ICON_CODES, STAT_LABEL, compute, fmOf, itemStats, lotStats, lotUnit, slotPrices, solve, sumSlots,
+    CARAC, FM_STATS, className, FRESH_SECS, HP_STAT, PANELS, SLOT_LAYOUT, SLOT_TITLES, STAT_ICON_CODES, STAT_LABEL, compute, fmOf, itemStats, lotStats, slotPrices, solve, sumSlots,
     type Build, type Info, type Lot, type Resolved, type SolveResult, type StatRow,
   } from "../../lib/stuff";
+  import { unitPriceOrNull } from "../../lib/price";
 
   const cols = new Columns("karrelage.cols.stuff", { left: 230 });
 
@@ -91,12 +92,6 @@
 
   /** Items of the build not scanned in the last hour (red border), one entry per item. */
   const toScan = $derived([...new Map(slotIds.filter((s) => !ignored.has(s) && !fresh(s)).map((s) => [build!.slots[s].gid, { gid: build!.slots[s].gid, name: build!.slots[s].name, group: s === "fa" || s === "mo" ? "companion" : "equip" } as ScanItem])).values()]);
-  async function openScanList() {
-    try { localStorage.setItem(SCAN_LIST_KEY, JSON.stringify(toScan)); } catch {}
-    const open = await WebviewWindow.getByLabel("scanlist");
-    if (open) { await open.setFocus(); return; } // it picks the new list up through the storage event
-    new WebviewWindow("scanlist", { url: "scanlist.html", title: "À scanner", width: 280, height: 380, decorations: false, transparent: true, shadow: false, alwaysOnTop: true, skipTaskbar: true, resizable: false });
-  }
   const caracCode = (stat: number) => CARAC.find(([, st]) => st === stat)?.[0];
   const icon = (kind: "item" | "stat", key: string | number) => icons.get(`${kind}:${key}`);
   const val = (c: typeof real, s: number) => c?.totals.get(s) ?? 0;
@@ -230,13 +225,12 @@
   const AUTOFILL_KEY = "karrelage.stuff.autofilled";
   $effect(() => {
     if (!build || !max || !slotIds.every((s) => info.items[build!.slots[s].gid])) return; // data of the items not loaded yet
-    let done: string[] = [];
-    try { done = JSON.parse(localStorage.getItem(AUTOFILL_KEY) ?? "[]"); } catch {}
+    const done = readJSON<string[]>(AUTOFILL_KEY, []);
     if (done.includes(build.id)) return;
     const targets = { ...build.targets };
     for (const s of AUTOFILL) if (targets[s] == null && (max.totals.get(s) ?? 0) > 0) targets[s] = max.totals.get(s)!;
     patch({ targets });
-    try { localStorage.setItem(AUTOFILL_KEY, JSON.stringify([...done, build.id])); } catch {}
+    writeJSON(AUTOFILL_KEY, [...done, build.id]);
   });
   const setTarget = (stat: number, v: string) => {
     const t = { ...build!.targets };
@@ -281,7 +275,7 @@
     slotIds.flatMap((s) => {
       if (ignored.has(s)) return []; // owned: own copy or perfect roll, not a lot of the output
       const lot = map[s] != null ? lotsOf(s).find((l) => l.uid === map[s]) : null;
-      return lot ? [{ slot: s, name: build!.slots[s].name, picture: build!.slots[s].picture, price: lotUnit(lot)!, lot }] : [];
+      return lot ? [{ slot: s, name: build!.slots[s].name, picture: build!.slots[s].picture, price: unitPriceOrNull(lot)!, lot }] : [];
     });
   /** The lots of the combination found, else the lots chosen in the build. */
   const tableRows = $derived(build ? rowsOf(result && result !== "none" ? result.picks : build.chosen) : []);
@@ -293,7 +287,7 @@
     const tick = setInterval(() => (now = Date.now() / 1000), 15000);
     let alive = true;
     call<Build[]>("stuff", "list").then((l) => { if (!alive) return; builds = l; if (l[0]) select(l[0].id); });
-    call<Recipes>("auction", "recipes").then((r) => (recipes = r));
+    cached<Recipes>("auction", "recipes").then((r) => (recipes = r)).catch((e) => (err = String(e)));
     void auction.ensure();
     void prices.ensure();
     void inventory.ensure();
@@ -335,7 +329,7 @@
     {@const mine = ownLot(id)}
     <div class="slot" data-slot={id} class:fresh={!owned.has(id) && fresh(id)} class:stale={!owned.has(id) && !fresh(id)} class:own={owned.has(id)} class:mine={!!mine} class:ign={ignored.has(id)}>
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-      <div class="ic" title="{sl.name} — {SLOT_TITLES[id]}{mine ? ' (mon objet)' : owned.has(id) ? ' (jet parfait)' : lot ? ` (lot à ${kamas(lotUnit(lot)!)})` : ''}" onclick={(e) => openPop(id, e.currentTarget)}>
+      <div class="ic" title="{sl.name} — {SLOT_TITLES[id]}{mine ? ' (mon objet)' : owned.has(id) ? ' (jet parfait)' : lot ? ` (lot à ${kamas(unitPriceOrNull(lot)!)})` : ''}" onclick={(e) => openPop(id, e.currentTarget)}>
         {#if icon("item", sl.picture)}<img src={icon("item", sl.picture)} alt={sl.name} />{:else}<span class="mut">{SLOT_TITLES[id]}</span>{/if}
       </div>
       {#if copies.length}<span class="inv" title="Dans l'inventaire du personnage ({copies.some((c) => c.equipped) ? 'équipé' : 'sac'}{copies.length > 1 ? `, ${copies.length} exemplaires` : ''})"></span>{/if}
@@ -378,7 +372,7 @@
         <div class="ttl"><b>{build.name}</b> <span class="mut">niv. {build.level}</span>
           <button class="ghost" title="Recharger depuis Dofusbook" onclick={() => refresh(build!)}>↻</button>
           <a class="mut" href={build.url} target="_blank" rel="noreferrer">Dofusbook</a>
-          <button class="scan" onclick={openScanList} disabled={!toScan.length} title="Ouvre une petite fenêtre flottante avec les objets à scanner à l'HDV">À scanner ({toScan.length})</button></div>
+          <button class="scan" onclick={() => openScanList(toScan)} disabled={!toScan.length} title="Ouvre une petite fenêtre flottante avec les objets à scanner à l'HDV">À scanner ({toScan.length})</button></div>
       </div>
 
       <SmoothScroll>

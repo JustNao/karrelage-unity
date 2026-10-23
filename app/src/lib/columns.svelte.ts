@@ -1,3 +1,5 @@
+import { readJSON, writeJSON } from "./persist.svelte";
+
 /**
  * Resizable columns, the default layout for tabs with side-by-side panels: a grid whose panels are separated by thin
  * draggable grips. Widths are in px, remembered between sessions; the flexible column (1fr) takes what is left.
@@ -22,9 +24,7 @@ export class Columns<K extends string> {
 
   toggle(name: K) {
     this.collapsed[name] = !this.collapsed[name];
-    try {
-      localStorage.setItem(this.key + ".collapsed", JSON.stringify(this.collapsed));
-    } catch {}
+    writeJSON(this.key + ".collapsed", this.collapsed);
   }
 
   constructor(
@@ -33,11 +33,8 @@ export class Columns<K extends string> {
     private min = 100,
     private max = 900,
   ) {
-    this.w = { ...defaults };
-    try {
-      Object.assign(this.w, JSON.parse(localStorage.getItem(key) ?? "{}"));
-      Object.assign(this.collapsed, JSON.parse(localStorage.getItem(key + ".collapsed") ?? "{}"));
-    } catch {}
+    this.w = { ...defaults, ...readJSON(key, {}) };
+    Object.assign(this.collapsed, readJSON(key + ".collapsed", {}));
   }
 
   drag(name: K, dir: 1 | -1, e: PointerEvent) {
@@ -50,9 +47,7 @@ export class Columns<K extends string> {
       this.dragging = false;
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
-      try {
-        localStorage.setItem(this.key, JSON.stringify(this.w));
-      } catch {}
+      writeJSON(this.key, this.w);
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);

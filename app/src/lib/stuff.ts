@@ -93,7 +93,6 @@ const countable = (group: string | null | undefined) => !!group && group !== "we
 
 /** Lot of the auction store (see crates/modules/src/auction.rs). */
 export interface Lot { uid: number; gid: number; prices: { qty: number; price: number }[]; effects: any[] }
-export const lotUnit = (lot: Lot): number | null => unitPriceOrNull(lot);
 
 /** Pseudo-stat ids (EXO_BASE + stat) holding the part of a lot's stat that is an exo (effect added on the item, or forged over its base maximum): the build's forgemagie
  *  (e.g. +1 PA / +1 PM) is then looked for on the items themselves. */
@@ -187,9 +186,9 @@ export function slotPrices(gid: number, lots: Lot[], chosenUid: number | null | 
   const uncraftable = !recipes.recipes[gid];
   const stored = uncraftable ? effectivePrice(prices.get(gid)) : null;
   const bought = stored?.value ?? null;
-  const units = lots.map(lotUnit).filter((x): x is number => x != null);
+  const units = lots.map(unitPriceOrNull).filter((x): x is number => x != null);
   const ch = chosenUid != null ? lots.find((l) => l.uid === chosenUid) : null;
-  return { craft: uncraftable ? bought : c?.cost ?? null, estimated: stored?.source === "moyenne", first: units.length ? Math.min(...units) : null, chosen: ch ? lotUnit(ch) : null, missing: c?.missing ?? [], scanned: lots.length > 0 };
+  return { craft: uncraftable ? bought : c?.cost ?? null, estimated: stored?.source === "moyenne", first: units.length ? Math.min(...units) : null, chosen: ch ? unitPriceOrNull(ch) : null, missing: c?.missing ?? [], scanned: lots.length > 0 };
 }
 
 export interface Totalled { total: number; priced: number; missingSlots: string[] }
@@ -240,10 +239,10 @@ export function solve(b: Build, info: Info, lotsOf: (slot: string) => Lot[], tar
   };
   for (const slot of slots) {
     const gid = b.slots[slot].gid;
-    const lots = lotsOf(slot).filter((l) => lotUnit(l) != null);
+    const lots = lotsOf(slot).filter((l) => unitPriceOrNull(l) != null);
     if (ignored.has(slot) || !lots.length) { resolveFixed(slot); continue; }
     // dominance inside one item: same set membership, so a lot that is dearer and no better on the targeted stats can go
-    let cands: Cand[] = lots.map((l) => ({ slot, gid: l.gid ?? gid, uid: l.uid, price: lotUnit(l)!, stats: lotStats(l) }));
+    let cands: Cand[] = lots.map((l) => ({ slot, gid: l.gid ?? gid, uid: l.uid, price: unitPriceOrNull(l)!, stats: lotStats(l) }));
     cands.sort((x, y) => x.price - y.price);
     const kept: Cand[] = [];
     for (const c of cands) if (!kept.some((k) => k.gid === c.gid && stats.every((s) => (k.stats.get(s) ?? 0) >= (c.stats.get(s) ?? 0)))) kept.push(c);

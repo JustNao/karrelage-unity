@@ -1,6 +1,7 @@
 <script lang="ts">
   import { SETTING_DEFAULTS, settings, type CombatShow } from "../../lib/stores/settings.svelte";
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
+  import Switch from "../../lib/components/Switch.svelte";
 
   /** Paramètres: one section per tab (general UI settings will come first). Values live in lib/stores/settings.svelte.ts. */
   const clampZ = (v: number) => (Number.isFinite(v) ? Math.min(5, Math.max(0.5, Math.round(v * 10) / 10)) : SETTING_DEFAULTS.hdv.goodZ);
@@ -41,7 +42,7 @@
             <div class="mut">Détecte les monstres du combat en cours (paquets du placement et des tours) et affiche leurs remarques dans l'onglet Combat.</div>
           </div>
           <div class="ctl">
-            <button class="sw" class:on={settings.combat.enabled} role="switch" aria-checked={settings.combat.enabled} aria-label="Suivre les combats" onclick={() => (settings.combat.enabled = !settings.combat.enabled)}></button>
+            <Switch bind:checked={settings.combat.enabled} label="Suivre les combats" />
           </div>
         </div>
         <div class="row">
@@ -73,7 +74,7 @@
             </div>
           </div>
           <div class="ctl">
-            <button class="sw" class:on={settings.combat.overlay} role="switch" aria-checked={settings.combat.overlay} aria-label="Fenêtre flottante pendant les combats" onclick={() => (settings.combat.overlay = !settings.combat.overlay)}></button>
+            <Switch bind:checked={settings.combat.overlay} label="Fenêtre flottante pendant les combats" />
           </div>
         </div>
       </section>
@@ -91,8 +92,4 @@
   .lb .mut { font-size: 12px; margin-top: 2px; }
   .ctl { display: flex; gap: 6px; align-items: center; flex: none; }
   .ctl input[type="number"] { width: 64px; }
-  .sw { position: relative; width: 44px; height: 24px; padding: 0; background: var(--line); border-radius: 12px; transition: 0.15s; flex: none; border: 0; }
-  .sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: 0.15s; }
-  .sw.on { background: var(--ok); }
-  .sw.on::after { left: 23px; }
 </style>

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { call } from "../../../../lib/api";
+  import { call, cached } from "../../../../lib/api";
+  import { readFlag, writeFlag } from "../../../../lib/persist.svelte";
   import { benefit, craftCost, type Recipes } from "../../../../lib/craft";
   import { prices } from "../../../../lib/stores/prices.svelte";
   import { kamas, pct, signedKamas } from "../../../../lib/fmt";
@@ -21,15 +22,8 @@
   let onlyPriced = $state(false);
   // transcendance runes (type 211) shown or not, remembered
   const TRANSCEND_KEY = "karrelage.crafting.runes.transcend";
-  let showTranscend = $state(true);
-  try {
-    showTranscend = localStorage.getItem(TRANSCEND_KEY) !== "0";
-  } catch {}
-  $effect(() => {
-    try {
-      localStorage.setItem(TRANSCEND_KEY, showTranscend ? "1" : "0");
-    } catch {}
-  });
+  let showTranscend = $state(readFlag(TRANSCEND_KEY, true));
+  $effect(() => writeFlag(TRANSCEND_KEY, showTranscend));
   const sort = useSort<SortKey>("pct", true, (k) => k !== "name");
 
   const rows = $derived.by<Row[]>(() =>
@@ -69,8 +63,8 @@
   ];
 
   onMount(() => {
-    call<{ gid: number; name: string; effect: string | null; transcend: boolean }[]>("prices", "craft_runes").then((l) => (list = l)).catch((e) => (err = String(e)));
-    call<Recipes>("auction", "recipes").then((r) => (recipes = r));
+    cached<{ gid: number; name: string; effect: string | null; transcend: boolean }[]>("prices", "craft_runes").then((l) => (list = l)).catch((e) => (err = String(e)));
+    cached<Recipes>("auction", "recipes").then((r) => (recipes = r)).catch((e) => (err = String(e)));
     void prices.ensure();
   });
 </script>

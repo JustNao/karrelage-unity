@@ -56,6 +56,11 @@ export function lotKeys(rows: any[]): Map<any, string> {
   return m;
 }
 
+/** Sale tax taken by the auction house on the selling price. */
+export const AH_TAX = 0.02;
+/** What the seller gets for a sale at `price`. */
+export const afterTax = (price: number) => price * (1 - AH_TAX);
+
 /** A stored price (prices.rs): unit = price read in the auction house, avg = average of the last week (preloaded by the
  *  game), override = manual. */
 export interface StoredPrice { gid: number; unit: number | null; avg?: number | null; override: number | null; updated?: number | null; avg_updated?: number | null }

@@ -1,11 +1,12 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { app } from "./lib/app.svelte";
-  import { call, captureSet, on, quitApp, restartApp } from "./lib/api";
+  import { call, captureSet, listenAll, quitApp, restartApp } from "./lib/api";
   import { modules } from "./lib/registry";
   import Banner from "./lib/components/Banner.svelte";
   import ProgressBar from "./lib/components/ProgressBar.svelte";
   import Notifications from "./lib/components/Notifications.svelte";
+  import Switch from "./lib/components/Switch.svelte";
   import { startAutomation } from "./lib/automation";
   import { startCombat } from "./lib/stores/combat.svelte";
 
@@ -55,27 +56,25 @@
     call<{ available: boolean; version?: string; notes?: string }>("update", "app_check", {}, true)
       .then((r) => r.available && (appUpd = { state: "available", version: r.version ?? "", notes: r.notes ?? "", pct: 0, label: "" }))
       .catch(() => {});
-    const offApp = on<{ phase: string; done?: number; total?: number; message?: string }>("update:app", (p) => {
-      if (p.phase === "error") appUpd = { ...appUpd, state: "error", label: p.message ?? "échec" };
-      else if (p.phase === "ready") appUpd = { ...appUpd, state: "ready", pct: 100 };
-      else {
-        const pct = Math.round(((p.done ?? 0) / Math.max(p.total ?? 1, 1)) * 100);
-        appUpd = { ...appUpd, state: "downloading", pct, label: `Téléchargement ${pct} %` };
-      }
-    });
     call<{ available: boolean }>("update", "check", {}, true)
       .then((r) => r.available && (upd = { state: "available", pct: 0, label: "" }))
       .catch(() => {}); // offline or no GitHub: nothing to show
-    const off = on<{ phase: string; done: number; total: number; message?: string }>("update:progress", (p) => {
-      if (p.phase === "error") upd = { state: "error", pct: 0, label: p.message ?? "échec" };
-      else if (p.phase === "done") upd = { state: "ready", pct: 100, label: "" };
-      else if (p.phase === "download") upd = { state: "installing", pct: Math.round((p.done / Math.max(p.total, 1)) * 80), label: `Téléchargement ${Math.round((p.done / Math.max(p.total, 1)) * 100)} %` };
-      else upd = { state: "installing", pct: 80 + Math.round((p.done / Math.max(p.total, 1)) * 20), label: "Installation…" };
+    return listenAll({
+      "update:app": (p: { phase: string; done?: number; total?: number; message?: string }) => {
+        if (p.phase === "error") appUpd = { ...appUpd, state: "error", label: p.message ?? "échec" };
+        else if (p.phase === "ready") appUpd = { ...appUpd, state: "ready", pct: 100 };
+        else {
+          const pct = Math.round(((p.done ?? 0) / Math.max(p.total ?? 1, 1)) * 100);
+          appUpd = { ...appUpd, state: "downloading", pct, label: `Téléchargement ${pct} %` };
+        }
+      },
+      "update:progress": (p: { phase: string; done: number; total: number; message?: string }) => {
+        if (p.phase === "error") upd = { state: "error", pct: 0, label: p.message ?? "échec" };
+        else if (p.phase === "done") upd = { state: "ready", pct: 100, label: "" };
+        else if (p.phase === "download") upd = { state: "installing", pct: Math.round((p.done / Math.max(p.total, 1)) * 80), label: `Téléchargement ${Math.round((p.done / Math.max(p.total, 1)) * 100)} %` };
+        else upd = { state: "installing", pct: 80 + Math.round((p.done / Math.max(p.total, 1)) * 20), label: "Installation…" };
+      },
     });
-    return () => {
-      void off.then((f) => f());
-      void offApp.then((f) => f());
-    };
   });
 
   // restore the capture state the user left at the last close (once, as soon as the backend is ready)
@@ -108,7 +107,7 @@
         <button class="tab" class:on={active?.id === m.id} onclick={() => (app.tab = m.id)}>{m.title}</button>
       {/each}
     </nav>
-    <button class="sw" class:on={s.on} role="switch" aria-checked={!!s.on} aria-label="Activer la capture" disabled={!s.ready} onclick={toggle}></button>
+    <Switch checked={!!s.on} label="Activer la capture" disabled={!s.ready} onchange={toggle} />
     <span class="state" class:on={s.on}>{s.on ? "ACTIVE" : "INACTIVE"}</span>
     <span class="mut">{s.on ? (s.tracking?.length ? "Connecté à Dofus" : "En attente de Dofus.exe…") : ""}</span>
     <Notifications />
@@ -168,10 +167,6 @@
   nav { display: flex; gap: 2px; }
   .tab { border: 0; background: none; color: var(--mut); padding: 4px 12px; }
   .tab.on { background: var(--bg); color: var(--fg); font-weight: 600; outline: 1px solid var(--line); }
-  .sw { position: relative; width: 44px; height: 24px; padding: 0; background: var(--line); border-radius: 12px; transition: 0.15s; flex: none; border: 0; }
-  .sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: 0.15s; }
-  .sw.on { background: var(--ok); }
-  .sw.on::after { left: 23px; }
   .state { font-weight: 600; color: var(--mut); }
   .state.on { color: var(--ok); }
   .grow { flex: 1; }

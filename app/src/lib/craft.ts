@@ -1,6 +1,5 @@
 /** Craft cost of an item from the stored prices, recursive: an ingredient is bought or crafted, whichever is cheaper. */
-import { priceOf, type StoredPrice } from "./price";
-import { AH_TAX } from "./transcend";
+import { afterTax, priceOf, type StoredPrice } from "./price";
 
 export interface Recipes {
   /** result gid -> [[ingredient gid, quantity], ...] */
@@ -26,8 +25,6 @@ export interface CraftResult {
   missing: string[];
 }
 
-/** Stored price of an item: manual override, then the price read in the auction house, then the weekly average. */
-export const storedPrice = (prices: Map<number, StoredPrice>, gid: number): number | null => priceOf(prices, gid);
 
 export function craftCost(gid: number, r: Recipes, prices: Map<number, StoredPrice>): CraftResult | null {
   if (!r.recipes[gid]) return null;
@@ -45,7 +42,7 @@ export function craftCost(gid: number, r: Recipes, prices: Map<number, StoredPri
   };
 
   const cheapest = (g: number): Best => {
-    const buy = storedPrice(prices, g);
+    const buy = priceOf(prices, g); // manual override, then the price read in the auction house, then the weekly average
     let craft: number | null = null;
     let sub: CraftLine[] | undefined;
     if (r.recipes[g] && !busy.has(g)) {
@@ -75,6 +72,6 @@ export function craftCost(gid: number, r: Recipes, prices: Map<number, StoredPri
 
 /** Profit of selling `sale` (cheapest unit price in the auction house) for a craft costing `cost`, after the AH tax. */
 export function benefit(sale: number, cost: number) {
-  const profit = Math.round(sale * (1 - AH_TAX) - cost);
+  const profit = Math.round(afterTax(sale) - cost);
   return { profit, pct: cost > 0 ? (profit / cost) * 100 : 0 };
 }

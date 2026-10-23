@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
-  import { call, on } from "../../lib/api";
-  import { fmtInt } from "../../lib/fmt";
+  import { call, listenAll } from "../../lib/api";
+  import { fmtDateTime, fmtInt } from "../../lib/fmt";
   import Banner from "../../lib/components/Banner.svelte";
   import ConfirmButton from "../../lib/components/ConfirmButton.svelte";
   import ProgressBar from "../../lib/components/ProgressBar.svelte";
@@ -33,7 +33,6 @@
     uncertain: { label: "À confirmer", cls: "warn" },
     incompatible: { label: "Incompatible", cls: "bad" },
   };
-  const date = (t: number) => new Date(t * 1000).toLocaleString("fr-FR");
   const num = (n: number | null | undefined) => (n == null ? "?" : fmtInt(n));
 
   /** One check at a time: the 3 s poll (and the button) skip while the previous one is still running. */
@@ -100,23 +99,21 @@
   onMount(() => {
     call("names", "set_active", { on: true }).then(refresh);
     const timer = setInterval(refresh, 3000);
-    const offs = [
-      on<string>("names:log", (l) => {
-        if (push(l)) scrollLog();
-      }),
-      on<{ ok: boolean }>("names:done", (d) => {
+    const off = listenAll({
+      "names:log": (l: string) => push(l) && scrollLog(),
+      "names:done": (d: { ok: boolean }) => {
         running = false;
         finished = d.ok;
         if (d.ok && progress) progress = { ...progress, title: "fin" };
         refresh();
-      }),
-    ];
+      },
+    });
     // after the listeners are in place, so no line falls between the snapshot and the live stream
-    Promise.all(offs).then(restore);
+    off.ready.then(restore);
     return () => {
       clearInterval(timer);
-      call("names", "set_active", { on: false });
-      offs.forEach((o) => o.then((f) => f()));
+      call("names", "set_active", { on: false }).catch(() => {});
+      off();
     };
   });
 </script>
@@ -148,7 +145,7 @@
     <div class="cols">
       <section>
         <h3>Pack chargé</h3>
-        <div>Généré le {date(report.pack.generated)}</div>
+        <div>Généré le {fmtDateTime(report.pack.generated)}</div>
         <div>{num(report.pack.messages)} messages · {num(report.pack.named)} nommés</div>
         <div class="mut small">{report.pack.dir}</div>
 

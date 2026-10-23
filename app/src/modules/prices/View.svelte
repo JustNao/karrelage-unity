@@ -74,7 +74,7 @@
 
   onMount(() => {
     // the shared store has the prices; this tab keeps its own grouping, updated with each change
-    const off = prices.subscribe((c) => (c.kind === "clear" ? clearAll() : putAll(c.prices)));
+    const off = prices.subscribe((c) => (c.kind === "clear" ? clearAll() : putAll(c.values)));
     void prices.ensure().then(() => {
       clearAll();
       putAll(prices.map.values());

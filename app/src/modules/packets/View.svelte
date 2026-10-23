@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
-  import { call, on } from "../../lib/api";
-  import { kamas } from "../../lib/fmt";
+  import { call, listenAll } from "../../lib/api";
+  import { readJSON, writeJSON } from "../../lib/persist.svelte";
+  import { fmtSize, kamas } from "../../lib/fmt";
   import { norm } from "../../lib/effects";
   import Grip from "../../lib/components/Grip.svelte";
   import PanelHead from "../../lib/components/PanelHead.svelte";
@@ -42,11 +43,8 @@
   const RMIN = 30;
   let rw = $state(
     (() => {
-      try {
-        const v = JSON.parse(localStorage.getItem(RKEY) ?? "null");
-        if (Array.isArray(v) && v.length === RDEF.length && v.every((x) => typeof x === "number")) return v as number[];
-      } catch {}
-      return [...RDEF];
+      const v = readJSON<unknown>(RKEY, null);
+      return Array.isArray(v) && v.length === RDEF.length && v.every((x) => typeof x === "number") ? (v as number[]) : [...RDEF];
     })(),
   );
   const rowCols = $derived(rw.map((w) => w + "px").join(" ") + " minmax(0, 1fr)");
@@ -57,14 +55,14 @@
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
-      try { localStorage.setItem(RKEY, JSON.stringify(rw)); } catch {}
+      writeJSON(RKEY, rw);
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
   }
   function resetCol(i: number) {
     rw[i] = RDEF[i];
-    try { localStorage.setItem(RKEY, JSON.stringify(rw)); } catch {}
+    writeJSON(RKEY, rw);
   }
 
   /** Export of the selected packet: written to the Downloads folder by the backend, which shows it in the Explorer. */
@@ -83,8 +81,6 @@
   });
 
   const nm = (p: any) => p.name || p.type || "?";
-  /** Payload size: "512 o", "12,3 ko". */
-  const fmtSize = (n: number | undefined) => (n == null ? "" : n < 1024 ? `${n} o` : `${(n / 1024).toFixed(n < 10240 ? 1 : 0).replace(".", ",")} ko`);
   const fmtT = (t: number) => {
     const d = new Date(t * 1000);
     return d.toTimeString().slice(0, 8) + "." + String(d.getMilliseconds()).padStart(3, "0");
@@ -190,15 +186,16 @@
   }
 
   onMount(() => {
-    const offs: Promise<() => void>[] = [on("packets:batch", add)];
+    const off = listenAll({ "packets:batch": add });
     // the backend records all the time (last packets of each type); it streams new ones only while this tab is open
     call("packets", "set_active", { on: true })
       .then(() => call<any[]>("packets", "list"))
-      .then((l) => reset(l));
+      .then((l) => reset(l))
+      .catch(() => {});
     return () => {
       cancelAnimationFrame(frame);
-      call("packets", "set_active", { on: false });
-      offs.forEach((o) => o.then((f) => f()));
+      call("packets", "set_active", { on: false }).catch(() => {});
+      off();
     };
   });
 

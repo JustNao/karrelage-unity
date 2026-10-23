@@ -16,10 +16,12 @@ class InventoryStore {
   /** When the inventory was last sent by the game (login), 0 = never seen. */
   updated = $state(0);
   private ready: Promise<void> | null = null;
+  /** Registered once: a failed list is retried without listening twice. */
+  private listening: Promise<unknown> | null = null;
 
   ensure(): Promise<void> {
     return (this.ready ??= (async () => {
-      await on<Listing>("inventory:changed", (l) => this.set(l));
+      await (this.listening ??= on<Listing>("inventory:changed", (l) => this.set(l)));
       try { this.set(await call<Listing>("inventory", "list")); } catch (e) { this.ready = null; throw e; }
     })());
   }

@@ -5,6 +5,7 @@
  * To add a rule: a default in DEFAULTS (missing keys of older saves fall back to it), its check in lib/automation.ts and a
  * card in the tab. Every rule has `enabled`, `sound` (id from lib/sounds.ts) and `volume` (0-1).
  */
+import { persisted } from "../persist.svelte";
 import { DEFAULT_SOUND } from "../sounds";
 
 const KEY = "karrelage.automation";
@@ -21,25 +22,7 @@ export type RuleId = keyof Rules;
 export const RULE_DEFAULTS: Rules = DEFAULTS;
 export const RULE_TITLES: Record<RuleId, string> = { exoDo: "Exo % dommages à briser" };
 
-function load(): Rules {
-  const out = structuredClone(DEFAULTS);
-  try {
-    const saved = JSON.parse(localStorage.getItem(KEY) ?? "{}");
-    for (const r of Object.keys(out) as RuleId[]) Object.assign(out[r], saved?.[r] ?? {});
-  } catch {}
-  return out;
-}
-
-export const rules = $state<Rules>(load());
-
-$effect.root(() => {
-  $effect(() => {
-    const json = JSON.stringify(rules); // read deeply: every change saves
-    try {
-      localStorage.setItem(KEY, json);
-    } catch {}
-  });
-});
+export const rules = persisted<Rules>(KEY, DEFAULTS, { sections: true });
 
 /** A triggered rule. `gid` + `lot` (lotKeys key) lead to the lot in the HDV tab. */
 export interface Notification { id: number; t: number; rule: RuleId; title: string; detail: string; gid: number; lot: string }

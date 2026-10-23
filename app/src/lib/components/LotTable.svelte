@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import { cubicOut } from "svelte/easing";
-  import { kamasFull } from "../fmt";
+  import { kamasFull, runeShort } from "../fmt";
   import { HIDDEN_EFFECTS, isNegative, perfection } from "../effects";
   import type { Opportunity } from "../transcend";
   import { unitPrice } from "../price";
@@ -154,7 +154,7 @@
       {#if transcend}
         <td class="tr">
           {#if r.locked}<span title="Transcendé">🛡</span>
-          {:else if r.opp}<span class="good" title="Ajouter {r.opp.target.rune?.name ?? 'la rune'} puis revendre (après taxe)">+{kamasFull(r.opp.profit)}</span> <span class="mut">{(r.opp.target.rune?.name ?? "").replace(/^Rune /, "")}</span>{/if}
+          {:else if r.opp}<span class="good" title="Ajouter {r.opp.target.rune?.name ?? 'la rune'} puis revendre (après taxe)">+{kamasFull(r.opp.profit)}</span> <span class="mut">{runeShort(r.opp.target.rune?.name) ?? ""}</span>{/if}
         </td>
       {/if}
       <td class="fx">

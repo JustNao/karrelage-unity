@@ -1,5 +1,5 @@
-import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { call, on } from "../api";
+import { closeFloating, openFloating, savedPos } from "../floating";
 import { app } from "../app.svelte";
 import { settings, type CombatShow } from "./settings.svelte";
 import { TAGS } from "../monsterTags";
@@ -49,15 +49,17 @@ export interface Fight {
 
 export const fight = $state<Fight>({ seen: false, active: false, started: 0, ended: null, fighters: [], poisons: [], me: null });
 
-/** Keep `fight` up to date (main window and the floating window); `onStart` runs when a new fight begins. */
-export async function followFight(onStart?: () => void) {
+/** Keep `fight` up to date (main window and the floating window); `onStart` runs when a new fight begins. Resolves to the
+ *  unsubscribe function. */
+export async function followFight(onStart?: () => void): Promise<() => void> {
   const set = (f: Fight) => {
     const fresh = f.active && !(fight.active && fight.started === f.started);
     Object.assign(fight, f);
     if (fresh) onStart?.();
   };
-  await on<Fight>("combat:fight", set);
+  const off = await on<Fight>("combat:fight", set);
   set(await call<Fight>("combat", "state", {}, true));
+  return off;
 }
 
 let started = false;
@@ -88,27 +90,23 @@ export const OVERLAY_POS_KEY = "karrelage.combat.overlayPos";
 /** The floating fight window (combat.html, src/CombatOverlay.svelte): frameless, transparent, always on top, like the scan list;
  *  its height follows its content. `focus` = false when it opens by itself (the game keeps the focus). */
 export async function openCombatOverlay(focus = true) {
-  const open = await WebviewWindow.getByLabel("combat");
-  if (open) {
-    if (focus) await open.setFocus();
-    return;
-  }
-  let pos: { x: number; y: number; bottom?: number } | null = null;
-  try {
-    pos = JSON.parse(localStorage.getItem(OVERLAY_POS_KEY) ?? "null");
-  } catch {}
+  const pos = savedPos(OVERLAY_POS_KEY);
   const h = 120;
   // growing up: the bottom edge is the anchor (the window then grows to its content upwards)
   const y = pos && (settings.combat.overlayGrow === "up" && pos.bottom != null ? pos.bottom - h : pos.y);
-  new WebviewWindow("combat", {
-    url: "combat.html", title: "Combat", width: 340, height: h, ...(pos ? { x: pos.x, y: y! } : {}),
-    decorations: false, transparent: true, shadow: false, alwaysOnTop: true, skipTaskbar: true, resizable: false, focus,
-  });
+  await openFloating("combat", { url: "combat.html", title: "Combat", width: OVERLAY_WIDTH, height: h, pos: pos && { x: pos.x, y: y! }, focus });
 }
 
-export async function closeCombatOverlay() {
-  await (await WebviewWindow.getByLabel("combat"))?.close();
-}
+export const closeCombatOverlay = () => closeFloating("combat");
+
+export const OVERLAY_WIDTH = 340;
+
+/** How each kind of note is shown (tab and floating window). */
+export const NOTE_KINDS: Record<keyof Notes, { icon: string; title: string }> = {
+  warning: { icon: "⚠", title: "Avertissement" },
+  invulnerable: { icon: "🛡", title: "Invulnérabilité" },
+  tips: { icon: "💡", title: "Conseil" },
+};
 
 /** The kinds of notes shown for a display level. */
 export const KINDS: Record<CombatShow, (keyof Notes)[]> = {
@@ -158,6 +156,19 @@ export function groups(list: Fighter[], show: CombatShow): Group[] {
     if (lines.length) g.notes = { ...g.notes, warning: [...lines, ...(g.notes?.warning ?? [])] };
   }
   return [...by.values()].filter((g) => g.alive > 0 || shown(g.notes, show).length > 0);
+}
+
+/** `groups` in display order: dead last, then summons; warnings first, then monsters with notes, then by name. */
+export function sortedGroups(list: Fighter[], show: CombatShow): Group[] {
+  const notes = (g: Group) => shown(g.notes, show).length > 0;
+  return groups(list, show).sort(
+    (a, b) =>
+      Number(!a.alive) - Number(!b.alive) ||
+      Number(a.summoned) - Number(b.summoned) ||
+      (b.notes?.warning?.length ?? 0) - (a.notes?.warning?.length ?? 0) ||
+      Number(notes(b)) - Number(notes(a)) ||
+      a.name.localeCompare(b.name),
+  );
 }
 
 /** The poisons to warn about: "Poison PA (Terre)" lines. */

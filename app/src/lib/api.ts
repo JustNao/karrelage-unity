@@ -22,6 +22,35 @@ export async function on<T = any>(event: string, fn: (payload: T) => void): Prom
   return listen<T>(event, (e) => fn(e.payload));
 }
 
+/**
+ * Several backend events at once, for a view: returns one synchronous cleanup (what `onMount` returns), which also drops
+ * the listeners still being registered; `.ready` resolves once they all listen (load a snapshot after it, so nothing
+ * falls between the snapshot and the live events).
+ *
+ *   onMount(() => listenAll({ "brisage:coef": (e) => ..., "brisage:pending": (l) => (pending = l) }));
+ */
+export function listenAll(handlers: Record<string, (payload: any) => void>): (() => void) & { ready: Promise<void> } {
+  const offs = Object.entries(handlers).map(([event, fn]) => on(event, fn));
+  const off = () => offs.forEach((o) => void o.then((f) => f()));
+  return Object.assign(off, { ready: Promise.all(offs).then(() => {}) });
+}
+
+const cache = new Map<string, Promise<unknown>>();
+/**
+ * A backend answer that never changes during the session (pack-derived: recipes, runes, breakable items...), fetched once
+ * and shared by every view. A failed call is not kept (asked again next time).
+ */
+export function cached<T>(module: string, method: string): Promise<T> {
+  const k = `${module}.${method}`;
+  let p = cache.get(k) as Promise<T> | undefined;
+  if (!p) {
+    p = call<T>(module, method);
+    cache.set(k, p);
+    p.catch(() => cache.delete(k));
+  }
+  return p;
+}
+
 export interface Status {
   ready: boolean;
   /** the data pack is still being loaded (startup) */

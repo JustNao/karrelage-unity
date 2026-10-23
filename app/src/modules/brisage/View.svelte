@@ -1,14 +1,14 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
-  import { call, on } from "../../lib/api";
+  import { cached, call, listenAll } from "../../lib/api";
+  import { persisted, readJSON, removeKey } from "../../lib/persist.svelte";
   import { breakEven, lotEffects, meanRoll, outcome, type BrisItem, type BrisPack, type Outcome } from "../../lib/brisage";
   import { craftCost, type Recipes } from "../../lib/craft";
-  import { AH_TAX } from "../../lib/transcend";
   import { Columns } from "../../lib/columns.svelte";
-  import { lotKeys, unitPriceOrNull } from "../../lib/price";
+  import { afterTax, lotKeys, unitPriceOrNull } from "../../lib/price";
   import { auction } from "../../lib/stores/auction.svelte";
   import { prices } from "../../lib/stores/prices.svelte";
-  import { ago, fmtNum, kamas, signedKamas } from "../../lib/fmt";
+  import { ago, fmtDateTime, fmtNum, kamas, runeShort, signedKamas } from "../../lib/fmt";
   import { useSort } from "../../lib/sort.svelte";
   import Banner from "../../lib/components/Banner.svelte";
   import Grip from "../../lib/components/Grip.svelte";
@@ -28,16 +28,7 @@
   const WEAPONS = new Set([2, 3, 4, 5, 6, 7, 8, 19, 20, 21, 22, 114, 271]);
 
   interface UiState { q: string; types: number[]; lvMin: number | null; lvMax: number | null; priced: boolean; noDrop: boolean; absent: boolean; sel: number | null }
-  const ui = $state<UiState>({ q: "", types: [], lvMin: null, lvMax: null, priced: true, noDrop: false, absent: false, sel: null });
-  try {
-    Object.assign(ui, JSON.parse(localStorage.getItem(UI_KEY) ?? "{}"));
-  } catch {}
-  $effect(() => {
-    const s = JSON.stringify(ui);
-    try {
-      localStorage.setItem(UI_KEY, s);
-    } catch {}
-  });
+  const ui = persisted<UiState>(UI_KEY, { q: "", types: [], lvMin: null, lvMax: null, priced: true, noDrop: false, absent: false, sel: null });
 
   const cols = new Columns(`karrelage.cols.brisage`, { detail: 640 });
   let pack = $state.raw<BrisPack>({ items: [], runes: {} });
@@ -52,7 +43,7 @@
   interface Break { t: number; uid: number; gid: number | null; how: "inventaire" | "runes" | "manuel" | null; first: number; last: number; qty: number | null; focus: number | null; runes: [number, number][] }
   type Pending = Break;
   let pending = $state.raw<Pending[]>([]);
-  const runeNames = $derived(new Map(Object.values(pack.runes).map((r) => [r.gid, r.name.replace(/^Rune /, "")])));
+  const runeNames = $derived(new Map(Object.values(pack.runes).map((r) => [r.gid, runeShort(r.name)])));
   const runesText = (p: Pending) => p.runes.map(([g, q]) => `${q} ${runeNames.get(g) ?? "#" + g}`).join(", ");
   const assign = (p: Pending, gid: number | null) => call("brisage", "assign", { uid: p.uid, t: p.t, gid }).catch((e) => (err = String(e)));
   /** Source chosen per item in the detail panel ("craft" or a lot key); default = the best one. */
@@ -189,15 +180,12 @@
 
   /** Kamas rounded to the unit (rune values are fractional). */
   const k0 = (n: number) => kamas(Math.round(n));
-  const focusName = (o: Outcome) => (o.best.focus == null ? "sans focus" : `focus ${o.lines.find((l) => l.a === o.best.focus)?.rune.name.replace(/^Rune /, "")}`);
+  const focusName = (o: Outcome) => (o.best.focus == null ? "sans focus" : `focus ${runeShort(o.lines.find((l) => l.a === o.best.focus)?.rune.name)}`);
   const saleTitle = (r: Row) => {
     const o = onSale[r.item.type_id];
-    return o ? `Catégorie « ${r.item.type} » ouverte le ${when(o.t)} (${ago(o.t)}) : ${o.gids.length} objets en vente` : `Ouvrez la catégorie « ${r.item.type} » à l'HDV`;
+    return o ? `Catégorie « ${r.item.type} » ouverte le ${fmtDateTime(o.t)} (${ago(o.t)}) : ${o.gids.length} objets en vente` : `Ouvrez la catégorie « ${r.item.type} » à l'HDV`;
   };
   const coefText = (c: number | null) => (c == null ? "—" : `${fmtNum(c, c < 10 ? 1 : 0)} %`);
-  const dateFmt = new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  /** "20/10/2026 22:30:39" */
-  const when = (t: number) => dateFmt.format(new Date(t * 1000));
 
   /** Row clicked: select it and copy its name (to paste in the auction house search). */
   let copied = $state<number | null>(null);
@@ -216,7 +204,7 @@
     call<Break[]>("brisage", "breaks", { gid }).then((l) => ui.sel === gid && (breaks = l.reverse())).catch(() => {});
   };
   $effect(() => loadBreaks(ui.sel));
-  const runeName = (a: number | null) => (a == null ? "" : (pack.runes[a]?.name.replace(/^Rune /, "") ?? "#" + a));
+  const runeName = (a: number | null) => (a == null ? "" : (runeShort(pack.runes[a]?.name) ?? "#" + a));
   const runeTotal = (b: Break) => b.runes.reduce((s, [, q]) => s + q, 0);
 
   // ---- detail ----
@@ -238,38 +226,37 @@
   const srcLabel = (s: Source) => (s.kind === "craft" ? `Craft (jet moyen) · ${s.cost != null ? kamas(s.cost) : "prix inconnu"}` : `Lot HDV · ${kamas(s.cost!)}`) + ` · rentable à ${coefText(s.even)}`;
 
   onMount(() => {
-    call<BrisPack>("brisage", "items").then((p) => (pack = p)).catch((e) => (err = String(e)));
-    call<Recipes>("auction", "recipes").then((r) => (recipes = r));
-    const offPending = on<Pending[]>("brisage:pending", (l) => (pending = l));
-    const offBreak = on<Break>("brisage:break", (b) => b.gid === ui.sel && loadBreaks(ui.sel));
+    cached<BrisPack>("brisage", "items").then((p) => (pack = p)).catch((e) => (err = String(e)));
+    cached<Recipes>("auction", "recipes").then((r) => (recipes = r)).catch((e) => (err = String(e)));
+    const offEvents = listenAll({
+      "brisage:pending": (l: Pending[]) => (pending = l),
+      "brisage:break": (b: Break) => b.gid === ui.sel && loadBreaks(ui.sel),
+      "brisage:coef": (e: Coef | { gid: number; coef: null }) => {
+        if (e.coef == null) delete coefs[e.gid];
+        else coefs[e.gid] = e as Coef;
+      },
+      "auction:on_sale": (o: OnSale) => (onSale = { ...onSale, [o.type]: o }),
+    });
     call<Pending[]>("brisage", "pending").then((l) => (pending = l)).catch(() => {});
-    const off = on<Coef | { gid: number; coef: null }>("brisage:coef", (e) => {
-      if (e.coef == null) delete coefs[e.gid];
-      else coefs[e.gid] = e as Coef;
-    });
-    call<Record<string, Coef>>("brisage", "coefs").then(async (c) => {
-      Object.assign(coefs, c);
-      // coefficients typed with the first version of the tab (browser storage) move to the backend
-      try {
-        const old: Record<string, number> = JSON.parse(localStorage.getItem(OLD_COEFS_KEY) ?? "{}");
+    call<Record<string, Coef>>("brisage", "coefs")
+      .then(async (c) => {
+        Object.assign(coefs, c);
+        // coefficients typed with the first version of the tab (browser storage) move to the backend
+        const old = readJSON<Record<string, number>>(OLD_COEFS_KEY, {});
         for (const [g, v] of Object.entries(old)) if (!c[g]) await call("brisage", "set_coef", { gid: +g, coef: v });
-        localStorage.removeItem(OLD_COEFS_KEY);
-      } catch {}
-    });
+        removeKey(OLD_COEFS_KEY);
+      })
+      .catch((e) => (err = String(e)));
     void prices.ensure();
     void auction.ensure();
     const offPrices = prices.subscribe(() => (priceVersion++, changed()));
     const offAuction = auction.subscribe(changed);
     call<Record<string, OnSale>>("auction", "on_sale").then((o) => (onSale = { ...o, ...onSale })).catch(() => {});
-    const offSale = on<OnSale>("auction:on_sale", (o) => (onSale = { ...onSale, [o.type]: o }));
     return () => {
+      offEvents();
       offPrices();
       offAuction();
       if (rebuild) clearTimeout(rebuild);
-      void offSale.then((f) => f());
-      void off.then((f) => f());
-      void offPending.then((f) => f());
-      void offBreak.then((f) => f());
     };
   });
 </script>
@@ -333,7 +320,7 @@
     <PanelHead {cols} name="detail" title="Détail" dir={-1} />
     {#each pending as p (p.uid + ":" + p.t)}
       <div class="pending">
-        <div><b>Brisage non reconnu</b> <span class="mut">{when(p.t)}</span> · coefficient <b>{coefText(p.last)}</b></div>
+        <div><b>Brisage non reconnu</b> <span class="mut">{fmtDateTime(p.t)}</span> · coefficient <b>{coefText(p.last)}</b></div>
         <div class="mut">{runesText(p)}</div>
         <div class="pbtns">
           <button disabled={!sel} onclick={() => sel && assign(p, sel.gid)}>{sel ? `Attribuer à ${sel.name}` : "Choisissez l'objet brisé dans la liste"}</button>
@@ -347,7 +334,7 @@
         <label>Coefficient <input type="number" min="0" step="1" value={selCoef?.coef ?? ""} placeholder="100" oninput={(e) => setCoef(sel.gid, e.currentTarget.value)} /> %</label>
         {#if selCoef}
           <span class="mut" title={selCoef.guessed ? "Objet reconnu d'après les runes obtenues (absent de l'inventaire lu)" : ""}>
-            {selCoef.source === "brisage" ? "brisé le" : "saisi le"} {when(selCoef.t)} ({ago(selCoef.t)}){selCoef.guessed ? " ?" : ""}
+            {selCoef.source === "brisage" ? "brisé le" : "saisi le"} {fmtDateTime(selCoef.t)} ({ago(selCoef.t)}){selCoef.guessed ? " ?" : ""}
           </span>
         {/if}
         {#if sources.length}
@@ -365,11 +352,11 @@
         <tbody>
           {#each out.lines as l, i (l.a)}
             <tr class:hot={out.best.focus === l.a}>
-              <td title={l.rune.label ?? ""}>{l.rune.name.replace(/^Rune /, "")}{#if l.exo} <span class="exo" title="Exo : donne ses runes mais ne peut pas être focus">exo</span>{/if}</td>
+              <td title={l.rune.label ?? ""}>{runeShort(l.rune.name)}{#if l.exo} <span class="exo" title="Exo : donne ses runes mais ne peut pas être focus">exo</span>{/if}</td>
               <td class="n">{fmtNum(l.value, 1)}</td>
               <td class="n">{#if l.price != null}{kamas(l.price)}{:else}<span class="warn" title="Ouvrez la rune à l'HDV">?</span>{/if}</td>
               <td class="n">{fmtNum(l.count * k)}</td>
-              <td class="n">{k0(l.count * (l.price ?? 0) * (1 - AH_TAX) * k)}</td>
+              <td class="n">{k0(afterTax(l.count * (l.price ?? 0)) * k)}</td>
               {#if l.exo}<td class="n mut">—</td><td class="n mut">—</td>
               {:else}<td class="n">{fmtNum(l.focus * k)}</td>
               <td class="n"><b>{k0(out.focus[i] * k)}</b></td>{/if}
@@ -402,7 +389,7 @@
           <tbody>
             {#each breaks as b (b.uid + ":" + b.t)}
               <tr title={b.how === "runes" ? "Objet reconnu d'après les runes" : b.how === "manuel" ? "Objet attribué à la main" : ""}>
-                <td>{when(b.t)}</td>
+                <td>{fmtDateTime(b.t)}</td>
                 <td class="n">{b.first !== b.last ? `${fmtNum(b.first)} → ` : ""}<b>{fmtNum(b.last)} %</b></td>
                 <td class="n">{b.qty ?? "?"}</td>
                 <td>{runeName(b.focus) || "—"}</td>

@@ -9,7 +9,7 @@
  * An exo effect (added by forgemagie, not a default effect of the item) gives its runes but cannot be focused.
  * Fractions are kept (an expected value): the coefficient scales everything, so value(coef) = coef / 100 x value(100 %).
  */
-import { AH_TAX } from "./transcend";
+import { afterTax } from "./price";
 
 export interface BrisRune {
   gid: number;
@@ -91,7 +91,7 @@ export function outcome(effects: BrisEffect[], level: number, runes: Record<stri
   const lines = [...by.values()];
   const total = lines.reduce((s, l) => s + l.count * l.rune.weight, 0);
   for (const l of lines) l.focus = l.exo ? 0 : l.count + (total - l.count * l.rune.weight) / l.rune.weight / 2;
-  const net = (n: number, p: number | null) => n * (p ?? 0) * (1 - AH_TAX);
+  const net = (n: number, p: number | null) => afterTax(n * (p ?? 0));
   const plain = lines.reduce((s, l) => s + net(l.count, l.price), 0);
   const focus = lines.map((l) => net(l.focus, l.price));
   let best: Outcome["best"] = { focus: null, value: plain };

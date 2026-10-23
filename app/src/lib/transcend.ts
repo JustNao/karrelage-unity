@@ -1,6 +1,6 @@
 /** Transcendance opportunities: unlocked lots that gain a rune effect worth more than the rune costs. */
 import { analyse } from "./density";
-import { effectivePrice, unitPrice as unit, type StoredPrice } from "./price";
+import { afterTax, effectivePrice, unitPrice as unit, type StoredPrice } from "./price";
 
 export interface Rune { gid: number; name: string; a: number; value: number }
 export type { StoredPrice } from "./price";
@@ -9,8 +9,6 @@ export type { StoredPrice } from "./price";
 export const STALE_SECS = 24 * 3600;
 export const targetKey = (t: { a: number; value: number }) => `${t.a}:${t.value}`;
 
-/** Sale tax taken by the auction house on the selling price. */
-export const AH_TAX = 0.02;
 
 /** A lot whose effect was added by a rune: carries the transcendance lock and an effect the item does not have by default. */
 export const isTranscended = (r: any) => r.locked && r.effects.some((e: any) => e.status === "added");
@@ -90,7 +88,7 @@ export function transcendance(rows: any[], runes: Rune[], prices: Map<number, St
         unpriced.push(t);
         continue;
       }
-      const profit = Math.round(t.sale * (1 - AH_TAX) - buy - t.runeCost);
+      const profit = Math.round(afterTax(t.sale) - buy - t.runeCost);
       if (!best || profit > best.profit) best = { target: t, profit };
     }
     return { row, buy, z: fit?.z[i] ?? 0, best, unpriced };
