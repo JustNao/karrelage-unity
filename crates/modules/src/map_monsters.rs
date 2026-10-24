@@ -102,8 +102,7 @@ impl Module for MapMonsters {
         match method {
             "list" => {
                 let d = &ctx.data;
-                let l: Vec<Value> =
-                    d.monsters.iter().filter_map(|(g, m)| Some(json!({"gid": g, "name": d.text(m.name_id)?}))).collect();
+                let l: Vec<Value> = d.monsters.iter().filter_map(|(g, m)| Some(json!({"gid": g, "name": d.text(m.name_id)?}))).collect();
                 Ok(Value::Array(l))
             }
             _ => Err(unknown("monsters", method)),
