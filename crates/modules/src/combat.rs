@@ -193,8 +193,9 @@ pub struct Combat {
     /// `layout.json`, written in the background (a vote comes with most fighter messages)
     layout: Store<Layout>,
     boost_bind: Role<BoostBindings>,
-    /// the player's character id (seen at login, kept in `me.json`)
-    me: Store<Option<i64>>,
+    /// the player's characters: every character id seen at login (an id never changes), the last one logged in last;
+    /// kept in `me.json`, so the poisons are told apart without the login being seen again
+    me: Store<Vec<i64>>,
 }
 
 impl Default for Combat {
@@ -311,17 +312,17 @@ impl Combat {
             })
             .collect();
         // PA / PM poisons on the player (on any player while the character is unknown: no login seen yet)
-        let me = *self.me.lock();
+        let mine = self.me.lock().clone();
         let poisons: Vec<Value> = f
             .poisons
             .values()
-            .filter(|p| me.map_or(p.target > 0, |me| p.target == me))
+            .filter(|p| if mine.is_empty() { p.target > 0 } else { mine.contains(&p.target) })
             .filter_map(|p| {
                 POISONS.iter().find(|x| x.0 == p.action).map(|&(a, kind, element)| json!({"action": a, "kind": kind, "element": element, "target": p.target}))
             })
             .collect();
         json!({"seen": f.seen, "active": f.seen && f.ended.is_none(), "started": f.started, "ended": f.ended, "fighters": list,
-               "poisons": poisons, "me": me})
+               "poisons": poisons, "me": mine.last(), "mine": mine})
     }
 }
 
@@ -339,8 +340,10 @@ impl Module for Combat {
     }
 
     fn init(&self, ctx: &Ctx) {
-        let saved = self.me.open(ctx, "combat", "me.json", |me| json!({"id": me}));
-        *self.me.lock() = saved.and_then(|v| v["id"].as_i64());
+        let saved = self.me.open(ctx, "combat", "me.json", |ids| json!({"id": ids.last(), "ids": ids}));
+        let ids: Vec<i64> = saved.as_ref().and_then(|v| v["ids"].as_array()).map(|a| a.iter().filter_map(Value::as_i64).collect()).unwrap_or_default();
+        // older file: the last character only
+        *self.me.lock() = if ids.is_empty() { saved.and_then(|v| v["id"].as_i64()).into_iter().collect() } else { ids };
         let saved = self.layout.open(ctx, "combat", "layout.json", |l| json!({"fields": l.fields, "votes": l.votes}));
         let Some(b) = self.bindings(ctx) else { return };
         let mut l = self.layout.lock();
@@ -361,7 +364,10 @@ impl Module for Combat {
         if m.name == SELECT || m.name == FIRST_SELECT {
             let id = self.boosts(ctx).zip(m.decoded.as_ref()).and_then(|(b, d)| b.character.iter().find(|f| d.has_field_by_name(f)).map(|f| int(d, f)));
             if let Some(id) = id.filter(|id| *id != 0) {
-                self.me.update(|me| *me = Some(id));
+                self.me.update(|ids| {
+                    ids.retain(|x| *x != id);
+                    ids.push(id);
+                });
                 ctx.emit("combat", "fight", self.state(&ctx.data));
             }
             return;
@@ -524,7 +530,7 @@ mod tests {
         let message = |name: &str, decoded: DynamicMessage| testkit::msg(name, Some(decoded), 1.0);
         let c = Combat::new();
         c.init(&hub.ctx);
-        let mut login = DynamicMessage::new(sel_md);
+        let mut login = DynamicMessage::new(sel_md.clone());
         login.set_field_by_name(b.character.iter().find(|f| login.descriptor().get_field_by_name(f).is_some()).unwrap(), PbValue::I64(42));
         c.on_message(&message(SELECT, login), &hub.ctx);
         c.on_message(&message(BOOST_ADD, boost(7, 42, 1135)), &hub.ctx);
@@ -532,6 +538,13 @@ mod tests {
         let s = c.call("state", Value::Null, &hub.ctx).unwrap();
         assert_eq!(s["me"], json!(42));
         assert_eq!(s["poisons"], json!([{"action": 1135, "kind": "PA", "element": "Terre", "target": 42}]), "only the player's poison");
+        // another of the player's characters logs in: both are the player's (multi-account, or the next session)
+        let mut login2 = DynamicMessage::new(sel_md);
+        login2.set_field_by_name(b.character.iter().find(|f| login2.descriptor().get_field_by_name(f).is_some()).unwrap(), PbValue::I64(43));
+        c.on_message(&message(SELECT, login2), &hub.ctx);
+        let s = c.call("state", Value::Null, &hub.ctx).unwrap();
+        assert_eq!((s["me"].clone(), s["mine"].clone()), (json!(43), json!([42, 43])));
+        assert_eq!(s["poisons"].as_array().unwrap().len(), 1, "the first character's poison is still the player's");
 
         let mut end = DynamicMessage::new(rem_md);
         end.set_field_by_name(&b.remove_uid, PbValue::I32(7));

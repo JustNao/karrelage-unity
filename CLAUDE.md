@@ -189,7 +189,8 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
 - Fight start: FightJoin(Running)Event; end: FightEndEvent; deaths: GameActionFightEvent `death` (role `fight.death`) or
   absence from FightSynchronizeEvent. Summoned copies of starting monsters (doubles) are ignored.
 - Poisons (effects 1131–1140): added by FightBoostAddEvent / FightJoinRunningEvent (role `boost`), removed by
-  FightBoostRemoveEvent. Player = id from CharacterSelectionRequest (`<app data>/combat/me.json`).
+  FightBoostRemoveEvent. Player = every character id seen in CharacterSelectionRequest (fixed per character; all kept
+  in `<app data>/combat/me.json`, so a login needs to be seen once per character).
 - Monster notes from `work/monster_notes.csv` (author's sheet, not committed) and tags from `work/dofusdb_monsters.json`
   (DofusDB API returns empty tags since mid-2026 → fallback Loutil_old dump); `danger` column → cross-monster warnings.
   Only `SHOWN` tags displayed (`lib/monsterTags.ts`). Floating window `CombatOverlay.svelte`.
