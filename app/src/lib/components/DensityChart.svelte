@@ -10,6 +10,8 @@
     added?: boolean;
     /** The lot lacks some default effect. */
     missing?: boolean;
+    /** The player's own lot on sale. */
+    mine?: boolean;
   }
 </script>
 
@@ -19,8 +21,8 @@
 
   /**
    * Price (x) against density (y) of the lots of one item, with a least-squares trend line and a band of ± the good-deal threshold (σ).
-   * Green dots sit far above the line: more value than their price suggests (good deals). Blue = has an added effect,
-   * orange = lacks some default effect.
+   * Gold dots sit far above the line: more value than their price suggests (good deals). Blue = has an added effect,
+   * red = lacks some default effect, green = the player's own lot.
    */
   let {
     points,
@@ -85,17 +87,17 @@
   const hw = $derived(hlabel.length * 6.2 + 10); // label box width (approximation of the 11px text)
   const hlx = $derived(hx == null ? 0 : Math.min(Math.max(hx, hw / 2 + 1), W - hw / 2 - 1));
 
-  /** gold = good deal, else blue (added effect) / red (missing effect), both = blue with a red ring. */
-  type Tone = "good" | "added" | "missing" | "both" | "mid";
+  /** green = own lot, gold = good deal, else blue (added effect) / red (missing effect), both = blue with a red ring. */
+  type Tone = "mine" | "good" | "added" | "missing" | "both" | "mid";
   const tone = (i: number): Tone => {
     const p = points[i];
-    return isGoodDeal(fit, i, points.length) ? "good" : p.added ? (p.missing ? "both" : "added") : p.missing ? "missing" : "mid";
+    return p.mine ? "mine" : isGoodDeal(fit, i, points.length) ? "good" : p.added ? (p.missing ? "both" : "added") : p.missing ? "missing" : "mid";
   };
 </script>
 
 <div class="chart" bind:clientWidth={W}>
   <div class="legend">
-    <span><i class="d good"></i>Bonne affaire</span>{#if equipment}<span><i class="d added"></i>EXO</span><span><i class="d missing"></i>Effet manquant</span>{/if}
+    <span><i class="d good"></i>Bonne affaire</span>{#if equipment}<span><i class="d added"></i>EXO</span><span><i class="d missing"></i>Effet manquant</span><span><i class="d mine"></i>Mes lots</span>{/if}
   </div>
   <svg width={W} height={H} role="img" aria-label="Densité en fonction du prix" onmousemove={hover} onmouseleave={() => (hx = null)}>
     <path d={band} class="band" />
@@ -117,7 +119,7 @@
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
       <g class="dot {t}" class:faded={faded?.has(p.id)} class:sel={selected === p.id} onclick={() => onselect(p.id)}>
         <circle cx={sx(p.x)} cy={sy(p.y)} r="11" class="hit" />
-        <circle cx={sx(p.x)} cy={sy(p.y)} r={t === "good" ? 6.5 : 4.5} class="pt" />
+        <circle cx={sx(p.x)} cy={sy(p.y)} r={t === "good" || t === "mine" ? 6.5 : 4.5} class="pt" />
         {#if selected === p.id}<circle cx={sx(p.x)} cy={sy(p.y)} r="10" class="ring" />{/if}
       </g>
     {/each}
@@ -151,5 +153,7 @@
   .d.good { background: var(--gold); }
   .d.added { background: #4a9eff; }
   .d.missing { background: var(--bad); }
+  .mine .pt { fill: var(--ok); }
+  .d.mine { background: var(--ok); }
   .mut { color: var(--mut); }
 </style>

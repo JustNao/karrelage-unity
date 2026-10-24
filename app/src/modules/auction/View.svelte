@@ -172,6 +172,7 @@
       label: r.name,
       added: comp ? isLegendary(r) : !mount && r.effects.some((e: any) => e.status === "added"), // companions: blue dot = legendary; mounts have no EXO
       missing: !comp && !mount && r.effects.some((e: any) => e.status === "removed"),
+      mine: mine.has(r, item?.gid),
     })),
   );
   const fit = $derived(points.length ? analyse(points) : null);
