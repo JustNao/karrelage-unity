@@ -103,6 +103,9 @@ struct Bindings {
     /// FightCharacteristics' summoner (actor id of whoever summoned it; absent in older packs)
     #[serde(default)]
     summoner: Option<String>,
+    /// SpawnInformation's alive (the synchronisation lists the dead fighters too; absent in older packs)
+    #[serde(default)]
+    alive: Option<String>,
 }
 
 /// A monster fighter: the three unordered ints of its MonsterFighter (gid / grade / level, see `Layout`), whether it was
@@ -113,6 +116,8 @@ struct Fighter {
     summoned: bool,
     summoner: i64,
     spawned: bool,
+    /// The message's spawn information says it is dead (None: no spawn information in it).
+    dead: Option<bool>,
 }
 
 impl Fighter {
@@ -238,7 +243,9 @@ fn fighters(b: &Bindings, m: &DynamicMessage, out: &mut Vec<(i64, Fighter)>) {
     let [Some(x), Some(y), Some(z)] = [0, 1, 2].map(|i| b.monster.get(i).map(|f| int(mon, f))) else { return };
     let summoned = find(m, &b.summoned).and_then(|s| s.get_field_by_name(&b.summoned).and_then(|v| as_i64(&v))).unwrap_or(0) != 0;
     let summoner = b.summoner.as_deref().and_then(|f| Some(int(find(m, f)?, f))).unwrap_or(0);
-    out.push((int(m, &b.actor_id), Fighter { ints: [x, y, z], summoned, summoner, spawned: false }));
+    // proto3: an alive fighter carries alive = true, a dead one a spawn information without it
+    let dead = b.alive.as_deref().and_then(|f| Some(!find(m, f)?.get_field_by_name(f)?.as_bool()?));
+    out.push((int(m, &b.actor_id), Fighter { ints: [x, y, z], summoned, summoner, spawned: false, dead }));
 }
 
 /// The players' summons (Steamer turrets, Osamodas creatures...: monsters too): summoned by someone who is not a monster of
@@ -450,6 +457,8 @@ impl Module for Combat {
                             let listed: BTreeSet<i64> = found.iter().map(|(a, _)| *a).collect();
                             dead.extend(f.fighters.keys().filter(|a| !listed.contains(a)));
                         }
+                        // fighters the game says are dead (killed before the app saw it: started mid-fight)
+                        dead.extend(found.iter().filter(|(_, x)| x.dead == Some(true)).map(|(a, _)| *a));
                         let mut next = f.fighters.clone();
                         for (actor, mut x) in found {
                             // first seen in a fight action = appeared during the fight (summon, double)
@@ -630,7 +639,7 @@ mod tests {
             return;
         }
         // field order of this imaginary build: (grade, level, gid)
-        let fighter = |gid: i64, grade: i64| Fighter { ints: [grade, 200, gid], summoned: false, summoner: 0, spawned: false };
+        let fighter = |gid: i64, grade: i64| Fighter { ints: [grade, 200, gid], summoned: false, summoner: 0, spawned: false, dead: None };
         let c = Combat::new();
         let found: Vec<(i64, Fighter)> =
             [(79, 3), (121, 2), (3462, 5), (1046, 1)].iter().enumerate().map(|(i, &(g, gr))| (-(i as i64) - 1, fighter(g, gr))).collect();
@@ -653,7 +662,7 @@ mod tests {
     /// A synthetic fight: placement shows a monster, the turn synchronisation lists it plus a summon, then the fight ends.
     #[test]
     fn ally_summons_are_not_enemies() {
-        let f = |summoner: i64| Fighter { ints: [1, 2, 3], summoned: summoner != 0, summoner, spawned: summoner != 0 };
+        let f = |summoner: i64| Fighter { ints: [1, 2, 3], summoned: summoner != 0, summoner, spawned: summoner != 0, dead: None };
         // -1 a monster, -2 its summon; -3 a turret of the player 77, -4 summoned by that turret
         let fighters = BTreeMap::from([(-1, f(0)), (-2, f(-1)), (-3, f(77)), (-4, f(-3))]);
         assert_eq!(ally_summons(&fighters), BTreeSet::from([-3, -4]));
@@ -742,5 +751,20 @@ mod tests {
         c.on_message(&message(END, end, 3.0), &hub.ctx);
         let s = c.call("state", Value::Null, &hub.ctx).unwrap();
         assert_eq!((s["active"].clone(), s["ended"].clone()), (json!(false), json!(3.0)), "the last fight stays shown, ended");
+
+        // the app opened mid-fight: the synchronisation also lists the monsters killed before (spawn information, not alive)
+        let alive_f = b.alive.as_deref().unwrap();
+        let to_alive = path(&actor_md, alive_f, &mut vec![]).unwrap();
+        let spawned = |id: i64, alive: bool| {
+            let mut a = actor(id, gid, false);
+            set(&mut a, &to_alive, alive_f, PbValue::Bool(alive));
+            PbValue::Message(a)
+        };
+        let mut late = DynamicMessage::new(proto.message(&proto.obf_for_clear(SYNC).unwrap()).unwrap());
+        late.set_field(&list_field, PbValue::List(vec![spawned(-5, false), spawned(-6, true)]));
+        c.on_message(&message(SYNC, late, 4.0), &hub.ctx);
+        let s = c.call("state", Value::Null, &hub.ctx).unwrap();
+        let dead: Vec<(i64, bool)> = s["fighters"].as_array().unwrap().iter().map(|f| (f["actor"].as_i64().unwrap(), f["dead"] == json!(true))).collect();
+        assert_eq!(dead, vec![(-6, false), (-5, true)], "killed before the app saw it: dead");
     }
 }
