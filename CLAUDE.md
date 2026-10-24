@@ -200,6 +200,12 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
 **Loot** (`loot.rs`): FightEndEvent → results → fighter id + `Loot` messages; item = the largest int that is a known gid
 (verified 3.7.12.12). Automation « Songes »: sound when a « Légende » (type 219) is looted, by price threshold.
 
+**Map monsters** (`map_monsters.rs`): `monsters:map` {map, gids} on MapComplementaryInformationEvent (every group of the new map:
+main creature, underlings, alternatives), `monsters:spawn` on GameRolePlayShowActorsEvent. Creatures = script-named
+`MonsterInGroupInformation`, gid / grade / level unordered (read with combat's `fits`). Call `list` = pack monsters. Automation
+« Monstres »: searched gids on the map → one sound per map (a searched monster already on it doesn't ring again on spawn).
+Not checked on a real capture yet.
+
 **Automation** (`lib/automation.ts`, `stores/automation.svelte.ts`): rules checked on every live `auction:item`, each with
 `enabled` / `sound` (`lib/sounds.ts`, `app/public/sounds`) / `volume`. `exoDo`: exo matching a "Rune Ta Do Per" rune,
 cheaper than it, break-even ≤ `maxEven`. Notifications (session only) open the lot via `app.showLot`.

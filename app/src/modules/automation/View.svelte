@@ -4,8 +4,9 @@
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
   import Switch from "../../lib/components/Switch.svelte";
   import { kamasFull } from "../../lib/fmt";
+  import MonsterSearch from "./MonsterSearch.svelte";
 
-  /** Automation: rules checked on every scan (lib/automation.ts), one section per tab, like Paramètres. A triggered rule
+  /** Automation: rules checked on every scan, fight end or map change (lib/automation.ts), one section per tab, like Paramètres. A triggered rule
    *  plays its sound and shows up in the header « Notifications ». */
 
   /** "2,500,000", "2.5M", "500k" -> kamas; empty or unreadable -> null (no limit). */
@@ -98,6 +99,25 @@
               {@render pick(rules.songes, "soundLow", "Son joué quand la Légende vaut moins que le seuil")}
             </div>
             <div class="snd">{@render volume(rules.songes)}</div>
+          </div>
+        </div>
+      </section>
+      <section>
+        <h2>Monstres</h2>
+        <div class="rule" class:off={!rules.monsters.enabled}>
+          <div class="rh">
+            <Switch bind:checked={rules.monsters.enabled} label="Activer la règle" />
+            <div class="lb">
+              <div><b>{RULE_TITLES.monsters}</b></div>
+              <div class="mut">
+                À chaque changement de carte (et quand un groupe apparaît sur la carte), si un des monstres recherchés est dans un
+                groupe : un seul son, même si plusieurs correspondent, et une notification par monstre.
+              </div>
+            </div>
+          </div>
+          <div class="params">
+            <MonsterSearch bind:gids={rules.monsters.gids} />
+            {@render sound(rules.monsters)}
           </div>
         </div>
       </section>

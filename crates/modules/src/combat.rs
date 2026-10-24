@@ -123,7 +123,7 @@ impl Fighter {
 }
 
 /// The six ways the three ints can be (gid, grade, level).
-const PERMS: [[usize; 3]; 6] = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
+pub(crate) const PERMS: [[usize; 3]; 6] = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
 
 /// Learnt arrangement of the MonsterFighter ints: votes per `PERMS` entry, for the build whose field names are `fields`.
 #[derive(Default)]
@@ -140,7 +140,7 @@ impl Layout {
 
 /// Highest level a monster can plausibly have in a fight (scaled ones included): the 99th percentile of the grade levels
 /// + margin (a few special entities go up to 2400, which would let most gids pass for a level).
-fn max_level(data: &Data) -> i64 {
+pub(crate) fn max_level(data: &Data) -> i64 {
     static TOP: OnceLock<i64> = OnceLock::new();
     *TOP.get_or_init(|| {
         let mut l: Vec<i64> = data.monsters.values().flat_map(|m| m.levels.iter().copied()).collect();
@@ -150,7 +150,7 @@ fn max_level(data: &Data) -> i64 {
 }
 
 /// `p` makes sense for these ints: the gid is a monster, the grade one of its grades and the level plausible.
-fn fits(data: &Data, ints: &[i64; 3], p: usize, top: i64) -> bool {
+pub(crate) fn fits(data: &Data, ints: &[i64; 3], p: usize, top: i64) -> bool {
     let [g, gr, l] = PERMS[p].map(|i| ints[i]);
     data.monsters.get(&g).is_some_and(|m| gr >= 1 && gr as usize <= m.levels.len()) && (1..=top).contains(&l)
 }

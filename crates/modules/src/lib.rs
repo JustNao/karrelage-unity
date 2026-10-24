@@ -8,6 +8,7 @@ pub mod combat;
 pub mod inventory;
 pub mod kit;
 pub mod loot;
+pub mod map_monsters;
 pub mod names;
 pub mod packets;
 pub mod prices;
@@ -130,6 +131,7 @@ pub fn all() -> Vec<Box<dyn Module>> {
         Box::new(inventory),
         Box::new(combat::Combat::new()),
         Box::new(loot::Loot::new()),
+        Box::new(map_monsters::MapMonsters::new()),
         Box::new(names::NamesTab::new()),
         Box::new(update::Update::new()),
     ]

@@ -19,11 +19,14 @@ const DEFAULTS = {
   /** Songes: someone of the group looted a « Légende … » (Ressource des Songes) at the end of a fight. `sound` plays when the
    *  best one is worth at least `threshold` (stored price), `soundLow` below it (or when its price is unknown). */
   songes: { enabled: true, sound: "crowd-applause", soundLow: "crowd-disappointed", volume: 0.6, threshold: 8_000_000 },
+  /** Monstres: on every map change (and when a group appears on the map), a searched monster is in one of its groups. One
+   *  sound per map, however many match. `gids` = the searched monsters (pack gids, names shown from the pack). */
+  monsters: { enabled: true, sound: "pop", volume: 0.6, gids: [] as number[] },
 };
 export type Rules = typeof DEFAULTS;
 export type RuleId = keyof Rules;
 export const RULE_DEFAULTS: Rules = DEFAULTS;
-export const RULE_TITLES: Record<RuleId, string> = { exoDo: "Exo % dommages à briser", songes: "Légende lootée" };
+export const RULE_TITLES: Record<RuleId, string> = { exoDo: "Exo % dommages à briser", songes: "Légende lootée", monsters: "Monstre recherché sur la carte" };
 
 export const rules = persisted<Rules>(KEY, DEFAULTS, { sections: true });
 
