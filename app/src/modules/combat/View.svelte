@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { fight, NOTE_KINDS, openCombatOverlay, poisonText, shown, sortedGroups, type Group } from "../../lib/stores/combat.svelte";
+  import { fight, NOTE_KINDS, openCombatOverlay, poisonText, shown, sortedGroups, waves, type Group } from "../../lib/stores/combat.svelte";
   import { settings, type CombatShow } from "../../lib/stores/settings.svelte";
   import Segmented from "../../lib/components/Segmented.svelte";
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
@@ -17,8 +17,30 @@
     { id: "all", label: "+ Conseils" },
   ];
   const cards = $derived(sortedGroups(fight.fighters, settings.combat.show));
+  /** multi-wave fight: one section per wave (null for a single wave) */
+  const byWave = $derived(waves(fight.fighters, settings.combat.show));
   const notesOf = (g: Group) => shown(g.notes, settings.combat.show);
 </script>
+
+{#snippet card(g: Group)}
+  {@const notes = notesOf(g)}
+  <article class="card" class:sum={g.summoned} class:gone={!g.alive} class:hasw={!!g.notes?.warning?.length} class:bare={!notes.length}>
+    <header>{@render title(g)}</header>
+    {#if g.tags.length}
+      <div class="tags">
+        {#each tagsOf(g.tags) as t (t.id)}<span class="tg {t.group}">{t.label}</span>{/each}
+      </div>
+    {/if}
+    {#each notes as [kind, lines] (kind)}
+      <div class="note {kind}">
+        <span class="ic" title={NOTE_KINDS[kind].title}>{NOTE_KINDS[kind].icon}</span>
+        <ul>
+          {#each lines as l, i (i)}<li>{l}</li>{/each}
+        </ul>
+      </div>
+    {/each}
+  </article>
+{/snippet}
 
 {#snippet title(g: Group)}
   <span class="nm">{g.name}</span>
@@ -69,27 +91,21 @@
           Les monstres du combat apparaissent ici dès la phase de placement (capture active), avec les avertissements, invulnérabilités et
           conseils connus pour chacun.
         </p>
+      {:else if byWave}
+        {#each byWave as w (w.wave)}
+          <section class="wave" class:gone={!w.alive}>
+            <h3>
+              {w.wave ? `Vague ${w.wave}` : "Sans vague"}
+              <span class="mut">{w.alive ? `${w.alive} en vie` : "terminée"}</span>
+            </h3>
+            <div class="cards">
+              {#each w.groups as g (g.key)}{@render card(g)}{/each}
+            </div>
+          </section>
+        {/each}
       {:else}
         <div class="cards">
-          {#each cards as g (g.key)}
-            {@const notes = notesOf(g)}
-            <article class="card" class:sum={g.summoned} class:gone={!g.alive} class:hasw={!!g.notes?.warning?.length} class:bare={!notes.length}>
-              <header>{@render title(g)}</header>
-              {#if g.tags.length}
-                <div class="tags">
-                  {#each tagsOf(g.tags) as t (t.id)}<span class="tg {t.group}">{t.label}</span>{/each}
-                </div>
-              {/if}
-              {#each notes as [kind, lines] (kind)}
-                <div class="note {kind}">
-                  <span class="ic" title={NOTE_KINDS[kind].title}>{NOTE_KINDS[kind].icon}</span>
-                  <ul>
-                    {#each lines as l, i (i)}<li>{l}</li>{/each}
-                  </ul>
-                </div>
-              {/each}
-            </article>
-          {/each}
+          {#each cards as g (g.key)}{@render card(g)}{/each}
         </div>
       {/if}
     </div>
@@ -130,6 +146,10 @@
   .tg.flag { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, transparent); }
   .tg.control { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
   .card.gone { opacity: 0.45; }
+  .wave + .wave { margin-top: 14px; }
+  .wave h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; display: flex; align-items: baseline; gap: 8px; }
+  .wave h3 .mut { font-weight: 400; font-size: 12px; }
+  .wave.gone h3 { opacity: 0.6; }
   .dead { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--bad); }
   .poison { margin-bottom: 10px; padding: 8px 12px; border-radius: 8px; background: color-mix(in srgb, var(--bad) 16%, transparent); border: 1px solid var(--bad); font-weight: 600; }
   .poison .mut { font-weight: 400; margin-left: 6px; }

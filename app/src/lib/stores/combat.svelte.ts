@@ -23,6 +23,8 @@ export interface Fighter {
   summoned: boolean;
   /** died during the fight (still sent: a monster with notes stays listed, dimmed) */
   dead: boolean;
+  /** wave of a multi-wave fight (dungeons, Songes); 0 = none */
+  wave?: number;
   notes: Notes | null;
   /** DofusDB tags (lib/monsterTags.ts) */
   tags: string[];
@@ -179,6 +181,24 @@ export function sortedGroups(list: Fighter[], show: CombatShow): Group[] {
       Number(notes(b)) - Number(notes(a)) ||
       a.name.localeCompare(b.name),
   );
+}
+
+/** A wave of a multi-wave fight and its groups (`sortedGroups` of its fighters); `alive` = its living monsters. */
+export interface Wave {
+  wave: number;
+  alive: number;
+  groups: Group[];
+}
+
+/** The fighters split by wave, in wave order, when they belong to several (null otherwise); waves with nothing to list are dropped. */
+export function waves(list: Fighter[], show: CombatShow): Wave[] | null {
+  const by = new Map<number, Fighter[]>();
+  for (const f of list) (by.get(f.wave ?? 0) ?? by.set(f.wave ?? 0, []).get(f.wave ?? 0)!).push(f);
+  if (by.size < 2) return null;
+  return [...by.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([wave, l]) => ({ wave, alive: l.filter((f) => !f.dead).length, groups: sortedGroups(l, show) }))
+    .filter((w) => w.groups.length);
 }
 
 /** The poisons to warn about: "Poison PA (Terre)" lines. */

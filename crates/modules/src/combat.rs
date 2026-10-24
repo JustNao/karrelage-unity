@@ -118,6 +118,8 @@ struct Fighter {
     spawned: bool,
     /// The message's spawn information says it is dead (None: no spawn information in it).
     dead: Option<bool>,
+    /// Wave it belongs to (multi-wave fights: dungeons, Songes; 0 = none). None: not in the message.
+    wave: Option<i64>,
 }
 
 impl Fighter {
@@ -198,6 +200,8 @@ pub struct Combat {
     /// `layout.json`, written in the background (a vote comes with most fighter messages)
     layout: Store<Layout>,
     boost_bind: Role<BoostBindings>,
+    /// obfuscated name of the fighters' `wave` field, found in the first fighter message that has it
+    wave: Mutex<Option<String>>,
     /// the player's characters: every character id seen at login (an id never changes), the last one logged in last;
     /// kept in `me.json`, so the poisons are told apart without the login being seen again
     me: Store<Vec<i64>>,
@@ -232,10 +236,11 @@ fn find<'a>(m: &'a DynamicMessage, name: &str) -> Option<&'a DynamicMessage> {
 }
 
 /// Every monster fighter of a message: (actor id, fighter). Actors that are not monsters (players, tax collectors) are left out.
-fn fighters(b: &Bindings, m: &DynamicMessage, out: &mut Vec<(i64, Fighter)>) {
+/// `wave` = the FightFighterInformation `wave` field (obfuscated name), when known.
+fn fighters(b: &Bindings, wave: Option<&str>, m: &DynamicMessage, out: &mut Vec<(i64, Fighter)>) {
     if m.descriptor().get_field_by_name(&b.actor_id).is_none() {
         for c in children(m) {
-            fighters(b, c, out);
+            fighters(b, wave, c, out);
         }
         return;
     }
@@ -245,7 +250,13 @@ fn fighters(b: &Bindings, m: &DynamicMessage, out: &mut Vec<(i64, Fighter)>) {
     let summoner = b.summoner.as_deref().and_then(|f| Some(int(find(m, f)?, f))).unwrap_or(0);
     // proto3: an alive fighter carries alive = true, a dead one a spawn information without it
     let dead = b.alive.as_deref().and_then(|f| Some(!find(m, f)?.get_field_by_name(f)?.as_bool()?));
-    out.push((int(m, &b.actor_id), Fighter { ints: [x, y, z], summoned, summoner, spawned: false, dead }));
+    let wave = wave.and_then(|f| Some(int(find(m, f)?, f)));
+    out.push((int(m, &b.actor_id), Fighter { ints: [x, y, z], summoned, summoner, spawned: false, dead, wave }));
+}
+
+/// Obfuscated name of the fighters' `wave` field (clear name, so it survives updates): the first message under `m` that has one.
+fn wave_field(ctx: &Ctx, m: &DynamicMessage) -> Option<String> {
+    ctx.proto.field_named(m.descriptor().full_name(), "wave").or_else(|| children(m).into_iter().find_map(|c| wave_field(ctx, c)))
 }
 
 /// The players' summons (Steamer turrets, Osamodas creatures...: monsters too): summoned by someone who is not a monster of
@@ -273,6 +284,7 @@ impl Combat {
             fight: Mutex::new(Fight::default()),
             layout: Store::default(),
             boost_bind: Role::new(),
+            wave: Mutex::new(None),
             me: Store::default(),
         }
     }
@@ -329,6 +341,7 @@ impl Combat {
                 let m = data.monsters.get(&gid);
                 Some(json!({
                     "actor": actor, "gid": gid, "grade": grade, "level": level, "summoned": x.summon(), "dead": f.dead.contains(actor),
+                    "wave": x.wave.unwrap_or(0),
                     "name": m.and_then(|m| data.text(m.name_id)).map(str::to_owned).unwrap_or_else(|| format!("monstre #{gid}")),
                     "notes": m.and_then(|m| m.notes.as_ref()),
                     "tags": m.map(|m| m.tags.as_slice()).unwrap_or_default(),
@@ -442,7 +455,14 @@ impl Module for Combat {
                         f.dead.len() != before
                     } else {
                         let mut found = vec![];
-                        fighters(b, d, &mut found);
+                        let wave = {
+                            let mut w = self.wave.lock();
+                            if w.is_none() && m.name != ACTION {
+                                *w = wave_field(ctx, d);
+                            }
+                            w.clone()
+                        };
+                        fighters(b, wave.as_deref(), d, &mut found);
                         if found.is_empty() {
                             return;
                         }
@@ -466,6 +486,7 @@ impl Module for Combat {
                             // a message without the summon details (a wave's refresh...) keeps those seen before
                             if let Some(old) = next.get(&actor) {
                                 x.summoned |= old.summoned;
+                                x.wave = x.wave.or(old.wave);
                                 if x.summoner == 0 {
                                     x.summoner = old.summoner;
                                 }
@@ -639,7 +660,7 @@ mod tests {
             return;
         }
         // field order of this imaginary build: (grade, level, gid)
-        let fighter = |gid: i64, grade: i64| Fighter { ints: [grade, 200, gid], summoned: false, summoner: 0, spawned: false, dead: None };
+        let fighter = |gid: i64, grade: i64| Fighter { ints: [grade, 200, gid], summoned: false, summoner: 0, spawned: false, dead: None, wave: None };
         let c = Combat::new();
         let found: Vec<(i64, Fighter)> =
             [(79, 3), (121, 2), (3462, 5), (1046, 1)].iter().enumerate().map(|(i, &(g, gr))| (-(i as i64) - 1, fighter(g, gr))).collect();
@@ -662,7 +683,7 @@ mod tests {
     /// A synthetic fight: placement shows a monster, the turn synchronisation lists it plus a summon, then the fight ends.
     #[test]
     fn ally_summons_are_not_enemies() {
-        let f = |summoner: i64| Fighter { ints: [1, 2, 3], summoned: summoner != 0, summoner, spawned: summoner != 0, dead: None };
+        let f = |summoner: i64| Fighter { ints: [1, 2, 3], summoned: summoner != 0, summoner, spawned: summoner != 0, dead: None, wave: None };
         // -1 a monster, -2 its summon; -3 a turret of the player 77, -4 summoned by that turret
         let fighters = BTreeMap::from([(-1, f(0)), (-2, f(-1)), (-3, f(77)), (-4, f(-3))]);
         assert_eq!(ally_summons(&fighters), BTreeSet::from([-3, -4]));
@@ -766,5 +787,36 @@ mod tests {
         let s = c.call("state", Value::Null, &hub.ctx).unwrap();
         let dead: Vec<(i64, bool)> = s["fighters"].as_array().unwrap().iter().map(|f| (f["actor"].as_i64().unwrap(), f["dead"] == json!(true))).collect();
         assert_eq!(dead, vec![(-6, false), (-5, true)], "killed before the app saw it: dead");
+
+        // a multi-wave fight: each fighter tells its wave; a message without it (a refresh) keeps the one seen before
+        let Some(wave_f) = named_field(&proto, &actor_md, "wave", &mut vec![]) else {
+            eprintln!("skipped: pack without the wave field name");
+            return;
+        };
+        let to_wave = path(&actor_md, &wave_f, &mut vec![]).unwrap();
+        let in_wave = |id: i64, w: i64| {
+            let mut a = actor(id, gid, false);
+            set(&mut a, &to_wave, &wave_f, PbValue::I32(w as i32));
+            PbValue::Message(a)
+        };
+        let mut waves = DynamicMessage::new(proto.message(&proto.obf_for_clear(SYNC).unwrap()).unwrap());
+        waves.set_field(&list_field, PbValue::List(vec![in_wave(-5, 1), in_wave(-6, 2)]));
+        c.on_message(&message(SYNC, waves, 5.0), &hub.ctx);
+        let wave_of = |s: &Value| -> Vec<(i64, i64)> {
+            s["fighters"].as_array().unwrap().iter().map(|f| (f["actor"].as_i64().unwrap(), f["wave"].as_i64().unwrap())).collect()
+        };
+        assert_eq!(wave_of(&c.call("state", Value::Null, &hub.ctx).unwrap()), vec![(-6, 2), (-5, 1)]);
+    }
+
+    /// Obfuscated name of the first field whose clear name is `clear` in `md` or the messages under it.
+    fn named_field(proto: &loutil_proto::Proto, md: &MessageDescriptor, clear: &str, seen: &mut Vec<String>) -> Option<String> {
+        if let Some(f) = proto.field_named(md.full_name(), clear) {
+            return Some(f);
+        }
+        if seen.contains(&md.full_name().to_string()) {
+            return None;
+        }
+        seen.push(md.full_name().to_string());
+        md.fields().find_map(|f| named_field(proto, f.kind().as_message()?, clear, seen))
     }
 }

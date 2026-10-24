@@ -202,6 +202,8 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   (DofusDB API returns empty tags since mid-2026 → fallback Loutil_old dump); `danger` column → cross-monster warnings.
   Only `SHOWN` tags displayed (`lib/monsterTags.ts`). Floating window `CombatOverlay.svelte`: living monsters
   only, and only those with a red (flag) tag or a note shown, unless its "tous" button is on.
+- Waves (Songes, some dungeons): FightFighterInformation `wave` (clear name, read with `field_named`; 0 = none, seen 1–9 on a
+  Songe capture); the tab groups the monsters by wave when there are several.
 - Not checked on a real capture yet (except poison boost uids).
 
 **Loot** (`loot.rs`): FightEndEvent → results → fighter id + `Loot` messages; item = the largest int that is a known gid
