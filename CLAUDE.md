@@ -193,7 +193,8 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   in `<app data>/combat/me.json`, so a login needs to be seen once per character).
 - Monster notes from `work/monster_notes.csv` (author's sheet, not committed) and tags from `work/dofusdb_monsters.json`
   (DofusDB API returns empty tags since mid-2026 → fallback Loutil_old dump); `danger` column → cross-monster warnings.
-  Only `SHOWN` tags displayed (`lib/monsterTags.ts`). Floating window `CombatOverlay.svelte`.
+  Only `SHOWN` tags displayed (`lib/monsterTags.ts`). Floating window `CombatOverlay.svelte`: living monsters
+  only, and only those with a red (flag) tag or a note shown, unless its "tous" button is on.
 - Not checked on a real capture yet (except poison boost uids).
 
 **Loot** (`loot.rs`): FightEndEvent → results → fighter id + `Loot` messages; item = the largest int that is a known gid

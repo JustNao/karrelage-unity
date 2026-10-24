@@ -1,17 +1,23 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
+  import { slide } from "svelte/transition";
   import { getCurrentWindow, LogicalPosition, LogicalSize } from "@tauri-apps/api/window";
   import { fight, followFight, NOTE_KINDS, OVERLAY_POS_KEY, OVERLAY_WIDTH, poisonText, shown, sortedGroups, type Group } from "./lib/stores/combat.svelte";
   import { settings } from "./lib/stores/settings.svelte";
   import { tagsOf } from "./lib/monsterTags";
-  import { writeJSON } from "./lib/persist.svelte";
+  import { persisted, writeJSON } from "./lib/persist.svelte";
   import FloatingShell from "./lib/components/FloatingShell.svelte";
 
   /** Floating fight window (combat.html): the Combat tab's monsters, their notes (display level = the app's setting) and the
    *  tags worth showing, in a small always-on-top window over the game. Its height follows its content (up to 80 % of the
-   *  screen, then it scrolls); where the user drops it is remembered for the next fight. */
-  const list = $derived(sortedGroups(fight.fighters, settings.combat.show));
+   *  screen, then it scrolls); where the user drops it is remembered for the next fight. Only the living monsters worth a
+   *  look (a red tag, or a note shown at the display level) are listed, unless "tous" is on; a dead one slides away. */
   const notesOf = (g: Group) => shown(g.notes, settings.combat.show);
+  const ui = persisted("karrelage.combat.overlay", { all: false });
+  const worth = (g: Group) => tagsOf(g.tags).some((t) => t.group === "flag") || notesOf(g).length > 0;
+  const alive = $derived(sortedGroups(fight.fighters, settings.combat.show).filter((g) => g.alive > 0));
+  const list = $derived(ui.all ? alive : alive.filter(worth));
+  const hidden = $derived(alive.length - list.length);
 
   let top = $state<HTMLElement>();
   let body = $state<HTMLElement>();
@@ -79,6 +85,11 @@
     {#if fight.seen && !fight.active}<span class="mut">terminé</span>{/if}
   {/snippet}
   {#snippet actions()}
+    {#if alive.length}
+      <button class="x all" class:on={ui.all} onclick={() => (ui.all = !ui.all)}
+        title={ui.all ? "Tous les monstres affichés : cliquer pour ne garder que ceux à surveiller" : "Seuls les monstres à surveiller (tag rouge ou note) sont affichés : cliquer pour tous les voir"}
+      >{ui.all ? "tous" : `+${hidden}`}</button>
+    {/if}
     <button
       class="x grow"
       onclick={() => (settings.combat.overlayGrow = settings.combat.overlayGrow === "up" ? "down" : "up")}
@@ -91,6 +102,8 @@
     <div class="mut msg">Suivi des combats désactivé (onglet Combat).</div>
   {:else if !fight.fighters.length}
     <div class="mut msg">En attente d'un combat…</div>
+  {:else if !list.length && fight.active}
+    <div class="mut msg">Rien à surveiller{hidden ? ` (${hidden} monstre${hidden > 1 ? "s" : ""})` : ""}</div>
   {/if}
   {#if settings.combat.enabled}
     {#each fight.poisons ?? [] as p (p.action + ":" + p.target)}
@@ -99,11 +112,10 @@
   {/if}
   {#each list as g (g.key)}
     {@const tags = tagsOf(g.tags)}
-    <div class="mon" class:sum={g.summoned} class:gone={!g.alive}>
+    <div class="mon" class:sum={g.summoned} transition:slide={{ duration: 220 }}>
       <div class="hd">
         <span class="nm">{g.name}</span>
         {#if g.alive > 1}<span class="cnt">×{g.alive}</span>{/if}
-        {#if !g.alive}<span class="dead">mort</span>{/if}
         {#if g.summoned}<span class="mut tag">invoc.</span>{/if}
       </div>
       {#if tags.length}
@@ -139,8 +151,8 @@
   .tg { font-size: 10px; padding: 0 5px; border-radius: 4px; line-height: 16px; white-space: nowrap; border: 1px solid; }
   .tg.flag { color: var(--bad); border-color: rgba(229, 100, 110, 0.45); }
   .tg.control { color: var(--warn); border-color: rgba(224, 176, 74, 0.45); }
-  .mon.gone { opacity: 0.45; }
-  .dead { font-size: 10px; text-transform: uppercase; color: var(--bad); }
+  .x.all { font-size: 11px; }
+  .x.all.on, .x.all:hover { color: var(--acc); }
   .poison { margin: 6px 8px; padding: 5px 8px; border-radius: 6px; background: rgba(229, 100, 110, 0.22); border: 1px solid rgba(229, 100, 110, 0.6); color: #ffd7da; font-weight: 600; animation: flash 0.45s ease-in-out 4 alternate; }
   /* a poison just applied: the background flashes to catch the eye, then settles */
   @keyframes flash {
