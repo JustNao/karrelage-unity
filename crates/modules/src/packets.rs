@@ -55,7 +55,7 @@ impl Packets {
         r.insert("len".into(), m.raw.payload.len().into());
         match &m.env {
             Some(e) => {
-                r.insert("kind".into(), e.kind.into());
+                r.insert("kind".into(), if m.raw.dir == "C->S" { "request" } else { e.kind }.into());
                 r.insert("uid".into(), e.uid.map_or(Value::Null, Value::from));
                 r.insert("type".into(), m.type_name.clone().map_or(Value::Null, Value::from));
                 r.insert("name".into(), m.name.clone().into());

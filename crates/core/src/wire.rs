@@ -201,32 +201,28 @@ pub struct Envelope {
     pub value: Vec<u8>,
 }
 
-/// Decode the GameMessage wrapper: oneof {1: Request, 2: Response, 3: Event} carrying a `google.protobuf.Any`.
+/// The `type.ankama.com/<obf>` url and value of a `google.protobuf.Any`, if `b` is one.
+fn any_of(b: &[u8]) -> Option<(String, Vec<u8>)> {
+    let a = decode_fields(b)?;
+    let url = a.iter().find(|x| x.no == 1 && x.wt == 2 && x.bytes.starts_with(b"type."))?;
+    let value = a.iter().find(|x| x.no == 2 && x.wt == 2).map(|x| x.bytes.to_vec()).unwrap_or_default();
+    Some((String::from_utf8_lossy(url.bytes).into_owned(), value))
+}
+
+/// Decode the GameMessage wrapper: a oneof of wrappers each carrying a `google.protobuf.Any`, with an int uid for requests
+/// and responses. The wrappers' field numbers (and the Any's field in them) move between builds (3.7: client requests in
+/// field 4), so they are found by shape: the first wrapper holding an Any. `kind`: "event" without uid, else "response" (a
+/// client request when sent by the client: the caller knows the direction).
 pub fn parse_envelope(payload: &[u8]) -> Option<Envelope> {
     for f in decode_fields(payload)? {
-        if !matches!(f.no, 1..=3) || f.wt != 2 {
+        if f.wt != 2 {
             continue;
         }
-        let kind = ["request", "response", "event"][f.no as usize - 1];
         let Some(inner) = decode_fields(f.bytes) else { continue };
-        let (mut uid, mut any) = (None, None);
-        for g in &inner {
-            let any_no = if kind == "request" { 2 } else { 1 };
-            if g.wt == 2 && g.no == any_no {
-                any = Some(g.bytes);
-            } else if g.wt == 0 && matches!(g.no, 1 | 2) && uid.is_none() {
-                uid = Some(g.num);
-            }
-        }
-        let Some(any) = any else {
-            return Some(Envelope { kind, uid, type_url: None, value: f.bytes.to_vec() });
-        };
-        let Some(a) = decode_fields(any) else {
-            return Some(Envelope { kind, uid, type_url: None, value: any.to_vec() });
-        };
-        let url = a.iter().find(|x| x.no == 1 && x.wt == 2).map(|x| String::from_utf8_lossy(x.bytes).into_owned());
-        let value = a.iter().find(|x| x.no == 2 && x.wt == 2).map(|x| x.bytes.to_vec()).unwrap_or_default();
-        return Some(Envelope { kind, uid, type_url: url, value });
+        let Some((url, value)) = inner.iter().filter(|g| g.wt == 2).find_map(|g| any_of(g.bytes)) else { continue };
+        let uid = inner.iter().find(|g| g.wt == 0).map(|g| g.num);
+        let kind = if uid.is_some() { "response" } else { "event" };
+        return Some(Envelope { kind, uid, type_url: Some(url), value });
     }
     None
 }
@@ -242,6 +238,19 @@ mod tests {
         assert_eq!(e.kind, "event");
         assert_eq!(e.type_url.as_deref(), Some("type.ankama.com/jzs"));
         assert!(!e.value.is_empty());
+    }
+
+    /// A client request of build 3.7 (captured): wrapper in field 4 {uid -1, Any}.
+    #[test]
+    fn envelope_of_client_request() {
+        let p = hex_decode("222908ffffffffffffffffff01121c0a13747970652e616e6b616d612e636f6d2f6b6a74120508a298b071");
+        let e = parse_envelope(&p).unwrap();
+        assert_eq!((e.kind, e.type_url.as_deref()), ("response", Some("type.ankama.com/kjt")));
+        assert_eq!(e.value, vec![0x08, 0xa2, 0x98, 0xb0, 0x71]);
+    }
+
+    fn hex_decode(s: &str) -> Vec<u8> {
+        (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap()).collect()
     }
 
     #[test]

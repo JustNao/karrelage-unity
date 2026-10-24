@@ -18,8 +18,9 @@ pipeline** (author only: game files → *data pack* the app loads).
 - The data pack contains text extracted from Ankama's files – decide before publishing it publicly.
 
 ## Protocol
-- Protobuf over plain TCP. Frame = VarInt length + `GameMessage` `oneof {1 request, 2 response, 3 event}`, each wrapping a
-  `google.protobuf.Any` (`type.ankama.com/<obf>`). Connection server port 5555.
+- Protobuf over plain TCP. Frame = VarInt length + `GameMessage`: a oneof of wrappers (uid + `google.protobuf.Any`
+  `type.ankama.com/<obf>`, no uid for events) whose field numbers move per build (3.7: client requests in field 4), so
+  `wire::parse_envelope` finds the Any by shape. Connection server port 5555.
 - Dofus.exe's established sockets are discovered (sysinfo + netstat2); each adapter's BPF filter is rebuilt from them
   (`capture.rs` `filter_of`), reject-all while none is tracked, fallback `tcp` if the filter fails.
 - Field numbers are reshuffled per build: beta/clear protos are matched *structurally* only (`match_protos.py`).
