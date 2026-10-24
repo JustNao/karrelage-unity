@@ -187,7 +187,8 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
 - Fighters from ActorPositionInformation (role `fight`); MonsterFighter's gid / grade / level ints are unordered and learnt by
   voting (`<app data>/combat/layout.json`) — levels are often scaled, so no "largest int" guess.
 - Fight start: FightJoin(Running)Event; end: FightEndEvent; deaths: GameActionFightEvent `death` (role `fight.death`) or
-  absence from FightSynchronizeEvent. Summoned copies of starting monsters (doubles) are ignored.
+  absence from FightSynchronizeEvent. Summoned copies of starting monsters (doubles) are ignored, and so are the
+  players' summons (summoner not a monster of the fight; summon details kept when a later message lacks them).
 - Poisons (effects 1131–1140): added by FightBoostAddEvent / FightJoinRunningEvent (role `boost`), removed by
   FightBoostRemoveEvent. Player = every character id seen in CharacterSelectionRequest (fixed per character; all kept
   in `<app data>/combat/me.json`, so a login needs to be seen once per character).

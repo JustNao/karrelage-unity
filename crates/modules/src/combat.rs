@@ -241,6 +241,23 @@ fn fighters(b: &Bindings, m: &DynamicMessage, out: &mut Vec<(i64, Fighter)>) {
     out.push((int(m, &b.actor_id), Fighter { ints: [x, y, z], summoned, summoner, spawned: false }));
 }
 
+/// The players' summons (Steamer turrets, Osamodas creatures...: monsters too): summoned by someone who is not a monster of
+/// the fight (a character), or by such a summon.
+fn ally_summons(fighters: &BTreeMap<i64, Fighter>) -> BTreeSet<i64> {
+    let mut allies = BTreeSet::new();
+    loop {
+        let before = allies.len();
+        for (actor, x) in fighters {
+            if x.summoner != 0 && (!fighters.contains_key(&x.summoner) || allies.contains(&x.summoner)) {
+                allies.insert(*actor);
+            }
+        }
+        if allies.len() == before {
+            return allies;
+        }
+    }
+}
+
 impl Combat {
     pub fn new() -> Self {
         Self {
@@ -293,12 +310,13 @@ impl Combat {
         };
         // doubles (Chafer Ronin...): summons of a monster that was placed at the start are left out
         let placed: BTreeSet<i64> = f.fighters.values().filter(|x| !x.summon()).map(|x| read(x)[0]).collect();
+        let allies = ally_summons(&f.fighters);
         let list: Vec<Value> = f
             .fighters
             .iter()
             .filter_map(|(actor, x)| {
                 let [gid, grade, level] = read(x);
-                if x.summon() && placed.contains(&gid) {
+                if allies.contains(actor) || (x.summon() && placed.contains(&gid)) {
                     return None;
                 }
                 let m = data.monsters.get(&gid);
@@ -436,6 +454,13 @@ impl Module for Combat {
                         for (actor, mut x) in found {
                             // first seen in a fight action = appeared during the fight (summon, double)
                             x.spawned = next.get(&actor).map_or(m.name == ACTION, |old| old.spawned);
+                            // a message without the summon details (a wave's refresh...) keeps those seen before
+                            if let Some(old) = next.get(&actor) {
+                                x.summoned |= old.summoned;
+                                if x.summoner == 0 {
+                                    x.summoner = old.summoner;
+                                }
+                            }
                             next.insert(actor, x);
                         }
                         let changed = next != f.fighters || dead != f.dead;
@@ -626,6 +651,14 @@ mod tests {
     }
 
     /// A synthetic fight: placement shows a monster, the turn synchronisation lists it plus a summon, then the fight ends.
+    #[test]
+    fn ally_summons_are_not_enemies() {
+        let f = |summoner: i64| Fighter { ints: [1, 2, 3], summoned: summoner != 0, summoner, spawned: summoner != 0 };
+        // -1 a monster, -2 its summon; -3 a turret of the player 77, -4 summoned by that turret
+        let fighters = BTreeMap::from([(-1, f(0)), (-2, f(-1)), (-3, f(77)), (-4, f(-3))]);
+        assert_eq!(ally_summons(&fighters), BTreeSet::from([-3, -4]));
+    }
+
     #[test]
     fn follows_the_fight_monsters() {
         let Some((hub, proto)) = testkit::hub("loutil-combat") else { return };
