@@ -34,6 +34,11 @@
 
   let builds = $state<Build[]>([]);
   let sel = $state<string | null>(null);
+  /** The build open last: opened again when coming back to the tab (or after a restart). */
+  const OPEN_KEY = "karrelage.stuff.open";
+  $effect(() => {
+    if (sel) writeJSON(OPEN_KEY, sel);
+  });
   let err = $state("");
   let info = $state.raw<Info>({ items: {}, sets: {} });
   let recipes = $state.raw<Recipes>({ recipes: {}, names: {} });
@@ -254,7 +259,11 @@
   onMount(() => {
     const tick = setInterval(() => (now = Date.now() / 1000), 15000);
     let alive = true;
-    call<Build[]>("stuff", "list").then((l) => { if (!alive) return; builds = l; if (l[0]) select(l[0].id); });
+    call<Build[]>("stuff", "list").then((l) => { if (!alive) return; builds = l;
+      const last = readJSON<string | null>(OPEN_KEY, null);
+      const open = l.find((b) => b.id === last) ?? l[0];
+      if (open) select(open.id);
+    });
     // a player inspected in game: added to "Builds des joueurs", or replacing that player's build
     const off = listenAll({
       "stuff:player": (b: Build) => {
