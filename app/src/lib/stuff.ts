@@ -26,6 +26,10 @@ export interface Build {
   own_uid?: Record<string, number>;
   /** slots left out of the price (they still count in stats) */
   ignored: string[];
+  /** a player's build, read from their card in game (crates/modules/src/stuff.rs): character id, name, when (unix secs), card level (Omega levels included; `level` stops at 200) */
+  player?: { id: number; name: string; seen: number; level?: number };
+  /** player's build: slot -> the exact roll worn (lot-shaped), counted when no lot is chosen */
+  rolls?: Record<string, Lot>;
 }
 export interface InfoEffect { a: number; min: number; max: number; stat: number; label: string | null; group: string | null; density: number | null }
 export interface ItemInfo { name: string; level: number; type_id: number; type: string; set_id: number | null; icon_id: number; effects: InfoEffect[] }

@@ -98,5 +98,21 @@
  "object_effect": {
   "action": ["gdmq", "gdmr"],
   "oneof": "gdng"
+ },
+ "card": {
+  "_doc": "Another player's card (click a player -> profile). CardViewRequest (client, named by anchor) {character, view}; CardInfoResponse -> info_success (Success) -> info (the character: id int64, name, breed, level with Omega levels; checked on a capture); CardViewResponse -> view_success (Success) -> equipment (EquipmentCard) {items: map worn position (0-15) -> preset.Equipment {gid, uid?, effects: ObjectEffect}, characteristics: CharacteristicsInfo}; or -> unauthorized (private equipment). Responses carry no character id: the CardViewRequest with the same envelope uid gives it.",
+  "view_character": "gbab",
+  "info_success": "gbbh",
+  "info": "gbau",
+  "info_id": "gbck",
+  "info_name": "gbcm",
+  "info_breed": "gbcl",
+  "info_level": "gbcn",
+  "view_success": "gbiw",
+  "equipment": "gbes",
+  "unauthorized": "gbet",
+  "items": "gbgt",
+  "gid": "gczo",
+  "effects": "gczk"
  }
 }

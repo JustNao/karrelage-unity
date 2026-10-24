@@ -1,12 +1,21 @@
 //! Stuff: equipment builds imported from Dofusbook links. The build (slots -> game item ids, base characteristics, scrolls,
 //! exo bonuses) is stored locally; item / stat icons are downloaded once and cached on disk (the webview CSP forbids remote
 //! images, so they are handed to the UI as `data:` URLs). Item stats and set bonuses come from the data pack, not from Dofusbook.
-use crate::kit::{arg_str, Store};
+//!
+//! Players' builds: the equipment tab of another player's card (click a player -> profile) becomes a build of its own
+//! (`player` set, one per character, the latest inspection replacing the previous one), with the exact rolls of each item.
+use crate::auction::{parse_effect, stat_effects, ObjectEffect};
+use crate::kit::{arg_str, Role, Store};
 use crate::store::write_atomic;
 use crate::sys::{http, no_window, system_tool, unix_millis, unix_secs};
-use crate::{Ctx, Interest, Module};
+use crate::{Ctx, Interest, Message, Module};
 use anyhow::{anyhow, bail, Context, Result};
+use loutil_proto::util::{int, messages};
+use loutil_proto::{DynamicMessage, PbValue};
+use parking_lot::Mutex;
+use serde::Deserialize;
 use serde_json::{json, Map, Value};
+use std::collections::{HashMap, VecDeque};
 
 const API: &str = "https://www.dofusbook.net/api/stuffs/dofus/public";
 const ITEM_ICON: &str = "https://www.dofusbook.net/static/dist/items"; // <picture>-100.webp (also has the recent items Ankama's CDN lacks)
@@ -23,9 +32,76 @@ const STAT_CODES: &[&str] = &[
     "rw",
 ];
 
+pub const CARD_VIEW_REQUEST: &str = "CardViewRequest";
+pub const CARD_INFO: &str = "CardInfoResponse";
+pub const CARD_VIEW: &str = "CardViewResponse";
+/// Worn position (as in the inventory, see app/src/lib/dofusbookExport.ts) -> build slot.
+const POSITION_SLOTS: [(i64, &str); 17] = [
+    (0, "am"),
+    (1, "ar"),
+    (2, "a1"),
+    (3, "ce"),
+    (4, "a2"),
+    (5, "bo"),
+    (6, "ch"),
+    (7, "ca"),
+    (8, "fa"),
+    (9, "d1"),
+    (10, "d2"),
+    (11, "d3"),
+    (12, "d4"),
+    (13, "d5"),
+    (14, "d6"),
+    (15, "br"),
+    (16, "mo"),
+];
+/// Highest level that gives characteristics (above: Omega levels).
+const MAX_LEVEL: i64 = 200;
+/// Fields of a build the user sets: kept when the player is inspected again.
+const USER_FIELDS: [&str; 7] = ["name", "targets", "chosen", "ignored", "owned", "own_uid", "fm"];
+
+/// bindings.json `card`: the player card messages (see its `_doc`).
+#[derive(Deserialize)]
+struct CardBind {
+    view_character: String,
+    info_success: String,
+    info: String,
+    info_id: String,
+    info_name: String,
+    info_breed: String,
+    info_level: String,
+    view_success: String,
+    equipment: String,
+    unauthorized: String,
+    items: String,
+    gid: String,
+    effects: String,
+}
+
+/// A character seen in a CardInfoResponse.
+#[derive(Clone)]
+struct Player {
+    name: String,
+    breed: i64,
+    level: i64,
+}
+
+#[derive(Default)]
+struct Cards {
+    players: HashMap<i64, Player>,
+    /// Recent CardViewRequests: (envelope uid, character). Responses carry no character id but the request's uid (checked
+    /// on a capture).
+    requested: VecDeque<(u64, i64)>,
+    /// Character of the last CardInfoResponse (fallback when the request was not seen).
+    last_info: Option<i64>,
+}
+
 #[derive(Default)]
 pub struct Stuff {
     builds: Store<Vec<Value>>,
+    bind: Role<CardBind>,
+    effect_bind: Role<ObjectEffect>,
+    cards: Mutex<Cards>,
 }
 
 impl Stuff {
@@ -37,6 +113,70 @@ impl Stuff {
     fn save(&self) {
         self.builds.flush();
     }
+
+    /// The equipment of a player card as a build (None when the card is another view, or private).
+    fn player_build(&self, ctx: &Ctx, b: &CardBind, eb: &ObjectEffect, msg: &DynamicMessage, uid: Option<u64>, t: f64) -> Option<Value> {
+        let success = sub(msg, &b.view_success)?;
+        let cards = self.cards.lock();
+        // the request with this uid, else (request not seen) the latest one, else the last card opened
+        let asked = uid.and_then(|u| cards.requested.iter().rev().find(|(r, _)| *r == u)).or(cards.requested.back()).map(|(_, c)| *c);
+        let id = asked.or(cards.last_info)?;
+        let player = cards.players.get(&id).cloned();
+        drop(cards);
+        if success.has_field_by_name(&b.unauthorized) {
+            ctx.log(format!("stuff: équipement privé (personnage {id})"));
+            return None;
+        }
+        let equipment = sub(&success, &b.equipment)?;
+        let (mut slots, mut rolls) = (Map::new(), Map::new());
+        if let Some(PbValue::Map(items)) = equipment.get_field_by_name(&b.items).as_deref() {
+            for (pos, v) in items {
+                let (Some(pos), Some(it)) = (pos.as_i32(), v.as_message()) else { continue };
+                let Some(&(_, slot)) = POSITION_SLOTS.iter().find(|(p, _)| *p == pos as i64) else { continue };
+                let gid = int(it, &b.gid);
+                let Some(info) = ctx.data.items.get(&gid) else { continue };
+                let stats = stat_effects(messages(it, &b.effects).iter().map(|e| parse_effect(&ctx.data, eb, e)).collect());
+                slots.insert(slot.into(), json!({"db_id": 0, "gid": gid, "picture": info.icon_id, "name": ctx.data.item_name(gid), "level": info.level}));
+                // shaped like an auction lot (as inventory items are), so the UI counts it with the lot helpers
+                rolls.insert(slot.into(), json!({"uid": -(pos as i64) - 1, "gid": gid, "prices": [], "effects": ctx.data.compare_effects(stats, Some(gid))}));
+            }
+        }
+        let name = player.as_ref().map(|p| p.name.clone()).filter(|n| !n.is_empty()).unwrap_or_else(|| format!("Joueur {id}"));
+        // the card's level counts Omega levels (360 seen): characteristics stop at 200
+        let level = player.as_ref().map(|p| p.level).filter(|l| *l > 0).unwrap_or(MAX_LEVEL);
+        Some(json!({
+            "id": format!("player-{id}"), "player": {"id": id, "name": name, "seen": t, "level": level}, "name": name, "url": "",
+            "level": level.clamp(1, MAX_LEVEL), "class": player.as_ref().map(|p| p.breed).unwrap_or(0),
+            "fetched": unix_secs(), "carac": {}, "fm": {}, "slots": slots, "rolls": rolls,
+            "targets": {}, "chosen": {}, "ignored": [], "owned": [],
+        }))
+    }
+
+    /// Store a player's build, replacing that player's previous one (the user's settings on it kept).
+    fn upsert(&self, mut b: Value) -> Value {
+        let mut bs = self.builds.lock();
+        if let Some(old) = bs.iter_mut().find(|x| x["id"] == b["id"]) {
+            for k in USER_FIELDS {
+                if let Some(v) = old.get(k) {
+                    b[k] = v.clone();
+                }
+            }
+            *old = b.clone();
+        } else {
+            bs.push(b.clone());
+        }
+        drop(bs);
+        self.builds.touch();
+        b
+    }
+}
+
+/// Singular message field `name` of `m`, when set.
+fn sub(m: &DynamicMessage, name: &str) -> Option<DynamicMessage> {
+    if !m.has_field_by_name(name) {
+        return None;
+    }
+    m.get_field_by_name(name)?.as_message().cloned()
 }
 
 fn agent(redirects: u32) -> ureq::Agent {
@@ -191,7 +331,34 @@ impl Module for Stuff {
     }
 
     fn interest(&self) -> Interest {
-        Interest::Types(&[])
+        Interest::Types(&[CARD_VIEW_REQUEST, CARD_INFO, CARD_VIEW])
+    }
+
+    fn on_message(&self, m: &Message, ctx: &Ctx) {
+        let (Some(b), Some(eb), Some(msg)) = (self.bind.get(ctx, "card"), self.effect_bind.get(ctx, "object_effect"), m.decoded.as_ref()) else { return };
+        match m.name.as_str() {
+            CARD_VIEW_REQUEST => {
+                let mut c = self.cards.lock();
+                c.requested.push_back((m.env.as_ref().and_then(|e| e.uid).unwrap_or(0), int(msg, &b.view_character)));
+                if c.requested.len() > 32 {
+                    c.requested.pop_front();
+                }
+            }
+            CARD_INFO => {
+                let Some(info) = sub(msg, &b.info_success).and_then(|s| sub(&s, &b.info)) else { return };
+                let id = int(&info, &b.info_id);
+                let name = info.get_field_by_name(&b.info_name).and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default();
+                let mut c = self.cards.lock();
+                c.players.insert(id, Player { name, breed: int(&info, &b.info_breed), level: int(&info, &b.info_level) });
+                c.last_info = Some(id);
+            }
+            CARD_VIEW => {
+                if let Some(build) = self.player_build(ctx, b, eb, msg, m.env.as_ref().and_then(|e| e.uid), m.raw.t) {
+                    ctx.emit("stuff", "player", self.upsert(build));
+                }
+            }
+            _ => {}
+        }
     }
 
     fn init(&self, ctx: &Ctx) {
@@ -371,6 +538,99 @@ mod tests {
         assert!(icon(&hub.ctx, "item", "9272").unwrap().starts_with("data:image/webp;base64,"));
         assert!(icon(&hub.ctx, "item", "17657").is_ok());
         assert!(icon(&hub.ctx, "stat", "vi").unwrap().len() > 100);
+    }
+
+    /// Synthetic player card: CardInfoResponse (name), CardViewRequest (character), CardViewResponse (equipment with one
+    /// rolled item), then a second inspection of the same player replacing the build but keeping its user settings.
+    #[test]
+    fn inspected_player_becomes_a_build() {
+        use crate::kit::testkit;
+        use loutil_proto::{MapKey, MessageDescriptor};
+        let Some((hub, proto)) = testkit::hub("loutil-stuff-card") else { return };
+        let ctx = &hub.ctx;
+        let b: CardBind = serde_json::from_value(ctx.data.bindings["card"].clone()).unwrap();
+        let eb: ObjectEffect = serde_json::from_value(ctx.data.bindings["object_effect"].clone()).unwrap();
+        let md = |clear: &str| proto.message(&proto.obf_for_clear(clear).unwrap_or_else(|| panic!("{clear} named"))).unwrap();
+        let field = |m: &MessageDescriptor, f: &str| m.get_field_by_name(f).unwrap_or_else(|| panic!("field {f}")).kind().as_message().unwrap().clone();
+        let (info_md, view_md) = (md(CARD_INFO), md(CARD_VIEW));
+
+        let mut player = DynamicMessage::new(field(&field(&info_md, &b.info_success), &b.info));
+        player.set_field_by_name(&b.info_id, PbValue::I64(4242));
+        player.set_field_by_name(&b.info_name, PbValue::String("Toto".into()));
+        let mut success = DynamicMessage::new(field(&info_md, &b.info_success));
+        success.set_field_by_name(&b.info, PbValue::Message(player));
+        let mut info = DynamicMessage::new(info_md);
+        info.set_field_by_name(&b.info_success, PbValue::Message(success));
+        let mut req = DynamicMessage::new(md(CARD_VIEW_REQUEST));
+        req.set_field_by_name(&b.view_character, PbValue::I64(4242));
+
+        // a hat (position 6) with its first effect rolled at its minimum
+        let gid = *ctx
+            .data
+            .items
+            .keys()
+            .find(|g| ctx.data.is_equipment(**g) && ctx.data.items[g].effects.first().is_some_and(|e| e.min < e.max && e.a == 125))
+            .unwrap();
+        let first = ctx.data.items[&gid].effects[0].clone();
+        let (succ_md, equip_md) = (field(&view_md, &b.view_success), field(&field(&view_md, &b.view_success), &b.equipment));
+        let item_md = equip_md.get_field_by_name(&b.items).unwrap().kind().as_message().unwrap().map_entry_value_field().kind().as_message().unwrap().clone();
+        let fx_md = field(&item_md, &b.effects);
+        // the effect's value: the oneof's integer member
+        let value_f = fx_md.oneofs().find(|o| o.name() == eb.oneof).unwrap().fields().find(|f| matches!(f.kind(), loutil_proto::Kind::Int32)).unwrap();
+        let view = |gid: i64| {
+            let mut fx = DynamicMessage::new(fx_md.clone());
+            fx.set_field_by_name(&eb.action[0], PbValue::I32(first.a as i32));
+            fx.set_field(&value_f, PbValue::I32(first.min as i32));
+            let mut it = DynamicMessage::new(item_md.clone());
+            it.set_field_by_name(&b.gid, PbValue::I32(gid as i32));
+            it.set_field_by_name(&b.effects, PbValue::List(vec![PbValue::Message(fx)]));
+            let mut eq = DynamicMessage::new(equip_md.clone());
+            eq.set_field_by_name(&b.items, PbValue::Map([(MapKey::I32(6), PbValue::Message(it))].into_iter().collect()));
+            let mut s = DynamicMessage::new(succ_md.clone());
+            s.set_field_by_name(&b.equipment, PbValue::Message(eq));
+            let mut v = DynamicMessage::new(view_md.clone());
+            v.set_field_by_name(&b.view_success, PbValue::Message(s));
+            v
+        };
+
+        let stuff = Stuff::new();
+        let send = |name: &str, d: DynamicMessage| stuff.on_message(&testkit::msg(name, Some(d), 7.0), ctx);
+        send(CARD_INFO, info);
+        send(CARD_VIEW_REQUEST, req);
+        send(CARD_VIEW, view(gid));
+        let list = stuff.call("list", Value::Null, ctx).unwrap();
+        let bs = list.as_array().unwrap();
+        assert_eq!(bs.len(), 1);
+        assert_eq!((bs[0]["id"].clone(), bs[0]["name"].clone(), bs[0]["player"]["id"].clone()), (json!("player-4242"), json!("Toto"), json!(4242)));
+        assert_eq!(bs[0]["slots"]["ch"]["gid"], json!(gid));
+        let roll = &bs[0]["rolls"]["ch"]["effects"][0];
+        assert_eq!((roll["action"].clone(), roll["hi"].clone()), (json!(first.a), json!(first.min)), "exact roll kept: {roll}");
+
+        stuff.call("save_state", json!({"id": "player-4242", "patch": {"targets": {"1": 12}}}), ctx).unwrap();
+        send(CARD_VIEW, view(gid));
+        let list = stuff.call("list", Value::Null, ctx).unwrap();
+        assert_eq!(list.as_array().unwrap().len(), 1, "the latest inspection replaces the previous one");
+        assert_eq!(list[0]["targets"], json!({"1": 12}), "user settings kept");
+    }
+
+    /// Dev check on a capture: `[CARD_INFO=<CardInfoResponse record .json>] CARD_REQ=<CardViewRequest hex> CARD_VIEW=<CardViewResponse record .json> cargo test -p loutil-modules
+    /// real_card -- --nocapture` runs both payloads through the hub and prints the build.
+    #[test]
+    fn real_card() {
+        let (Ok(req), Ok(view)) = (std::env::var("CARD_REQ"), std::env::var("CARD_VIEW")) else { return };
+        let Some((hub, _)) = crate::kit::testkit::hub("loutil-stuff-real-card") else { return };
+        let hex = |s: &str| (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap()).collect::<Vec<u8>>();
+        let rec: Value = serde_json::from_slice(&std::fs::read(view).unwrap()).unwrap();
+        let raw = |dir: &'static str, payload: Vec<u8>| loutil_core::RawMessage { t: 1.0, srv: "x".into(), dir, payload };
+        if let Ok(info) = std::env::var("CARD_INFO") {
+            let rec: Value = serde_json::from_slice(&std::fs::read(info).unwrap()).unwrap();
+            hub.handle(raw("S->C", hex(rec["hex"].as_str().unwrap())));
+        }
+        hub.handle(raw("C->S", hex(&req)));
+        hub.handle(raw("S->C", hex(rec["hex"].as_str().unwrap())));
+        let list = hub.call("stuff", "list", Value::Null).unwrap();
+        println!("{}", serde_json::to_string_pretty(&list).unwrap());
+        assert_eq!(list.as_array().unwrap().len(), 1);
     }
 
     #[test]

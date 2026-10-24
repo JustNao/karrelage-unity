@@ -1,7 +1,7 @@
 <script lang="ts">
   import { call } from "../../lib/api";
   import type { Columns } from "../../lib/columns.svelte";
-  import type { Build } from "../../lib/stuff";
+  import { className, type Build } from "../../lib/stuff";
   import ConfirmButton from "../../lib/components/ConfirmButton.svelte";
   import SideList from "../../lib/components/SideList.svelte";
   import SearchBar, { matcher } from "../../lib/components/SearchBar.svelte";
@@ -10,7 +10,7 @@
   import { dofusbookLink } from "../../lib/dofusbookExport";
 
   /** Stuff left panel: the imported builds (filtered by name; "Ajouter" asks for a Dofusbook link in a modal), renamed in place, deleted with a confirmation; export of the
-   *  character's worn equipment to Dofusbook. */
+   *  character's worn equipment to Dofusbook. "Builds des joueurs": the builds read from other players' cards in game (one per player, newest first). */
   let {
     cols,
     builds = $bindable(),
@@ -21,6 +21,8 @@
 
   let q = $state("");
   const shown = $derived.by(() => { const m = matcher(q); return builds.filter((b) => m(b.name)); });
+  const mine = $derived(shown.filter((b) => !b.player));
+  const players = $derived(shown.filter((b) => b.player).sort((a, b) => b.player!.seen - a.player!.seen));
   let adding = $state(false);
   let addErr = $state("");
   let link = $state("");
@@ -75,21 +77,31 @@
       Exporter mon équipement vers Dofusbook</button>
   </div>
   {#if err}<div class="bad err">{err}</div>{/if}
-  {#each shown as b, i (b.id)}
-    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-    <div class="irow brow" class:first={i === 0} class:sel={b.id === sel} onclick={() => renaming !== b.id && onselect(b.id)}>
-      {#if renaming === b.id}
-        <input class="rn" bind:value={draft} onclick={(e) => e.stopPropagation()} onkeydown={(e) => { if (e.key === "Enter") rename(b); if (e.key === "Escape") renaming = null; }} onblur={() => rename(b)} />
-      {:else}
-        <span class="nm"><b>{b.name}</b><br /><span class="mut">niv. {b.level} · {Object.keys(b.slots).length} objets</span></span>
-        <button class="mini" title="Renommer" onclick={(e) => { e.stopPropagation(); renaming = b.id; draft = b.name; }}>✎</button>
-        <ConfirmButton mini label="✕" confirmLabel="Supprimer ?" title="Supprimer ce stuff" onconfirm={() => del(b)} />
-      {/if}
-    </div>
+  {#each mine as b, i (b.id)}
+    {@render row(b, i)}
   {:else}
-    <div class="mut empty">{builds.length ? "Aucun stuff ne correspond au filtre." : "« Ajouter » charge un stuff depuis un lien Dofusbook."}</div>
+    <div class="mut empty">{builds.some((b) => !b.player) ? "Aucun stuff ne correspond au filtre." : "« Ajouter » charge un stuff depuis un lien Dofusbook."}</div>
+  {/each}
+  <div class="sec">Builds des joueurs</div>
+  {#each players as b, i (b.id)}
+    {@render row(b, i)}
+  {:else}
+    <div class="mut empty">{builds.some((b) => b.player) ? "Aucun build ne correspond au filtre." : "Clique sur un joueur en jeu et ouvre l'équipement de sa fiche : son build arrive ici (jets exacts)."}</div>
   {/each}
 </SideList>
+
+{#snippet row(b: Build, i: number)}
+  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+  <div class="irow brow" class:first={i === 0} class:sel={b.id === sel} onclick={() => renaming !== b.id && onselect(b.id)}>
+    {#if renaming === b.id}
+      <input class="rn" bind:value={draft} onclick={(e) => e.stopPropagation()} onkeydown={(e) => { if (e.key === "Enter") rename(b); if (e.key === "Escape") renaming = null; }} onblur={() => rename(b)} />
+    {:else}
+      <span class="nm"><b>{b.name}</b><br /><span class="mut">niv. {b.level}{b.player && b.class ? ` · ${className(b.class)}` : ""} · {Object.keys(b.slots).length} objets</span></span>
+      <button class="mini" title="Renommer" onclick={(e) => { e.stopPropagation(); renaming = b.id; draft = b.name; }}>✎</button>
+      <ConfirmButton mini label="✕" confirmLabel="Supprimer ?" title="Supprimer ce stuff" onconfirm={() => del(b)} />
+    {/if}
+  </div>
+{/snippet}
 
 {#if exported}
   <Modal title="Exporter mon équipement vers Dofusbook" width="520px" onclose={() => (exported = null)}>
@@ -125,4 +137,5 @@
   .err { padding: 0 10px 6px; font-size: 12px; margin-bottom: 6px; }
   .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .rn { flex: 1; min-width: 0; }
+  .sec { padding: 10px 10px 4px; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--mut); }
 </style>

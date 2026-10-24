@@ -47,8 +47,8 @@ struct AhItem {
 }
 #[derive(Deserialize, Clone)]
 pub(crate) struct ObjectEffect {
-    action: Vec<String>,
-    oneof: String,
+    pub(crate) action: Vec<String>,
+    pub(crate) oneof: String,
 }
 /// bindings.json `ah_buy` / `ah_row` / `ah_row_removed` (each optional, so that an older pack still loads the listing bindings).
 #[derive(Deserialize, Clone)]

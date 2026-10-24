@@ -177,6 +177,11 @@ Set `PYTHONUTF8=1` for scripts handling accents. The "Développeur" header toggl
 - Dofusbook export (`lib/dofusbookExport.ts`, format documented there): worn positions 0–15 (0 amulette, 1 arme, 2/4
   anneaux, 3 ceinture, 5 bottes, 6 coiffe, 7 cape, 8 familier, 9–14 Dofus, 15 bouclier; 16 mount, 63 bag); exos sent as fm.
 - Floating scan list (`ScanList.svelte`, localStorage `karrelage.scanlist`) of unscanned items.
+- « Builds des joueurs »: another player's card (Card package, role `card`): CardViewResponse → Success → EquipmentCard
+  {map worn position → preset.Equipment {gid, uid?, effects}} (or Unauthorized = private). Responses carry no character id:
+  the CardViewRequest (named by anchor; view 1 = equipment) with the same envelope uid gives it (verified 3.7.12.12), name /
+  breed / level from CardInfoResponse (level counts Omega levels, 360 seen: the build uses ≤ 200). Build id `player-<id>`, replaced on each inspection (user fields kept); `rolls` = exact rolls,
+  counted when no lot is chosen. Event `stuff:player`. Base points / scrolls (EquipmentCard CharacteristicsInfo) not read.
 
 **Inventory** (`inventory.rs`): equipment from `InventoryContentEvent` (login only), updated by Object* events and
 `ObjectMovementEvent` (named by anchor; uid / position told apart by value). Role `inventory`. Characteristics from

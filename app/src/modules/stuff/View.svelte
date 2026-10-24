@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { call, cached } from "../../lib/api";
+  import { call, cached, listenAll } from "../../lib/api";
   import { kamas } from "../../lib/fmt";
   import { auction } from "../../lib/stores/auction.svelte";
   import { prices } from "../../lib/stores/prices.svelte";
@@ -58,16 +58,20 @@
     return it && it.gid === build.slots[slot].gid ? it : undefined;
   };
 
+  /** A player's build (inspected in game): the exact roll the player wears in that slot. */
+  const rollOf = (slot: string): Lot | null => build?.rolls?.[slot] ?? null;
+
   const resolveWith = (real: boolean): Resolved[] =>
     slotIds.map((slot) => {
       const gid = build!.slots[slot].gid;
-      // an item counted off the price is taken at the roll of the user's own copy, else at its perfect roll (max level for a familiar / mount)
-      const lot = real ? (ignored.has(slot) ? ownLot(slot) ?? null : chosenLot(slot)) : null;
+      // an item counted off the price is taken at the roll of the user's own copy, else at its perfect roll (max level for a familiar / mount);
+      // a bought one at the chosen lot, else (player's build) at the player's roll
+      const lot = real ? (ignored.has(slot) ? ownLot(slot) ?? null : chosenLot(slot) ?? rollOf(slot)) : null;
       return { slot, gid, lot, stats: lot ? lotStats(lot) : itemStats(info.items[gid] ?? ({ effects: [] } as any)) };
     });
   const real = $derived(build ? compute(build, info, resolveWith(true)) : null);
   const max = $derived(build ? compute(build, info, resolveWith(false)) : null);
-  const anyChosen = $derived(!!build && slotIds.some((s) => chosenLot(s) || ownLot(s)));
+  const anyChosen = $derived(!!build && slotIds.some((s) => chosenLot(s) || ownLot(s) || rollOf(s)));
 
   const DOFUS_SLOTS = ["d1", "d2", "d3", "d4", "d5", "d6"];
   const DOFUS_TYPE = 23; // itemtypes: Dofus (trophées 151 and prysmaradites share the slots and are not touched)
@@ -242,12 +246,21 @@
     const tick = setInterval(() => (now = Date.now() / 1000), 15000);
     let alive = true;
     call<Build[]>("stuff", "list").then((l) => { if (!alive) return; builds = l; if (l[0]) select(l[0].id); });
+    // a player inspected in game: added to "Builds des joueurs", or replacing that player's build
+    const off = listenAll({
+      "stuff:player": (b: Build) => {
+        const had = builds.some((x) => x.id === b.id);
+        builds = had ? builds.map((x) => (x.id === b.id ? b : x)) : [...builds, b];
+        if (sel === b.id) void loadInfo(b);
+      },
+    });
     cached<Recipes>("auction", "recipes").then((r) => (recipes = r)).catch((e) => (err = String(e)));
     void auction.ensure();
     void prices.ensure();
     void inventory.ensure();
     return () => {
       alive = false;
+      off();
       clearInterval(tick);
       infoReq++; // a pending item_info / icons answer is dropped
       solver.stop(); // the solver must not keep running (and patch the build) once the tab is gone
@@ -284,7 +297,7 @@
     {@const mine = ownLot(id)}
     <div class="slot" data-slot={id} class:fresh={!owned.has(id) && fresh(id)} class:stale={!owned.has(id) && !fresh(id)} class:own={owned.has(id)} class:mine={!!mine} class:ign={ignored.has(id)}>
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-      <div class="ic" title="{sl.name} — {SLOT_TITLES[id]}{mine ? ' (mon objet)' : owned.has(id) ? ' (jet parfait)' : lot ? ` (lot à ${kamas(unitPriceOrNull(lot)!)})` : ''}" onclick={(e) => openPop(id, e.currentTarget)}>
+      <div class="ic" title="{sl.name} — {SLOT_TITLES[id]}{mine ? ' (mon objet)' : owned.has(id) ? ' (jet parfait)' : lot ? ` (lot à ${kamas(unitPriceOrNull(lot)!)})` : rollOf(id) ? ' (jet du joueur)' : ''}" onclick={(e) => openPop(id, e.currentTarget)}>
         {#if icon("item", sl.picture)}<img src={icon("item", sl.picture)} alt={sl.name} />{:else}<span class="mut">{SLOT_TITLES[id]}</span>{/if}
       </div>
       {#if copies.length}<span class="inv" title="Dans l'inventaire du personnage ({copies.some((c) => c.equipped) ? 'équipé' : 'sac'}{copies.length > 1 ? `, ${copies.length} exemplaires` : ''})"></span>{/if}
@@ -305,8 +318,12 @@
     {:else}
       <div class="bar">
         <div class="ttl"><b>{build.name}</b> <span class="mut">niv. {build.level}</span>
-          <button class="ghost" title="Recharger depuis Dofusbook" onclick={() => refresh(build!)}>↻</button>
-          <a class="mut" href={build.url} target="_blank" rel="noreferrer">Dofusbook</a>
+          {#if build.player}
+            <span class="mut" title="Équipement lu sur la fiche du joueur en jeu (jets exacts) ; une nouvelle inspection le remplace">{build.class ? `${className(build.class)} · ` : ""}{(build.player.level ?? 0) > 200 ? `niv. ${build.player.level} (Oméga) · ` : ""}inspecté le {new Date(build.player.seen * 1000).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })}</span>
+          {:else}
+            <button class="ghost" title="Recharger depuis Dofusbook" onclick={() => refresh(build!)}>↻</button>
+            <a class="mut" href={build.url} target="_blank" rel="noreferrer">Dofusbook</a>
+          {/if}
           <button class="scan" onclick={() => openScanList(toScan)} disabled={!toScan.length} title="Ouvre une petite fenêtre flottante avec les objets à scanner à l'HDV">À scanner ({toScan.length})</button></div>
       </div>
 

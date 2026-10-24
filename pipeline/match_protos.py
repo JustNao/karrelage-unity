@@ -267,10 +267,13 @@ def field_assign(cm, bm, cmap, emap):
 
 
 # Messages the obfuscator blanked in the script table, found again on every build: the blank entry declared right after
-# `after` in the same .proto file, with the clear name's length, and `ints` integer fields (field names and numbers are
-# reshuffled per build, so the app tells the fields apart by their values: see crates/modules/src/inventory.rs).
+# `after` in the same .proto file (nested decoys in between skipped), with the clear name's length, and `ints` integer
+# fields (field names and numbers are reshuffled per build, so the app tells the fields apart by their values: see
+# crates/modules/src/inventory.rs); `enums` = how many enum fields it has besides (default 0).
 ANCHORS = [
     {"name": "ObjectMovementEvent", "file": "Inventory", "after": "ObjectDeletedEvent", "ints": (2, 3)},
+    # player card tab asked for: character id + view (social / ladder / equipment); see crates/modules/src/stuff.rs
+    {"name": "CardViewRequest", "file": "Card", "after": "ChangeHighlightedJobsRequest", "ints": (1, 1), "enums": 1},
 ]
 INT_TYPES = {F.TYPE_INT32, F.TYPE_INT64, F.TYPE_UINT32, F.TYPE_UINT64, F.TYPE_SINT32, F.TYPE_SINT64}
 
@@ -285,11 +288,19 @@ def anchored_names(cur_msgs):
     out = {}
     for a in ANCHORS:
         for i, (k, v) in enumerate(entries[:-1]):
-            nk, nv = entries[i + 1]
+            j = i + 1
+            while j < len(entries) - 1 and entries[j][1]["conf"] == "decoy":
+                j += 1
+            nk, nv = entries[j]
             if v["name"] != a["after"] or v["file"] != a["file"] or nv["name"] or nv["file"] != a["file"] or nv["len"] != len(a["name"]):
                 continue
             cn = by_short.get(nk)
-            if cn and all(f.type in INT_TYPES for f in cur_msgs[cn].field) and a["ints"][0] <= len(cur_msgs[cn].field) <= a["ints"][1]:
+            if not cn:
+                continue
+            fields = cur_msgs[cn].field
+            n_int = sum(f.type in INT_TYPES for f in fields)
+            n_enum = sum(f.type == F.TYPE_ENUM for f in fields)
+            if n_int + n_enum == len(fields) and a["ints"][0] <= n_int <= a["ints"][1] and n_enum == a.get("enums", 0):
                 out[cn] = a["name"]
         if a["name"] not in out.values():
             print(f"anchor not found: {a['name']} (after {a['after']} in {a['file']})")
