@@ -61,8 +61,12 @@
   /** The user's own copy an owned slot counts at (still in the inventory), else undefined = perfect roll. */
   const ownLot = (slot: string) => {
     if (!build || !owned.has(slot)) return undefined;
+    const gid = build.slots[slot].gid;
     const it = inventory.byUid(build.own_uid?.[slot]);
-    return it && it.gid === build.slots[slot].gid ? it : undefined;
+    if (it && it.gid === gid) return it;
+    // the chosen copy's uid is gone (object uids can change): the character's only copy of that item stands in
+    const copies = build.own_uid?.[slot] != null ? inventory.ofGid(gid) : [];
+    return copies.length === 1 ? copies[0] : undefined;
   };
 
   /** A player's build (inspected in game): the exact roll the player wears in that slot. */
