@@ -5,6 +5,9 @@ use std::collections::HashMap;
 /// Out-of-order segments kept while waiting for a missing one; past this the gap is given up on.
 const MAX_PENDING: usize = 256;
 const MAX_PENDING_BYTES: usize = 4 << 20;
+/// Seconds a gap is waited for: a TCP retransmission fills it well before; a segment pcap dropped never comes (the game
+/// got it), and a quiet connection would take minutes to reach MAX_PENDING segments.
+const GAP_WAIT: f64 = 1.0;
 /// Unsynced bytes kept while looking for a frame boundary.
 const MAX_UNSYNCED: usize = 1 << 20;
 
@@ -15,11 +18,15 @@ pub struct Stream {
     pending_bytes: usize,
     buf: Vec<u8>,
     synced: bool,
+    /// When the oldest gap still waited for opened (`now` of `feed`).
+    gap_since: Option<f64>,
 }
 
 impl Stream {
-    pub fn feed(&mut self, seq: u32, data: &[u8], syn: bool) -> Vec<Vec<u8>> {
+    /// `now`: capture time in seconds (gaps are given up on after GAP_WAIT).
+    pub fn feed(&mut self, seq: u32, data: &[u8], syn: bool, now: f64) -> Vec<Vec<u8>> {
         if syn {
+            self.gap_since = None;
             self.next_seq = Some(seq.wrapping_add(1));
             self.pending.clear();
             self.pending_bytes = 0;
@@ -46,7 +53,8 @@ impl Stream {
             if let Some(old) = self.pending.insert(seq, data.to_vec()) {
                 self.pending_bytes -= old.len();
             }
-            if self.pending.len() <= MAX_PENDING && self.pending_bytes <= MAX_PENDING_BYTES {
+            let since = *self.gap_since.get_or_insert(now);
+            if self.pending.len() <= MAX_PENDING && self.pending_bytes <= MAX_PENDING_BYTES && now - since < GAP_WAIT {
                 return vec![];
             }
             // the missing segment is never coming (dropped by pcap, or captured mid-stream): skip the gap and
@@ -56,13 +64,13 @@ impl Stream {
             self.pending_bytes -= d.len();
             self.buf.clear();
             self.synced = false;
-            return self.append(first, &d);
+            return self.append(first, &d, now);
         }
-        self.append(seq, data)
+        self.append(seq, data, now)
     }
 
     /// Append in-order bytes starting at `seq`, then everything pending that follows, and pop the frames.
-    fn append(&mut self, seq: u32, data: &[u8]) -> Vec<Vec<u8>> {
+    fn append(&mut self, seq: u32, data: &[u8], now: f64) -> Vec<Vec<u8>> {
         self.buf.extend_from_slice(data);
         let mut n = seq.wrapping_add(data.len() as u32);
         while let Some(d) = self.pending.remove(&n) {
@@ -71,6 +79,8 @@ impl Stream {
             n = n.wrapping_add(d.len() as u32);
         }
         self.next_seq = Some(n);
+        // a later gap (segments still pending) is waited for from now
+        self.gap_since = (!self.pending.is_empty()).then_some(now);
         if !self.synced {
             match wire::find_sync(&self.buf, 3) {
                 wire::SyncPoint::At(off) => {
@@ -101,26 +111,42 @@ mod tests {
     #[test]
     fn reorders_and_frames() {
         let mut s = Stream::default();
-        assert!(s.feed(100, &[], true).is_empty());
+        assert!(s.feed(100, &[], true, 0.0).is_empty());
         // frame: len 3 + payload 08 01 10 is not valid protobuf-free, but synced streams do not validate payloads.
         let a = [3u8, 8, 1, 16];
         let b = [1u8];
-        assert!(s.feed(105, &b[..], false).is_empty());
-        let out = s.feed(101, &a[..], false);
+        assert!(s.feed(105, &b[..], false, 0.0).is_empty());
+        let out = s.feed(101, &a[..], false, 0.0);
         assert_eq!(out, vec![vec![8, 1, 16]]);
     }
 
     #[test]
     fn skips_a_segment_that_never_arrives() {
         let mut s = Stream::default();
-        s.feed(0, &[], true);
+        s.feed(0, &[], true, 0.0);
         // seq 1..4 is lost; everything after it must still come through once the gap is given up on
         let frame = [2u8, 0x08, 0x01];
         let mut out = vec![];
         for i in 0..(MAX_PENDING as u32 + 10) {
-            out.extend(s.feed(4 + i * 3, &frame, false));
+            out.extend(s.feed(4 + i * 3, &frame, false, 0.0));
         }
         assert!(out.len() >= 5, "got {} frames", out.len());
+        assert!(out.iter().all(|f| f == &vec![0x08, 0x01]));
+    }
+
+    #[test]
+    fn gives_up_on_a_gap_after_a_while() {
+        let mut s = Stream::default();
+        s.feed(0, &[], true, 0.0);
+        // seq 1..4 lost on a quiet connection: a frame now and then
+        let frame = [2u8, 0x08, 0x01];
+        assert!(s.feed(4, &frame, false, 10.0).is_empty());
+        assert!(s.feed(7, &frame, false, 10.5).is_empty(), "a retransmission may still fill the gap");
+        let mut out = s.feed(10, &frame, false, 11.2);
+        for i in 0..4 {
+            out.extend(s.feed(13 + i * 3, &frame, false, 11.5));
+        }
+        assert!(!out.is_empty(), "past GAP_WAIT the gap is skipped");
         assert!(out.iter().all(|f| f == &vec![0x08, 0x01]));
     }
 }

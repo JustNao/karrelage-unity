@@ -274,7 +274,7 @@ fn handle(state: &Mutex<State>, on_msg: &Arc<dyn Fn(RawMessage) + Send + Sync>, 
             return;
         };
         let label = st.conns[&key].clone();
-        let frames = st.streams.entry((key, dir)).or_default().feed(p.seq, p.payload, p.syn);
+        let frames = st.streams.entry((key, dir)).or_default().feed(p.seq, p.payload, p.syn, now());
         frames.into_iter().map(|f| (label.clone(), dir, f)).collect::<Vec<_>>()
     };
     for (srv, dir, payload) in frames {
