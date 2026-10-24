@@ -116,18 +116,24 @@ impl Stuff {
 
     /// The equipment of a player card as a build (None when the card is another view, or private).
     fn player_build(&self, ctx: &Ctx, b: &CardBind, eb: &ObjectEffect, msg: &DynamicMessage, uid: Option<u64>, t: f64) -> Option<Value> {
-        let success = sub(msg, &b.view_success)?;
+        let Some(success) = sub(msg, &b.view_success) else {
+            ctx.log("stuff: fiche de joueur refusée par le serveur");
+            return None;
+        };
         let cards = self.cards.lock();
         // the request with this uid, else (request not seen) the latest one, else the last card opened
         let asked = uid.and_then(|u| cards.requested.iter().rev().find(|(r, _)| *r == u)).or(cards.requested.back()).map(|(_, c)| *c);
-        let id = asked.or(cards.last_info)?;
+        let Some(id) = asked.or(cards.last_info) else {
+            ctx.log("stuff: fiche de joueur reçue sans sa demande (personnage inconnu)");
+            return None;
+        };
         let player = cards.players.get(&id).cloned();
         drop(cards);
         if success.has_field_by_name(&b.unauthorized) {
             ctx.log(format!("stuff: équipement privé (personnage {id})"));
             return None;
         }
-        let equipment = sub(&success, &b.equipment)?;
+        let equipment = sub(&success, &b.equipment)?; // another tab of the card
         let (mut slots, mut rolls) = (Map::new(), Map::new());
         if let Some(PbValue::Map(items)) = equipment.get_field_by_name(&b.items).as_deref() {
             for (pos, v) in items {
@@ -354,6 +360,11 @@ impl Module for Stuff {
             }
             CARD_VIEW => {
                 if let Some(build) = self.player_build(ctx, b, eb, msg, m.env.as_ref().and_then(|e| e.uid), m.raw.t) {
+                    ctx.log(format!(
+                        "stuff: build de {} lu ({} objets)",
+                        build["name"].as_str().unwrap_or("?"),
+                        build["slots"].as_object().map_or(0, |s| s.len())
+                    ));
                     ctx.emit("stuff", "player", self.upsert(build));
                 }
             }

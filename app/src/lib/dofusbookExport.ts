@@ -10,7 +10,7 @@
  * scrolls are the character's (inventory `character`; without them: 0 points, 100 scrolls). The level is not captured: 200.
  */
 import type { Character, InvItem } from "./stores/inventory.svelte";
-import { EXO_BASE, FM_STATS, lotStats } from "./stuff";
+import { EXO_BASE, FM_STATS, lotStats, type Build } from "./stuff";
 
 const URL = "https://www.dofusbook.net/fr/equipement/dofus-stuffer/objets?stuff=";
 /** Dofusbook's stat order of the format. */
@@ -79,4 +79,16 @@ function pack(v: unknown, out: number[] = []): number[] {
     for (const [k, x] of e) { pack(k, out); pack(x, out); }
   }
   return out;
+}
+
+/** Build slot -> the game's worn position (as in crates/modules/src/stuff.rs `POSITION_SLOTS`). */
+const SLOT_POSITIONS: Record<string, number> = {
+  am: 0, ar: 1, a1: 2, ce: 3, a2: 4, bo: 5, ch: 6, ca: 7, fa: 8, d1: 9, d2: 10, d3: 11, d4: 12, d5: 13, d6: 14, br: 15, mo: 16,
+};
+
+/** Export link of a player's build (read on their card in game): their items, exos of their exact rolls as forgemagie. Their
+ *  characteristics are not on the card: 0 points, 100 scrolls. */
+export function playerBuildLink(b: Build): string {
+  const worn = Object.entries(b.rolls ?? {}).flatMap(([slot, lot]) => (slot in SLOT_POSITIONS ? [{ ...lot, position: SLOT_POSITIONS[slot] } as InvItem] : []));
+  return dofusbookLink(worn, null, b.level);
 }

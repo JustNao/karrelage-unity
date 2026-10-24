@@ -16,6 +16,8 @@
     type Build, type Info, type Lot, type Resolved, type StatRow,
   } from "../../lib/stuff";
   import BuildList from "./BuildList.svelte";
+  import Modal from "../../lib/components/Modal.svelte";
+  import { playerBuildLink } from "../../lib/dofusbookExport";
   import PricePanel, { type OutRow } from "./PricePanel.svelte";
   import SlotPopup, { POP_W, type PopAt } from "./SlotPopup.svelte";
   import { Solver } from "./solver.svelte";
@@ -117,6 +119,13 @@
     Object.assign(build, p);
     call("stuff", "save_state", { id: build.id, patch: p }).catch((e) => (err = String(e)));
   };
+  /** Dofusbook export link of a player's build, shown in its modal (null = closed). */
+  let exported = $state<string | null>(null);
+  let copied = $state<boolean | null>(false); // null = the clipboard refused
+  async function copyExport() {
+    try { await navigator.clipboard.writeText(exported!); copied = true; } catch { copied = null; }
+  }
+  const selectAll = (n: HTMLInputElement) => { n.focus(); n.select(); };
   const refresh = async (b: Build) => {
     try {
       const fresh = await call<Build>("stuff", "refresh", { id: b.id });
@@ -324,7 +333,8 @@
             <button class="ghost" title="Recharger depuis Dofusbook" onclick={() => refresh(build!)}>↻</button>
             <a class="mut" href={build.url} target="_blank" rel="noreferrer">Dofusbook</a>
           {/if}
-          <button class="scan" onclick={() => openScanList(toScan)} disabled={!toScan.length} title="Ouvre une petite fenêtre flottante avec les objets à scanner à l'HDV">À scanner ({toScan.length})</button></div>
+          <button class="scan" onclick={() => openScanList(toScan)} disabled={!toScan.length} title="Ouvre une petite fenêtre flottante avec les objets à scanner à l'HDV">À scanner ({toScan.length})</button>
+          {#if build.player}<button class="scan" onclick={() => ((exported = playerBuildLink(build!)), (copied = false))} title="Lien d'un stuff Dofusbook avec les objets de ce joueur (exos de ses jets en forgemagie)">Exporter vers Dofusbook</button>{/if}</div>
       </div>
 
       <SmoothScroll>
@@ -423,6 +433,18 @@
   </main>
 </div>
 
+{#if exported}
+  <Modal title="Exporter vers Dofusbook" width="520px" onclose={() => (exported = null)}>
+    <div class="mut small">Lien à ouvrir dans le navigateur : Dofusbook y crée un stuff avec les objets du joueur (jets max, exos de ses jets en forgemagie ; ses caractéristiques ne sont pas sur sa fiche : points à 0, parchemins 100 ; niveau {build?.level}).</div>
+    <input class="link" readonly value={exported} use:selectAll />
+    {#if copied === null}<div class="bad small">Copie refusée : le lien est sélectionné, Ctrl+C pour le copier.</div>{/if}
+    <div class="acts">
+      <button class="mini" onclick={() => (exported = null)}>Fermer</button>
+      <button class="mini" onclick={copyExport}>{copied ? "Copié ✓" : "Copier"}</button>
+    </div>
+  </Modal>
+{/if}
+
 {#if build}<SlotPopup bind:pop {build} {owned} mine={pop ? ownLot(pop.slot) : undefined} onset={setOwned} />{/if}
 
 <style>
@@ -436,6 +458,9 @@
   .bar { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; padding: 6px 10px; margin-bottom: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
   .ttl { flex: 1; min-width: 220px; }
   .scan { margin-left: 10px; padding: 2px 8px; font-size: 12px; }
+  .link { width: 100%; box-sizing: border-box; padding: 5px 8px; }
+  .acts { display: flex; justify-content: flex-end; gap: 6px; }
+  .small { font-size: 12px; }
   .ttl a { margin-left: 8px; font-size: 12px; }
   .sheetwrap { container-type: inline-size; }
   .sheet { display: grid; grid-template-columns: 460px max-content 620px; justify-content: safe center; gap: 14px; align-items: start; padding-bottom: 12px; }
