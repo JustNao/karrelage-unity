@@ -56,7 +56,7 @@
     focus = null;
     cand = null;
   });
-  // Pinned lot (kept across items): every other lot shown gets a diff against it.
+  // Pinned lot: every other lot of its item gets a diff against it.
   let pin = $state.raw<{ item: any; row: any } | null>(null);
   const isPin = (r: any) => !!pin && !!item && pin.item.gid === item.gid && pin.row.uid === r.uid;
   const togglePin = (r: any) => (pin = isPin(r) ? null : { item, row: r });
@@ -81,7 +81,9 @@
   /** Familier / montilier listing: tracked by level (price follows the xp curve), no stats / pin / transcendance. */
   const comp = $derived(!!item?.companion);
   /** What a lot is compared with: the pinned lot (never shown against itself). One object per pin, so cards don't re-pair on every render. */
-  const versus = $derived(pin && !comp ? { pin: pin.row, name: pin.item.name } : null);
+  /** The pin only shows (and compares) on its own item's page; it is kept while other items are open. */
+  const shownPin = $derived(pin && item && pin.item.gid === item.gid ? pin : null);
+  const versus = $derived(shownPin && !comp ? { pin: shownPin.row, name: shownPin.item.name } : null);
   const versusFor = (r: any) => (isPin(r) ? null : versus);
 
   // ---- companions: cheapest way to reach a level, buying a lot and feeding it (resource prices = stored prices)
@@ -312,7 +314,7 @@
           Prix <span class="arrow" class:desc={sortDir === -1}>↑</span>
         </button>
         <button onclick={() => ((allOpen = !allOpen), openSet.clear())}>{allOpen ? "Tout replier" : "Tout déplier"}</button>
-        {#if pin}<button class="on" onclick={() => (pin = null)} title="Arrêter de comparer les lots avec le lot épinglé">Désépingler {pin.item.name}</button>{/if}
+        {#if shownPin}<button class="on" onclick={() => (pin = null)} title="Arrêter de comparer les lots avec le lot épinglé">Désépingler</button>{/if}
       </div>
       {#if craft}<CraftSummary {craft} {sale} {gain} />{/if}
       {#if points.length >= 3}
@@ -394,7 +396,7 @@
 
   <Grip {cols} name="filter" dir={-1} />
 
-  <FilterPanel {cols} {item} {comp} {filt} {meta} {picker} {pin} onunpin={() => (pin = null)} bind:legendOnly />
+  <FilterPanel {cols} {item} {comp} {filt} {meta} {picker} pin={shownPin} onunpin={() => (pin = null)} bind:legendOnly />
 </div>
 
 <style>
