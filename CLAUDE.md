@@ -136,6 +136,9 @@ Set `PYTHONUTF8=1` for scripts handling accents. The "Développeur" header toggl
 - Price vs density chart with least-squares line; good deal = ≥ `settings.hdv.goodZ` σ (default 2) above trend, needs ≥ 5
   lots (`lib/density.ts`). Companions plot price vs total xp of the level (`lib/companion.ts`; effects 2821 level, 2862 legendary).
 - Pin (`lib/compare.ts` `pairRows`): other lots shown against the pinned one per stat.
+- Tabs Achat / Vente / Transcendance. Vente (`SellView.svelte`, `lib/sell.ts`): the player's copies of the open item
+  (inventory + own lots on sale), price = 1,000 K under the cheapest filtered lot at least as dense, among lots with the
+  same EXO (else same over) at least as high when any; none denser = the most expensive compared. Copies can be pinned.
 - Transcendance (`lib/transcend.ts`): lock 2825 + `added` effect = runed lot; rune = type 211 with that effect/value;
   profit = cheapest transcended × (1 − tax) − lot − rune.
 - On sale per category (role `ah_type`, removed by `ah_gone`) and listing changes (`ah_buy` removes a lot by uid, `ah_row`

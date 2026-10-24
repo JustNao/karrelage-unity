@@ -7,6 +7,7 @@
   import { ago, kamas } from "../../lib/fmt";
   import { readJSON, writeJSON } from "../../lib/persist.svelte";
   import { auction, mine } from "../../lib/stores/auction.svelte";
+  import { inventory } from "../../lib/stores/inventory.svelte";
   import { prices } from "../../lib/stores/prices.svelte";
   import { settings } from "../../lib/stores/settings.svelte";
   import { isLegendary, levelOf, xpOfLevel } from "../../lib/companion";
@@ -28,12 +29,13 @@
   import CraftSummary from "./CraftSummary.svelte";
   import FilterPanel from "./FilterPanel.svelte";
   import ItemList from "./ItemList.svelte";
+  import SellView from "./SellView.svelte";
   import TranscendView from "./TranscendView.svelte";
   import { effectLabel, Filters } from "./filters.svelte";
 
   /**
    * HDV tab: scanned items (ItemList) | the open item's lots: craft summary, price / density graph, good deals, lot table or
-   * Transcendance tab (TranscendView) | filters and the pinned lot (FilterPanel). The filters live in `filt` (filters.svelte.ts).
+   * Vente tab (SellView: the player's copies, recommended prices) or Transcendance tab (TranscendView) | filters and the pinned lot (FilterPanel). The filters live in `filt` (filters.svelte.ts).
    */
 
   const cols = new Columns("karrelage.cols.items", { list: 280, filter: 470 }); // resizable: list | listing (flexible) | filter
@@ -61,7 +63,7 @@
   /** Highlighted effect: lots without it as an EXO or above its base max are faded out (a plain base roll does not count). */
   const lacksFade = (r: any) => fade !== null && !r.effects.some((e: any) => e.action === fade && (e.status === "added" || e.status === "above"));
   const toggleFade = (a: number) => (fade = fade === a ? null : a);
-  let tab = $state<"listing" | "trans">("listing");
+  let tab = $state<"listing" | "sell" | "trans">("listing");
   let levelOpen = $state(true);
   let dealsOpen = $state(false); // "Good deals" starts collapsed
   let cand = $state<{ id: string | number; a: number; value: number } | null>(null); // selected candidate: its point + the lots with the same rune applied stand out
@@ -124,6 +126,9 @@
       .sort(byUnitPrice(sortDir));
   });
   const rowSet = $derived(new Set(rows));
+  const isMineRow = (r: any) => mine.has(r, item?.gid);
+  /** Copies of the open item the player owns (inventory + own lots on sale): the Vente tab's count. */
+  const owned = $derived(item && !comp ? item.rows.filter(isMineRow).length + inventory.ofGid(item.gid).length : 0);
 
   // dragodindes / muldos / volkornes: extraction into neurones / ambres / cornes (heads-up on lots worth extracting)
   let neurGids = $state.raw<Record<string, number>>({});
@@ -172,7 +177,7 @@
       label: r.name,
       added: comp ? isLegendary(r) : !mount && r.effects.some((e: any) => e.status === "added"), // companions: blue dot = legendary; mounts have no EXO
       missing: !comp && !mount && r.effects.some((e: any) => e.status === "removed"),
-      mine: mine.has(r, item?.gid),
+      mine: isMineRow(r),
     })),
   );
   const fit = $derived(points.length ? analyse(points) : null);
@@ -271,6 +276,7 @@
     cached<Rune[]>("prices", "runes").then(live((l) => (runes = l))).catch(() => {});
     void prices.ensure();
     void mine.ensure();
+    void inventory.ensure().catch(() => {});
     // the shared stores never let an older snapshot replace a newer scan / price (see lib/stores)
     auction.ensure().then(live(() => {
       listed = true;
@@ -313,10 +319,13 @@
         <div class="graph" bind:offsetHeight={graphH}><DensityChart {points} {fit} faded={fadedIds} equipment={!comp && !mount} selected={tab === "trans" && cand ? cand.id : picked} onselect={focusLot} /></div>
       {/if}
       {#if !comp}<div class="tabs">
-        <button class:on={tab === "listing"} onclick={() => (tab = "listing")}>Liste</button>
+        <button class:on={tab === "listing"} onclick={() => (tab = "listing")}>Achat</button>
+        <button class:on={tab === "sell"} onclick={() => (tab = "sell")} title="Mes exemplaires de cet objet et leur prix conseillé">Vente{owned ? ` · ${owned}` : ""}</button>
         <button class:on={tab === "trans"} onclick={() => (tab = "trans")}>Transcendance{transCount ? ` · ${transCount}` : ""}</button>
       </div>{/if}
-      {#if tab === "trans" && !comp}
+      {#if tab === "sell" && !comp}
+        <SellView {item} {rows} {keyOf} isMine={isMineRow} {effLabel} pinned={isPin} onpin={togglePin} onshow={focusLot} />
+      {:else if tab === "trans" && !comp}
         <TranscendView
           {trans}
           {item}
@@ -377,7 +386,7 @@
         {/if}
         <CompanionTable lots={lotsOf(rows)} {neurons} {neuroneUnit} {resource} {picked} faded={lacksFade} onpick={pickLot} />
       {:else}
-        <LotTable lots={lotsOf(rows)} good={goodKeys} transcend={false} {picked} open={(k) => allOpen || openSet.has(k)} faded={lacksFade} ontoggle={toggleRow} stickTop={points.length >= 3 ? graphH : 0} {fade} onfade={toggleFade} pinned={isPin} mine={(r) => mine.has(r, item?.gid)} onpin={togglePin} versus={versusFor} />
+        <LotTable lots={lotsOf(rows)} good={goodKeys} transcend={false} {picked} open={(k) => allOpen || openSet.has(k)} faded={lacksFade} ontoggle={toggleRow} stickTop={points.length >= 3 ? graphH : 0} {fade} onfade={toggleFade} pinned={isPin} mine={isMineRow} onpin={togglePin} versus={versusFor} />
       {/if}
       {/if}
     {/if}

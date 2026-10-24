@@ -159,14 +159,15 @@ impl Inventory {
             return None;
         }
         let position = int(inv, &b.position);
-        let effs = messages(&it, &b.effects).iter().map(|e| parse_effect(&ctx.data, eb, e)).collect();
+        let stats = stat_effects(messages(&it, &b.effects).iter().map(|e| parse_effect(&ctx.data, eb, e)).collect());
+        let density = (ctx.data.item_density(&stats) * 1000.0).round() / 1000.0;
         let info = ctx.data.items.get(&gid);
         Some((
             uid,
             json!({
                 "uid": uid, "gid": gid, "name": ctx.data.item_name(gid), "level": info.map(|i| i.level), "icon": info.map(|i| i.icon_id),
                 "quantity": int(&it, &b.quantity), "position": position, "equipped": position != BAG, "updated": t,
-                "prices": [], "effects": ctx.data.compare_effects(stat_effects(effs), Some(gid)),
+                "prices": [], "density": density, "effects": ctx.data.compare_effects(stats, Some(gid)),
             }),
         ))
     }
@@ -246,7 +247,19 @@ impl Module for Inventory {
                 if let Some(seen) = Seen::of(it) {
                     self.uids.lock().insert(uid, seen);
                 }
-                s.items.insert(uid, it.clone());
+                let mut it = it.clone();
+                if it.get("density").is_none() {
+                    // stored before items carried their density (the Vente tab of the HDV compares it)
+                    let sum: f64 = it["effects"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter(|e| e["status"] != "removed")
+                        .filter_map(|e| ctx.data.effect_density(e["action"].as_i64()?, e["params"].as_array()?))
+                        .sum();
+                    it["density"] = json!((sum * 1000.0).round() / 1000.0);
+                }
+                s.items.insert(uid, it);
             }
         }
     }
