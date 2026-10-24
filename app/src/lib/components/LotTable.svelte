@@ -12,7 +12,7 @@
 
   /**
    * Equipment lots as a condensed table (the HDV "Tableau" view): good deal, price, perfect damage / resistances /
-   * characteristics, transcendance, over-max and EXO effects; good deals get a green line. Clicking a row unfolds the
+   * characteristics, transcendance, over-max and EXO effects; good deals get a gold line, the player's own lots a green one. Clicking a row unfolds the
    * lot's card under it, clicking the card folds it again. Clicking an over / EXO chip highlights the lots with that stat
    * (like "Mettre en avant" on the cards) without unfolding; the pin button sits left of the unfolded card.
    * Also used for lots of different items (Stuff tab) and for transcendance candidates: leading `leads` columns (item,
@@ -34,13 +34,14 @@
     fade = null,
     onfade,
     pinned = () => false,
+    mine = () => false,
     onpin,
     versus = () => null,
     stickTop = 0,
   }: {
     /** `meta`: whatever the `lead` column shows (e.g. the slot and item of a Stuff lot). */
     lots: { row: any; key: string; meta?: any }[];
-    /** Keys of the lots well above the price trend (green line). */
+    /** Keys of the lots well above the price trend (gold line). */
     good?: Set<string>;
     /** Transcendance candidates of the listing (unlocked lots a rune makes profitable), by row. */
     opps?: Map<any, Opportunity>;
@@ -60,6 +61,8 @@
     fade?: number | null;
     onfade?: (action: number) => void;
     pinned?: (r: any) => boolean;
+    /** The player's own lot on sale (green line). */
+    mine?: (r: any) => boolean;
     onpin?: (r: any) => void;
     versus?: (r: any) => { pin: any; name: string } | null;
     /** Height of what sticks above the table (the graph): the header sticks right under it. */
@@ -142,11 +145,11 @@
     rows={sorted}
     {sort}
     key={(r) => r.key}
-    rowProps={(r) => ({ id: `lot-${r.key}`, class: [picked === r.key && "picked", faded(r.row) && "faded", r.good && "hot", pinned(r.row) && "pinned", open(r.key) && "open", rowClass?.(r.meta)].filter(Boolean).join(" "), onclick: () => ontoggle(r.key) })}
+    rowProps={(r) => ({ id: `lot-${r.key}`, class: [picked === r.key && "picked", faded(r.row) && "faded", r.good && "hot", pinned(r.row) && "pinned", mine(r.row) && "mine", open(r.key) && "open", rowClass?.(r.meta)].filter(Boolean).join(" "), onclick: () => ontoggle(r.key) })}
   >
     {#snippet row(r)}
       {#each leads as l (l.key)}<td class="lead" class:n={l.num}>{@render l.cell(r.meta)}</td>{/each}
-      {#if deals}<td class="c">{#if r.good}<span class="good" title="Bien au-dessus de la tendance prix / densité">●</span>{/if}</td>{/if}
+      {#if deals}<td class="c">{#if r.good}<span class="deal" title="Bien au-dessus de la tendance prix / densité">●</span>{/if}</td>{/if}
       <td class="n pc"><b>{Number.isFinite(r.price) ? kamasFull(r.price) : "—"}</b></td>
       <td class="c">{#if r.damage}<span class="star">★</span>{/if}</td>
       <td class="c">{#if r.resist}<span class="star">★</span>{/if}</td>
@@ -195,12 +198,16 @@
   .ltable :global(tbody tr:not(.card-row):hover) { background: var(--panel); }
   .ltable :global(tr.picked) { outline: 1px solid var(--acc); outline-offset: -1px; }
   .ltable :global(tr.faded) { opacity: 0.2; }
-  .ltable :global(tr.hot) { background: color-mix(in srgb, var(--ok) 14%, transparent); }
+  .ltable :global(tr.hot) { background: color-mix(in srgb, var(--gold) 14%, transparent); }
   .ltable :global(tr.hot td) { background: none; }
-  .ltable :global(tr.pinned), .ltable :global(tr.pinned:not(.card-row):hover) { background: color-mix(in srgb, #f5c542 18%, transparent); }
+  .ltable :global(tr.pinned), .ltable :global(tr.pinned:not(.card-row):hover) { background: color-mix(in srgb, var(--acc) 16%, transparent); }
   .ltable :global(tr.pinned td) { background: none !important; }
+  /* the player's own lot: the whole line green, over every other mark */
+  .ltable :global(tr.mine), .ltable :global(tr.mine:not(.card-row):hover) { background: color-mix(in srgb, var(--ok) 20%, transparent); }
+  .ltable :global(tr.mine td) { background: none !important; }
+  .ltable :global(tr.mine td.pc b) { color: var(--ok); }
   /* the open row is marked by a background, not bold text: a change of width would reflow the table mid-animation */
-  .ltable :global(tr.open:not(.hot) td) { background: var(--panel); }
+  .ltable :global(tr.open:not(.hot):not(.mine) td) { background: var(--panel); }
   /* the sticky header sits flush with the top of the scroll area (over the scroller's padding), under the sticky graph */
   .ltable :global(th) { top: calc(var(--stick, 0px) - var(--pad, 12px)); z-index: 2; white-space: nowrap; padding: 2px 5px; }
   /* every column but the last (Over / EXO) as narrow as its content, on one line */
@@ -232,6 +239,7 @@
   .chip.act { cursor: pointer; }
   .chip.act:hover { background: color-mix(in srgb, currentColor 12%, transparent); }
   .chip.on { background: color-mix(in srgb, currentColor 22%, transparent); border-color: currentColor; }
-  .chip.miss { color: var(--warn, orange); border-color: var(--line); padding-left: 6px; }
+  .chip.miss { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 50%, var(--line)); padding-left: 6px; }
   .good { color: var(--ok); }
+  .deal { color: var(--gold); }
 </style>

@@ -68,7 +68,7 @@
      aspect-ratio cannot give the width here (a flex item's width is set before it is stretched) */
   :global(.ii.iic) { align-self: stretch; width: calc(2lh + 6px); margin: -3px 0; }
   .itx { min-width: 0; }
-  .deal-ico { display: inline-block; width: 8px; height: 8px; margin-left: 4px; border-radius: 50%; background: var(--ok); vertical-align: middle; position: relative; top: -1px; font-size: 0; }
+  .deal-ico { display: inline-block; width: 8px; height: 8px; margin-left: 4px; border-radius: 50%; background: var(--gold); vertical-align: middle; position: relative; top: -1px; font-size: 0; }
   /* item types of the list: sticky under the search bar */
   :global(.chd.thead) { border-bottom: 1px solid var(--line); background: var(--bg); padding: 5px 10px; font: 600 11px var(--font); letter-spacing: 0.04em; text-transform: uppercase; position: sticky; top: 66px; z-index: 1; }
 </style>

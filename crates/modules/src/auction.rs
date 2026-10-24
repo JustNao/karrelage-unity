@@ -23,6 +23,9 @@ pub const AH_ROW_REMOVED: &str = "ExchangeBidHouseInListRemovedEvent";
 pub const AH_TYPE: &str = "ExchangeTypesExchangerDescriptionForUserEvent";
 /// The last lot of an item left the AH (the item is no longer listed in its category).
 pub const AH_GONE: &str = "ExchangeBidHouseGenericItemRemovedEvent";
+/// The player's own lots: the AH sell window opened (every lot they have on sale) / a lot put on sale.
+pub const AH_SELLER: &str = "ExchangeBidSellerStartedEvent";
+pub const AH_ADDED: &str = "ExchangeBidHouseItemAddedEvent";
 
 // build-specific obfuscated field names, read from the data pack's bindings.json
 #[derive(Deserialize, Clone)]
@@ -74,6 +77,15 @@ struct AhType {
 struct AhGone {
     gid: String,
 }
+/// bindings.json `ah_mine`: the seller's lots (`objects` -> `item`, or the `added_item` of a lot put on sale), an item
+/// being three unordered ints uid / quantity / gid.
+#[derive(Deserialize, Clone)]
+struct AhMine {
+    objects: String,
+    item: String,
+    added_item: String,
+    ints: Vec<String>,
+}
 
 #[derive(Default)]
 pub struct Auction {
@@ -83,11 +95,15 @@ pub struct Auction {
     removed_bind: Role<AhRowRemoved>,
     type_bind: Role<AhType>,
     gone_bind: Role<AhGone>,
+    mine_bind: Role<AhMine>,
     /// gid -> latest listing of an equipment item (`items.json`)
     store: Store<BTreeMap<String, Value>>,
     /// item type -> {type, t, gids}: what was on sale in that AH category when it was last opened (minus the items whose
     /// last lot left since)
     on_sale: Store<BTreeMap<i64, Value>>,
+    /// uid -> {uid, gid}: the player's own lots on sale (as of the last time the sell window was opened, plus the lots put
+    /// on sale since)
+    mine: Store<BTreeMap<i64, Value>>,
     /// pack-derived answers, constant once the pack is loaded
     effects: OnceLock<Value>,
     recipes: OnceLock<Value>,
@@ -149,6 +165,21 @@ impl Auction {
         };
         self.on_sale.touch();
         ctx.emit("auction", "on_sale", ent);
+    }
+
+    /// The sell window opened (`auction_mine`: the whole list) or a lot put on sale (`auction_mine_added`).
+    fn mine_change(&self, m: &Message, ctx: &Ctx) {
+        let Some(f) = &m.fmt else { return };
+        let lots = f["lots"].as_array().into_iter().flatten().filter_map(|l| Some((l["uid"].as_i64()?, l.clone())));
+        {
+            let mut s = self.mine.lock();
+            if f["kind"] == "auction_mine" {
+                s.clear();
+            }
+            s.extend(lots);
+        }
+        self.mine.touch();
+        ctx.emit("auction", "mine", json!(self.mine.lock().values().collect::<Vec<_>>()));
     }
 
     /// A change of the open listing (`apply_change`): applied to the stored listing holding that lot, sent again with
@@ -282,6 +313,15 @@ fn format_row(
     })
 }
 
+/// One of the player's lots on sale: the item's gid is the int that is an item id, its uid the largest of the others
+/// (the quantity of an equipment lot is 1).
+fn mine_lot(data: &Data, b: &AhMine, item: &DynamicMessage) -> Option<Value> {
+    let ints: Vec<i64> = b.ints.iter().map(|n| int(item, n)).collect();
+    let gi = ints.iter().position(|g| data.items.contains_key(g))?;
+    let uid = ints.iter().enumerate().filter(|(i, _)| *i != gi).map(|(_, u)| *u).max()?;
+    Some(json!({"uid": uid, "gid": ints[gi], "name": data.item_name(ints[gi])}))
+}
+
 /// Apply a listing change (fmt `auction_bought` / `auction_row` / `auction_row_removed`) to the rows of a listing.
 /// None when it changes nothing (no row with that uid...). A purchase only removes a row holding a single offer (an
 /// equipment lot): a resource row lists the cheapest stack of every size, the server's `auction_row` updates it.
@@ -326,10 +366,16 @@ impl Module for Auction {
     }
 
     fn interest(&self) -> Interest {
-        Interest::Types(&[AH_LIST, AH_BUY, AH_ROW_UPDATED, AH_ROW_REMOVED, AH_TYPE, AH_GONE])
+        Interest::Types(&[AH_LIST, AH_BUY, AH_ROW_UPDATED, AH_ROW_REMOVED, AH_TYPE, AH_GONE, AH_SELLER, AH_ADDED])
     }
 
     fn init(&self, ctx: &Ctx) {
+        let saved = self.mine.open(ctx, "auction", "mine.json", |s| json!(s.values().collect::<Vec<_>>()));
+        for l in saved.as_ref().and_then(Value::as_array).into_iter().flatten() {
+            if let Some(uid) = l["uid"].as_i64() {
+                self.mine.lock().insert(uid, l.clone());
+            }
+        }
         let saved = self.on_sale.open(ctx, "auction", "on_sale.json", |s| json!(s.values().collect::<Vec<_>>()));
         for e in saved.as_ref().and_then(Value::as_array).into_iter().flatten() {
             if let Some(t) = e["type"].as_i64() {
@@ -414,6 +460,16 @@ impl Module for Auction {
                 let gid = int(msg, &b.gid);
                 Some(json!({"kind": "auction_gone", "gid": gid, "name": ctx.data.item_name(gid)}))
             }
+            AH_SELLER => {
+                let b = self.mine_bind.get(ctx, "ah_mine")?;
+                let items = messages(msg, &b.objects).iter().filter_map(|o| o.get_field_by_name(&b.item)?.as_message().cloned()).collect::<Vec<_>>();
+                Some(json!({"kind": "auction_mine", "lots": items.iter().filter_map(|i| mine_lot(&ctx.data, b, i)).collect::<Vec<_>>()}))
+            }
+            AH_ADDED => {
+                let b = self.mine_bind.get(ctx, "ah_mine")?;
+                let item = msg.get_field_by_name(&b.added_item)?.as_message()?.clone();
+                Some(json!({"kind": "auction_mine_added", "lots": mine_lot(&ctx.data, b, &item).into_iter().collect::<Vec<_>>()}))
+            }
             _ => None,
         }
     }
@@ -421,6 +477,9 @@ impl Module for Auction {
     fn on_message(&self, m: &Message, ctx: &Ctx) {
         if m.name == AH_TYPE || m.name == AH_GONE {
             return self.on_sale_change(m, ctx);
+        }
+        if m.name == AH_SELLER || m.name == AH_ADDED {
+            return self.mine_change(m, ctx);
         }
         if m.name != AH_LIST {
             return self.on_change(m, ctx);
@@ -433,6 +492,8 @@ impl Module for Auction {
             "items" => Ok(Value::Array(self.store.lock().values().cloned().collect())),
             // what is on sale per item type: {type id: {type, t (category opened), gids}}
             "on_sale" => Ok(Value::Object(self.on_sale.lock().iter().map(|(t, e)| (t.to_string(), e.clone())).collect())),
+            // the player's own lots on sale: [{uid, gid, name}]
+            "mine" => Ok(json!(self.mine.lock().values().collect::<Vec<_>>())),
             "effects" => Ok(self.effects.get_or_init(|| ctx.data.filterable_effects()).clone()),
             "recipes" => Ok(self.recipes.get_or_init(|| ctx.data.recipes_json()).clone()),
             "effect_meta" => Ok(self.effect_meta.get_or_init(|| ctx.data.effect_meta()).clone()),
@@ -501,6 +562,51 @@ mod tests {
         send(AH_GONE, g, 11.0);
         let s = a.call("on_sale", Value::Null, &hub.ctx).unwrap();
         assert_eq!((s["1"]["gids"].clone(), s["1"]["t"].as_f64()), (json!([31789]), Some(10.0)), "gone, category scan time kept");
+    }
+
+    /// The sell window lists the player's lots (uid told from the gid / quantity by value), a lot put on sale is added and
+    /// the next sell window replaces the list. Needs the data pack.
+    #[test]
+    fn own_lots_on_sale() {
+        let Some((hub, proto)) = crate::kit::testkit::hub("loutil-mine") else { return };
+        let b: AhMine = serde_json::from_value(hub.ctx.data.bindings["ah_mine"].clone()).unwrap();
+        let (Some(s_obf), Some(a_obf)) = (proto.obf_for_clear(AH_SELLER), proto.obf_for_clear(AH_ADDED)) else { return };
+        let (s_md, a_md) = (proto.message(&s_obf).unwrap(), proto.message(&a_obf).unwrap());
+        let item = |uid: i32, gid: i32| {
+            let md = a_md.get_field_by_name(&b.added_item).unwrap().kind().as_message().unwrap().clone();
+            let mut it = DynamicMessage::new(md);
+            for (n, v) in b.ints.iter().zip([1, uid, gid]) {
+                it.set_field_by_name(n, PbValue::I32(v));
+            }
+            it
+        };
+        let objects = s_md.get_field_by_name(&b.objects).unwrap();
+        let entry = |uid: i32, gid: i32| {
+            let mut o = DynamicMessage::new(objects.kind().as_message().unwrap().clone());
+            o.set_field_by_name(&b.item, PbValue::Message(item(uid, gid)));
+            PbValue::Message(o)
+        };
+        let seller = |lots: Vec<PbValue>| {
+            let mut m = DynamicMessage::new(s_md.clone());
+            m.set_field_by_name(&b.objects, PbValue::List(lots));
+            m
+        };
+        let mut added = DynamicMessage::new(a_md.clone());
+        added.set_field_by_name(&b.added_item, PbValue::Message(item(987654, 11609)));
+        let a = Auction::new();
+        let send = |name: &str, decoded: DynamicMessage| {
+            let mut m = testkit::msg(name, Some(decoded), 1.0);
+            m.fmt = a.format(&m, &hub.ctx);
+            a.on_message(&m, &hub.ctx);
+        };
+        let uids = || a.call("mine", Value::Null, &hub.ctx).unwrap().as_array().unwrap().iter().map(|l| l["uid"].as_i64().unwrap()).collect::<Vec<_>>();
+        send(AH_SELLER, seller(vec![entry(123456, 11609), entry(234567, 31789)]));
+        assert_eq!(uids(), vec![123456, 234567]);
+        assert_eq!(a.call("mine", Value::Null, &hub.ctx).unwrap()[1]["gid"], json!(31789));
+        send(AH_ADDED, added);
+        assert_eq!(uids(), vec![123456, 234567, 987654]);
+        send(AH_SELLER, seller(vec![entry(234567, 31789)]));
+        assert_eq!(uids(), vec![234567], "the sell window gives the whole list");
     }
 
     #[test]

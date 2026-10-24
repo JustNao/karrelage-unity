@@ -4,12 +4,12 @@
 :root {
   --font: "Montserrat", system-ui, sans-serif;
   --bg: #14161a; --panel: #1c1f26; --line: #2a2e38; --fg: #d8dce4; --mut: #8a91a0; --acc: #5aa9ff;
-  --ok: #4cc38a; --warn: #e0b04a; --bad: #e5646e; --c2s: #c792ea; --s2c: #7fd1b9;
+  --ok: #4cc38a; --warn: #e0b04a; --bad: #e5646e; --gold: #f2c230; --c2s: #c792ea; --s2c: #7fd1b9;
 }
 @media (prefers-color-scheme: light) {
   :root {
     --bg: #f5f6f8; --panel: #fff; --line: #dde0e6; --fg: #1d2128; --mut: #6a7280; --acc: #1f6fd1;
-    --ok: #17915a; --warn: #a87414; --bad: #c4343f; --c2s: #8a3fb8; --s2c: #12806a;
+    --ok: #17915a; --warn: #a87414; --bad: #c4343f; --gold: #a98000; --c2s: #8a3fb8; --s2c: #12806a;
   }
 }
 * { box-sizing: border-box; }

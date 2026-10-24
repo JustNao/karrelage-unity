@@ -6,7 +6,7 @@
   import { Columns } from "../../lib/columns.svelte";
   import { ago, kamas } from "../../lib/fmt";
   import { readJSON, writeJSON } from "../../lib/persist.svelte";
-  import { auction } from "../../lib/stores/auction.svelte";
+  import { auction, mine } from "../../lib/stores/auction.svelte";
   import { prices } from "../../lib/stores/prices.svelte";
   import { settings } from "../../lib/stores/settings.svelte";
   import { isLegendary, levelOf, xpOfLevel } from "../../lib/companion";
@@ -205,7 +205,7 @@
     return n;
   }
 
-  /** Lots far above the price trend (same rule as the green dots), best first. */
+  /** Lots far above the price trend (same rule as the gold dots), best first. */
   const deals = $derived.by(() => {
     if (!fit) return [];
     const f = fit;
@@ -219,7 +219,7 @@
   /** Only computed when read (deriveds are lazy): the Transcendance tab, the deals' "similar item" hint, and the tab count when some lot is transcended. */
   const trans = $derived(transcendance(comp ? [] : rows, runes, stored, focus));
   const transCount = $derived(!comp && rows.some(isTranscended) ? trans.opportunities.length : 0);
-  /** Table view: the good deals (green lines). */
+  /** Table view: the good deals (gold lines). */
   const goodKeys = $derived(new Set<string>(fit ? points.filter((_: any, i: number) => isGoodDeal(fit!, i, points.length)).map((p: any) => p.id) : []));
 
   /** Clicking a dot: unroll the lot and scroll the list down to it (nothing is filtered out). */
@@ -269,6 +269,7 @@
     foodGids().then(live((m) => (foodIds = m))).catch(() => {});
     cached<Rune[]>("prices", "runes").then(live((l) => (runes = l))).catch(() => {});
     void prices.ensure();
+    void mine.ensure();
     // the shared stores never let an older snapshot replace a newer scan / price (see lib/stores)
     auction.ensure().then(live(() => {
       listed = true;
@@ -350,7 +351,7 @@
         </div>
       {/if}
       {#if deals.length}
-        <div class="deals">
+        <div class="deals gold">
           <Collapsible head="dhead" title="Bonnes affaires" count="· {deals.length} {deals.length === 1 ? 'lot se démarque' : 'lots se démarquent'} au-dessus de la tendance des prix" bind:open={dealsOpen}>
           {#if comp}
             <CompanionTable lots={lotsOf(deals.map((d: any) => d.row)).map((l) => ({ ...l, key: "d-" + l.key }))} {neurons} {neuroneUnit} {resource} faded={lacksFade} onpick={(k) => pickLot(String(k).slice(2))} />
@@ -375,7 +376,7 @@
         {/if}
         <CompanionTable lots={lotsOf(rows)} {neurons} {neuroneUnit} {resource} {picked} faded={lacksFade} onpick={pickLot} />
       {:else}
-        <LotTable lots={lotsOf(rows)} good={goodKeys} transcend={false} {picked} open={(k) => allOpen || openSet.has(k)} faded={lacksFade} ontoggle={toggleRow} stickTop={points.length >= 3 ? graphH : 0} {fade} onfade={toggleFade} pinned={isPin} onpin={togglePin} versus={versusFor} />
+        <LotTable lots={lotsOf(rows)} good={goodKeys} transcend={false} {picked} open={(k) => allOpen || openSet.has(k)} faded={lacksFade} ontoggle={toggleRow} stickTop={points.length >= 3 ? graphH : 0} {fade} onfade={toggleFade} pinned={isPin} mine={(r) => mine.has(r.uid)} onpin={togglePin} versus={versusFor} />
       {/if}
       {/if}
     {/if}
@@ -405,6 +406,8 @@
   .dhead { display: flex; gap: 6px; align-items: center; width: 100%; border: 0; background: none; font: 600 13px var(--font); color: var(--ok); margin-bottom: 8px; padding: 0; text-align: left; }
   .dhead .mut { font-weight: 400; }
   .deals :global(.chd.dhead) { font: 600 13px var(--font); color: var(--ok); margin-bottom: 8px; padding: 0; }
+  .deals.gold { border-color: color-mix(in srgb, var(--gold) 45%, var(--line)); background: color-mix(in srgb, var(--gold) 5%, transparent); }
+  .deals.gold :global(.chd.dhead) { color: var(--gold); }
   .deals :global(.chd.dhead .mut) { font-weight: 400; }
   .deal { cursor: pointer; }
   .deal { transition: opacity 0.25s; }

@@ -55,6 +55,13 @@
   "_doc": "ExchangeBidHouseGenericItemRemovedEvent (the last lot of an item left the AH): gid.",
   "gid": "fyqx"
  },
+ "ah_mine": {
+  "_doc": "The player's own AH lots. ExchangeBidSellerStartedEvent (sell window opened): objects = ItemToSellInBid {item, price, unsold delay...}; ExchangeBidHouseItemAddedEvent (a lot put on sale): added_item. The item: three unordered ints uid / quantity / gid + effects.",
+  "objects": "fygc",
+  "item": "fyfs",
+  "added_item": "fxub",
+  "ints": ["fylw", "fyly", "fylz"]
+ },
  "decraft": {
   "_doc": "DecraftResultEvent (breaking items into runes): results = DecraftedItem {coef_min, coef_max (floats, 0.529 = 52.9 %; equal for one item), uid (object uid of the broken item), runes: [{rune_gid, rune_qty}]}.",
   "results": "fyeo",

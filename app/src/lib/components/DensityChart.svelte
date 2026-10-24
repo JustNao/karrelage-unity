@@ -85,7 +85,7 @@
   const hw = $derived(hlabel.length * 6.2 + 10); // label box width (approximation of the 11px text)
   const hlx = $derived(hx == null ? 0 : Math.min(Math.max(hx, hw / 2 + 1), W - hw / 2 - 1));
 
-  /** green = good deal, else blue (added effect) / orange (missing effect), both = blue with an orange ring. */
+  /** gold = good deal, else blue (added effect) / red (missing effect), both = blue with a red ring. */
   type Tone = "good" | "added" | "missing" | "both" | "mid";
   const tone = (i: number): Tone => {
     const p = points[i];
@@ -141,15 +141,15 @@
   .hit { fill: transparent; }
   .pt { transition: r 0.12s; stroke: #0a0b0e; stroke-width: 1; }
   .dot:hover .pt { r: 7; }
-  .good .pt { fill: var(--ok); }
+  .good .pt { fill: var(--gold); }
   .added .pt, .both .pt { fill: #4a9eff; }
-  .missing .pt { fill: #f08a3c; }
-  .both .pt { stroke: #f08a3c; stroke-width: 2; }
+  .missing .pt { fill: var(--bad); }
+  .both .pt { stroke: var(--bad); stroke-width: 2; }
   .mid .pt { fill: #8a91a0; }
   .ring { fill: none; stroke: #fff; stroke-width: 1.5; }
   .d { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin: 0 5px 0 0; background: #8a91a0; }
-  .d.good { background: var(--ok); }
+  .d.good { background: var(--gold); }
   .d.added { background: #4a9eff; }
-  .d.missing { background: #f08a3c; }
+  .d.missing { background: var(--bad); }
   .mut { color: var(--mut); }
 </style>

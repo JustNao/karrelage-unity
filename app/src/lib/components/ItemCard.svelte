@@ -215,7 +215,7 @@
   .ln.low { color: #f08a3c; }
   .ln.neg { color: var(--bad); font-weight: 400; }
   .ln.legend { color: #e6b800; font-weight: 700; }
-  .ln.removed { color: var(--mut); opacity: 0.55; }
+  .ln.removed { color: var(--bad); opacity: 0.7; }
   .ln small { font-weight: 400; color: var(--mut); margin-left: 6px; }
   .ln small.rg { margin: 0 6px 0 0; }
   /* compact: the pinned stats sit right next to the lot's own, columns hug their content */
