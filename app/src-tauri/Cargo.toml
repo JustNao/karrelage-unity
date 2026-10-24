@@ -17,5 +17,9 @@ loutil-data = { path = "../../crates/data" }
 loutil-proto = { path = "../../crates/proto" }
 loutil-modules = { path = "../../crates/modules" }
 
+[target.'cfg(windows)'.dependencies]
+# SetWindowPos: move + resize a floating window in one step (already in the tree through tauri)
+windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging"] }
+
 [lints]
 workspace = true

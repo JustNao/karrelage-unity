@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import { slide } from "svelte/transition";
-  import { getCurrentWindow, LogicalPosition, LogicalSize } from "@tauri-apps/api/window";
+  import { invoke } from "@tauri-apps/api/core";
+  import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
   import { fight, followFight, NOTE_KINDS, OVERLAY_POS_KEY, OVERLAY_WIDTH, poisonText, shown, sortedGroups, type Group } from "./lib/stores/combat.svelte";
   import { settings } from "./lib/stores/settings.svelte";
   import { tagsOf } from "./lib/monsterTags";
@@ -48,10 +49,11 @@
         const p = (await win.outerPosition()).toLogical(await win.scaleFactor());
         bottom ??= p.y + before;
         placed = { x: Math.round(p.x), y: Math.round(bottom - h) };
-        await win.setPosition(new LogicalPosition(placed.x, placed.y));
-      } else {
-        bottom = null;
+        // one step: a move then a resize would show the window a frame at its new top with its old height (flicker)
+        await invoke("set_bounds", { ...placed, width: OVERLAY_WIDTH, height: h });
+        return;
       }
+      bottom = null;
       await win.setSize(new LogicalSize(OVERLAY_WIDTH, h));
     }
     const ro = new ResizeObserver(() => void fit());

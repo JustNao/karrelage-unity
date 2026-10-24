@@ -169,6 +169,30 @@ fn restart_app(app: AppHandle) {
     app.restart()
 }
 
+/// Move and resize the calling (floating) window in one step, logical px: `setPosition` then `setSize` show it a frame at
+/// the new place with the old size, which flickers while a window anchored at its bottom edge grows or shrinks.
+#[tauri::command]
+fn set_bounds(window: tauri::WebviewWindow, x: f64, y: f64, width: f64, height: f64) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{SetWindowPos, SWP_NOACTIVATE, SWP_NOZORDER};
+        let s = window.scale_factor().map_err(|e| e.to_string())?;
+        let hwnd = window.hwnd().map_err(|e| e.to_string())?;
+        let px = |v: f64| (v * s).round() as i32;
+        // SAFETY: a live window handle of this process; no z-order change, no activation (the game keeps the focus)
+        let ok = unsafe { SetWindowPos(hwnd.0, std::ptr::null_mut(), px(x), px(y), px(width), px(height), SWP_NOZORDER | SWP_NOACTIVATE) };
+        if ok == 0 {
+            return Err("SetWindowPos a échoué".into());
+        }
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        window.set_position(tauri::LogicalPosition::new(x, y)).map_err(|e| e.to_string())?;
+        window.set_size(tauri::LogicalSize::new(width, height)).map_err(|e| e.to_string())
+    }
+}
+
 /// Quit so the app installer started by `update.app_install` can replace the files (it relaunches the app itself).
 #[tauri::command]
 fn quit_app(app: AppHandle) {
@@ -219,7 +243,7 @@ fn main() {
                 w.app_handle().exit(0);
             }
         })
-        .invoke_handler(tauri::generate_handler![status, module_call, capture_set, splash_done, restart_app, quit_app])
+        .invoke_handler(tauri::generate_handler![status, module_call, capture_set, splash_done, restart_app, quit_app, set_bounds])
         .build(tauri::generate_context!())
         .expect("error while running Karrelage")
         .run(|_, e| {
