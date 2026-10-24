@@ -102,9 +102,9 @@
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div class="card" class:col={collapsible} onclick={() => collapsible && ontoggle?.()}>
-  {#if (!versus || onpin) && priced && !(inTable && !onpin)}
+  {#if (!versus || onpin) && (priced || onpin) && !(inTable && !onpin)}
     <div class="prices">
-      {#if !versus && !inTable}
+      {#if !versus && !inTable && priced}
         {#each prices as p (p.qty)}
           <span class="price">{#if p.qty > 1}×{p.qty} {/if}{kamasFull(p.price)}</span>
         {:else}
