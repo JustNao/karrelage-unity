@@ -1,6 +1,7 @@
 //! Map monsters: the monster groups of the map the player is on, sent to the UI for the Automation tab (Monstres: a sound
 //! when a searched monster is on the map). `monsters:map` {t, map, gids} on every map change (MapComplementaryInformationEvent,
 //! every actor of the new map), `monsters:spawn` {t, gids} when groups appear on the current map (GameRolePlayShowActorsEvent).
+//! Both also carry `npcs`: the NPC actors (NpcStaticInformation) of the message, by pack NPC id (Songes goblins: King Gob...).
 //!
 //! A group is an ActorPositionInformation -> RolePlayActor -> MonsterGroupActor -> MonsterGroupStaticInformation {main_creature,
 //! underlings, alternatives (other compositions by party size)}, each creature a MonsterInGroupInformation (named by the script
@@ -22,6 +23,15 @@ pub const MAP: &str = "MapComplementaryInformationEvent";
 pub const SHOW: &str = "GameRolePlayShowActorsEvent";
 /// Script-table name of a creature of a group (stable across builds).
 const CREATURE: &str = "MonsterInGroupInformation";
+/// Script-table name of an NPC actor: npc id / special artwork id are unnamed ints, the npc id is the one that is a pack NPC.
+const NPC: &str = "NpcStaticInformation";
+
+/// Monster gids and NPC ids found in a message.
+#[derive(Default)]
+struct Found {
+    gids: BTreeSet<i64>,
+    npcs: BTreeSet<i64>,
+}
 
 #[derive(Default)]
 pub struct MapMonsters;
@@ -46,11 +56,17 @@ impl MapMonsters {
         }
     }
 
-    /// Every creature gid under `m` (each group's main creature, underlings and alternatives), whatever the fields leading there.
-    fn walk(ctx: &Ctx, m: &DynamicMessage, out: &mut BTreeSet<i64>) {
-        if ctx.proto.message_name(m.descriptor().full_name()).0 == CREATURE {
+    /// Every creature gid under `m` (each group's main creature, underlings and alternatives) and every NPC, whatever the
+    /// fields leading there.
+    fn walk(ctx: &Ctx, m: &DynamicMessage, out: &mut Found) {
+        let name = ctx.proto.message_name(m.descriptor().full_name()).0;
+        if name == CREATURE {
             let ints: Vec<i64> = scalar_ints(m).into_iter().map(|(_, v)| v).collect();
-            out.extend(Self::gid(&ctx.data, &ints));
+            out.gids.extend(Self::gid(&ctx.data, &ints));
+            return;
+        }
+        if name == NPC {
+            out.npcs.extend(scalar_ints(m).into_iter().map(|(_, v)| v).find(|v| *v != 0 && ctx.data.npcs.contains_key(v)));
             return;
         }
         for (_, v) in m.fields() {
@@ -62,10 +78,10 @@ impl MapMonsters {
         }
     }
 
-    /// The monster gids of a message, sorted, each once. Only the `actors` field when it is named (map: skips the
+    /// The monster gids and NPC ids of a message, sorted, each once. Only the `actors` field when it is named (map: skips the
     /// interactive elements, houses...).
-    fn monsters(ctx: &Ctx, msg: &DynamicMessage) -> Vec<i64> {
-        let mut out = BTreeSet::new();
+    fn actors(ctx: &Ctx, msg: &DynamicMessage) -> (Vec<i64>, Vec<i64>) {
+        let mut out = Found::default();
         match ctx.proto.field_named(msg.descriptor().full_name(), "actors").and_then(|f| msg.get_field_by_name(&f)) {
             Some(v) => match v.as_ref() {
                 PbValue::List(l) => l.iter().filter_map(PbValue::as_message).for_each(|x| Self::walk(ctx, x, &mut out)),
@@ -73,7 +89,12 @@ impl MapMonsters {
             },
             None => Self::walk(ctx, msg, &mut out),
         }
-        out.into_iter().collect()
+        (out.gids.into_iter().collect(), out.npcs.into_iter().collect())
+    }
+
+    #[cfg(test)]
+    fn monsters(ctx: &Ctx, msg: &DynamicMessage) -> Vec<i64> {
+        Self::actors(ctx, msg).0
     }
 }
 
@@ -88,22 +109,26 @@ impl Module for MapMonsters {
 
     fn on_message(&self, m: &Message, ctx: &Ctx) {
         let Some(msg) = m.decoded.as_ref() else { return };
-        let gids = Self::monsters(ctx, msg);
+        let (gids, npcs) = Self::actors(ctx, msg);
         if m.name == MAP {
             let map = ctx.proto.field_named(msg.descriptor().full_name(), "map_id").map(|f| loutil_proto::util::int(msg, &f));
-            ctx.emit("monsters", "map", json!({"t": m.raw.t, "map": map, "gids": gids}));
-        } else if !gids.is_empty() {
-            ctx.emit("monsters", "spawn", json!({"t": m.raw.t, "gids": gids}));
+            ctx.emit("monsters", "map", json!({"t": m.raw.t, "map": map, "gids": gids, "npcs": npcs}));
+        } else if !gids.is_empty() || !npcs.is_empty() {
+            ctx.emit("monsters", "spawn", json!({"t": m.raw.t, "gids": gids, "npcs": npcs}));
         }
     }
 
-    /// `list`: every monster of the pack [{gid, name}] (Automation search suggestions).
+    /// `list`: every monster of the pack [{gid, name}] (Automation search suggestions); `npcs`: every NPC [{id, name}].
     fn call(&self, method: &str, _args: Value, ctx: &Ctx) -> Result<Value> {
         match method {
             "list" => {
                 let d = &ctx.data;
                 let l: Vec<Value> = d.monsters.iter().filter_map(|(g, m)| Some(json!({"gid": g, "name": d.text(m.name_id)?}))).collect();
                 Ok(Value::Array(l))
+            }
+            "npcs" => {
+                let d = &ctx.data;
+                Ok(Value::Array(d.npcs.iter().filter_map(|(id, n)| Some(json!({"id": id, "name": d.text(n.name_id)?}))).collect()))
             }
             _ => Err(unknown("monsters", method)),
         }
@@ -115,6 +140,30 @@ mod tests {
     use super::*;
     use crate::kit::testkit;
     use loutil_proto::{FieldDescriptor, MessageDescriptor, Proto};
+
+    /// A real Songe room (Paquets tab export of MapComplementaryInformationEvent, work/capture_kinggob_map.json: local only, it
+    /// holds players' names) replayed through a hub: King Gob (NPC 7850) and the room's group are found. Skipped without it.
+    #[test]
+    fn finds_king_gob_in_a_recorded_songe_room() {
+        let Some(pack) = testkit::pack() else { return };
+        let rec = pack.join("../work/capture_kinggob_map.json");
+        let Ok(text) = std::fs::read_to_string(&rec) else { return };
+        let r: Value = serde_json::from_str(&text).unwrap();
+        let h = r["hex"].as_str().unwrap();
+        let payload: Vec<u8> = (0..h.len() / 2).map(|i| u8::from_str_radix(&h[2 * i..2 * i + 2], 16).unwrap()).collect();
+        let data = std::sync::Arc::new(Data::load(&pack, "fr").unwrap());
+        let dir = testkit::temp_dir("loutil-map-npcs");
+        let proto = std::sync::Arc::new(Proto::load(&pack, dir.join("o.json")).unwrap());
+        let seen = std::sync::Arc::new(parking_lot::Mutex::new(vec![]));
+        let s2 = seen.clone();
+        let hub =
+            crate::Hub::new(data, proto, dir, std::sync::Arc::new(move |ev: &str, v: Value| s2.lock().push((ev.to_string(), v))), std::sync::Arc::new(|_| {}));
+        hub.handle(loutil_core::RawMessage { t: 1.0, srv: "x".into(), dir: "S->C", payload });
+        let seen = seen.lock();
+        let (_, v) = seen.iter().find(|(e, _)| e == "monsters:map").expect("a monsters:map event");
+        assert_eq!(v["npcs"], json!([7850]), "King Gob");
+        assert_eq!(v["gids"].as_array().unwrap().len(), 8, "Grand Pa Wabbit and its 7 underlings");
+    }
 
     /// The field path from `m` down to a message named `target` (script table), at most 6 levels deep.
     fn path(proto: &Proto, m: &MessageDescriptor, target: &str, depth: usize) -> Option<Vec<FieldDescriptor>> {

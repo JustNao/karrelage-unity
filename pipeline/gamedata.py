@@ -33,6 +33,7 @@ def _load(n):
 
 
 items, effects, characteristics, itemtypes, spells, recipes, itemsets, monsters = _load("items"), _load("effects"), _load("characteristics"), _load("itemtypes"), _load("spells"), _load("recipes"), _load("itemsets"), _load("monsters")
+npcs = _load("npcs")
 _i18n = None
 
 

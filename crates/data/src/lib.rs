@@ -92,6 +92,13 @@ pub struct MonsterRow {
     pub danger: Vec<String>,
 }
 
+/// An NPC (map actor): its name only.
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct NpcRow {
+    pub name_id: i64,
+}
+
 #[derive(Debug, Deserialize, serde::Serialize, Clone, Default)]
 pub struct MonsterNotes {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -153,6 +160,8 @@ pub struct Data {
     pub itemsets: HashMap<i64, ItemSet>,
     /// Monsters: id -> name, grade levels, fight notes (absent in older packs).
     pub monsters: HashMap<i64, MonsterRow>,
+    /// NPCs: id -> name (absent in older packs).
+    pub npcs: HashMap<i64, NpcRow>,
     pub strings: HashMap<i64, String>,
     /// Build-specific obfuscated names per role (bindings.json), see pipeline/bindings.json.
     pub bindings: Value,
@@ -189,6 +198,7 @@ impl Data {
             recipes: read_map(dir, "recipes.json").unwrap_or_default(),
             itemsets: read_map(dir, "itemsets.json").unwrap_or_default(),
             monsters: read_map(dir, "monsters.json").unwrap_or_default(),
+            npcs: read_map(dir, "npcs.json").unwrap_or_default(),
             equipment_effects,
             bindings: serde_json::from_slice(&std::fs::read(dir.join("bindings.json"))?)?,
             dir: dir.to_path_buf(),

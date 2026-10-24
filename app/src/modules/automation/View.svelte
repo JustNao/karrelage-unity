@@ -101,6 +101,21 @@
             <div class="snd">{@render volume(rules.songes)}</div>
           </div>
         </div>
+        <div class="rule" class:off={!rules.goblins.enabled}>
+          <div class="rh">
+            <Switch bind:checked={rules.goblins.enabled} label="Activer la règle" />
+            <div class="lb">
+              <div><b>{RULE_TITLES.goblins}</b></div>
+              <div class="mut">
+                En entrant dans une salle, si un gobelin des Songes s'y trouve (King Gob, Gobséric, Gobledore ou Bog) : un son par
+                salle et une notification par gobelin.
+              </div>
+            </div>
+          </div>
+          <div class="params">
+            {@render sound(rules.goblins)}
+          </div>
+        </div>
       </section>
       <section>
         <h2>Monstres</h2>

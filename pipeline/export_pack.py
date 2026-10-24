@@ -130,6 +130,11 @@ if db_file.exists():
     print("monster tags:", sum(1 for v in monsters.values() if v.get("tags")), "monsters")
 dump("monsters.json", monsters)
 
+# npcs: name only (map actors, Automation « PNJ » rule)
+npcs = {k: {"nameId": v["nameId"]} for k, v in gd.npcs.items()}
+ids.update(v["nameId"] for v in npcs.values())
+dump("npcs.json", npcs)
+
 for lang in ("fr", "en"):
     f = gd.D / "i18n" / f"{lang}.bin"
     if f.exists():

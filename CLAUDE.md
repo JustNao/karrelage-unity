@@ -213,7 +213,9 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
 main creature, underlings, alternatives), `monsters:spawn` on GameRolePlayShowActorsEvent. Creatures = script-named
 `MonsterInGroupInformation`, gid / grade / level unordered (read with combat's `fits`). Call `list` = pack monsters. Automation
 « Monstres »: searched gids on the map → one sound per map (a searched monster already on it doesn't ring again on spawn).
-Not checked on a real capture yet.
+Not checked on a real capture yet. NPCs (`npcs` in both events): script-named `NpcStaticInformation`, npc id = its int that is a
+pack NPC (`npcs.json`). Songes goblins = NPCs 7848 Gobséric, 7849 Gobledore, 7850 King Gob (seen on a real room map), 7853 Bog
+(same batch); the floor map (InfiniteDreamInformationEvent) does not announce them. Automation « Gobelin dans la salle ».
 
 **Automation** (`lib/automation.ts`, `stores/automation.svelte.ts`): rules checked on every live `auction:item`, each with
 `enabled` / `sound` (`lib/sounds.ts`, `app/public/sounds`) / `volume`. `exoDo`: exo matching a "Rune Ta Do Per" rune,

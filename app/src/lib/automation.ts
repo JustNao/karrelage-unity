@@ -1,6 +1,6 @@
 /**
  * Automation engine: watches every auction listing captured live (whatever tab is open), the loot of every fight and the
- * monster groups of every map, and
+ * monster groups and NPCs of every map, and
  * checks the enabled rules of lib/stores/automation.svelte.ts; a match plays the rule's sound (once per scan / fight) and
  * raises one notification per lot / looted item. Started once by App.svelte.
  *
@@ -108,6 +108,25 @@ function checkMonsters(gids: number[], map: boolean) {
   playSound(r.sound, r.volume);
 }
 
+/** The goblin NPCs that can stand in a Songe room (pack NPC ids; King Gob seen on a real capture, the others share its batch:
+ *  consecutive ids, names and look). */
+export const SONGE_GOBLINS = [7848, 7849, 7850, 7853];
+interface NpcName { id: number; name: string }
+let npcNames = new Map<number, string>();
+/** Goblins already on the map: one spawning again does not ring twice. */
+let goblinsOnMap = new Set<number>();
+
+/** goblins: a Songe goblin among the NPCs of the map entered (`monsters:map` npcs) or appearing on it (`monsters:spawn`). */
+function checkGoblins(npcs: number[] | undefined, map: boolean) {
+  const r = rules.goblins;
+  if (map) goblinsOnMap = new Set();
+  const hits = [...new Set(npcs ?? [])].filter((n) => SONGE_GOBLINS.includes(n) && !goblinsOnMap.has(n));
+  hits.forEach((n) => goblinsOnMap.add(n));
+  if (!r.enabled || !hits.length) return;
+  for (const n of hits) notifications.push({ rule: "goblins", title: npcNames.get(n) ?? `PNJ #${n}`, detail: "Dans la salle", gid: n, lot: null });
+  playSound(r.sound, r.volume);
+}
+
 export async function startAutomation() {
   if (started) return;
   started = true;
@@ -119,8 +138,9 @@ export async function startAutomation() {
     .catch(() => {});
   void on<{ items: Looted[] }>("loot:fight", (e) => checkSonges(e.items));
   cached<MonsterName[]>("monsters", "list").then((l) => (monsterNames = new Map(l.map((m) => [m.gid, m.name])))).catch(() => {});
-  void on<{ gids: number[] }>("monsters:map", (e) => checkMonsters(e.gids, true));
-  void on<{ gids: number[] }>("monsters:spawn", (e) => checkMonsters(e.gids, false));
+  cached<NpcName[]>("monsters", "npcs").then((l) => (npcNames = new Map(l.map((n) => [n.id, n.name])))).catch(() => {});
+  void on<{ gids: number[]; npcs?: number[] }>("monsters:map", (e) => (checkMonsters(e.gids, true), checkGoblins(e.npcs, true)));
+  void on<{ gids: number[]; npcs?: number[] }>("monsters:spawn", (e) => (checkMonsters(e.gids, false), checkGoblins(e.npcs, false)));
   auction.subscribe((c) => {
     if (c.kind !== "put" || !c.live) return;
     for (const item of c.values) if (checkExoDo(item)) playSound(rules.exoDo.sound, rules.exoDo.volume);

@@ -15,7 +15,7 @@ import UnityPy
 GAME = pathlib.Path(r"C:\Users\nao3n\AppData\Local\Ankama\Dofus-dofus3\Dofus_Data\StreamingAssets\Content")
 OUT = root / "work" / "gamedata"
 BUNDLES = OUT / "bundles"
-TABLES = ["items", "effects", "characteristics", "itemtypes", "itemsets", "itemsupertypes", "spells", "recipes", "monsters"]
+TABLES = ["items", "effects", "characteristics", "itemtypes", "itemsets", "itemsupertypes", "spells", "recipes", "monsters", "npcs"]
 UnityPy.config.FALLBACK_UNITY_VERSION = "6000.3.16f1"   # bundles ship with a stripped version; matches UnityPlayer.dll
 
 LEGENDARY_SPELL_TYPE = 339   # spells.typeId of the passives of legendary items
@@ -93,7 +93,9 @@ def main():
     # monsters (a fighter's creature gid): name + level of each grade (resolves the unordered gid / grade / level ints of a fighter)
     monsters = {r["id"]: {"id": r["id"], "nameId": r["nameId"], "race": r.get("race"), "levels": [g.get("level", 0) for g in r.get("grades", [])]}
                 for r in rows("monsters") if "id" in r and "nameId" in r}
-    for n, d in (("items", items), ("effects", effects), ("characteristics", chars), ("itemtypes", types), ("spells", spells), ("recipes", recipes), ("itemsets", sets), ("monsters", monsters)):
+    # NPCs (an npc actor of a map: Songes goblins...): name only
+    npcs = {r["id"]: {"id": r["id"], "nameId": r["nameId"]} for r in rows("npcs") if "id" in r and r.get("nameId")}
+    for n, d in (("items", items), ("effects", effects), ("characteristics", chars), ("itemtypes", types), ("spells", spells), ("recipes", recipes), ("itemsets", sets), ("monsters", monsters), ("npcs", npcs)):
         (OUT / f"{n}.json").write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
         print(n, len(d))
 
