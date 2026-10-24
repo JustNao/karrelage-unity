@@ -46,4 +46,6 @@
   .top :global(.x) { border: 0; background: none; color: var(--mut); padding: 0 4px; font-size: 13px; }
   .top :global(.x:hover) { color: var(--bad); }
   .list { flex: 1; min-height: 0; overflow: auto; }
+  /* the measured content keeps its children's margins inside (else they collapse out of it and the fitted window is short) */
+  .list > div { display: flow-root; }
 </style>

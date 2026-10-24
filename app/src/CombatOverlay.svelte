@@ -73,7 +73,7 @@
   {/if}
   {#if settings.combat.enabled}
     {#each fight.poisons ?? [] as p (p.action + ":" + p.target)}
-      <div class="poison" title={fight.me == null ? "Personnage pas encore identifié (reconnectez-vous) : poisons de tous les joueurs" : ""}>☠ {poisonText(p)}{fight.me == null ? " (un joueur)" : ""}</div>
+      <div class="poison" title={fight.me == null ? "Personnage pas encore identifié (reconnectez-vous) : poisons de tous les joueurs" : ""}>{poisonText(p)}{fight.me == null ? " (un joueur)" : ""}</div>
     {/each}
   {/if}
   {#each list as g (g.key)}
@@ -120,5 +120,10 @@
   .tg.control { color: var(--warn); border-color: rgba(224, 176, 74, 0.45); }
   .mon.gone { opacity: 0.45; }
   .dead { font-size: 10px; text-transform: uppercase; color: var(--bad); }
-  .poison { margin: 6px 8px; padding: 5px 8px; border-radius: 6px; background: rgba(229, 100, 110, 0.22); border: 1px solid rgba(229, 100, 110, 0.6); color: #ffd7da; font-weight: 600; }
+  .poison { margin: 6px 8px; padding: 5px 8px; border-radius: 6px; background: rgba(229, 100, 110, 0.22); border: 1px solid rgba(229, 100, 110, 0.6); color: #ffd7da; font-weight: 600; animation: flash 0.45s ease-in-out 4 alternate; }
+  /* a poison just applied: the background flashes to catch the eye, then settles */
+  @keyframes flash {
+    from { background: rgba(229, 100, 110, 0.22); }
+    to { background: rgba(229, 100, 110, 0.85); color: #fff; }
+  }
 </style>

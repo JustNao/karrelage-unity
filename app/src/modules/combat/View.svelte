@@ -57,7 +57,7 @@
       {#if settings.combat.enabled}
         {#each fight.poisons ?? [] as p (p.action + ":" + p.target)}
           <div class="poison">
-            ☠ {poisonText(p)}{fight.me == null ? " (un joueur)" : ""}
+            {poisonText(p)}{fight.me == null ? " (un joueur)" : ""}
             {#if fight.me == null}<span class="mut">— personnage pas encore identifié : reconnectez-vous pour ne voir que vos poisons</span>{/if}
           </div>
         {/each}
