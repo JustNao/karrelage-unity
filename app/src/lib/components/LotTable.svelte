@@ -198,8 +198,9 @@
   .ltable :global(tbody tr:not(.card-row):hover) { background: var(--panel); }
   .ltable :global(tr.picked) { outline: 1px solid var(--acc); outline-offset: -1px; }
   .ltable :global(tr.faded) { opacity: 0.2; }
-  .ltable :global(tr.hot) { background: color-mix(in srgb, var(--gold) 14%, transparent); }
+  .ltable :global(tr.hot), .ltable :global(tr.hot:not(.card-row):hover) { background: color-mix(in srgb, var(--gold) 20%, transparent); }
   .ltable :global(tr.hot td) { background: none; }
+  .ltable :global(tr.hot td.pc b) { color: var(--gold); }
   .ltable :global(tr.pinned), .ltable :global(tr.pinned:not(.card-row):hover) { background: color-mix(in srgb, var(--acc) 16%, transparent); }
   .ltable :global(tr.pinned td) { background: none !important; }
   /* the player's own lot: the whole line green, over every other mark */
