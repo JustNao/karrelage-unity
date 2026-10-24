@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { getCurrentWindow, LogicalPosition, LogicalSize } from "@tauri-apps/api/window";
   import { fight, followFight, NOTE_KINDS, OVERLAY_POS_KEY, OVERLAY_WIDTH, poisonText, shown, sortedGroups, type Group } from "./lib/stores/combat.svelte";
   import { settings } from "./lib/stores/settings.svelte";
@@ -16,32 +16,53 @@
   let top = $state<HTMLElement>();
   let body = $state<HTMLElement>();
 
+  /** The window stays transparent until the fight's list is in and the window fitted to it, then fades in (no empty box,
+   *  no jump). */
+  let ready = $state(false);
+
   onMount(() => {
     const following = followFight();
     const win = getCurrentWindow();
-    // natural height = title bar + the list's content (+ the box's 2px border); growing up keeps the bottom edge in place
+    // natural height = title bar + the list's content (+ the box's 2px border)
     let last = 0;
-    const fit = async () => {
+    /** Growing up: the bottom edge (logical y) the window hangs from, taken when it first fits, moved by the user's drags. */
+    let bottom: number | null = null;
+    /** Where the window last placed itself: its own move is not a drag. */
+    let placed: { x: number; y: number } | null = null;
+    // one fit at a time: overlapping ones read the position half-way through another's move and drift
+    let queue = Promise.resolve();
+    const fit = () => (queue = queue.then(fitNow).catch(() => {}));
+    async function fitNow() {
       if (!top || !body) return;
       const h = Math.ceil(Math.min(top.offsetHeight + body.offsetHeight + 2, screen.availHeight * 0.8));
       if (h === last) return;
-      const before = last || window.innerHeight; // the height asked last (innerHeight can lag behind a resize)
+      const before = last || window.innerHeight;
       last = h;
-      try {
-        if (settings.combat.overlayGrow === "up") {
-          const p = (await win.outerPosition()).toLogical(await win.scaleFactor());
-          await win.setPosition(new LogicalPosition(p.x, p.y + before - h));
-        }
-        await win.setSize(new LogicalSize(OVERLAY_WIDTH, h));
-      } catch {}
-    };
+      if (settings.combat.overlayGrow === "up") {
+        const p = (await win.outerPosition()).toLogical(await win.scaleFactor());
+        bottom ??= p.y + before;
+        placed = { x: Math.round(p.x), y: Math.round(bottom - h) };
+        await win.setPosition(new LogicalPosition(placed.x, placed.y));
+      } else {
+        bottom = null;
+      }
+      await win.setSize(new LogicalSize(OVERLAY_WIDTH, h));
+    }
     const ro = new ResizeObserver(() => void fit());
     if (top) ro.observe(top);
     if (body) ro.observe(body);
-    void fit();
+    void (async () => {
+      await following.catch(() => {}); // the fight's state is in: the list is complete
+      await tick();
+      await fit();
+      ready = true;
+    })();
     const moved = win.onMoved(async ({ payload }) => {
       const p = payload.toLogical(await win.scaleFactor());
-      writeJSON(OVERLAY_POS_KEY, { x: Math.round(p.x), y: Math.round(p.y), bottom: Math.round(p.y + (last || window.innerHeight)) });
+      const own = placed && Math.abs(p.x - placed.x) <= 1 && Math.abs(p.y - placed.y) <= 1;
+      const h = last || window.innerHeight;
+      if (!own && bottom != null) bottom = p.y + h; // dragged by the user: hang from where it was dropped
+      writeJSON(OVERLAY_POS_KEY, { x: Math.round(p.x), y: Math.round(p.y), bottom: Math.round(p.y + h) });
     });
     return () => {
       ro.disconnect();
@@ -52,7 +73,7 @@
 </script>
 
 <!-- growing up (popup at the bottom of the screen): the title bar sits at the bottom, under the monsters -->
-<FloatingShell up={settings.combat.overlayGrow === "up"} bind:top bind:body>
+<FloatingShell up={settings.combat.overlayGrow === "up"} shown={ready} bind:top bind:body>
   {#snippet title()}
     {#if fight.active}<span class="dot" title="Combat en cours"></span>{/if}Combat
     {#if fight.seen && !fight.active}<span class="mut">terminé</span>{/if}

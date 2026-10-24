@@ -13,6 +13,7 @@
     children,
     up = false,
     closable = true,
+    shown = true,
     top = $bindable(),
     body = $bindable(),
   }: {
@@ -22,12 +23,14 @@
     children: Snippet;
     up?: boolean;
     closable?: boolean;
+    /** False: nothing drawn yet (the window is transparent); true fades the box in. */
+    shown?: boolean;
     top?: HTMLElement;
     body?: HTMLElement;
   } = $props();
 </script>
 
-<div class="box" class:up>
+<div class="box" class:up class:hide={!shown}>
   <div class="top" bind:this={top} data-tauri-drag-region>
     <span class="t" data-tauri-drag-region>{@render title()}</span>
     {@render actions?.()}
@@ -39,6 +42,8 @@
 <style>
   .box { height: 100%; box-sizing: border-box; display: flex; flex-direction: column; background: rgba(28, 31, 38, 0.86); border: 1px solid rgba(90, 169, 255, 0.45); border-radius: 10px; overflow: hidden; font-family: var(--font); font-size: 12px; }
   .box.up { flex-direction: column-reverse; }
+  .box { transition: opacity 0.25s ease-out; }
+  .box.hide { opacity: 0; }
   .top { flex: none; display: flex; align-items: center; gap: 8px; padding: 7px 10px 7px 12px; background: rgba(20, 22, 26, 0.7); cursor: move; user-select: none; }
   .t { flex: 1; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
   /* the title's parts let the drag through to the drag region */

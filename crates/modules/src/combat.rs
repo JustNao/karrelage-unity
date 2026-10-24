@@ -396,7 +396,10 @@ impl Module for Combat {
                     if open {
                         f.ended = Some(t);
                     }
-                    open
+                    // the fight's buffs end with it: no poison warning left once it is over
+                    let had = !f.poisons.is_empty();
+                    f.poisons.clear();
+                    open || had
                 }
                 _ => {
                     let (Some(b), Some(d)) = (self.bindings(ctx), &m.decoded) else { return };
@@ -549,6 +552,12 @@ mod tests {
         let mut end = DynamicMessage::new(rem_md);
         end.set_field_by_name(&b.remove_uid, PbValue::I32(7));
         c.on_message(&message(BOOST_REMOVE, end), &hub.ctx);
+        assert_eq!(c.call("state", Value::Null, &hub.ctx).unwrap()["poisons"], json!([]));
+
+        // a poison still running when the fight ends goes with it
+        c.on_message(&message(BOOST_ADD, boost(9, 42, 1135)), &hub.ctx);
+        let end_md = proto.message(&proto.obf_for_clear(END).unwrap()).unwrap();
+        c.on_message(&message(END, DynamicMessage::new(end_md)), &hub.ctx);
         assert_eq!(c.call("state", Value::Null, &hub.ctx).unwrap()["poisons"], json!([]));
     }
 
