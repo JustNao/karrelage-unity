@@ -173,7 +173,8 @@ Set `PYTHONUTF8=1` for scripts handling accents. The "Développeur" header toggl
 - Prices are real only (override / AH price, never weekly avg) except craft ingredients (avg allowed). Owned items count
   at their perfect roll or the chosen inventory copy (`own_uid`) and are left out of prices.
 - Solver (`solve`, web worker `lib/stuffWorker.ts`): branch and bound over scanned lots with set bonuses, node-limited.
-  Build fm is searched as exo on lots (`EXO_BASE + stat` pseudo-stats) and not double-counted in `compute`.
+  Build fm is searched as exo on lots (`EXO_BASE + stat` pseudo-stats) and not double-counted in `compute`. No combination carrying it
+  (`solveWithFm`) = searched again with the fm counted as forged (like the sheet), flagged in the result.
 - Dofusbook export (`lib/dofusbookExport.ts`, format documented there): worn positions 0–15 (0 amulette, 1 arme, 2/4
   anneaux, 3 ceinture, 5 bottes, 6 coiffe, 7 cape, 8 familier, 9–14 Dofus, 15 bouclier; 16 mount, 63 bag); exos sent as fm.
 - Floating scan list (`ScanList.svelte`, localStorage `karrelage.scanlist`) of unscanned items.

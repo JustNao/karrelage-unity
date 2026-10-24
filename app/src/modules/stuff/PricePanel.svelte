@@ -91,6 +91,7 @@
     {:else if r}
       <div class="small">Coût : <b>{kamas(r.cost)}</b>{#if r.approx} <span class="mut">(recherche limitée, résultat approché)</span>{/if}</div>
       <div class="small mut">{Object.keys(r.picks).length} emplacement(s) choisis{#if r.fixedSlots.length} · gardés tels quels : {names(r.fixedSlots)}{/if}</div>
+      {#if r.forged?.length}<div class="small warn">Aucun lot scanné ne porte la FM du stuff en exo ({r.forged.join(", ")}) : comptée comme forgemagée par vos soins.</div>{/if}
     {/if}
     {#if rows.length}
       <div class="fh tt">{r && r !== "none" ? "Combinaison trouvée" : "Lots choisis"}</div>
@@ -122,4 +123,5 @@
   .lic { width: 22px; height: 22px; vertical-align: middle; margin-right: 6px; }
   .tot { margin-top: 8px; text-align: right; }
   .tt { margin-top: 12px; }
+  .warn { color: var(--warn); }
 </style>

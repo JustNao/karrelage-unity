@@ -212,18 +212,23 @@ export function sumSlots(slots: string[], ignored: Set<string>, pick: (slot: str
 // ---- solver -----------------------------------------------------------------------------------------------------------
 
 export interface Cand { slot: string; gid: number; uid: number; price: number; stats: Totals }
-export interface SolveResult { picks: Record<string, number>; cost: number; totals: Totals; approx: boolean; nodes: number; fixedSlots: string[]; }
+export interface SolveResult {
+  picks: Record<string, number>; cost: number; totals: Totals; approx: boolean; nodes: number; fixedSlots: string[];
+  /** the build's forgemagie no combination carries as exos: counted as forged by the user (labels, e.g. "PA") */
+  forged?: string[];
+}
 
 /** Cheapest lot combination whose stat totals reach `targets` (stat -> minimum). One lot per free slot; ignored slots and slots without any scanned
  *  lot keep their current item (the user's own copy `ownLot` or else the theoretical maximum for an ignored slot, the chosen lot or else the theoretical
- *  maximum otherwise) at no cost. Set bonuses are tracked incrementally. Returns null when infeasible. */
-export function solve(b: Build, info: Info, lotsOf: (slot: string) => Lot[], targets: Record<string, number>, nodeLimit = 4_000_000, progress?: (fraction: number) => void, ownLot: (slot: string) => Lot | undefined = () => undefined): SolveResult | null {
+ *  maximum otherwise) at no cost. Set bonuses are tracked incrementally. Returns null when infeasible. `exo` = the build's forgemagie must be
+ *  found as exos on the lots (else it is left out, like the sheet does: forged by the user). */
+export function solve(b: Build, info: Info, lotsOf: (slot: string) => Lot[], targets: Record<string, number>, nodeLimit = 4_000_000, progress?: (fraction: number) => void, ownLot: (slot: string) => Lot | undefined = () => undefined, exo = true): SolveResult | null {
   // a PdV target is a vitality target: hp = 50 + 5 x level + vitality
   const wanted: Record<string, number> = { ...targets };
   if (wanted[HP_STAT] > 0) { const vit = wanted[HP_STAT] - 50 - 5 * b.level; wanted[11] = Math.max(wanted[11] ?? 0, vit); delete wanted[HP_STAT]; }
   const tgt = Object.entries(wanted).map(([s, v]) => [+s, v] as const).filter(([, v]) => Number.isFinite(v) && v > 0);
   // the build's forgemagie is expected on the items: each fm stat looks for that much exo (added, or forged over the base max) among the chosen lots
-  for (const [code, v] of Object.entries(b.fm ?? {})) { const stat = FM_STATS[code]?.stat; if (stat != null && v > 0) tgt.push([EXO_BASE + stat, v] as const); }
+  if (exo) for (const [code, v] of Object.entries(b.fm ?? {})) { const stat = FM_STATS[code]?.stat; if (stat != null && v > 0) tgt.push([EXO_BASE + stat, v] as const); }
   const stats = tgt.map(([s]) => s);
   const slots = Object.keys(b.slots);
   const ignored = new Set(b.ignored);
@@ -339,4 +344,13 @@ export function solve(b: Build, info: Info, lotsOf: (slot: string) => Lot[], tar
   const picks: Record<string, number> = {};
   for (const c of found.picks) picks[c.slot] = c.uid;
   return { picks, cost: found.cost, totals: new Map(), approx, nodes, fixedSlots };
+}
+
+/** `solve`, and when nothing carries the build's forgemagie as exos, the search again with that forgemagie counted as forged (`forged`). */
+export function solveWithFm(b: Build, info: Info, lotsOf: (slot: string) => Lot[], targets: Record<string, number>, nodeLimit = 4_000_000, progress?: (fraction: number) => void, ownLot: (slot: string) => Lot | undefined = () => undefined): SolveResult | null {
+  const fm = Object.entries(b.fm ?? {}).filter(([c, v]) => v > 0 && FM_STATS[c]);
+  const r = solve(b, info, lotsOf, targets, nodeLimit, fm.length ? (p) => progress?.(p / 2) : progress, ownLot);
+  if (r || !fm.length) return r;
+  const again = solve(b, info, lotsOf, targets, nodeLimit, (p) => progress?.(0.5 + p / 2), ownLot, false);
+  return again && { ...again, forged: fm.map(([c, v]) => `${v} ${FM_STATS[c].label}`) };
 }
