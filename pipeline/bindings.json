@@ -56,11 +56,15 @@
   "gid": "fyqx"
  },
  "ah_mine": {
-  "_doc": "The player's own AH lots. ExchangeBidSellerStartedEvent (sell window opened): objects = ItemToSellInBid {item, price, unsold delay...}; ExchangeBidHouseItemAddedEvent (a lot put on sale): added_item. The item: three unordered ints uid / quantity / gid + effects.",
+  "_doc": "The player's own AH lots. ExchangeBidSellerStartedEvent (sell window opened): objects = ItemToSellInBid {item, sell_id (the int32, assumed to be the AH listing uid), prices = price + unsold delay (int64s, not told apart)}; ExchangeBidHouseItemAddedEvent (a lot put on sale): added_item + added_prices. The item: three unordered ints uid / quantity / gid (object uid, not the AH listing uid) + effects.",
   "objects": "fygc",
   "item": "fyfs",
+  "sell_id": "fyfq",
+  "prices": ["fyfr", "fyft"],
   "added_item": "fxub",
-  "ints": ["fylw", "fyly", "fylz"]
+  "added_prices": ["fxua", "fxuc"],
+  "ints": ["fylw", "fyly", "fylz"],
+  "effects": "fylx"
  },
  "decraft": {
   "_doc": "DecraftResultEvent (breaking items into runes): results = DecraftedItem {coef_min, coef_max (floats, 0.529 = 52.9 %; equal for one item), uid (object uid of the broken item), runes: [{rune_gid, rune_qty}]}.",

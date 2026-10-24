@@ -30,25 +30,48 @@ class AuctionStore extends SyncedMap<number, any> {
 
 export const auction = new AuctionStore();
 
-/** uids of the player's own lots on sale (auction.rs `mine`: the AH sell window's list + the lots put on sale since). */
+interface MineLot { uid: number; sell_id?: number | null; gid: number; prices?: number[]; effects?: [number, number | null][] }
+/** Sorted [action, highest value] of a lot's stats, as text. */
+const effectSig = (effects: [number, number | null][]) => effects.map(([a, hi]) => `${a}:${hi ?? ""}`).join(",");
+const rowSig = (r: any) =>
+  effectSig(
+    (r.effects ?? [])
+      .filter((e: any) => e.status !== "removed")
+      .map((e: any): [number, number | null] => [e.action, e.hi ?? null])
+      .sort((a: [number, number | null], b: [number, number | null]) => a[0] - b[0] || (a[1] ?? -Infinity) - (b[1] ?? -Infinity)),
+  );
+
+/**
+ * The player's own lots on sale (auction.rs `mine`: the AH sell window's list + the lots put on sale since). Their object
+ * uid is not the listing's: a listing row is one of them by its sell id, else by gid + price + identical stats.
+ */
 class MineStore {
-  readonly uids = new SvelteSet<number>();
+  private sellIds = new SvelteSet<number>();
+  /** "gid|price|stats" */
+  private keys = new SvelteSet<string>();
   private ready: Promise<void> | null = null;
-  private set(lots: { uid: number }[]) {
-    this.uids.clear();
-    for (const l of lots) this.uids.add(l.uid);
+  private set(lots: MineLot[]) {
+    this.sellIds.clear();
+    this.keys.clear();
+    for (const l of lots) {
+      if (l.sell_id) this.sellIds.add(l.sell_id);
+      for (const p of l.prices ?? []) if (p > 0) this.keys.add(`${l.gid}|${p}|${effectSig(l.effects ?? [])}`);
+    }
   }
   /** Listener first, then the list (unless an event already gave a newer one). */
   ensure(): Promise<void> {
     return (this.ready ??= (async () => {
       let live = false;
-      await on<{ uid: number }[]>("auction:mine", (l) => ((live = true), this.set(l)));
-      const l = await call<{ uid: number }[]>("auction", "mine");
+      await on<MineLot[]>("auction:mine", (l) => ((live = true), this.set(l)));
+      const l = await call<MineLot[]>("auction", "mine");
       if (!live) this.set(l);
     })().catch(() => void (this.ready = null)));
   }
-  has(uid: any): boolean {
-    return uid != null && this.uids.has(uid);
+  /** A row of an AH listing (`gid`: the listing's, when the row has none). */
+  has(row: any, gid?: number): boolean {
+    if (row.uid != null && this.sellIds.has(row.uid)) return true;
+    const price = row.prices?.[0]?.price;
+    return !!price && this.keys.has(`${row.gid ?? gid}|${price}|${rowSig(row)}`);
   }
 }
 

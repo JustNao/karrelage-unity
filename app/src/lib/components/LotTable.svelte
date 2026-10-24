@@ -233,7 +233,7 @@
   .tr span { white-space: nowrap; }
   .star { color: var(--acc); }
   .ltable td.fx { white-space: normal; line-height: 1.8; }
-  .chip { display: inline-flex; align-items: center; gap: 3px; margin: 0 4px 0 0; padding: 0 6px 0 4px; border-radius: 8px; font-size: 11px; white-space: nowrap; color: var(--acc); border: 1px solid color-mix(in srgb, var(--acc) 50%, var(--line)); }
+  .chip { display: inline-flex; align-items: center; vertical-align: middle; gap: 3px; margin: 0 4px 0 0; padding: 0 6px 0 4px; border-radius: 8px; font-size: 11px; white-space: nowrap; color: var(--acc); border: 1px solid color-mix(in srgb, var(--acc) 50%, var(--line)); }
   .chip img { width: 14px; height: 14px; }
   .chip.over { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 50%, var(--line)); }
   .chip.act { cursor: pointer; }

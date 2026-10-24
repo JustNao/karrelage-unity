@@ -130,8 +130,8 @@ Set `PYTHONUTF8=1` for scripts handling accents. The "Développeur" header toggl
 ## Features (non-obvious facts only)
 **HDV / auction** (`auction.rs`, `modules/auction`)
 - Lot colours: blue = added effect, green = above default max, red = default effect missing; gold = good deal, green
-  line = the player's own lot (uids from role `ah_mine`: ExchangeBidSellerStartedEvent list + ExchangeBidHouseItemAddedEvent;
-  AH listing uid assumed equal to the object uid, not checked on a capture). Perfect = default
+  line = the player's own lot (role `ah_mine`: ExchangeBidSellerStartedEvent list + ExchangeBidHouseItemAddedEvent). The
+  object uid is NOT the AH listing uid (checked): matched by sell id (assumed = listing uid), else gid + price + stats. Perfect = default
   damage / % resistances at max, main stats within 3 (vitality 10). Line styles in `lib/effects.ts`.
 - Price vs density chart with least-squares line; good deal = ≥ `settings.hdv.goodZ` σ (default 2) above trend, needs ≥ 5
   lots (`lib/density.ts`). Companions plot price vs total xp of the level (`lib/companion.ts`; effects 2821 level, 2862 legendary).

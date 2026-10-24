@@ -77,14 +77,19 @@ struct AhType {
 struct AhGone {
     gid: String,
 }
-/// bindings.json `ah_mine`: the seller's lots (`objects` -> `item`, or the `added_item` of a lot put on sale), an item
-/// being three unordered ints uid / quantity / gid.
+/// bindings.json `ah_mine`: the seller's lots (`objects` -> `item` + `sell_id` + `prices`, or the `added_item` +
+/// `added_prices` of a lot put on sale), an item being three unordered ints uid / quantity / gid + `effects`. `prices`:
+/// the price and the unsold delay, not told apart (both kept).
 #[derive(Deserialize, Clone)]
 struct AhMine {
     objects: String,
     item: String,
+    sell_id: String,
+    prices: Vec<String>,
     added_item: String,
+    added_prices: Vec<String>,
     ints: Vec<String>,
+    effects: String,
 }
 
 #[derive(Default)]
@@ -314,12 +319,16 @@ fn format_row(
 }
 
 /// One of the player's lots on sale: the item's gid is the int that is an item id, its uid the largest of the others
-/// (the quantity of an equipment lot is 1).
-fn mine_lot(data: &Data, b: &AhMine, item: &DynamicMessage) -> Option<Value> {
+/// (the quantity of an equipment lot is 1). The object uid is not the AH listing's uid: the lot is found in a listing by
+/// its `sell_id`, else by gid + price + `effects` (sorted [action, highest value] of its stats).
+fn mine_lot(data: &Data, b: &AhMine, oe: &ObjectEffect, item: &DynamicMessage, sell_id: Option<i64>, prices: Vec<i64>) -> Option<Value> {
     let ints: Vec<i64> = b.ints.iter().map(|n| int(item, n)).collect();
     let gi = ints.iter().position(|g| data.items.contains_key(g))?;
     let uid = ints.iter().enumerate().filter(|(i, _)| *i != gi).map(|(_, u)| *u).max()?;
-    Some(json!({"uid": uid, "gid": ints[gi], "name": data.item_name(ints[gi])}))
+    let effs = stat_effects(messages(item, &b.effects).iter().map(|e| parse_effect(data, oe, e)).collect());
+    let mut effects: Vec<(i64, Option<i64>)> = effs.iter().map(|e| (e.action, e.hi)).collect();
+    effects.sort();
+    Some(json!({"uid": uid, "sell_id": sell_id, "gid": ints[gi], "name": data.item_name(ints[gi]), "prices": prices, "effects": effects}))
 }
 
 /// Apply a listing change (fmt `auction_bought` / `auction_row` / `auction_row_removed`) to the rows of a listing.
@@ -461,14 +470,21 @@ impl Module for Auction {
                 Some(json!({"kind": "auction_gone", "gid": gid, "name": ctx.data.item_name(gid)}))
             }
             AH_SELLER => {
-                let b = self.mine_bind.get(ctx, "ah_mine")?;
-                let items = messages(msg, &b.objects).iter().filter_map(|o| o.get_field_by_name(&b.item)?.as_message().cloned()).collect::<Vec<_>>();
-                Some(json!({"kind": "auction_mine", "lots": items.iter().filter_map(|i| mine_lot(&ctx.data, b, i)).collect::<Vec<_>>()}))
+                let (b, oe) = (self.mine_bind.get(ctx, "ah_mine")?, &self.bindings(ctx)?.object_effect);
+                let lots = messages(msg, &b.objects)
+                    .iter()
+                    .filter_map(|o| {
+                        let item = o.get_field_by_name(&b.item)?.as_message()?.clone();
+                        mine_lot(&ctx.data, b, oe, &item, Some(int(o, &b.sell_id)), b.prices.iter().map(|n| int(o, n)).collect())
+                    })
+                    .collect::<Vec<_>>();
+                Some(json!({"kind": "auction_mine", "lots": lots}))
             }
             AH_ADDED => {
-                let b = self.mine_bind.get(ctx, "ah_mine")?;
+                let (b, oe) = (self.mine_bind.get(ctx, "ah_mine")?, &self.bindings(ctx)?.object_effect);
                 let item = msg.get_field_by_name(&b.added_item)?.as_message()?.clone();
-                Some(json!({"kind": "auction_mine_added", "lots": mine_lot(&ctx.data, b, &item).into_iter().collect::<Vec<_>>()}))
+                let lot = mine_lot(&ctx.data, b, oe, &item, None, b.added_prices.iter().map(|n| int(msg, n)).collect());
+                Some(json!({"kind": "auction_mine_added", "lots": lot.into_iter().collect::<Vec<_>>()}))
             }
             _ => None,
         }
@@ -584,6 +600,8 @@ mod tests {
         let entry = |uid: i32, gid: i32| {
             let mut o = DynamicMessage::new(objects.kind().as_message().unwrap().clone());
             o.set_field_by_name(&b.item, PbValue::Message(item(uid, gid)));
+            o.set_field_by_name(&b.sell_id, PbValue::I32(uid / 1000));
+            o.set_field_by_name(&b.prices[0], PbValue::I64(2_500_000));
             PbValue::Message(o)
         };
         let seller = |lots: Vec<PbValue>| {
@@ -602,7 +620,8 @@ mod tests {
         let uids = || a.call("mine", Value::Null, &hub.ctx).unwrap().as_array().unwrap().iter().map(|l| l["uid"].as_i64().unwrap()).collect::<Vec<_>>();
         send(AH_SELLER, seller(vec![entry(123456, 11609), entry(234567, 31789)]));
         assert_eq!(uids(), vec![123456, 234567]);
-        assert_eq!(a.call("mine", Value::Null, &hub.ctx).unwrap()[1]["gid"], json!(31789));
+        let lot = &a.call("mine", Value::Null, &hub.ctx).unwrap()[1];
+        assert_eq!((lot["gid"].clone(), lot["sell_id"].clone(), lot["prices"].clone()), (json!(31789), json!(234), json!([2_500_000, 0])));
         send(AH_ADDED, added);
         assert_eq!(uids(), vec![123456, 234567, 987654]);
         send(AH_SELLER, seller(vec![entry(234567, 31789)]));
