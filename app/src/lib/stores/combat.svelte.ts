@@ -129,7 +129,7 @@ export interface Group {
 
 /** The groups worth listing at this display level: a monster without any note shown is dropped once all its copies died.
  *  Dangerous interactions: a living monster whose sheet says e.g. "poussée" puts a warning on every other monster of the
- *  fight that can push ("Poussée : dangereux avec Glourséleste"). */
+ *  fight that can push ("Poussée : dangereux avec Glourséleste"), and the Glourséleste itself ("Dangereux avec Poussée : …"). */
 export function groups(list: Fighter[], show: CombatShow): Group[] {
   const by = new Map<string, Group>();
   // tag -> the living monsters that make it dangerous
@@ -147,12 +147,22 @@ export function groups(list: Fighter[], show: CombatShow): Group[] {
     }
     by.set(key, g);
   }
+  // the living monsters having each tag (the other side of a dangerous interaction)
+  const having = new Map<string, Set<string>>();
+  for (const g of by.values()) if (g.alive) for (const t of g.tags) (having.get(t) ?? having.set(t, new Set()).get(t)!).add(g.name);
+  const sourceDanger = new Map<string, string[]>(); // monster name -> its danger tags
+  for (const f of list) if (!f.dead && f.danger?.length) sourceDanger.set(f.name, f.danger);
   for (const g of by.values()) {
     if (!g.alive) continue;
     const lines = g.tags.flatMap((t) => {
       const who = [...(danger.get(t) ?? [])].filter((n) => n !== g.name);
       return who.length ? [`${TAGS[t]?.label ?? t} : dangereux avec ${who.join(", ")}`] : [];
     });
+    // the dangerous monster itself (e.g. Glourséleste with pushers around): warned too, so it is always listed
+    for (const t of sourceDanger.get(g.name) ?? []) {
+      const who = [...(having.get(t) ?? [])].filter((n) => n !== g.name);
+      if (who.length) lines.push(`Dangereux avec ${TAGS[t]?.label ?? t} : ${who.join(", ")}`);
+    }
     if (lines.length) g.notes = { ...g.notes, warning: [...lines, ...(g.notes?.warning ?? [])] };
   }
   return [...by.values()].filter((g) => g.alive > 0 || shown(g.notes, show).length > 0);
