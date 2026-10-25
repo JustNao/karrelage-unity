@@ -5,6 +5,7 @@
   import { ago, kamas } from "../../lib/fmt";
   import { readJSON, writeJSON } from "../../lib/persist.svelte";
   import { auction } from "../../lib/stores/auction.svelte";
+  import { minute } from "../../lib/stores/clock.svelte";
   import Collapsible from "../../lib/components/Collapsible.svelte";
   import ConfirmButton from "../../lib/components/ConfirmButton.svelte";
   import ItemIcon from "../../lib/components/ItemIcon.svelte";
@@ -51,7 +52,7 @@
           <div class="itx">
             <b>{i.name}</b> <span class="mut">niv. {i.level ?? "?"}</span>
             {#if dc}<span class="deal-ico" title="{dc} {dc === 1 ? 'bonne affaire' : 'bonnes affaires'} dans cette liste">●</span>{/if}<br />
-            <span class="mut">{i.lots} lots · {i.min_price ? "min " + kamas(i.min_price) : "—"} · {ago(i.updated)}{i.demo ? " · demo" : ""}</span>
+            <span class="mut">{i.lots} lots · {i.min_price ? "min " + kamas(i.min_price) : "—"} · {ago(i.updated, minute.now)}{i.demo ? " · demo" : ""}</span>
           </div>
         </div>
       {/each}

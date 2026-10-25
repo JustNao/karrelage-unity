@@ -7,6 +7,7 @@
   import { ago, kamas } from "../../lib/fmt";
   import { readJSON, writeJSON } from "../../lib/persist.svelte";
   import { auction, mine } from "../../lib/stores/auction.svelte";
+  import { minute } from "../../lib/stores/clock.svelte";
   import { inventory } from "../../lib/stores/inventory.svelte";
   import { prices } from "../../lib/stores/prices.svelte";
   import { settings } from "../../lib/stores/settings.svelte";
@@ -336,7 +337,7 @@
     {#if item}
       <div class="head">
         <ItemIcon icon={item.icon} class="hic" />
-        <div class="fh">{item.name} <span class="mut">{item.level != null ? "niv. " + item.level + " · " : ""}{item.type ?? ""}{app.dev ? " · gid " + item.gid : ""} · mis à jour {ago(item.updated)} · {rows.length}/{item.lots} lots</span></div>
+        <div class="fh">{item.name} <span class="mut">{item.level != null ? "niv. " + item.level + " · " : ""}{item.type ?? ""}{app.dev ? " · gid " + item.gid : ""} · mis à jour {ago(item.updated, minute.now)} · {rows.length}/{item.lots} lots</span></div>
         <button class="sort" onclick={() => (sortDir = -sortDir)} title="Cliquer pour inverser l'ordre des prix">
           Prix <span class="arrow" class:desc={sortDir === -1}>↑</span>
         </button>

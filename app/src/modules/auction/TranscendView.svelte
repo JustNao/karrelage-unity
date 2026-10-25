@@ -2,6 +2,7 @@
   import { ago, kamasFull, runeShort } from "../../lib/fmt";
   import { readJSON, writeJSON } from "../../lib/persist.svelte";
   import { auction } from "../../lib/stores/auction.svelte";
+  import { minute } from "../../lib/stores/clock.svelte";
   import { useSort } from "../../lib/sort.svelte";
   import { targetKey, type Target, type transcendance } from "../../lib/transcend";
   import LotTable from "../../lib/components/LotTable.svelte";
@@ -106,7 +107,7 @@
   {#snippet svState(sv: Saved)}
     {@const live = stillListed(sv)}
     {#if live === true}<span class="ok">en vente</span>{:else if live === false}<span class="warn">absent du dernier scan</span>{:else}<span class="mut">pas rescanné</span>{/if}
-    <span class="mut"> · {ago(sv.savedAt)}</span>
+    <span class="mut"> · {ago(sv.savedAt, minute.now)}</span>
   {/snippet}
   {#if saved.length}
     <div class="ghead">Candidats enregistrés</div>
