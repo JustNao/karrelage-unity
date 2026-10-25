@@ -17,6 +17,8 @@
    * (like "Mettre en avant" on the cards) without unfolding; the pin button sits left of the unfolded card.
    * Also used for lots of different items (Stuff tab) and for transcendance candidates: leading `leads` columns (item,
    * profit, rune...), no deal / transcendance columns.
+   * `changes` (HDV "Modifications"): lots added since the previous scan (green), removed (red, faded), repriced (the new
+   * price over the old one, struck through).
    */
   let {
     lots,
@@ -38,6 +40,7 @@
     onpin,
     versus = () => null,
     stickTop = 0,
+    changes = null,
   }: {
     /** `meta`: whatever the `lead` column shows (e.g. the slot and item of a Stuff lot). */
     lots: { row: any; key: string; meta?: any }[];
@@ -67,6 +70,8 @@
     versus?: (r: any) => { pin: any; name: string } | null;
     /** Height of what sticks above the table (the graph): the header sticks right under it. */
     stickTop?: number;
+    /** Lot key -> what changed since the previous scan of the listing (`was`: the old price of a repriced lot). */
+    changes?: Map<string, { kind: "added" | "removed" | "price"; was?: number }> | null;
   } = $props();
 
   /** The unfolded card starts where the price of its row starts (re-measured when the table changes size). */
@@ -145,12 +150,13 @@
     rows={sorted}
     {sort}
     key={(r) => r.key}
-    rowProps={(r) => ({ id: `lot-${r.key}`, class: [picked === r.key && "picked", faded(r.row) && "faded", r.good && "hot", pinned(r.row) && "pinned", mine(r.row) && "mine", open(r.key) && "open", rowClass?.(r.meta)].filter(Boolean).join(" "), onclick: () => ontoggle(r.key) })}
+    rowProps={(r) => ({ id: `lot-${r.key}`, class: [picked === r.key && "picked", faded(r.row) && "faded", r.good && "hot", pinned(r.row) && "pinned", mine(r.row) && "mine", open(r.key) && "open", changes?.get(r.key)?.kind, rowClass?.(r.meta)].filter(Boolean).join(" "), onclick: () => ontoggle(r.key) })}
   >
     {#snippet row(r)}
       {#each leads as l (l.key)}<td class="lead" class:n={l.num}>{@render l.cell(r.meta)}</td>{/each}
       {#if deals}<td class="c">{#if r.good}<span class="deal" title="Bien au-dessus de la tendance prix / densité">●</span>{/if}</td>{/if}
-      <td class="n pc"><b>{Number.isFinite(r.price) ? kamasFull(r.price) : "—"}</b></td>
+      {@const was = changes?.get(r.key)?.was}
+      <td class="n pc"><b>{Number.isFinite(r.price) ? kamasFull(r.price) : "—"}</b>{#if was != null}<br /><s class="was" title="Prix au relevé précédent">{Number.isFinite(was) ? kamasFull(was) : "—"}</s>{/if}</td>
       <td class="c">{#if r.damage}<span class="star">★</span>{/if}</td>
       <td class="c">{#if r.resist}<span class="star">★</span>{/if}</td>
       <td class="c">{#if r.main}<span class="star">★</span>{/if}</td>
@@ -209,6 +215,12 @@
   .ltable :global(tr.mine td.pc b) { color: var(--ok); }
   /* the open row is marked by a background, not bold text: a change of width would reflow the table mid-animation */
   .ltable :global(tr.open:not(.hot):not(.mine) td) { background: var(--panel); }
+  /* "Modifications": over every other mark */
+  .ltable :global(tr.added), .ltable :global(tr.added:not(.card-row):hover) { background: color-mix(in srgb, var(--ok) 14%, transparent); }
+  .ltable :global(tr.removed), .ltable :global(tr.removed:not(.card-row):hover) { background: color-mix(in srgb, var(--bad) 14%, transparent); }
+  .ltable :global(tr.added td), .ltable :global(tr.removed td) { background: none !important; }
+  .ltable :global(tr.removed td) { opacity: 0.45; }
+  .was { color: var(--mut); font-size: 11px; }
   /* the sticky header sits flush with the top of the scroll area (over the scroller's padding), under the sticky graph */
   .ltable :global(th) { top: calc(var(--stick, 0px) - var(--pad, 12px)); z-index: 2; white-space: nowrap; padding: 2px 5px; }
   /* every column but the last (Over / EXO) as narrow as its content, on one line */

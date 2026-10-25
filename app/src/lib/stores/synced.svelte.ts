@@ -26,6 +26,8 @@ export interface SyncSpec<K, V> {
   cleared?: string;
   /** A value of the list loaded after `old` was received from an event: keep it? (default: the event's is newer, kept) */
   fromList?: (old: V, listed: V) => boolean;
+  /** A value is replaced by a newer one. */
+  replaced?: (old: V, now: V) => void;
 }
 
 export class SyncedMap<K, V> {
@@ -81,7 +83,12 @@ export class SyncedMap<K, V> {
   }
 
   private put(values: V[], live: boolean) {
-    for (const v of values) this.map.set(this.spec.key(v), v);
+    for (const v of values) {
+      const k = this.spec.key(v);
+      const old = this.map.get(k);
+      if (old !== undefined && old !== v) this.spec.replaced?.(old, v);
+      this.map.set(k, v);
+    }
     if (values.length) this.emit({ kind: "put", values, live });
   }
   private emit(c: SyncChange<V>) {

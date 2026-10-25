@@ -16,6 +16,7 @@
     picked = null,
     faded = () => false,
     onpick,
+    changes = null,
   }: {
     lots: { row: any; key: string | number }[];
     /** Resources obtained by extracting this mount (null = not a mount from the tables). */
@@ -26,6 +27,8 @@
     picked?: string | number | null;
     faded?: (r: any) => boolean;
     onpick?: (key: string | number) => void;
+    /** Lot key -> what changed since the previous scan (as in LotTable). */
+    changes?: Map<string, { kind: "added" | "removed" | "price"; was?: number }> | null;
   } = $props();
 
   const mount = $derived(neurons != null);
@@ -69,7 +72,7 @@
     rows={sort.apply(rows)}
     {sort}
     key={(r) => r.key}
-    rowProps={(r) => ({ id: `lot-${r.key}`, class: [picked === r.key && "picked", faded(r.row) && "faded", (r.profit ?? 0) > 0 && "hot"].filter(Boolean).join(" "), onclick: () => onpick?.(r.key) })}
+    rowProps={(r) => ({ id: `lot-${r.key}`, class: [picked === r.key && "picked", faded(r.row) && "faded", (r.profit ?? 0) > 0 && "hot", changes?.get(String(r.key))?.kind].filter(Boolean).join(" "), onclick: () => onpick?.(r.key) })}
   >
     {#snippet row(r)}
       <td class="n"><b>{r.level ?? "?"}</b></td>
@@ -78,7 +81,8 @@
         {#if r.senile}<span class="tag mut">Sénile</span>{/if}
         {#if (r.profit ?? 0) > 0}<span class="tag good" title="Extraire cette monture rapporte plus que son prix d'achat">⚠ Rentable en {resource.toLowerCase()}</span>{/if}
       </td>
-      <td class="n">{Number.isFinite(r.price) ? kamas(r.price) : "—"}</td>
+      {@const was = changes?.get(String(r.key))?.was}
+      <td class="n">{Number.isFinite(r.price) ? kamas(r.price) : "—"}{#if was != null}<br /><s class="was" title="Prix au relevé précédent">{Number.isFinite(was) ? kamas(was) : "—"}</s>{/if}</td>
       {#if mount}
         <td class="n">{r.n}</td>
         <td class="n">{r.sale != null ? kamas(r.sale) : "—"}</td>
@@ -98,6 +102,11 @@
   .ctable :global(tr.faded) { opacity: 0.2; }
   .ctable :global(tr.hot) { background: color-mix(in srgb, var(--ok) 8%, transparent); }
   .ctable :global(tr.hot td) { background: none; }
+  .ctable :global(tr.added) { background: color-mix(in srgb, var(--ok) 14%, transparent); }
+  .ctable :global(tr.removed) { background: color-mix(in srgb, var(--bad) 14%, transparent); }
+  .ctable :global(tr.added td), .ctable :global(tr.removed td) { background: none; }
+  .ctable :global(tr.removed td) { opacity: 0.45; }
+  .was { color: var(--mut); font-size: 11px; }
   .tag { margin-right: 8px; white-space: nowrap; }
   .leg { color: var(--acc); }
 </style>

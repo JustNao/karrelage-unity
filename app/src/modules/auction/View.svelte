@@ -18,6 +18,7 @@
   import { benefit, craftCost, type Recipes } from "../../lib/craft";
   import { isTranscended, transcendance, type Rune } from "../../lib/transcend";
   import { byUnitPrice, lotKeys, unitPrice } from "../../lib/price";
+  import { lotDiff } from "../../lib/lotDiff";
   import Collapsible from "../../lib/components/Collapsible.svelte";
   import CompanionTable from "../../lib/components/CompanionTable.svelte";
   import DensityChart from "../../lib/components/DensityChart.svelte";
@@ -129,6 +130,33 @@
   });
   const rowSet = $derived(new Set(rows));
   const isMineRow = (r: any) => mine.has(r, item?.gid);
+
+  const lotsOf = (l: any[]) => l.map((r) => ({ row: r, key: keyOf(r) }));
+
+  /** "Modifications": the open item's lots against its previous scan this session (added / removed / repriced). */
+  let showChanges = $state(false);
+  const prev = $derived(item ? auction.previous.get(item.gid) : undefined);
+  const diff = $derived(item && prev ? lotDiff(prev.rows, item.rows) : null);
+  const changeCount = $derived(diff ? diff.added.size + diff.removed.length + diff.was.size : 0);
+  /** Removed lots get keys of their own (they may share one with a lot still listed). */
+  const prevKeys = $derived(prev ? lotKeys(prev.rows) : new Map<any, string>());
+  const removedRows = $derived(
+    showChanges && diff ? diff.removed.filter((r: any) => (!(comp && legendOnly) || isLegendary(r)) && filt.matches(item!.gid, r)) : [],
+  );
+  const changes = $derived.by(() => {
+    if (!showChanges || !diff) return null;
+    const m = new Map<string, { kind: "added" | "removed" | "price"; was?: number }>();
+    for (const r of diff.added) m.set(keyOf(r), { kind: "added" });
+    for (const [r, was] of diff.was) m.set(keyOf(r), { kind: "price", was });
+    for (const r of removedRows) m.set("rm-" + prevKeys.get(r), { kind: "removed" });
+    return m;
+  });
+  /** The lot table: the listed lots, plus the removed ones when "Modifications" is on. */
+  const tableLots = $derived(
+    removedRows.length
+      ? [...lotsOf(rows), ...removedRows.map((r: any) => ({ row: r, key: "rm-" + prevKeys.get(r) }))].sort((a, b) => byUnitPrice(sortDir)(a.row, b.row))
+      : lotsOf(rows),
+  );
   /** Copies of the open item the player owns (inventory + own lots on sale): the Vente tab's count. */
   const owned = $derived(item && !comp ? item.rows.filter(isMineRow).length + inventory.ofGid(item.gid).length : 0);
 
@@ -141,7 +169,6 @@
   const extractable = $derived(
     neurons != null && neuroneUnit != null ? rows.filter((r: any) => Number.isFinite(unitPrice(r)) && benefit(neuroneUnit * neuronsOf(r, neurons), unitPrice(r)).profit > 0).length : 0,
   );
-  const lotsOf = (l: any[]) => l.map((r) => ({ row: r, key: keyOf(r) }));
   /** Scroll the lot list to a lot. */
   async function revealLot(id: string | number) {
     await tick();
@@ -314,6 +341,7 @@
           Prix <span class="arrow" class:desc={sortDir === -1}>↑</span>
         </button>
         <button onclick={() => ((allOpen = !allOpen), openSet.clear())}>{allOpen ? "Tout replier" : "Tout déplier"}</button>
+        {#if prev}<button class:on={showChanges} onclick={() => (showChanges = !showChanges)} title="Lots ajoutés (vert), retirés (rouge) et prix modifiés depuis le relevé précédent de cet objet">Modifications{changeCount ? ` · ${changeCount}` : ""}</button>{/if}
         {#if shownPin}<button class="on" onclick={() => (pin = null)} title="Arrêter de comparer les lots avec le lot épinglé">Désépingler</button>{/if}
       </div>
       {#if craft}<CraftSummary {craft} {sale} {gain} />{/if}
@@ -386,9 +414,9 @@
         {#if extractable}
           <div class="warn altw">⚠ {extractable} lot{extractable > 1 ? "s" : ""} rentable{extractable > 1 ? "s" : ""} à extraire en {resource.toLowerCase()}</div>
         {/if}
-        <CompanionTable lots={lotsOf(rows)} {neurons} {neuroneUnit} {resource} {picked} faded={lacksFade} onpick={pickLot} />
+        <CompanionTable lots={tableLots} {neurons} {neuroneUnit} {resource} {picked} faded={lacksFade} onpick={pickLot} {changes} />
       {:else}
-        <LotTable lots={lotsOf(rows)} good={goodKeys} transcend={false} {picked} open={(k) => allOpen || openSet.has(k)} faded={lacksFade} ontoggle={toggleRow} stickTop={points.length >= 3 ? graphH : 0} {fade} onfade={toggleFade} pinned={isPin} mine={isMineRow} onpin={togglePin} versus={versusFor} />
+        <LotTable lots={tableLots} {changes} good={goodKeys} transcend={false} {picked} open={(k) => allOpen || openSet.has(k)} faded={lacksFade} ontoggle={toggleRow} stickTop={points.length >= 3 ? graphH : 0} {fade} onfade={toggleFade} pinned={isPin} mine={isMineRow} onpin={togglePin} versus={versusFor} />
       {/if}
       {/if}
     {/if}

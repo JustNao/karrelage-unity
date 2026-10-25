@@ -4,13 +4,16 @@
  *
  *   auction.ensure();                // in a view's onMount (idempotent)
  *   auction.items                    // gid -> latest listing (reactive SvelteMap; a scan replaces the entry whole)
+ *   auction.previous                 // gid -> the listing the latest one replaced (this session: the HDV "Modifications")
  *   auction.subscribe((c) => ...)    // { kind: "put", values: [listing], live } for each listing set, { kind: "clear" }
  */
-import { SvelteSet } from "svelte/reactivity";
+import { SvelteMap, SvelteSet } from "svelte/reactivity";
 import { call, on } from "../api";
 import { SyncedMap } from "./synced.svelte";
 
 export type { SyncChange as AuctionChange } from "./synced.svelte";
+
+const previous = new SvelteMap<number, any>();
 
 class AuctionStore extends SyncedMap<number, any> {
   constructor() {
@@ -20,11 +23,17 @@ class AuctionStore extends SyncedMap<number, any> {
       put: ["auction:item"],
       cleared: "auction:cleared",
       fromList: (old, listed) => old.updated <= listed.updated, // an item scanned while the list was loading stays
+      replaced: (old) => previous.set(old.gid, old),
     });
+    this.subscribe((c) => c.kind === "clear" && previous.clear());
   }
   /** gid -> latest listing. */
   get items() {
     return this.map;
+  }
+  /** gid -> the listing the latest one replaced. */
+  get previous() {
+    return previous;
   }
 }
 
