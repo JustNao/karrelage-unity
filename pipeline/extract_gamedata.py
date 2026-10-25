@@ -15,7 +15,7 @@ import UnityPy
 GAME = pathlib.Path(r"C:\Users\nao3n\AppData\Local\Ankama\Dofus-dofus3\Dofus_Data\StreamingAssets\Content")
 OUT = root / "work" / "gamedata"
 BUNDLES = OUT / "bundles"
-TABLES = ["items", "effects", "characteristics", "itemtypes", "itemsets", "itemsupertypes", "spells", "recipes", "monsters", "npcs"]
+TABLES = ["items", "effects", "characteristics", "itemtypes", "itemsets", "itemsupertypes", "spells", "recipes", "monsters", "npcs", "breeds"]
 UnityPy.config.FALLBACK_UNITY_VERSION = "6000.3.16f1"   # bundles ship with a stripped version; matches UnityPlayer.dll
 
 LEGENDARY_SPELL_TYPE = 339   # spells.typeId of the passives of legendary items
@@ -95,7 +95,11 @@ def main():
                 for r in rows("monsters") if "id" in r and "nameId" in r}
     # NPCs (an npc actor of a map: Songes goblins...): name only
     npcs = {r["id"]: {"id": r["id"], "nameId": r["nameId"]} for r in rows("npcs") if "id" in r and r.get("nameId")}
-    for n, d in (("items", items), ("effects", effects), ("characteristics", chars), ("itemtypes", types), ("spells", spells), ("recipes", recipes), ("itemsets", sets), ("monsters", monsters), ("npcs", npcs)):
+    # breeds (classes): the base skins of their looks ("{1|10||53}" -> 10), which tell a player card's breed int apart
+    look_skin = lambda look: int(look.split("|")[1].split(",")[0]) if look and look.count("|") >= 1 and look.split("|")[1] else None
+    breeds = {r["id"]: {"id": r["id"], "nameId": r.get("shortNameId"), "skins": [s for s in (look_skin(r.get("maleLook")), look_skin(r.get("femaleLook"))) if s]}
+              for r in rows("breeds") if "id" in r}
+    for n, d in (("items", items), ("effects", effects), ("characteristics", chars), ("itemtypes", types), ("spells", spells), ("recipes", recipes), ("itemsets", sets), ("monsters", monsters), ("npcs", npcs), ("breeds", breeds)):
         (OUT / f"{n}.json").write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
         print(n, len(d))
 

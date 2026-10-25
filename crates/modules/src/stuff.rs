@@ -69,7 +69,7 @@ struct CardBind {
     /// the character's two int64 (its id and another): the player is kept under both (the view request gives the id)
     info_ids: Vec<String>,
     info_name: String,
-    /// its plain int32 (breed, level, another), told apart by value: see `breed_and_level`
+    /// its plain int32 (breed, level, another), told apart by value: see `Stuff::breed_and_level`
     info_ints: Vec<String>,
     view_success: String,
     equipment: String,
@@ -87,16 +87,28 @@ struct Player {
     level: i64,
 }
 
-/// Breeds (classes) of the game: ids 1..=20.
-const BREEDS: std::ops::RangeInclusive<i64> = 1..=20;
+/// Which of the card's plain int32 (`CardBind::info_ints`) is the breed: votes per field, for the build whose field names
+/// are `fields` (`breed.json`). The other one besides the level is small too (1, 3, 5 seen): both often look like a breed.
+#[derive(Default)]
+struct BreedVotes {
+    fields: Vec<String>,
+    votes: Vec<u32>,
+}
 
-/// (breed, level) from the character's plain int32, whose fields cannot be told apart after an update: the breed is the
-/// one in `BREEDS`, the level the largest other one (Omega levels go past 200; a level-1..20 character makes it ambiguous:
-/// then the first in range is the breed).
-fn breed_and_level(ints: &[i64]) -> (i64, i64) {
-    let Some(at) = ints.iter().position(|v| BREEDS.contains(v)) else { return (0, ints.iter().copied().max().unwrap_or(0)) };
-    let level = ints.iter().enumerate().filter(|&(i, _)| i != at).map(|(_, v)| *v).max().unwrap_or(0);
-    (ints[at], level)
+/// The first value of every repeated int list (two values or more) under `m`: the looks' skins start with the breed's base
+/// skin (unless a costume replaces it). Single values (scales: 48, 52...) are left out, they could pass for a skin.
+fn list_heads(m: &DynamicMessage, out: &mut std::collections::HashSet<i64>) {
+    for (_, v) in m.fields() {
+        match &*v {
+            PbValue::List(l) if l.len() >= 2 => match l[0].as_message() {
+                Some(_) => l.iter().filter_map(PbValue::as_message).for_each(|x| list_heads(x, out)),
+                None => out.extend(loutil_proto::util::as_i64(&l[0])),
+            },
+            PbValue::List(l) => l.iter().filter_map(PbValue::as_message).for_each(|x| list_heads(x, out)),
+            PbValue::Message(x) => list_heads(x, out),
+            _ => {}
+        }
+    }
 }
 
 #[derive(Default)]
@@ -112,6 +124,7 @@ struct Cards {
 #[derive(Default)]
 pub struct Stuff {
     builds: Store<Vec<Value>>,
+    breed: Store<BreedVotes>,
     bind: Role<CardBind>,
     effect_bind: Role<ObjectEffect>,
     cards: Mutex<Cards>,
@@ -120,6 +133,35 @@ pub struct Stuff {
 impl Stuff {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// (breed, level) from the character's plain int32, whose fields cannot be told apart after an update. The breed is the
+    /// one that is a breed whose base skin the card's look shows (a vote for that field), else the field voted for, else
+    /// the first that is a breed; the level is the largest other one (Omega levels go past 200).
+    fn breed_and_level(&self, ctx: &Ctx, info: &DynamicMessage, ints: &[i64]) -> (i64, i64) {
+        let breeds = &ctx.data.breeds;
+        let is_breed = |v: i64| if breeds.is_empty() { (1..=20).contains(&v) } else { breeds.contains_key(&v) };
+        let mut heads = std::collections::HashSet::new();
+        list_heads(info, &mut heads);
+        let by_skin: Vec<usize> = (0..ints.len()).filter(|&i| breeds.get(&ints[i]).is_some_and(|br| br.skins.iter().any(|s| heads.contains(s)))).collect();
+        let mut v = self.breed.lock();
+        let at = match by_skin[..] {
+            [i] => {
+                if v.votes.len() == ints.len() {
+                    v.votes[i] += 1;
+                    drop(v);
+                    self.breed.touch();
+                }
+                Some(i)
+            }
+            _ => {
+                let voted = (0..v.votes.len()).filter(|&i| v.votes[i] > 0).max_by_key(|&i| v.votes[i]);
+                voted.filter(|&i| ints.get(i).is_some_and(|x| is_breed(*x))).or_else(|| ints.iter().position(|x| is_breed(*x)))
+            }
+        };
+        let Some(at) = at else { return (0, ints.iter().copied().max().unwrap_or(0)) };
+        let level = ints.iter().enumerate().filter(|&(i, _)| i != at).map(|(_, x)| *x).max().unwrap_or(0);
+        (ints[at], level)
     }
 
     /// Builds change only on user actions: written right away (outside the lock).
@@ -367,7 +409,7 @@ impl Module for Stuff {
                 let Some(info) = sub(msg, &b.info_success).and_then(|s| sub(&s, &b.info)) else { return };
                 let ids: Vec<i64> = b.info_ids.iter().map(|f| int(&info, f)).filter(|id| *id != 0).collect();
                 let name = info.get_field_by_name(&b.info_name).and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default();
-                let (breed, level) = breed_and_level(&b.info_ints.iter().map(|f| int(&info, f)).collect::<Vec<_>>());
+                let (breed, level) = self.breed_and_level(ctx, &info, &b.info_ints.iter().map(|f| int(&info, f)).collect::<Vec<_>>());
                 let mut c = self.cards.lock();
                 // the asked character, when its request was seen first; else every id (the view request will name one)
                 let asked: Vec<i64> = ids.iter().copied().filter(|id| c.requested.iter().any(|(_, r)| r == id)).collect();
@@ -393,6 +435,20 @@ impl Module for Stuff {
     fn init(&self, ctx: &Ctx) {
         if let Some(Value::Array(saved)) = self.builds.open(ctx, "stuff", "builds.json", |b| json!(b)) {
             *self.builds.lock() = saved;
+        }
+        let saved = self.breed.open(ctx, "stuff", "breed.json", |v| json!({"fields": v.fields, "votes": v.votes}));
+        if let Some(b) = self.bind.get(ctx, "card") {
+            let mut v = self.breed.lock();
+            v.fields = b.info_ints.clone();
+            v.votes = vec![0; b.info_ints.len()];
+            // the votes of another build (other field names) are dropped
+            if let Some(saved) = saved.filter(|s| s["fields"] == json!(b.info_ints)) {
+                if let Ok(x) = serde_json::from_value::<Vec<u32>>(saved["votes"].clone()) {
+                    if x.len() == b.info_ints.len() {
+                        v.votes = x;
+                    }
+                }
+            }
         }
     }
 
@@ -640,6 +696,25 @@ mod tests {
         let list = stuff.call("list", Value::Null, ctx).unwrap();
         assert_eq!(list.as_array().unwrap().len(), 1, "the latest inspection replaces the previous one");
         assert_eq!(list[0]["targets"], json!({"1": 12}), "user settings kept");
+    }
+
+    /// Dev check on a capture: `CARD_CAPTURE=<pipeline/sniff.py .jsonl with player cards opened> cargo test -p loutil-modules
+    /// real_cards -- --nocapture` replays it and prints each inspected player's name / breed / level.
+    #[test]
+    fn real_cards() {
+        let Ok(rec) = std::env::var("CARD_CAPTURE") else { return };
+        let Some((hub, _)) = crate::kit::testkit::hub("loutil-stuff-real-cards") else { return };
+        let hex = |s: &str| (0..s.len() / 2).map(|i| u8::from_str_radix(s.get(2 * i..2 * i + 2)?, 16).ok()).collect::<Option<Vec<u8>>>();
+        for line in std::fs::read_to_string(rec).unwrap().lines() {
+            let Ok(r) = serde_json::from_str::<Value>(line) else { continue };
+            let (Some(h), Some(len)) = (r["hex"].as_str(), r["len"].as_u64()) else { continue };
+            let Some(payload) = hex(h).filter(|p| p.len() >= len as usize) else { continue }; // truncated record
+            let dir = if r["dir"] == "C->S" { "C->S" } else { "S->C" };
+            hub.handle(loutil_core::RawMessage { t: r["t"].as_f64().unwrap_or(0.0), srv: "x".into(), dir, payload });
+        }
+        for b in hub.call("stuff", "list", Value::Null).unwrap().as_array().unwrap().iter().filter(|b| !b["player"].is_null()) {
+            eprintln!("{} breed {} level {}", b["player"]["name"], b["class"], b["player"]["level"]);
+        }
     }
 
     /// Dev check on a capture: `[CARD_INFO=<CardInfoResponse record .json>] CARD_REQ=<CardViewRequest hex> CARD_VIEW=<CardViewResponse record .json> cargo test -p loutil-modules

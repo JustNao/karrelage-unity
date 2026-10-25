@@ -195,8 +195,11 @@ Set `PYTHONUTF8=1` for scripts handling accents. The "Développeur" header toggl
   {map worn position → preset.Equipment {gid, uid?, effects}} (or Unauthorized = private). Responses carry no character id:
   the CardViewRequest (named by anchor; view 1 = equipment) with the same envelope uid gives it (verified 3.7.12.12), name /
   breed / level from CardInfoResponse (level counts Omega levels, 360 seen: the build uses ≤ 200). The character's two
-  int64 (id + another) can't be told apart: the player is stored under both; its three plain int32 = breed (1..=20) /
-  level (largest other) / unknown (`breed_and_level`, not checked on a capture). Build id `player-<id>`, replaced on each inspection (user fields kept); `rolls` = exact rolls,
+  int64 (id + another) can't be told apart: the player is stored under both; its three plain int32 = breed / level
+  (largest other) / unknown (1, 3, 5 seen: looks like a breed too). Breed = the int whose breed's base skin (pack
+  `breeds.json`, from the game's breeds table) heads a skins list of the card's look (a costume hides it: 1 card in 5),
+  voted per field in `<app data>/stuff/breed.json`, else the voted field (`Stuff::breed_and_level`; right on
+  work/capture_card3.jsonl, field order reversed too). Build id `player-<id>`, replaced on each inspection (user fields kept); `rolls` = exact rolls,
   counted when no lot is chosen. Event `stuff:player`. Base points / scrolls (EquipmentCard CharacteristicsInfo) not read.
   "Exporter vers Dofusbook" on a player build = `playerBuildLink` (`lib/dofusbookExport.ts`, 0 points / 100 scrolls).
 

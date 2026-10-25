@@ -99,6 +99,12 @@ pub struct NpcRow {
     pub name_id: i64,
 }
 
+/// A breed (class): the base skins of its male / female looks.
+#[derive(Debug, Deserialize, Clone)]
+pub struct BreedRow {
+    pub skins: Vec<i64>,
+}
+
 #[derive(Debug, Deserialize, serde::Serialize, Clone, Default)]
 pub struct MonsterNotes {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -162,6 +168,8 @@ pub struct Data {
     pub monsters: HashMap<i64, MonsterRow>,
     /// NPCs: id -> name (absent in older packs).
     pub npcs: HashMap<i64, NpcRow>,
+    /// Breeds: id -> base skins (absent in older packs).
+    pub breeds: HashMap<i64, BreedRow>,
     pub strings: HashMap<i64, String>,
     /// Build-specific obfuscated names per role (bindings.json), see pipeline/bindings.json.
     pub bindings: Value,
@@ -199,6 +207,7 @@ impl Data {
             itemsets: read_map(dir, "itemsets.json").unwrap_or_default(),
             monsters: read_map(dir, "monsters.json").unwrap_or_default(),
             npcs: read_map(dir, "npcs.json").unwrap_or_default(),
+            breeds: read_map(dir, "breeds.json").unwrap_or_default(),
             equipment_effects,
             bindings: serde_json::from_slice(&std::fs::read(dir.join("bindings.json"))?)?,
             dir: dir.to_path_buf(),

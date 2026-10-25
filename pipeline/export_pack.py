@@ -139,6 +139,8 @@ dump("monsters.json", monsters)
 npcs = {k: {"nameId": v["nameId"]} for k, v in gd.npcs.items()}
 ids.update(v["nameId"] for v in npcs.values())
 dump("npcs.json", npcs)
+# breeds: base skins only (player cards: the breed int is the one whose skin the look shows)
+dump("breeds.json", {k: {"skins": v["skins"]} for k, v in gd.breeds.items()})
 
 for lang in ("fr", "en"):
     f = gd.D / "i18n" / f"{lang}.bin"
