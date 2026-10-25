@@ -26,7 +26,7 @@ export interface Build {
   own_uid?: Record<string, number>;
   /** slots left out of the price (they still count in stats) */
   ignored: string[];
-  /** a player's build, read from their card in game (crates/modules/src/stuff.rs): character id, name, when (unix secs), card level (Omega levels included; `level` stops at 200) */
+  /** a player's build, read from their card in game (crates/modules/src/stuff.rs): character id, name, when (unix secs), level (capped at 200: Omega levels above are cosmetic) */
   player?: { id: number; name: string; seen: number; level?: number };
   /** player's build: slot -> the exact roll worn (lot-shaped), counted when no lot is chosen */
   rolls?: Record<string, Lot>;

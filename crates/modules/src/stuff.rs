@@ -203,11 +203,11 @@ impl Stuff {
             }
         }
         let name = player.as_ref().map(|p| p.name.clone()).filter(|n| !n.is_empty()).unwrap_or_else(|| format!("Joueur {id}"));
-        // the card's level counts Omega levels (360 seen): characteristics stop at 200
-        let level = player.as_ref().map(|p| p.level).filter(|l| *l > 0).unwrap_or(MAX_LEVEL);
+        // the card's level counts Omega levels (360 seen): cosmetic past 200, where the characteristics stop
+        let level = player.as_ref().map(|p| p.level).filter(|l| *l > 0).unwrap_or(MAX_LEVEL).clamp(1, MAX_LEVEL);
         Some(json!({
             "id": format!("player-{id}"), "player": {"id": id, "name": name, "seen": t, "level": level}, "name": name, "url": "",
-            "level": level.clamp(1, MAX_LEVEL), "class": player.as_ref().map(|p| p.breed).unwrap_or(0),
+            "level": level, "class": player.as_ref().map(|p| p.breed).unwrap_or(0),
             "fetched": unix_secs(), "carac": {}, "fm": {}, "slots": slots, "rolls": rolls,
             "targets": {}, "chosen": {}, "ignored": [], "owned": [],
         }))

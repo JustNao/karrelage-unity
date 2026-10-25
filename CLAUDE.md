@@ -194,7 +194,7 @@ Set `PYTHONUTF8=1` for scripts handling accents. The "Développeur" header toggl
 - « Builds des joueurs »: another player's card (Card package, role `card`): CardViewResponse → Success → EquipmentCard
   {map worn position → preset.Equipment {gid, uid?, effects}} (or Unauthorized = private). Responses carry no character id:
   the CardViewRequest (named by anchor; view 1 = equipment) with the same envelope uid gives it (verified 3.7.12.12), name /
-  breed / level from CardInfoResponse (level counts Omega levels, 360 seen: the build uses ≤ 200). The character's two
+  breed / level from CardInfoResponse (level counts Omega levels, 360 seen: capped at 200 everywhere, Omega levels are cosmetic). The character's two
   int64 (id + another) can't be told apart: the player is stored under both; its three plain int32 = breed / level
   (largest other) / unknown (1, 3, 5 seen: looks like a breed too). Breed = the int whose breed's base skin (pack
   `breeds.json`, from the game's breeds table) heads a skins list of the card's look (a costume hides it: 1 card in 5),

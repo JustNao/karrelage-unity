@@ -341,7 +341,7 @@
       <div class="bar">
         <div class="ttl"><b>{build.name}</b> <span class="mut">niv. {build.level}</span>
           {#if build.player}
-            <span class="mut" title="Équipement lu sur la fiche du joueur en jeu (jets exacts) ; une nouvelle inspection le remplace">{build.class ? `${className(build.class)} · ` : ""}{(build.player.level ?? 0) > 200 ? `niv. ${build.player.level} (Oméga) · ` : ""}inspecté le {new Date(build.player.seen * 1000).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })}</span>
+            <span class="mut" title="Équipement lu sur la fiche du joueur en jeu (jets exacts) ; une nouvelle inspection le remplace">{build.class ? `${className(build.class)} · ` : ""}inspecté le {new Date(build.player.seen * 1000).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })}</span>
           {:else}
             <button class="ghost" title="Recharger depuis Dofusbook" onclick={() => refresh(build!)}>↻</button>
             <a class="mut" href={build.url} target="_blank" rel="noreferrer">Dofusbook</a>
