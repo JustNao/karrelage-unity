@@ -1,8 +1,6 @@
 /**
- * A clock ticking every minute, for "il y a 5min" texts: reading `minute.now` (unix seconds) in a template re-renders it
- * each minute. The timer only runs while something reads it.
- *
- *   {ago(item.updated, minute.now)}
+ * A clock ticking every minute, for "il y a 5min" texts (`fmt.ago` reads it): reading `minute.now` (unix seconds) in a
+ * template or a derived re-runs it each minute. The timer only runs while something reads it.
  */
 import { createSubscriber } from "svelte/reactivity";
 

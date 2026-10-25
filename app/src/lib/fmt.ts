@@ -1,5 +1,7 @@
 /** Number formatting shared by every tab: one cached formatter, one minus sign (typographic "−"). */
 
+import { minute } from "./stores/clock.svelte";
+
 const nf = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 3 });
 const nf0 = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 });
 const nfs = new Map<number, Intl.NumberFormat>();
@@ -49,8 +51,8 @@ export const fmtSize = (n: number | null | undefined) => (n == null ? "" : n < 1
 /** A rune's name without its "Rune " prefix: "Rune Pa Fo" -> "Pa Fo". */
 export const runeShort = (name: string | undefined) => name?.replace(/^Rune /, "");
 
-/** "il y a 12s / 5min / 3h" (`now`: unix seconds, e.g. `minute.now` to refresh every minute). */
-export const ago = (t: number, now = Date.now() / 1000) => {
+/** "il y a 12s / 5min / 3h"; read in a template or a derived, it refreshes every minute (`minute`). */
+export const ago = (t: number, now = minute.now) => {
   const d = Math.round(now - t);
   return "il y a " + (d < 60 ? `${d}s` : d < 3600 ? `${Math.round(d / 60)}min` : `${Math.round(d / 3600)}h`);
 };
