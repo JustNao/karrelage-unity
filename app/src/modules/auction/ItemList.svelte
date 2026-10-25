@@ -5,6 +5,7 @@
   import { ago, kamas } from "../../lib/fmt";
   import { readJSON, writeJSON } from "../../lib/persist.svelte";
   import { auction } from "../../lib/stores/auction.svelte";
+  import { OPEN_BUILD_KEY, toBuy, type Build } from "../../lib/stuff";
   import Collapsible from "../../lib/components/Collapsible.svelte";
   import ConfirmButton from "../../lib/components/ConfirmButton.svelte";
   import ItemIcon from "../../lib/components/ItemIcon.svelte";
@@ -22,11 +23,23 @@
     writeJSON(COLLAPSE_KEY, [...collapsed]);
   }
   let search = $state(""); // filter by item or type name
+  /** "Stuff à acheter": only the items of the build open in the Stuff tab that are still to buy (not owned). */
+  const STUFF_KEY = "karrelage.auction.stuffOnly";
+  let stuffOnly = $state(readJSON<boolean>(STUFF_KEY, false));
+  $effect(() => writeJSON(STUFF_KEY, stuffOnly));
+  let build = $state.raw<Build | null>(null);
+  $effect(() => {
+    if (!stuffOnly) return;
+    const id = readJSON<string | null>(OPEN_BUILD_KEY, null); // read again on each toggle and each visit of the tab
+    call<Build[]>("stuff", "list").then((l) => (build = l.find((b) => b.id === id) ?? l[0] ?? null)).catch(() => (build = null));
+  });
+  const wanted = $derived(stuffOnly && build ? toBuy(build) : null);
+  let barH = $state(0); // the item types stick right under the bar
   const typeGroups = $derived.by(() => {
     const m = new Map<string, any[]>();
     const match = matcher(search);
     for (const i of [...auction.items.values()].sort((a, b) => b.updated - a.updated)) {
-      if (!match(i.name, i.type)) continue;
+      if (!match(i.name, i.type) || (stuffOnly && !wanted?.has(i.gid))) continue;
       const t = i.type ?? "?";
       if (!m.has(t)) m.set(t, []);
       m.get(t)!.push(i);
@@ -37,10 +50,16 @@
 
 <SideList {cols} name="list" title="Objets">
   {#snippet bar()}
-    <SearchBar bind:value={search} placeholder="Rechercher un objet…" grow compact>
-      {#snippet after()}<ConfirmButton mini label="Nettoyer" title="Oublier tous les objets enregistrés" onconfirm={() => call("auction", "clear")} />{/snippet}
-    </SearchBar>
+    <div class="bar" bind:offsetHeight={barH}>
+      <SearchBar bind:value={search} placeholder="Rechercher un objet…" grow compact />
+      <div class="tools">
+        <button class="mini" class:on={stuffOnly} onclick={() => (stuffOnly = !stuffOnly)} title="N'afficher que les objets du stuff ouvert dans l'onglet Stuff qui restent à acheter{build ? ` (${build.name})` : ''}">Stuff à acheter</button>
+        <span class="sp"></span>
+        <ConfirmButton mini label="Nettoyer" title="Oublier tous les objets enregistrés" onconfirm={() => call("auction", "clear")} />
+      </div>
+    </div>
   {/snippet}
+  <div class="groups" style:--thead-top="{barH + 42}px">
   {#each typeGroups as g (g.type)}
     <Collapsible head="thead" title={g.type} count={g.items.length} open={!collapsed.has(g.type)} ontoggle={() => toggleType(g.type)}>
       {#each g.items as i (i.gid)}
@@ -57,8 +76,9 @@
       {/each}
     </Collapsible>
   {:else}
-    <div class="mut empty">{search ? "Aucun objet ne correspond à la recherche." : "Ouvrez un objet à l'hôtel de vente : il apparaît ici (dernière liste par objet)."}</div>
+    <div class="mut empty">{stuffOnly && !build ? "Aucun stuff ouvert dans l'onglet Stuff." : stuffOnly ? "Aucun objet à acheter de ce stuff n'a été scanné" + (search ? " (ou aucun ne correspond à la recherche)." : ".") : search ? "Aucun objet ne correspond à la recherche." : "Ouvrez un objet à l'hôtel de vente : il apparaît ici (dernière liste par objet)."}</div>
   {/each}
+  </div>
 </SideList>
 
 <style>
@@ -70,5 +90,10 @@
   .itx { min-width: 0; }
   .deal-ico { display: inline-block; width: 8px; height: 8px; margin-left: 4px; border-radius: 50%; background: var(--gold); vertical-align: middle; position: relative; top: -1px; font-size: 0; }
   /* item types of the list: sticky under the search bar */
-  :global(.chd.thead) { border-bottom: 1px solid var(--line); background: var(--bg); padding: 5px 10px; font: 600 11px var(--font); letter-spacing: 0.04em; text-transform: uppercase; position: sticky; top: 66px; z-index: 1; }
+  :global(.chd.thead) { border-bottom: 1px solid var(--line); background: var(--bg); padding: 5px 10px; font: 600 11px var(--font); letter-spacing: 0.04em; text-transform: uppercase; position: sticky; top: var(--thead-top, 66px); z-index: 1; }
+  .bar { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  .tools { display: flex; gap: 6px; align-items: center; }
+  .tools .sp { flex: 1; }
+  .tools .on { border-color: var(--acc); color: var(--acc); }
+  .groups { display: contents; }
 </style>

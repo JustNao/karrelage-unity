@@ -12,7 +12,7 @@
   import type { Recipes } from "../../lib/craft";
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
   import {
-    CARAC, FM_STATS, className, FRESH_SECS, HP_STAT, PANELS, SLOT_LAYOUT, SLOT_TITLES, compute, fmOf, itemStats, lotStats, slotPrices, sumSlots,
+    CARAC, FM_STATS, OPEN_BUILD_KEY as OPEN_KEY, className, FRESH_SECS, HP_STAT, PANELS, SLOT_LAYOUT, SLOT_TITLES, compute, fmOf, itemStats, lotStats, slotPrices, sumSlots,
     type Build, type Info, type Lot, type Resolved, type StatRow,
   } from "../../lib/stuff";
   import BuildList from "./BuildList.svelte";
@@ -35,7 +35,6 @@
   let builds = $state<Build[]>([]);
   let sel = $state<string | null>(null);
   /** The build open last: opened again when coming back to the tab (or after a restart). */
-  const OPEN_KEY = "karrelage.stuff.open";
   $effect(() => {
     if (sel) writeJSON(OPEN_KEY, sel);
   });

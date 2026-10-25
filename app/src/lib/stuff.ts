@@ -10,6 +10,10 @@ export const CLASSES: Record<number, string> = {
 };
 export const className = (id: number) => CLASSES[id] ?? `Classe ${id}`;
 
+/** localStorage: id of the build open in the Stuff tab (opened again on return; the HDV's "Stuff à acheter" filter). */
+export const OPEN_BUILD_KEY = "karrelage.stuff.open";
+/** Gids of a build's slots still to buy (not owned). */
+export const toBuy = (b: Build) => new Set(Object.entries(b.slots).filter(([s]) => !(b.owned ?? []).includes(s)).map(([, r]) => r.gid));
 export const FRESH_SECS = 60 * 60; // an item scanned less than 1 h ago counts as fresh
 
 export interface SlotRef { db_id: number; gid: number; picture: number; name: string; level: number }
