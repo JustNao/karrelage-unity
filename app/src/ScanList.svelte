@@ -3,7 +3,7 @@
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { listenAll } from "./lib/api";
   import { onStored, readJSON, writeJSON } from "./lib/persist.svelte";
-  import { SCAN_LIST_KEY, type ScanItem } from "./lib/scanlist";
+  import { SCAN_LIST_KEY, SCAN_LIST_POS_KEY, type ScanItem } from "./lib/scanlist";
   import FloatingShell from "./lib/components/FloatingShell.svelte";
 
   /** Floating "items to scan" list: filled by the Stuff tab (shared localStorage), items vanish as their auction listing is read. */
@@ -37,9 +37,15 @@
         if (n > 0 && !items.length) void close(); // everything scanned: the window goes away by itself
       },
     });
+    const win = getCurrentWindow();
+    const moved = win.onMoved(async ({ payload }) => {
+      const p = payload.toLogical(await win.scaleFactor());
+      writeJSON(SCAN_LIST_POS_KEY, { x: Math.round(p.x), y: Math.round(p.y) });
+    });
     return () => {
       offStored();
       off();
+      void moved.then((f) => f());
     };
   });
 </script>
