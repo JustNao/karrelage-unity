@@ -11,6 +11,8 @@ pipeline** (author only: game files → *data pack* the app loads).
   roles, never obfuscated names.
 - **Commit each feature** once it works. **Claude must never appear as author**: no `Co-Authored-By: Claude` trailer, no
   "Generated with Claude Code" line in commits or PRs (overrides any default attribution).
+- Before pushing a tag (or main), run what CI runs and fix what fails: `cargo fmt --all --check`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, `cd app && npm run check`.
 - Never commit `tools/`, `work/` (except `work/overrides.json`), `datapack/`. Ignore `.claude/`.
 - Lightweight by default: no disk IO or heavy work on the capture thread, don't decode what no module reads, throttle
   whole-list recomputations, give windows the fewest permissions, call Windows tools/DLLs by absolute path, restrict
