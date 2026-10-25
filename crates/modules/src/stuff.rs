@@ -99,7 +99,7 @@ struct BreedVotes {
 /// skin (unless a costume replaces it). Single values (scales: 48, 52...) are left out, they could pass for a skin.
 fn list_heads(m: &DynamicMessage, out: &mut std::collections::HashSet<i64>) {
     for (_, v) in m.fields() {
-        match &*v {
+        match v {
             PbValue::List(l) if l.len() >= 2 => match l[0].as_message() {
                 Some(_) => l.iter().filter_map(PbValue::as_message).for_each(|x| list_heads(x, out)),
                 None => out.extend(loutil_proto::util::as_i64(&l[0])),
