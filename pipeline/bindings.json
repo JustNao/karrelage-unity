@@ -1,118 +1,153 @@
 {
- "_doc": "Build-specific obfuscated names used by formatters (they rotate on every game update). Roles are stable; values change.",
+ "_doc": "Fields each role reads, as clear paths: Message.field.field (a message by its clear name, then fields / a oneof by clear name, each step but the last going into the field's message type). Resolved per game build by pipeline/bindings.py into datapack/bindings.json (obfuscated names). Names the beta does not give are confirmed in work/overrides.json.",
  "ah_list": {
-  "message": "jzs",
-  "items": "fycg",
-  "ints": ["fych", "fyci"]
+  "message": "ExchangeTypesItemsExchangerDescriptionForUserEvent",
+  "items": "ExchangeTypesItemsExchangerDescriptionForUserEvent.item_descriptions",
+  "ints": [
+   "ExchangeTypesItemsExchangerDescriptionForUserEvent.ints_1",
+   "ExchangeTypesItemsExchangerDescriptionForUserEvent.ints_2"
+  ]
  },
  "ah_item": {
-  "prices": "fybz",
-  "effects": "fycc",
-  "ints": ["fyby", "fyca", "fycb"]
+  "prices": "BidExchangerObject.prices",
+  "effects": "BidExchangerObject.effects",
+  "ints": [
+   "BidExchangerObject.ints_1",
+   "BidExchangerObject.ints_2",
+   "BidExchangerObject.ints_3"
+  ]
  },
  "ah_buy": {
   "_doc": "ExchangeBidHouseBuyResultEvent (answer to an AH purchase): object_uid = uid of the lot bought (as in the AH listing), bought = success.",
-  "uid": "fycx",
-  "bought": "fycy"
+  "uid": "ExchangeBidHouseBuyResultEvent.object_uid",
+  "bought": "ExchangeBidHouseBuyResultEvent.bought"
  },
  "ah_row": {
   "_doc": "ExchangeBidHouseInListUpdatedEvent (a row of the open AH listing changed, e.g. after a purchase): same shape as an ah_item row (prices per stack size, three unordered ints uid / gid / type, effects).",
-  "prices": "fygu",
-  "effects": "fygy",
-  "ints": ["fygv", "fygw", "fygx"]
+  "prices": "ExchangeBidHouseInListUpdatedEvent.prices",
+  "effects": "ExchangeBidHouseInListUpdatedEvent.effects",
+  "ints": [
+   "ExchangeBidHouseInListUpdatedEvent.ints_1",
+   "ExchangeBidHouseInListUpdatedEvent.ints_2",
+   "ExchangeBidHouseInListUpdatedEvent.ints_3"
+  ]
  },
  "ah_row_removed": {
   "_doc": "ExchangeBidHouseInListRemovedEvent (a row left the open AH listing): three unordered ints uid / gid / type.",
-  "ints": ["fxyy", "fxyz", "fxza"]
+  "ints": [
+   "ExchangeBidHouseInListRemovedEvent.ints_1",
+   "ExchangeBidHouseInListRemovedEvent.ints_2",
+   "ExchangeBidHouseInListRemovedEvent.ints_3"
+  ]
  },
  "avg_prices": {
   "_doc": "ObjectAveragePricesEvent: repeated entries of (item gid, average per-unit price over the last week). The third field of an entry is unused.",
-  "items": "fswf",
-  "gid": "fsvx",
-  "price": "fsvy"
+  "items": "ObjectAveragePricesEvent.objects_average_prices",
+  "gid": "ObjectAveragePricesEvent.objects_average_prices.object_gid",
+  "price": "ObjectAveragePricesEvent.objects_average_prices.price"
  },
  "inventory": {
   "_doc": "InventoryContentEvent (sent at login) -> objects: ObjectItemInventory {item: ObjectItem {gid, uid, quantity, effects: ObjectEffect}, position (0-15 equipped, 63 bag)}; ObjectAdded/ObjectsAdded/ObjectModified events carry ObjectItemInventory, ObjectDeleted/ObjectsDeleted object uids.",
-  "objects": "fsro",
-  "item": "gdxj",
-  "position": "gdxm",
-  "gid": "gcif",
-  "uid": "gcig",
-  "quantity": "gcie",
-  "effects": "gcii",
-  "added": "fsot",
-  "added_list": "fsup",
-  "modified": "fsoy",
-  "deleted": "fsmr",
-  "deleted_list": "fssq"
+  "objects": "InventoryContentEvent.objects",
+  "item": "ObjectItemInventory.item",
+  "position": "ObjectItemInventory.position",
+  "gid": "ObjectItem.gid",
+  "uid": "ObjectItem.uid",
+  "quantity": "ObjectItem.quantity",
+  "effects": "ObjectItem.effects",
+  "added": "ObjectAddedEvent.object",
+  "added_list": "ObjectsAddedEvent.objects",
+  "modified": "ObjectModifiedEvent.object",
+  "deleted": "ObjectDeletedEvent.object_uid",
+  "deleted_list": "ObjectsDeletedEvent.objects_uid"
  },
  "ah_type": {
   "_doc": "ExchangeTypesExchangerDescriptionForUserEvent (an AH category opened): gids = every item on sale in it, type = its item type.",
-  "gids": "fyju",
-  "type": "fyjv"
+  "gids": "ExchangeTypesExchangerDescriptionForUserEvent.type_description",
+  "type": "ExchangeTypesExchangerDescriptionForUserEvent.object_type"
  },
  "ah_gone": {
   "_doc": "ExchangeBidHouseGenericItemRemovedEvent (the last lot of an item left the AH): gid.",
-  "gid": "fyqx"
+  "gid": "ExchangeBidHouseGenericItemRemovedEvent.object_gid"
  },
  "ah_mine": {
   "_doc": "The player's own AH lots. ExchangeBidSellerStartedEvent (sell window opened): objects = ItemToSellInBid {item, sell_id (the int32, assumed to be the AH listing uid), prices = price + unsold delay (int64s, not told apart)}; ExchangeBidHouseItemAddedEvent (a lot put on sale): added_item + added_prices. The item: three unordered ints uid / quantity / gid (object uid, not the AH listing uid) + effects.",
-  "objects": "fygc",
-  "item": "fyfs",
-  "sell_id": "fyfq",
-  "prices": ["fyfr", "fyft"],
-  "added_item": "fxub",
-  "added_prices": ["fxua", "fxuc"],
-  "ints": ["fylw", "fyly", "fylz"],
-  "effects": "fylx"
+  "objects": "ExchangeBidSellerStartedEvent.objects",
+  "item": "ItemToSellInBid.item",
+  "sell_id": "ItemToSellInBid.sell_id",
+  "prices": [
+   "ItemToSellInBid.prices_1",
+   "ItemToSellInBid.prices_2"
+  ],
+  "added_item": "ExchangeBidHouseItemAddedEvent.added_item",
+  "added_prices": [
+   "ExchangeBidHouseItemAddedEvent.added_prices_1",
+   "ExchangeBidHouseItemAddedEvent.added_prices_2"
+  ],
+  "ints": [
+   "ExchangeBidHouseItemAddedEvent.added_item.ints_1",
+   "ExchangeBidHouseItemAddedEvent.added_item.ints_2",
+   "ExchangeBidHouseItemAddedEvent.added_item.ints_3"
+  ],
+  "effects": "ExchangeBidHouseItemAddedEvent.added_item.effects"
  },
  "decraft": {
   "_doc": "DecraftResultEvent (breaking items into runes): results = DecraftedItem {coef_min, coef_max (floats, 0.529 = 52.9 %; equal for one item), uid (object uid of the broken item), runes: [{rune_gid, rune_qty}]}.",
-  "results": "fyeo",
-  "coef_min": "fyeh",
-  "coef_max": "fyei",
-  "uid": "fyej",
-  "runes": "fyek",
-  "rune_gid": "fyed",
-  "rune_qty": "fyec"
+  "results": "DecraftResultEvent.results",
+  "coef_min": "DecraftedItem.coef_min",
+  "coef_max": "DecraftedItem.coef_max",
+  "uid": "DecraftedItem.object_uid",
+  "runes": "DecraftedItem.runes",
+  "rune_gid": "Rune.rune_gid",
+  "rune_qty": "Rune.rune_qty"
  },
  "fight": {
   "_doc": "Fighters (FightFighterShowEvent / FightFighterRefreshEvent information, FightSynchronizeEvent fighters, summons of GameActionFightEvent): ActorPositionInformation {actor_id, actor_information -> fighter -> ai_fighter -> MonsterFighter {three unordered ints monster_gid / creature_grade / creature_level}, stats: FightCharacteristics {summoned, summoner (actor id)}, spawn: SpawnInformation {alive, team, ...}}. Found by walking the message. death = GameActionFightEvent's Death member (two int64, target id + an unnamed one: the one that is a fighter of the fight died).",
-  "actor_id": "gcaw",
-  "monster": ["gbyx", "gbyy", "gbyz"],
-  "summoned": "gdeo",
-  "death": "fwuz",
-  "summoner": "gdep",
-  "alive": "gdnr"
+  "actor_id": "ActorPositionInformation.actor_id",
+  "monster": [
+   "MonsterFighter.monster_1",
+   "MonsterFighter.monster_2",
+   "MonsterFighter.monster_3"
+  ],
+  "summoned": "FightCharacteristics.summoned",
+  "death": "GameActionFightEvent.death",
+  "summoner": "FightCharacteristics.summoner",
+  "alive": "SpawnInformation.alive"
  },
  "boost": {
   "_doc": "Fight buffs (confirmed on a capture). FightBoostAddEvent / FightJoinRunningEvent effects carry FightRemovableEffectExtendedInformation {effect: FightRemovableEffect {uid, target_id, ...}, action_id (= effects table id: 1131-1140 = PA / PM poisons), source_id}; FightBoostRemoveEvent {boost_uid, target_id} ends one. character = character_id of CharacterSelectionRequest / CharacterFirstSelectionRequest (client -> server at login: the player's own fighter id).",
-  "effect": "gdzl",
-  "action": "gdzm",
-  "uid": "gdpw",
-  "target": "gdpz",
-  "remove_uid": "fxhi",
-  "remove_target": "fxhj",
-  "character": ["gatq", "garh"]
+  "effect": "FightRemovableEffectExtendedInformation.effect",
+  "action": "FightRemovableEffectExtendedInformation.action_id",
+  "uid": "FightRemovableEffect.uid",
+  "target": "FightRemovableEffect.target_id",
+  "remove_uid": "FightBoostRemoveEvent.boost_uid",
+  "remove_target": "FightBoostRemoveEvent.target_id",
+  "character": [
+   "CharacterSelectionRequest.character_id",
+   "CharacterFirstSelectionRequest.character_id"
+  ]
  },
  "object_effect": {
-  "action": ["gdmq", "gdmr"],
-  "oneof": "gdng"
+  "action": [
+   "ObjectEffect.action_1",
+   "ObjectEffect.action_2"
+  ],
+  "oneof": "ObjectEffect.value"
  },
  "card": {
   "_doc": "Another player's card (click a player -> profile). CardViewRequest (client, named by anchor) {character, view}; CardInfoResponse -> info_success (Success) -> info (the character: id int64, name, breed, level with Omega levels; checked on a capture); CardViewResponse -> view_success (Success) -> equipment (EquipmentCard) {items: map worn position (0-15) -> preset.Equipment {gid, uid?, effects: ObjectEffect}, characteristics: CharacteristicsInfo}; or -> unauthorized (private equipment). Responses carry no character id: the CardViewRequest with the same envelope uid gives it.",
-  "view_character": "gbab",
-  "info_success": "gbbh",
-  "info": "gbau",
-  "info_id": "gbck",
-  "info_name": "gbcm",
-  "info_breed": "gbcl",
-  "info_level": "gbcn",
-  "view_success": "gbiw",
-  "equipment": "gbes",
-  "unauthorized": "gbet",
-  "items": "gbgt",
-  "gid": "gczo",
-  "effects": "gczk"
+  "view_character": "CardViewRequest.character_id",
+  "info_success": "CardInfoResponse.success",
+  "info": "CardInfoResponse.success.info",
+  "info_id": "CardInfoResponse.success.info.id",
+  "info_name": "CardInfoResponse.success.info.name",
+  "info_breed": "CardInfoResponse.success.info.breed",
+  "info_level": "CardInfoResponse.success.info.level",
+  "view_success": "CardViewResponse.success",
+  "equipment": "CardViewResponse.success.equipment",
+  "unauthorized": "CardViewResponse.success.unauthorized",
+  "items": "EquipmentCard.items",
+  "gid": "Equipment.gid",
+  "effects": "Equipment.effects"
  }
 }

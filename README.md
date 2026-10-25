@@ -101,7 +101,7 @@ Le plus simple : en mode développeur, l'onglet **Proto** compare le pack au jeu
 python pipeline/build_protos.py             # compile les protos, écrit work/pb/protocol.desc
 python pipeline/extract_gamedata.py --refresh   # copie les données et traductions du jeu dans work/gamedata, les lit avec UnityPy
 python pipeline/script_names.py             # noms en clair laissés par la table des scripts Unity -> work/script_names.json
-python pipeline/match_protos.py             # correspondance structurelle avec la bêta, ancrée sur ces noms -> work/mapping.json
+python pipeline/match_protos.py             # correspondance structurelle avec le build précédent puis la bêta, ancrée sur ces noms -> work/mapping.json
 python pipeline/import_reference_names.py <liste.txt>   # facultatif : liste communautaire obfusqué -> clair
 python pipeline/export_pack.py              # -> datapack/
 python pipeline/package_pack.py             # -> dist/datapack.zip + dist/pack.json
@@ -109,10 +109,15 @@ python pipeline/make_fixtures.py            # seulement si le paquet de démo / 
 ```
 
 Les noms obfusqués (messages `jzs`, champs `fycg`…) et les numéros de champs changent à chaque version. Priorité des noms :
-correspondance automatique avec la bêta < `pipeline/reference/message_names.json` < table des scripts < ancres (`match_protos.py` `ANCHORS` :
-messages retrouvés à chaque version par leur voisin et la longueur de leur nom) < `work/overrides.json` (indexé par les noms obfusqués, donc
-à revoir après chaque mise à jour). `pipeline/bindings.json` associe des _rôles_ (champs des listes HDV, des effets, de l'inventaire…) aux noms
-de champs obfusqués : il faut en général le mettre à jour, et l'onglet **Proto** signale les rôles qui ne se résolvent plus. Le code de
+correspondance automatique avec la bêta < `pipeline/reference/message_names.json` < **build précédent** < table des scripts < ancres
+(`match_protos.py` `ANCHORS` : messages retrouvés à chaque version par leur voisin et la longueur de leur nom) < `work/overrides.json`.
+Chaque export enregistre le build courant dans `pipeline/reference/builds/` (protocol.desc + noms) ; après une mise à jour, le nouveau build
+est apparié à celui-là (tables des scripts alignées, puis structure) et tous ses noms – overrides compris – sont repris. `work/overrides.json`
+(marqué `_build`) est réindexé pour le nouveau build. `pipeline/bindings.json` donne, par _rôle_, les champs lus par l'application sous forme
+de chemins en clair (`DecraftResultEvent.results`, `DecraftedItem.coef_min`…), résolus à chaque export (`pipeline/bindings.py`) en noms
+obfusqués dans `datapack/bindings.json`. Des champs de même type (deux entiers, deux flottants) ne se distinguent que si le jeu garde les
+numéros ou l'ordre des champs d'une version à l'autre (vérifié à chaque fois), ou s'ils sont nommés `x_1`, `x_2`… (lus par leur valeur, donc
+interchangeables) ; sinon l'export signale le rôle non résolu et l'onglet **Proto** aussi. Le code de
 l'application ne contient jamais de nom obfusqué en dur.
 
 Alternative en ligne de commande pour enregistrer des paquets : `python pipeline/sniff.py` (ajoutez `--raw` pour l'hexadécimal du contenu) écrit du JSONL.

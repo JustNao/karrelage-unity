@@ -1,7 +1,8 @@
 """Export the app's data pack -> datapack/ (small, build-specific; the Tauri app loads it instead of work/).
-Needs: work/pb/protocol.desc (build_protos.py), work/gamedata (extract_gamedata.py), work/mapping.json + overrides.json."""
+Needs: work/pb/protocol.desc (build_protos.py), work/gamedata (extract_gamedata.py), work/mapping.json + overrides.json.
+Also snapshots this build into pipeline/reference/builds (builds.py) for matching the next one."""
 import csv, json, pathlib, re, shutil, time, sys, unicodedata
-import schema, gamedata as gd
+import bindings, builds, schema, gamedata as gd
 
 root = pathlib.Path(__file__).resolve().parent.parent
 out = root / "datapack"
@@ -13,7 +14,11 @@ def dump(name, obj):
 
 
 shutil.copy(root / "work" / "pb" / "protocol.desc", out / "protocol.desc")
-shutil.copy(pathlib.Path(__file__).with_name("bindings.json"), out / "bindings.json")
+# bindings: bindings.json's clear paths -> this build's obfuscated names (the app reads those)
+bound, problems = bindings.resolve(schema.mapping())
+for p in problems:
+    print(f"[!] bindings : {p} (rôle laissé de côté : la fonction reste inactive)")
+dump("bindings.json", bound)
 
 # names: message -> {name, conf, fields:{obf: {name|cands}}}   (mapping.json with overrides applied)
 dump("names.json", schema.mapping())
@@ -153,4 +158,13 @@ if v := dumped_version():
     fp["version"] = v
 dump("manifest.json", {"pack": 1, "generated": int(time.time()), "items": len(items), "effects": len(effects),
                        "messages": len(schema.mapping()), "game": fp})
+
+# snapshot of this build: the next one is matched against it (match_protos.py), overrides.json is re-keyed from it
+ov_path = root / "work" / "overrides.json"
+build_fp = builds.save(schema.mapping(), json.loads((root / "work" / "script_names.json").read_text(encoding="utf-8")), dumped_version())
+ov = json.loads(ov_path.read_text(encoding="utf-8")) if ov_path.exists() else {}
+if "_build" not in ov:
+    ov_path.write_text(json.dumps({"_build": build_fp, **ov}, indent=1, ensure_ascii=False), encoding="utf-8")
+elif ov["_build"] != build_fp:
+    print(f"[!] work/overrides.json est d'un autre build ({ov['_build']}) : ses noms ne s'appliquent pas à celui-ci")
 print("datapack:", {p.name: p.stat().st_size for p in out.iterdir()})

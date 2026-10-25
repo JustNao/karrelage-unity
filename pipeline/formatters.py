@@ -1,7 +1,6 @@
 """Human-friendly renderings of specific messages, using the extracted game data.
 
-Field names below are the *obfuscated* ones of the current build (they rotate on game updates; refresh them with the
-clear-name mapping / overrides when that happens).  Ambiguous same-typed ints are resolved from the game data itself.
+Field names below are the *obfuscated* ones of the current build, resolved from bindings.json's clear paths.  Ambiguous same-typed ints are resolved from the game data itself.
 """
 import gamedata as gd
 
@@ -9,9 +8,9 @@ LOT_SIZES = [1, 10, 100, 1000]
 INFO_EFFECTS = {985: "modified_by", 988: "crafted_by"}   # "Modifié par : X", "Fabriqué par : X" -> metadata, not stats
 LOCK_EFFECT = 2825                                        # "Empêche les futures forgemagies" -> shield flag
 
-# --- build-specific obfuscated names: loaded from bindings.json (role -> obfuscated name) --------------------------
-import json as _json, pathlib as _pl
-_B = _json.loads((_pl.Path(__file__).with_name("bindings.json")).read_text(encoding="utf-8"))
+# --- build-specific obfuscated names: bindings.json's clear paths resolved for this build (bindings.py) -------------
+import bindings as _bindings, schema as _schema
+_B, _ = _bindings.resolve(_schema.mapping())   # a role missing below = formatters disabled (schema.py)
 AH_LIST = _B["ah_list"]["message"]
 AH_LIST_FIELDS = dict(items=_B["ah_list"]["items"], ints=tuple(_B["ah_list"]["ints"]))
 AH_ITEM_FIELDS = dict(prices=_B["ah_item"]["prices"], effects=_B["ah_item"]["effects"], ints=tuple(_B["ah_item"]["ints"]))

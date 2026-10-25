@@ -1,4 +1,5 @@
-"""Match obfuscated current protos (work/proto/game.proto) against the clear beta protos (work/beta).
+"""Match obfuscated current protos (work/proto/game.proto) against the clear beta protos (work/beta), and against the
+snapshot of the previous game build (builds.py, `match_previous`): its names (overrides included) carry over to this build.
 
 Output: work/mapping.json
   { "<obf msg>": {"name": "ChatChannelMessageEvent", "full": "...", "score": 0.93, "conf": "high|med|low",
@@ -8,9 +9,10 @@ Beta field numbers are NOT used (Ankama reshuffles them each build); matching is
 type-multiset similarity, refined over several rounds with already-matched neighbours/enums as anchors.
 Overrides in work/overrides.json ({"obf": {"name": ..., "fields": {"obfField": "clear"}}}) win over auto matches.
 """
-import sys, json, pathlib, collections
+import sys, json, pathlib, collections, difflib, re
 root = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(root / "tools" / "pylib"))
+import builds
 from google.protobuf import descriptor_pb2
 from grpc_tools import protoc
 import grpc_tools
@@ -123,18 +125,21 @@ def _ids(mapping):
     return {c: i for i, c in enumerate(mapping)}
 
 
-def run(cur_msgs, beta_msgs, emap, script=None):
+def run(cur_msgs, beta_msgs, emap, script=None, seeds=None, allowed=None):
+    """`seeds` (cur -> ref pairs known for sure) and `allowed(cur, ref)` default to the script table against the beta."""
     benum_id = {b: i for i, b in enumerate(sorted(set(emap.values())))}
     script = script or {}
     cmap = {}   # cur -> beta
     info = {}
     # names read from the game's script table are certain: they seed the rounds as anchors
-    for cn, s in script.items():
-        if s["beta"] and s["beta"] not in cmap.values():
-            cmap[cn] = s["beta"]; info[cn] = (1.0, -1, False)
-    print(f"script table anchors: {len(cmap)}")
+    if seeds is None:
+        seeds = {cn: s["beta"] for cn, s in script.items() if s["beta"]}
+    for cn, bn in seeds.items():
+        if bn not in cmap.values():
+            cmap[cn] = bn; info[cn] = (1.0, -1, False)
+    print(f"seed pairs: {len(cmap)}")
 
-    def allowed(cn, bn):
+    def script_allowed(cn, bn):
         """A blank script entry still fixes the package and the length of the clear name."""
         s = script.get(cn)
         if not s or s["name"]:
@@ -143,6 +148,7 @@ def run(cur_msgs, beta_msgs, emap, script=None):
             return False                          # a fake class from the obfuscator
         short = bn.rsplit(".", 1)[-1]
         return (s["len"] is None or len(short) == s["len"]) and (not s["pkg"] or _flat(bn).startswith(_flat(s["pkg"])))
+    allowed = allowed or script_allowed
 
     for rnd in range(7):
         pair_id = {c: i for i, c in enumerate(cmap)}
@@ -275,6 +281,7 @@ ANCHORS = [
     # player card tab asked for: character id + view (social / ladder / equipment); see crates/modules/src/stuff.rs
     {"name": "CardViewRequest", "file": "Card", "after": "ChangeHighlightedJobsRequest", "ints": (1, 1), "enums": 1},
 ]
+BETA_CONFS = {"high", "med", "low"}
 INT_TYPES = {F.TYPE_INT32, F.TYPE_INT64, F.TYPE_UINT32, F.TYPE_UINT64, F.TYPE_SINT32, F.TYPE_SINT64}
 
 
@@ -311,6 +318,130 @@ def message_short(full):
     return full.rsplit(".", 1)[-1]
 
 
+def shape(m):
+    """Field types of a message, message / enum references left unresolved: equal for the same message in two builds."""
+    return collections.Counter(("R" if f.label == F.LABEL_REPEATED else "S", "M" if f.type == F.TYPE_MESSAGE else "E" if f.type == F.TYPE_ENUM
+                                else SCALAR[f.type]) for f in m.field)
+
+
+def match_previous(cur_msgs, cur_enums, prev):
+    """Match this build against the snapshot of the previous one (builds.py): both script tables aligned in declaration
+    order (same file, name length and leaked name, same field types) seed the structural rounds of `run`, which then only
+    pair messages of the same file and name length. Returns (cur -> prev message pairs, {cur msg: {prev field or oneof:
+    cur one}}, {cur msg: {"name"?, "fields": {cur field: clear}}} = the snapshot's names carried over)."""
+    prev_msgs, prev_enums = load(prev["desc"])
+    emap = {c: b for c, (b, j) in match_enums(cur_enums, prev_enums).items()}
+    sn = json.loads((work / "script_names.json").read_text(encoding="utf-8")) if (work / "script_names.json").exists() else {}
+    cur_seq = [(k, v.get("file"), v.get("len"), v.get("name")) for k, v in sn.items() if v.get("conf") != "decoy"]
+    prev_seq = [tuple(x) for x in prev["script"]]
+    prev_info = {x[0]: x for x in prev_seq}
+    cur_by_short = {message_short(cn): cn for cn in cur_msgs}
+    prev_by_short = {message_short(pn): pn for pn in prev_msgs}
+    seeds = {}
+    sm = difflib.SequenceMatcher(None, [x[1:] for x in cur_seq], [x[1:] for x in prev_seq], autojunk=False)
+    for a, b, n in sm.get_matching_blocks():
+        for i in range(n):
+            cn, pn = cur_by_short.get(cur_seq[a + i][0]), prev_by_short.get(prev_seq[b + i][0])
+            if cn and pn and shape(cur_msgs[cn]) == shape(prev_msgs[pn]):
+                seeds[cn] = pn
+    print(f"previous build {prev['game'] or prev['fingerprint']}: {len(seeds)} pairs from the script tables")
+
+    def allowed(cn, pn):
+        c, p = sn.get(message_short(cn)), prev_info.get(message_short(pn))
+        if not c or not p:
+            return not c and not p
+        return c.get("conf") != "decoy" and (c.get("file"), c.get("len")) == p[1:3] and (not c.get("name") or not p[3] or c["name"] == p[3])
+
+    cmap, info, *_ = run(cur_msgs, prev_msgs, emap, {cn: True for cn in cur_msgs if message_short(cn) in sn}, seeds, allowed)
+    names, fmaps, carried = prev["names"], {}, {}
+    # fields: paired by type; fields of the same type (same-typed group, as many in both builds) are left for later
+    groups = {}
+    for cn, pn in cmap.items():
+        fa = field_assign(cur_msgs[cn], prev_msgs[pn], cmap, emap)
+        fmaps[cn] = {v["name"]: k for k, v in fa.items() if v.get("exact")}
+        g = collections.defaultdict(list)
+        for k, v in fa.items():
+            if v.get("cands") and not v.get("weak"):
+                g[tuple(v["cands"])].append(k)
+        groups[cn] = [(list(p), c) for p, c in g.items() if len(p) == len(c)]
+    # does this update keep field numbers / declaration order? Measured on the fields paired by type
+    num_same = num_all = ord_same = ord_all = 0
+    for cn, fm in fmaps.items():
+        cf = {f.name: (i, f.number) for i, f in enumerate(cur_msgs[cn].field)}
+        pf = {f.name: (i, f.number) for i, f in enumerate(prev_msgs[cmap[cn]].field)}
+        pairs = [(pf[p], cf[c]) for p, c in fm.items() if p in pf]
+        num_same += sum(a[1] == b[1] for a, b in pairs); num_all += len(pairs)
+        for i in range(len(pairs)):
+            for j in range(i + 1, len(pairs)):
+                ord_same += (pairs[i][0][0] < pairs[j][0][0]) == (pairs[i][1][0] < pairs[j][1][0]); ord_all += 1
+    by_number, by_order = num_all and num_same / num_all >= 0.97, ord_all and ord_same / ord_all >= 0.97
+    print(f"previous build: field numbers kept {num_same}/{num_all}, declaration order kept {ord_same}/{ord_all}"
+          f" -> same-typed fields told apart by {'number' if by_number else 'order' if by_order else 'nothing (only x_1, x_2… groups)'}")
+    told = 0
+    for cn, gs in groups.items():
+        cm, pm, pe = cur_msgs[cn], prev_msgs[cmap[cn]], names.get(cmap[cn], {}).get("fields", {})
+        cf = {f.name: (i, f.number) for i, f in enumerate(cm.field)}
+        pf = {f.name: (i, f.number) for i, f in enumerate(pm.field)}
+        for p, c in gs:
+            if by_number and sorted(pf[x][1] for x in p) == sorted(cf[x][1] for x in c):
+                pair = zip(sorted(p, key=lambda x: pf[x][1]), sorted(c, key=lambda x: cf[x][1]))
+            elif by_order:
+                pair = zip(sorted(p, key=lambda x: pf[x][0]), sorted(c, key=lambda x: cf[x][0]))
+            elif all(pe.get(x) for x in p) and len({re.sub(r"_\d+$", "", pe[x]) for x in p}) == 1 and all(re.search(r"_\d+$", pe[x]) for x in p):
+                # x_1, x_2…: fields the app tells apart by their values, any pairing will do
+                pair = zip(sorted(p, key=lambda x: pe[x]), sorted(c, key=lambda x: cf[x][0]))
+            else:
+                continue
+            fmaps[cn].update(pair); told += len(p)
+    print(f"previous build: {told} same-typed fields paired")
+    for cn, pn in cmap.items():
+        fm = fmaps[cn]
+        # a oneof follows its member fields
+        cm, pm = cur_msgs[cn], prev_msgs[pn]
+        cur_of = {f.name: f.oneof_index for f in cm.field if f.HasField("oneof_index")}
+        for j, o in enumerate(pm.oneof_decl):
+            idx = {cur_of.get(fm.get(f.name)) for f in pm.field if f.HasField("oneof_index") and f.oneof_index == j and f.name in fm}
+            if len(idx) == 1 and None not in idx:
+                fm[o.name] = cm.oneof_decl[idx.pop()].name
+        pe = names.get(pn) or names.get(message_short(pn))   # reference names key nested messages by their own name
+        if pe:
+            c = {"fields": {fm[k]: v for k, v in pe.get("fields", {}).items() if k in fm}}
+            if pe.get("name"):
+                c["name"] = pe["name"]
+            carried[cn] = c
+    matched = set(cmap.values()) | {message_short(pn) for pn in cmap.values()}
+    lost = sum(1 for pn, pe in names.items() if pe.get("name") and pn not in matched)
+    print(f"previous build: {len(cmap)} messages matched, {sum(1 for c in carried.values() if 'name' in c)} names carried, {lost} lost")
+    return cmap, fmaps, carried
+
+
+def migrate_overrides(path, prev, cur_fp, cmap, fmaps):
+    """overrides.json is keyed by obfuscated names: when it belongs to the previous build ("_build"), re-key it for this
+    one through the previous-build match (entries that found no counterpart are dropped, and listed)."""
+    ov = json.loads(path.read_text(encoding="utf-8"))
+    if ov.get("_build") != prev["fingerprint"]:
+        return
+    rev = {p: c for c, p in cmap.items()}
+    new = {"_build": cur_fp}
+    for k, v in ov.items():
+        if k.startswith("_"):
+            continue
+        cn = rev.get(k)
+        if not cn:
+            print(f"[!] override dropped (no counterpart in this build): {k} {v}")
+            continue
+        e = {"name": v["name"]} if v.get("name") else {}
+        for fk, fv in v.get("fields", {}).items():
+            if fk in fmaps[cn]:
+                e.setdefault("fields", {})[fmaps[cn][fk]] = fv
+            else:
+                print(f"[!] override dropped (field without counterpart): {k}.{fk} = {fv}")
+        if e:
+            new[cn] = e
+    path.write_text(json.dumps(new, indent=1, ensure_ascii=False), encoding="utf-8")
+    print(f"overrides.json re-keyed for this build ({len(new) - 1} entries)")
+
+
 if __name__ == "__main__":
     cmap, info, beta_msgs, cur_msgs, emap = main()
     script = script_constraints(cur_msgs, beta_msgs)
@@ -328,13 +459,42 @@ if __name__ == "__main__":
             mapping[cn].update(name=s["name"], conf="script")
     for cn, name in anchored_names(cur_msgs).items():
         mapping.setdefault(cn, {"fields": {}}).update(name=name, conf="anchor")
+    # names of the previous build (any source, overrides included) over the beta ones, under the script table / anchors
     ov = work / "overrides.json"
+    cur_fp = builds.fingerprint()
+    prev = builds.previous(cur_fp)
+    if prev:
+        _, cur_enums = load(builds.DESC)
+        pairs, fmaps, carried = match_previous(cur_msgs, cur_enums, prev)
+        prev_count = collections.Counter(e["name"] for e in prev["names"].values() if e.get("name"))
+        names_carried = {c["name"] for c in carried.values() if c.get("name")}
+        for cn, e in mapping.items():   # a beta name now given to another message by the previous build
+            if cn not in carried and e.get("conf") in BETA_CONFS and e.get("name") in names_carried and prev_count[e["name"]] < 2:
+                e.pop("name"); e["conf"] = None
+        for cn, c in carried.items():
+            e = mapping.setdefault(cn, {"fields": {}})
+            if e.get("conf") in ("script", "anchor") and c.get("name") and e["name"] != c["name"]:
+                print(f"[!] {cn}: {e['conf']} name {e['name']} kept over previous build's {c['name']}: pair dropped")
+                continue
+            if c.get("name") and e.get("conf") not in ("script", "anchor"):
+                for k in ("full", "score", "round"):
+                    e.pop(k, None)
+                e.update(name=c["name"], conf="previous")
+            for f, n in c["fields"].items():
+                e["fields"][f] = {"name": n, "exact": True, "previous": True}
+        if ov.exists():
+            migrate_overrides(ov, prev, cur_fp, pairs, fmaps)
+    else:
+        print("no snapshot of a previous build (pipeline/reference/builds): beta and script table only")
     if ov.exists():
-        for k, v in json.loads(ov.read_text()).items():
-            e = mapping.setdefault(k, {"conf": "manual", "fields": {}})
-            e["name"] = v.get("name", e.get("name")); e["conf"] = "manual"
+        for k, v in json.loads(ov.read_text(encoding="utf-8")).items():
+            if k.startswith("_"):
+                continue
+            e = mapping.setdefault(k, {"conf": None, "fields": {}})
+            if v.get("name"):   # field names alone leave the message's own name and confidence alone
+                e["name"] = v["name"]; e["conf"] = "manual"
             for fk, fv in v.get("fields", {}).items():
-                e["fields"][fk] = {"name": fv, "exact": True}
+                e["fields"][fk] = {"name": fv, "exact": True, "manual": True}
     (work / "mapping.json").write_text(json.dumps(mapping, indent=1), encoding="utf-8")
     cnt = collections.Counter(v["conf"] for v in mapping.values())
     print("mapped", len(mapping), "of", len(cur_msgs), dict(cnt))

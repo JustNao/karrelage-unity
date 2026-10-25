@@ -1,15 +1,21 @@
 {
+ "_build": "238eb24763d2a11d",
  "jzs": {
   "name": "ExchangeTypesItemsExchangerDescriptionForUserEvent",
   "fields": {
-   "fycg": "item_descriptions"
+   "fycg": "item_descriptions",
+   "fych": "ints_1",
+   "fyci": "ints_2"
   }
  },
  "jzs.jzq": {
   "name": "BidExchangerObject",
   "fields": {
    "fybz": "prices",
-   "fycc": "effects"
+   "fycc": "effects",
+   "fyby": "ints_1",
+   "fyca": "ints_2",
+   "fycb": "ints_3"
   }
  },
  "juh": {
@@ -28,6 +34,135 @@
   "fields": {
    "gdpw": "uid",
    "gdqh": "spell_id"
+  }
+ },
+ "kas": {
+  "fields": {
+   "fygv": "ints_1",
+   "fygw": "ints_2",
+   "fygx": "ints_3"
+  }
+ },
+ "jyu": {
+  "fields": {
+   "fxyy": "ints_1",
+   "fxyz": "ints_2",
+   "fxza": "ints_3"
+  }
+ },
+ "isr.isp": {
+  "fields": {
+   "fsvy": "price"
+  }
+ },
+ "irl": {
+  "fields": {
+   "fsro": "objects"
+  }
+ },
+ "lmy": {
+  "fields": {
+   "gdxj": "item"
+  }
+ },
+ "lef": {
+  "fields": {
+   "gcif": "gid",
+   "gcig": "uid",
+   "gcie": "quantity"
+  }
+ },
+ "kao.kam": {
+  "fields": {
+   "fyfs": "item",
+   "fyfq": "sell_id",
+   "fyfr": "prices_1",
+   "fyft": "prices_2"
+  }
+ },
+ "jxt": {
+  "fields": {
+   "fxub": "added_item",
+   "fxua": "added_prices_1",
+   "fxuc": "added_prices_2"
+  }
+ },
+ "kbt": {
+  "fields": {
+   "fylw": "ints_1",
+   "fyly": "ints_2",
+   "fylz": "ints_3",
+   "fylx": "effects"
+  }
+ },
+ "kag.kae": {
+  "fields": {
+   "fyeh": "coef_min",
+   "fyei": "coef_max"
+  }
+ },
+ "kag.kae.kac": {
+  "fields": {
+   "fyed": "rune_gid",
+   "fyec": "rune_qty"
+  }
+ },
+ "lcs.lcq.lco.lcl.lci": {
+  "fields": {
+   "gbyx": "monster_1",
+   "gbyy": "monster_2",
+   "gbyz": "monster_3"
+  }
+ },
+ "lkp": {
+  "fields": {
+   "gdmq": "action_1",
+   "gdmr": "action_2",
+   "gdng": "value"
+  }
+ },
+ "kut": {
+  "fields": {
+   "gbab": "character_id"
+  }
+ },
+ "kve": {
+  "fields": {
+   "gbbh": "success"
+  }
+ },
+ "kve.kuz": {
+  "fields": {
+   "gbau": "info"
+  }
+ },
+ "kvn": {
+  "fields": {
+   "gbck": "id",
+   "gbcm": "name",
+   "gbcl": "breed",
+   "gbcn": "level"
+  }
+ },
+ "kxh": {
+  "fields": {
+   "gbiw": "success"
+  }
+ },
+ "kxh.kwc": {
+  "fields": {
+   "gbes": "equipment",
+   "gbet": "unauthorized"
+  }
+ },
+ "kxh.kws": {
+  "fields": {
+   "gbgt": "items"
+  }
+ },
+ "lhw": {
+  "fields": {
+   "gczo": "gid"
   }
  }
 }

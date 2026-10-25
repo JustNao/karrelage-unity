@@ -133,7 +133,7 @@ if "--from-game" in sys.argv:
     from_game()
 
 if not REPACK:
-    step("Calcul des noms (correspondance structurelle avec les protos beta)")
+    step("Calcul des noms (build précédent, table des scripts, protos beta)")
     run([py, "pipeline/script_names.py"])   # clear names / name lengths from the game's Unity script table
     run([py, "pipeline/match_protos.py"])
 

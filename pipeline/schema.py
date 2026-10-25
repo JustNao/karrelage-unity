@@ -16,11 +16,6 @@ except Exception as e:  # pragma: no cover
     AVAILABLE = False
 
 _cache = {}
-try:
-    import formatters
-except Exception as _e:  # game data not extracted yet
-    print(f"[!] formatters disabled: {_e}", file=sys.stderr)
-    formatters = type("F", (), {"format_message": staticmethod(lambda *a: None)})
 _mapping = None
 _mpath = root / "work" / "mapping.json"
 
@@ -37,18 +32,20 @@ def overrides():
 def mapping():
     """work/mapping.json (auto beta matches + names read from the game's script table, conf "script"), then the reference
     name list, then work/overrides.json (confirmed by hand) on top. A reference name never replaces a script-table name, nor
-    contradicts the name length the script table gives (work/script_names.json)."""
+    contradicts the name length the script table gives (work/script_names.json), nor an anchor / previous-build name."""
     global _mapping
     if _mapping is None:
         m = json.loads(_mpath.read_text(encoding="utf-8")) if _mpath.exists() else {}
         sn = json.loads(_spath.read_text(encoding="utf-8")) if _spath.exists() else {}
         for obf, name in (json.loads(_rpath.read_text(encoding="utf-8")) if _rpath.exists() else {}).items():
             s = sn.get(obf, {})
-            if m.get(obf, {}).get("conf") == "script" or (s.get("len") is not None and s["len"] != len(name)):
+            if m.get(obf, {}).get("conf") in ("script", "anchor", "previous") or (s.get("len") is not None and s["len"] != len(name)):
                 continue
             e = m.setdefault(obf, {"fields": {}})
             e["name"], e["conf"] = name, "ref"
         for k, v in overrides().items():
+            if k.startswith("_"):   # "_build": the build the obfuscated keys belong to (match_protos.py migrate_overrides)
+                continue
             e = m.setdefault(k, {"fields": {}})
             e.setdefault("fields", {})
             if v.get("name"):
@@ -150,3 +147,11 @@ def describe(type_name, value):
     except Exception as e:
         res["decoded"] = {"_error": str(e)}
     return res
+
+
+# last: formatters reads mapping() (bindings.py) when imported
+try:
+    import formatters
+except Exception as _e:  # game data not extracted yet
+    print(f"[!] formatters disabled: {_e}", file=sys.stderr)
+    formatters = type("F", (), {"format_message": staticmethod(lambda *a: None)})
