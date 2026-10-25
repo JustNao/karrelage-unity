@@ -148,8 +148,8 @@ Set `PYTHONUTF8=1` for scripts handling accents. The "Développeur" header toggl
 - Price vs density chart with least-squares line; good deal = ≥ `settings.hdv.goodZ` σ (default 2) above trend, needs ≥ 5
   lots (`lib/density.ts`). Companions plot price vs total xp of the level (`lib/companion.ts`; effects 2821 level, 2862 legendary).
 - Pin (`lib/compare.ts` `pairRows`): other lots shown against the pinned one per stat.
-- « Modifications » (`lib/lotDiff.ts`): the open item vs the listing its last scan replaced (`auction.previous`, session
-  only). Lots matched by exact characteristics (action + value + text), not uid: same price = unchanged, else paired as a
+- « Modifications » (`lib/lotDiff.ts`): the open item vs the last listing with other lots (`auction.previous`, session
+  only; a scan finding the same lots keeps it). Lots matched by exact characteristics (action + value + text), not uid: same price = unchanged, else paired as a
   price change (any match), leftovers added / removed.
 - Tabs Achat / Vente / Transcendance. Vente (`SellView.svelte`, `lib/sell.ts`): the player's copies of the open item
   (inventory + own lots on sale), price = 1,000 K under the cheapest filtered lot at least as dense, among lots with the

@@ -4,16 +4,22 @@
  *
  *   auction.ensure();                // in a view's onMount (idempotent)
  *   auction.items                    // gid -> latest listing (reactive SvelteMap; a scan replaces the entry whole)
- *   auction.previous                 // gid -> the listing the latest one replaced (this session: the HDV "Modifications")
+ *   auction.previous                 // gid -> the last listing with other lots than the latest (this session: the HDV "Modifications")
  *   auction.subscribe((c) => ...)    // { kind: "put", values: [listing], live } for each listing set, { kind: "clear" }
  */
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
 import { call, on } from "../api";
+import { lotDiff } from "../lotDiff";
 import { SyncedMap } from "./synced.svelte";
 
 export type { SyncChange as AuctionChange } from "./synced.svelte";
 
 const previous = new SvelteMap<number, any>();
+/** Some lot added, removed or repriced between two listings of an item. */
+const changed = (old: any, now: any) => {
+  const d = lotDiff(old.rows ?? [], now.rows ?? []);
+  return d.added.size + d.removed.length + d.was.size > 0;
+};
 
 class AuctionStore extends SyncedMap<number, any> {
   constructor() {
@@ -23,7 +29,7 @@ class AuctionStore extends SyncedMap<number, any> {
       put: ["auction:item"],
       cleared: "auction:cleared",
       fromList: (old, listed) => old.updated <= listed.updated, // an item scanned while the list was loading stays
-      replaced: (old) => previous.set(old.gid, old),
+      replaced: (old, now) => changed(old, now) && previous.set(old.gid, old), // a scan finding the same lots keeps the earlier one
     });
     this.subscribe((c) => c.kind === "clear" && previous.clear());
   }
@@ -31,7 +37,7 @@ class AuctionStore extends SyncedMap<number, any> {
   get items() {
     return this.map;
   }
-  /** gid -> the listing the latest one replaced. */
+  /** gid -> the last listing whose lots differ from the latest one's. */
   get previous() {
     return previous;
   }
