@@ -8,6 +8,7 @@ use crate::kit::{arg_i64, unknown, Role, Store};
 use crate::sys::unix_secs_f64 as now;
 use crate::{Ctx, Interest, Message, Module};
 use anyhow::{anyhow, Result};
+use loutil_data::Data;
 use loutil_proto::util::{int, messages};
 use parking_lot::Mutex;
 use serde::Deserialize;
@@ -30,16 +31,33 @@ fn breakable(type_id: i64) -> bool {
     BREAKABLE_TYPES.contains(&type_id)
 }
 
-/// Obfuscated field names of the break result (bindings.json `decraft`).
+/// Obfuscated field names of the break result (bindings.json `decraft`). Same-typed fields are told apart by value (their
+/// names cannot be told apart after a game update): `coefs` = the first / last item's coefficients (min / max), `rune_ints`
+/// = rune gid (a rune of the pack) / quantity.
 #[derive(Deserialize, Clone)]
 struct Bindings {
     results: String,
-    coef_min: String,
-    coef_max: String,
+    coefs: Vec<String>,
     uid: String,
     runes: String,
-    rune_gid: String,
-    rune_qty: String,
+    rune_ints: Vec<String>,
+}
+
+/// Item type of the runes.
+const RUNE_TYPE: i64 = 78;
+
+/// (rune gid, quantity) from a Rune's two ints: the gid is the one that is a rune; when both are, the other is a quantity
+/// that happens to be a rune gid too, and the base rune wins (break results mostly give base runes).
+fn rune_and_qty(data: &Data, pack: &Pack, ints: [i64; 2]) -> (i64, i64) {
+    let rune = |g: i64| data.items.get(&g).is_some_and(|i| i.type_id == RUNE_TYPE);
+    let base = |g: i64| pack.runes.values().any(|r| r.gid == g);
+    let [a, b] = ints;
+    match (rune(a), rune(b)) {
+        (true, false) => (a, b),
+        (false, true) => (b, a),
+        _ if base(b) && !base(a) => (b, a),
+        _ => (a, b),
+    }
 }
 
 /// The base rune of an effect.
@@ -252,15 +270,16 @@ impl Module for Brisage {
 
     fn on_message(&self, m: &Message, ctx: &Ctx) {
         let (Some(msg), Some(b)) = (m.decoded.as_ref(), self.bindings(ctx)) else { return };
+        let ([c1, c2], [r1, r2]) = (&b.coefs[..], &b.rune_ints[..]) else { return };
         let float = |x: &loutil_proto::DynamicMessage, f: &str| x.get_field_by_name(f).and_then(|v| v.as_f32()).unwrap_or(0.0) as f64;
         let pct = |x: f64| (x * 10000.0).round() / 100.0; // 0.529079 -> 52.91 %
+        let pack = self.pack(ctx);
         for r in messages(msg, &b.results) {
-            // presumably a stack of identical items: coef_max for the first one broken, coef_min for the last (the latest)
-            let (lo, hi) = (float(&r, &b.coef_min), float(&r, &b.coef_max));
+            // presumably a stack of identical items: the max for the first one broken, the min for the last (the latest)
+            let (lo, hi) = (float(&r, c1), float(&r, c2));
             let uid = int(&r, &b.uid);
-            let runes: Vec<(i64, i64)> = messages(&r, &b.runes).iter().map(|x| (int(x, &b.rune_gid), int(x, &b.rune_qty))).collect();
+            let runes: Vec<(i64, i64)> = messages(&r, &b.runes).iter().map(|x| rune_and_qty(&ctx.data, pack, [int(x, r1), int(x, r2)])).collect();
             let seen = self.uids.lock().get(&uid).cloned();
-            let pack = self.pack(ctx);
             let (gid, how) = match &seen {
                 Some(s) => (Some(s.gid), Some("inventaire")),
                 None => match Self::guess_gid(pack, &runes) {

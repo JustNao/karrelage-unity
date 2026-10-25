@@ -41,25 +41,36 @@
   ]
  },
  "avg_prices": {
-  "_doc": "ObjectAveragePricesEvent: repeated entries of (item gid, average per-unit price over the last week). The third field of an entry is unused.",
+  "_doc": "ObjectAveragePricesEvent: repeated entries of (item gid (the int32), two int64: the average per-unit price over the last week and an unused one, told apart by value).",
   "items": "ObjectAveragePricesEvent.objects_average_prices",
   "gid": "ObjectAveragePricesEvent.objects_average_prices.object_gid",
-  "price": "ObjectAveragePricesEvent.objects_average_prices.price"
+  "prices": [
+   "ObjectAveragePricesEvent.objects_average_prices.prices_1",
+   "ObjectAveragePricesEvent.objects_average_prices.prices_2"
+  ]
  },
  "inventory": {
-  "_doc": "InventoryContentEvent (sent at login) -> objects: ObjectItemInventory {item: ObjectItem {gid, uid, quantity, effects: ObjectEffect}, position (0-15 equipped, 63 bag)}; ObjectAdded/ObjectsAdded/ObjectModified events carry ObjectItemInventory, ObjectDeleted/ObjectsDeleted object uids.",
-  "objects": "InventoryContentEvent.objects",
-  "item": "ObjectItemInventory.item",
+  "_doc": "InventoryContentEvent (sent at login) -> objects (two lists of ObjectItemInventory, told apart by content) -> {item (two ObjectItem fields, told apart by content), position (0-15 equipped, 63 bag)} -> ObjectItem {three unordered ints gid / uid / quantity, effects: ObjectEffect}; ObjectAdded/ObjectsAdded/ObjectModified events carry ObjectItemInventory, ObjectDeleted/ObjectsDeleted object uids.",
+  "objects": [
+   "InventoryContentEvent.objects_1",
+   "InventoryContentEvent.objects_2"
+  ],
+  "item": [
+   "ObjectItemInventory.items_1",
+   "ObjectItemInventory.items_2"
+  ],
   "position": "ObjectItemInventory.position",
-  "gid": "ObjectItem.gid",
-  "uid": "ObjectItem.uid",
-  "quantity": "ObjectItem.quantity",
   "effects": "ObjectItem.effects",
   "added": "ObjectAddedEvent.object",
   "added_list": "ObjectsAddedEvent.objects",
   "modified": "ObjectModifiedEvent.object",
   "deleted": "ObjectDeletedEvent.object_uid",
-  "deleted_list": "ObjectsDeletedEvent.objects_uid"
+  "deleted_list": "ObjectsDeletedEvent.objects_uid",
+  "ints": [
+   "ObjectItem.ints_1",
+   "ObjectItem.ints_2",
+   "ObjectItem.ints_3"
+  ]
  },
  "ah_type": {
   "_doc": "ExchangeTypesExchangerDescriptionForUserEvent (an AH category opened): gids = every item on sale in it, type = its item type.",
@@ -92,14 +103,18 @@
   "effects": "ExchangeBidHouseItemAddedEvent.added_item.effects"
  },
  "decraft": {
-  "_doc": "DecraftResultEvent (breaking items into runes): results = DecraftedItem {coef_min, coef_max (floats, 0.529 = 52.9 %; equal for one item), uid (object uid of the broken item), runes: [{rune_gid, rune_qty}]}.",
+  "_doc": "DecraftResultEvent (breaking items into runes): results = DecraftedItem {coefs (two floats: coefficient of the first and the last item of the stack, 0.529 = 52.9 %; min / max told apart by value), uid (object uid of the broken item), runes: Rune {two ints: rune gid (a rune of the pack) and quantity, told apart by value}}.",
   "results": "DecraftResultEvent.results",
-  "coef_min": "DecraftedItem.coef_min",
-  "coef_max": "DecraftedItem.coef_max",
   "uid": "DecraftedItem.object_uid",
   "runes": "DecraftedItem.runes",
-  "rune_gid": "Rune.rune_gid",
-  "rune_qty": "Rune.rune_qty"
+  "coefs": [
+   "DecraftedItem.coefs_1",
+   "DecraftedItem.coefs_2"
+  ],
+  "rune_ints": [
+   "Rune.ints_1",
+   "Rune.ints_2"
+  ]
  },
  "fight": {
   "_doc": "Fighters (FightFighterShowEvent / FightFighterRefreshEvent information, FightSynchronizeEvent fighters, summons of GameActionFightEvent): ActorPositionInformation {actor_id, actor_information -> fighter -> ai_fighter -> MonsterFighter {three unordered ints monster_gid / creature_grade / creature_level}, stats: FightCharacteristics {summoned, summoner (actor id)}, spawn: SpawnInformation {alive, team, ...}}. Found by walking the message. death = GameActionFightEvent's Death member (two int64, target id + an unnamed one: the one that is a fighter of the fight died).",
@@ -115,16 +130,24 @@
   "alive": "SpawnInformation.alive"
  },
  "boost": {
-  "_doc": "Fight buffs (confirmed on a capture). FightBoostAddEvent / FightJoinRunningEvent effects carry FightRemovableEffectExtendedInformation {effect: FightRemovableEffect {uid, target_id, ...}, action_id (= effects table id: 1131-1140 = PA / PM poisons), source_id}; FightBoostRemoveEvent {boost_uid, target_id} ends one. character = character_id of CharacterSelectionRequest / CharacterFirstSelectionRequest (client -> server at login: the player's own fighter id).",
+  "_doc": "Fight buffs (confirmed on a capture). FightBoostAddEvent / FightJoinRunningEvent effects carry FightRemovableEffectExtendedInformation {effect: FightRemovableEffect {target_id (the int64), ints = its eight int32 (uid, spell, duration...: the uid is learnt, see combat.rs)}, action_id (= effects table id: 1131-1140 = PA / PM poisons), source_id}; FightBoostRemoveEvent {boost_uid (its only int32)} ends one. character = character_id of CharacterSelectionRequest / CharacterFirstSelectionRequest (client -> server at login: the player's own fighter id).",
   "effect": "FightRemovableEffectExtendedInformation.effect",
   "action": "FightRemovableEffectExtendedInformation.action_id",
-  "uid": "FightRemovableEffect.uid",
   "target": "FightRemovableEffect.target_id",
   "remove_uid": "FightBoostRemoveEvent.boost_uid",
-  "remove_target": "FightBoostRemoveEvent.target_id",
   "character": [
    "CharacterSelectionRequest.character_id",
    "CharacterFirstSelectionRequest.character_id"
+  ],
+  "ints": [
+   "FightRemovableEffect.ints_1",
+   "FightRemovableEffect.ints_2",
+   "FightRemovableEffect.ints_3",
+   "FightRemovableEffect.ints_4",
+   "FightRemovableEffect.ints_5",
+   "FightRemovableEffect.ints_6",
+   "FightRemovableEffect.ints_7",
+   "FightRemovableEffect.ints_8"
   ]
  },
  "object_effect": {
@@ -135,19 +158,25 @@
   "oneof": "ObjectEffect.value"
  },
  "card": {
-  "_doc": "Another player's card (click a player -> profile). CardViewRequest (client, named by anchor) {character, view}; CardInfoResponse -> info_success (Success) -> info (the character: id int64, name, breed, level with Omega levels; checked on a capture); CardViewResponse -> view_success (Success) -> equipment (EquipmentCard) {items: map worn position (0-15) -> preset.Equipment {gid, uid?, effects: ObjectEffect}, characteristics: CharacteristicsInfo}; or -> unauthorized (private equipment). Responses carry no character id: the CardViewRequest with the same envelope uid gives it.",
+  "_doc": "Another player's card (click a player -> profile). CardViewRequest (client, named by anchor) {character, view}; CardInfoResponse -> info_success (Success) -> info (the character: two int64 = id (the one asked by the CardViewRequest) + another, name, three plain int32 = breed / level (Omega levels included) / another, told apart by value); CardViewResponse -> view_success (Success) -> equipment (EquipmentCard) {items: map worn position (0-15) -> preset.Equipment {gid, uid?, effects: ObjectEffect}, characteristics: CharacteristicsInfo}; or -> unauthorized (private equipment). Responses carry no character id: the CardViewRequest with the same envelope uid gives it.",
   "view_character": "CardViewRequest.character_id",
   "info_success": "CardInfoResponse.success",
   "info": "CardInfoResponse.success.info",
-  "info_id": "CardInfoResponse.success.info.id",
   "info_name": "CardInfoResponse.success.info.name",
-  "info_breed": "CardInfoResponse.success.info.breed",
-  "info_level": "CardInfoResponse.success.info.level",
   "view_success": "CardViewResponse.success",
   "equipment": "CardViewResponse.success.equipment",
   "unauthorized": "CardViewResponse.success.unauthorized",
   "items": "EquipmentCard.items",
   "gid": "Equipment.gid",
-  "effects": "Equipment.effects"
+  "effects": "Equipment.effects",
+  "info_ids": [
+   "CardInfoResponse.success.info.ids_1",
+   "CardInfoResponse.success.info.ids_2"
+  ],
+  "info_ints": [
+   "CardInfoResponse.success.info.ints_1",
+   "CardInfoResponse.success.info.ints_2",
+   "CardInfoResponse.success.info.ints_3"
+  ]
  }
 }

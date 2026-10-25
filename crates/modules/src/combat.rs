@@ -14,7 +14,7 @@ use loutil_proto::{DynamicMessage, PbValue, ReflectMessage};
 use parking_lot::Mutex;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
@@ -57,10 +57,11 @@ struct BoostBindings {
     /// FightRemovableEffectExtendedInformation: the effect (FightRemovableEffect) and its action id
     effect: String,
     action: String,
-    /// FightRemovableEffect
-    uid: String,
+    /// FightRemovableEffect: its int32 (uid, spell, duration...: same type, so which one is the uid is learnt, see
+    /// `Layout::boost_votes`) and its int64 target
+    ints: Vec<String>,
     target: String,
-    /// FightBoostRemoveEvent
+    /// FightBoostRemoveEvent: its only int32, the uid of the buff that ends
     remove_uid: String,
     /// CharacterSelectionRequest / CharacterFirstSelectionRequest character_id
     character: Vec<String>,
@@ -73,20 +74,29 @@ struct Poison {
     action: i64,
 }
 
-/// The PA / PM poisons put by a message (every FightRemovableEffectExtendedInformation in it) into `out` (by buff uid).
-fn boosts_added(b: &BoostBindings, m: &DynamicMessage, out: &mut BTreeMap<i64, Poison>) -> bool {
+/// Buff ints kept to learn which one is the uid (see `Fight::recent`).
+const RECENT_BOOSTS: usize = 500;
+
+/// The PA / PM poisons put by a message (every FightRemovableEffectExtendedInformation in it) into `f.poisons` (by the
+/// buff's ints, see `BoostBindings::ints`); every buff's ints go to `f.recent`.
+fn boosts_added(b: &BoostBindings, m: &DynamicMessage, f: &mut Fight) -> bool {
     let mut changed = false;
     if m.descriptor().get_field_by_name(&b.action).is_some() {
-        let action = int(m, &b.action);
-        if POISONS.iter().any(|p| p.0 == action) {
-            if let Some(PbValue::Message(e)) = m.get_field_by_name(&b.effect).as_deref() {
-                changed |= out.insert(int(e, &b.uid), Poison { target: int(e, &b.target), action }).is_none();
+        if let Some(PbValue::Message(e)) = m.get_field_by_name(&b.effect).as_deref() {
+            let ints: Vec<i64> = b.ints.iter().map(|x| int(e, x)).collect();
+            let action = int(m, &b.action);
+            if POISONS.iter().any(|p| p.0 == action) {
+                changed |= f.poisons.insert(ints.clone(), Poison { target: int(e, &b.target), action }).is_none();
             }
+            if f.recent.len() == RECENT_BOOSTS {
+                f.recent.pop_front();
+            }
+            f.recent.push_back(ints);
         }
         return changed;
     }
     for c in children(m) {
-        changed |= boosts_added(b, c, out);
+        changed |= boosts_added(b, c, f);
     }
     changed
 }
@@ -132,16 +142,24 @@ impl Fighter {
 /// The six ways the three ints can be (gid, grade, level).
 pub(crate) const PERMS: [[usize; 3]; 6] = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
 
-/// Learnt arrangement of the MonsterFighter ints: votes per `PERMS` entry, for the build whose field names are `fields`.
+/// Learnt arrangement of the MonsterFighter ints: votes per `PERMS` entry, for the build whose field names are `fields`;
+/// and which FightRemovableEffect int is the buff uid: votes per int of `boost_fields` (a FightBoostRemoveEvent uid found
+/// in a single int of the buffs seen votes for it).
 #[derive(Default)]
 struct Layout {
     fields: Vec<String>,
     votes: [u32; 6],
+    boost_fields: Vec<String>,
+    boost_votes: Vec<u32>,
 }
 
 impl Layout {
     fn best(&self) -> Option<usize> {
         (0..6).filter(|&i| self.votes[i] > 0).max_by_key(|&i| self.votes[i])
+    }
+
+    fn boost_uid(&self) -> Option<usize> {
+        (0..self.boost_votes.len()).filter(|&i| self.boost_votes[i] > 0).max_by_key(|&i| self.boost_votes[i])
     }
 }
 
@@ -189,8 +207,10 @@ struct Fight {
     fighters: BTreeMap<i64, Fighter>,
     /// actor ids of the monsters that died (death action, or left out of a synchronisation)
     dead: BTreeSet<i64>,
-    /// PA / PM poisons running, by buff uid (FightBoostRemoveEvent names that uid when one ends)
-    poisons: BTreeMap<i64, Poison>,
+    /// PA / PM poisons running, by the buff's ints (one is the uid FightBoostRemoveEvent names when it ends)
+    poisons: BTreeMap<Vec<i64>, Poison>,
+    /// the ints of the latest buffs (any effect), to learn which one is the uid
+    recent: VecDeque<Vec<i64>>,
 }
 
 pub struct Combat {
@@ -297,6 +317,24 @@ impl Combat {
         self.bind.get(ctx, "fight")
     }
 
+    /// The buff int holding the uid: a removed uid found in a single int of the recent buffs votes for that int (saved).
+    fn boost_uid(&self, ctx: &Ctx, f: &Fight, uid: i64) -> Option<usize> {
+        let n = f.recent.front().map_or(0, Vec::len);
+        let hits: Vec<usize> = (0..n).filter(|&k| f.recent.iter().any(|r| r.get(k) == Some(&uid))).collect();
+        let mut l = self.layout.lock();
+        if let ([k], true) = (&hits[..], l.boost_votes.len() == n) {
+            let before = l.boost_uid();
+            l.boost_votes[*k] += 1;
+            if before != l.boost_uid() {
+                ctx.log(format!("combat: buff uid = {}", l.boost_fields[*k]));
+            }
+            drop(l);
+            self.layout.touch();
+            l = self.layout.lock();
+        }
+        l.boost_uid()
+    }
+
     /// A message's fighters fit a single arrangement: one vote for it (saved).
     fn vote(&self, ctx: &Ctx, found: &[(i64, Fighter)]) {
         let ok = fitting(&ctx.data, &found.iter().map(|(_, x)| x.ints).collect::<Vec<_>>());
@@ -382,9 +420,26 @@ impl Module for Combat {
         let ids: Vec<i64> = saved.as_ref().and_then(|v| v["ids"].as_array()).map(|a| a.iter().filter_map(Value::as_i64).collect()).unwrap_or_default();
         // older file: the last character only
         *self.me.lock() = if ids.is_empty() { saved.and_then(|v| v["id"].as_i64()).into_iter().collect() } else { ids };
-        let saved = self.layout.open(ctx, "combat", "layout.json", |l| json!({"fields": l.fields, "votes": l.votes}));
-        let Some(b) = self.bindings(ctx) else { return };
+        let saved = self.layout.open(
+            ctx,
+            "combat",
+            "layout.json",
+            |l| json!({"fields": l.fields, "votes": l.votes, "boost_fields": l.boost_fields, "boost_votes": l.boost_votes}),
+        );
         let mut l = self.layout.lock();
+        if let Some(b) = self.boosts(ctx) {
+            l.boost_fields = b.ints.clone();
+            l.boost_votes = vec![0; b.ints.len()];
+            // the votes of another build (other field names) are dropped
+            if let Some(saved) = saved.as_ref().filter(|s| s["boost_fields"] == json!(b.ints)) {
+                if let Ok(v) = serde_json::from_value::<Vec<u32>>(saved["boost_votes"].clone()) {
+                    if v.len() == b.ints.len() {
+                        l.boost_votes = v;
+                    }
+                }
+            }
+        }
+        let Some(b) = self.bindings(ctx) else { return };
         l.fields = b.monster.clone();
         // the votes of another build (other field names) are dropped
         if let Some(saved) = saved {
@@ -417,17 +472,25 @@ impl Module for Combat {
                     *f = Fight { seen: true, started: t, ..Default::default() };
                     // reconnection: the buffs already running come with it
                     if let (Some(b), Some(d)) = (self.boosts(ctx), &m.decoded) {
-                        boosts_added(b, d, &mut f.poisons);
+                        boosts_added(b, d, &mut f);
                     }
                     true
                 }
                 BOOST_ADD => {
                     let (Some(b), Some(d)) = (self.boosts(ctx), &m.decoded) else { return };
-                    boosts_added(b, d, &mut f.poisons)
+                    boosts_added(b, d, &mut f)
                 }
                 BOOST_REMOVE => {
                     let (Some(b), Some(d)) = (self.boosts(ctx), &m.decoded) else { return };
-                    f.poisons.remove(&int(d, &b.remove_uid)).is_some()
+                    let uid = int(d, &b.remove_uid);
+                    let k = self.boost_uid(ctx, &f, uid);
+                    let before = f.poisons.len();
+                    // until the uid int is learnt, a poison holding the uid in any int ends
+                    f.poisons.retain(|ints, _| match k {
+                        Some(k) => ints.get(k) != Some(&uid),
+                        None => !ints.contains(&uid),
+                    });
+                    f.poisons.len() != before
                 }
                 END => {
                     let open = f.seen && f.ended.is_none();
@@ -534,6 +597,7 @@ mod tests {
     use crate::kit::testkit;
     use loutil_core::RawMessage;
     use loutil_proto::{FieldDescriptor, MessageDescriptor};
+    use std::sync::Arc;
 
     /// A real fight recorded with pipeline/sniff.py (work/capture_poison.jsonl: local only, it holds the players' ids), replayed
     /// through the hub: monsters found, doubles / deaths applied, buffs read without error. Skipped without the file.
@@ -544,7 +608,16 @@ mod tests {
         if !rec.exists() {
             return;
         }
-        let (hub, _) = testkit::hub("loutil-combat-replay").unwrap();
+        let (hub, proto) = testkit::hub("loutil-combat-replay").unwrap();
+        let logs: Arc<Mutex<Vec<String>>> = Default::default();
+        let sink = logs.clone();
+        let hub = crate::Hub::new(
+            hub.ctx.data.clone(),
+            proto,
+            testkit::temp_dir("loutil-combat-replay2"),
+            Arc::new(|_, _| {}),
+            Arc::new(move |l| sink.lock().push(l)),
+        );
         let hex = |s: &str| (0..s.len() / 2).map(|i| u8::from_str_radix(&s[2 * i..2 * i + 2], 16).unwrap()).collect::<Vec<u8>>();
         for line in std::fs::read_to_string(&rec).unwrap().lines() {
             let r: Value = serde_json::from_str(line).unwrap();
@@ -560,6 +633,9 @@ mod tests {
         eprintln!("recorded fight: {names:?} poisons={}", s["poisons"]);
         assert!(!names.is_empty(), "the recorded fight's monsters are found");
         assert!(names.iter().all(|n| !n.contains("monstre #")), "every monster is known");
+        let learnt: Vec<String> = logs.lock().iter().filter(|l| l.contains("buff uid")).cloned().collect();
+        eprintln!("{learnt:?}");
+        assert_eq!(learnt.len(), 1, "the buff uid int is learnt from the removals, once");
     }
 
     /// A PA poison put on the player, then its end (FightBoostRemoveEvent with the buff uid); one on a monster is ignored.
@@ -580,8 +656,9 @@ mod tests {
             let mut m = DynamicMessage::new(add_md.clone());
             set(&mut m, &to_info, &b.action, PbValue::I32(action as i32));
             let mut info_path = to_info.clone();
-            info_path.push(path(to_info.last().unwrap().kind().as_message().unwrap(), &b.uid, &mut vec![]).unwrap().into_iter().next().unwrap());
-            set(&mut m, &info_path, &b.uid, PbValue::I32(uid as i32));
+            // the uid in one of the effect's ints (which one is learnt from the removals)
+            info_path.push(path(to_info.last().unwrap().kind().as_message().unwrap(), &b.ints[1], &mut vec![]).unwrap().into_iter().next().unwrap());
+            set(&mut m, &info_path, &b.ints[1], PbValue::I32(uid as i32));
             set(&mut m, &info_path, &b.target, PbValue::I64(target));
             m
         };
@@ -608,6 +685,7 @@ mod tests {
         end.set_field_by_name(&b.remove_uid, PbValue::I32(7));
         c.on_message(&message(BOOST_REMOVE, end), &hub.ctx);
         assert_eq!(c.call("state", Value::Null, &hub.ctx).unwrap()["poisons"], json!([]));
+        assert_eq!(c.layout.lock().boost_uid(), Some(1), "the removed uid was in the effect's second int only: learnt");
 
         // a poison still running when the fight ends goes with it
         c.on_message(&message(BOOST_ADD, boost(9, 42, 1135)), &hub.ctx);

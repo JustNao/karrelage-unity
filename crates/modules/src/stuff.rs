@@ -66,10 +66,11 @@ struct CardBind {
     view_character: String,
     info_success: String,
     info: String,
-    info_id: String,
+    /// the character's two int64 (its id and another): the player is kept under both (the view request gives the id)
+    info_ids: Vec<String>,
     info_name: String,
-    info_breed: String,
-    info_level: String,
+    /// its plain int32 (breed, level, another), told apart by value: see `breed_and_level`
+    info_ints: Vec<String>,
     view_success: String,
     equipment: String,
     unauthorized: String,
@@ -84,6 +85,18 @@ struct Player {
     name: String,
     breed: i64,
     level: i64,
+}
+
+/// Breeds (classes) of the game: ids 1..=20.
+const BREEDS: std::ops::RangeInclusive<i64> = 1..=20;
+
+/// (breed, level) from the character's plain int32, whose fields cannot be told apart after an update: the breed is the
+/// one in `BREEDS`, the level the largest other one (Omega levels go past 200; a level-1..20 character makes it ambiguous:
+/// then the first in range is the breed).
+fn breed_and_level(ints: &[i64]) -> (i64, i64) {
+    let Some(at) = ints.iter().position(|v| BREEDS.contains(v)) else { return (0, ints.iter().copied().max().unwrap_or(0)) };
+    let level = ints.iter().enumerate().filter(|&(i, _)| i != at).map(|(_, v)| *v).max().unwrap_or(0);
+    (ints[at], level)
 }
 
 #[derive(Default)]
@@ -352,11 +365,16 @@ impl Module for Stuff {
             }
             CARD_INFO => {
                 let Some(info) = sub(msg, &b.info_success).and_then(|s| sub(&s, &b.info)) else { return };
-                let id = int(&info, &b.info_id);
+                let ids: Vec<i64> = b.info_ids.iter().map(|f| int(&info, f)).filter(|id| *id != 0).collect();
                 let name = info.get_field_by_name(&b.info_name).and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default();
+                let (breed, level) = breed_and_level(&b.info_ints.iter().map(|f| int(&info, f)).collect::<Vec<_>>());
                 let mut c = self.cards.lock();
-                c.players.insert(id, Player { name, breed: int(&info, &b.info_breed), level: int(&info, &b.info_level) });
-                c.last_info = Some(id);
+                // the asked character, when its request was seen first; else every id (the view request will name one)
+                let asked: Vec<i64> = ids.iter().copied().filter(|id| c.requested.iter().any(|(_, r)| r == id)).collect();
+                for id in if asked.is_empty() { &ids } else { &asked } {
+                    c.players.insert(*id, Player { name: name.clone(), breed, level });
+                }
+                c.last_info = asked.first().or(ids.first()).copied();
             }
             CARD_VIEW => {
                 if let Some(build) = self.player_build(ctx, b, eb, msg, m.env.as_ref().and_then(|e| e.uid), m.raw.t) {
@@ -566,7 +584,7 @@ mod tests {
         let (info_md, view_md) = (md(CARD_INFO), md(CARD_VIEW));
 
         let mut player = DynamicMessage::new(field(&field(&info_md, &b.info_success), &b.info));
-        player.set_field_by_name(&b.info_id, PbValue::I64(4242));
+        player.set_field_by_name(&b.info_ids[1], PbValue::I64(4242));
         player.set_field_by_name(&b.info_name, PbValue::String("Toto".into()));
         let mut success = DynamicMessage::new(field(&info_md, &b.info_success));
         success.set_field_by_name(&b.info, PbValue::Message(player));

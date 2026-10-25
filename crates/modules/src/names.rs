@@ -149,22 +149,28 @@ fn binding_checks(ctx: &Ctx) -> Vec<Value> {
     // average prices
     let avg = ctx.proto.obf_for_clear(AVG_PRICES).and_then(|o| ctx.proto.message(&o));
     match avg.as_ref().and_then(|m| sub_msg(m, &s(&b["avg_prices"]["items"]))) {
-        Some(entry) => out.push(fields_check("bindings.avg_prices (champs)", &entry, vec![s(&b["avg_prices"]["gid"]), s(&b["avg_prices"]["price"])], vec![])),
+        Some(entry) => {
+            let mut want = vec![s(&b["avg_prices"]["gid"])];
+            want.extend(list_of(&b["avg_prices"]["prices"]));
+            out.push(fields_check("bindings.avg_prices (champs)", &entry, want, vec![]))
+        }
         None => out.push(check("bindings.avg_prices (champs)", false, "liste d'entrées introuvable")),
     }
     // inventory: content -> ObjectItemInventory -> ObjectItem, and the events that follow it
     let inv = &b["inventory"];
     let content = ctx.proto.obf_for_clear(inventory::CONTENT).and_then(|o| ctx.proto.message(&o));
-    match content.as_ref().and_then(|m| sub_msg(m, &s(&inv["objects"]))) {
+    let first = |v: &Value| v.as_array().and_then(|a| a.first()).map(s).unwrap_or_default();
+    match content.as_ref().and_then(|m| sub_msg(m, &first(&inv["objects"]))) {
         Some(entry) => {
-            out.push(fields_check("bindings.inventory (entrée)", &entry, vec![s(&inv["item"]), s(&inv["position"])], vec![]));
-            match sub_msg(&entry, &s(&inv["item"])) {
-                Some(item) => out.push(fields_check(
-                    "bindings.inventory (objet)",
-                    &item,
-                    ["gid", "uid", "quantity", "effects"].iter().map(|k| s(&inv[k])).collect(),
-                    vec![],
-                )),
+            let mut want = list_of(&inv["item"]);
+            want.push(s(&inv["position"]));
+            out.push(fields_check("bindings.inventory (entrée)", &entry, want, vec![]));
+            match sub_msg(&entry, &first(&inv["item"])) {
+                Some(item) => {
+                    let mut want = list_of(&inv["ints"]);
+                    want.push(s(&inv["effects"]));
+                    out.push(fields_check("bindings.inventory (objet)", &item, want, vec![]))
+                }
                 None => out.push(check("bindings.inventory (objet)", false, "message d'objet introuvable")),
             }
         }
@@ -175,9 +181,11 @@ fn binding_checks(ctx: &Ctx) -> Vec<Value> {
     let decraft = ctx.proto.obf_for_clear(brisage::DECRAFT).and_then(|o| ctx.proto.message(&o));
     match decraft.as_ref().and_then(|m| sub_msg(m, &s(&dc["results"]))) {
         Some(item) => {
-            out.push(fields_check("bindings.decraft (objet)", &item, ["coef_min", "coef_max", "uid", "runes"].iter().map(|k| s(&dc[k])).collect(), vec![]));
+            let mut want = list_of(&dc["coefs"]);
+            want.extend(["uid", "runes"].iter().map(|k| s(&dc[k])));
+            out.push(fields_check("bindings.decraft (objet)", &item, want, vec![]));
             match sub_msg(&item, &s(&dc["runes"])) {
-                Some(r) => out.push(fields_check("bindings.decraft (rune)", &r, vec![s(&dc["rune_gid"]), s(&dc["rune_qty"])], vec![])),
+                Some(r) => out.push(fields_check("bindings.decraft (rune)", &r, list_of(&dc["rune_ints"]), vec![])),
                 None => out.push(check("bindings.decraft (rune)", false, "message de rune introuvable")),
             }
         }

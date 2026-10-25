@@ -227,25 +227,37 @@ def pair_id_rev(cmap):
     return set(cmap.values())
 
 
-def field_assign(cm, bm, cmap, emap):
-    """Assign clear field names inside a matched pair by type key; ambiguous groups get candidate lists."""
+def field_assign(cm, bm, cmap, emap, cur_msgs=None, ref_msgs=None):
+    """Assign clear field names inside a matched pair by type key; ambiguous groups get candidate lists. With both message
+    sets (two builds of the same protos), the key also has what a rename keeps: in a oneof / proto3 optional or not, and a
+    map's key and value types (map entry messages are never paired themselves)."""
     rev = {b: c for c, b in cmap.items()}
+    fine = cur_msgs is not None and ref_msgs is not None
+
+    def extra(f, msgs, typ):
+        if not fine:
+            return ()
+        oneof = "opt" if f.proto3_optional else "oneof" if f.HasField("oneof_index") else ""
+        entry = msgs.get(norm(f.type_name)) if f.type == F.TYPE_MESSAGE else None
+        if entry is None or not entry.options.map_entry:
+            return (oneof,)
+        return (oneof, tuple(typ(x) for x in entry.field))
 
     def kc(f):
         card = "R" if f.label == F.LABEL_REPEATED else "S"
         if f.type == F.TYPE_MESSAGE:
-            b = cmap.get(norm(f.type_name)); return (card, "M", b)
+            b = cmap.get(norm(f.type_name)); return (card, "M", b) + extra(f, cur_msgs, kc)
         if f.type == F.TYPE_ENUM:
-            return (card, "E", emap.get(norm(f.type_name)))
-        return (card, SCALAR[f.type])
+            return (card, "E", emap.get(norm(f.type_name))) + extra(f, cur_msgs, kc)
+        return (card, SCALAR[f.type]) + extra(f, cur_msgs, kc)
 
     def kb(f):
         card = "R" if f.label == F.LABEL_REPEATED else "S"
         if f.type == F.TYPE_MESSAGE:
-            return (card, "M", norm(f.type_name) if norm(f.type_name) in rev else None)
+            return (card, "M", norm(f.type_name) if norm(f.type_name) in rev else None) + extra(f, ref_msgs, kb)
         if f.type == F.TYPE_ENUM:
-            return (card, "E", norm(f.type_name) if norm(f.type_name) in emap.values() else None)
-        return (card, SCALAR[f.type])
+            return (card, "E", norm(f.type_name) if norm(f.type_name) in emap.values() else None) + extra(f, ref_msgs, kb)
+        return (card, SCALAR[f.type]) + extra(f, ref_msgs, kb)
 
     cg, bg = collections.defaultdict(list), collections.defaultdict(list)
     for f in cm.field: cg[kc(f)].append(f)
@@ -357,7 +369,7 @@ def match_previous(cur_msgs, cur_enums, prev):
     # fields: paired by type; fields of the same type (same-typed group, as many in both builds) are left for later
     groups = {}
     for cn, pn in cmap.items():
-        fa = field_assign(cur_msgs[cn], prev_msgs[pn], cmap, emap)
+        fa = field_assign(cur_msgs[cn], prev_msgs[pn], cmap, emap, cur_msgs, prev_msgs)
         fmaps[cn] = {v["name"]: k for k, v in fa.items() if v.get("exact")}
         g = collections.defaultdict(list)
         for k, v in fa.items():

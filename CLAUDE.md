@@ -99,9 +99,11 @@ Set `PYTHONUTF8=1` for scripts handling accents. The "Développeur" header toggl
 - Previous build (`builds.py`, `match_protos.py` `match_previous`): every export snapshots the build (desc + sure names +
   script table, 2 kept, committed). A new build is matched against the newest snapshot of another build: script tables
   aligned by (file, name length, name) with equal field types = seeds, then `run` restricted to same file + length. Names
-  (and exact field names) carry over; `overrides.json` (`_build` = desc fingerprint) is re-keyed. Same-typed sibling fields
-  pair by number or declaration order only if the update kept them (measured, ≥ 97 %), else only `x_1`, `x_2`… groups
-  (fields told apart by value) pair. Verified on simulated updates only (renamed + reshuffled desc), not a real one yet.
+  (and exact field names) carry over; `overrides.json` (`_build` = desc fingerprint) is re-keyed. Field keys there also hold
+  oneof / proto3 optional membership and map key/value types. Same-typed sibling fields pair by number or declaration order
+  only if the update kept them (measured, ≥ 97 %), else only `x_1`, `x_2`… groups (fields the app tells apart by value:
+  every bound same-typed field is one) pair. Simulated updates (renamed + numbers / order shuffled): 15/15 roles; no real
+  update seen yet.
 - `bindings.json` = clear paths per role (first segment = a message name unique in the build; nested `Success` etc. go
   through a parent), resolved by `bindings.py` at export into obfuscated `datapack/bindings.json` (app format unchanged);
   formatters.py resolves them too. An unresolved path drops its role (feature idles).
@@ -157,7 +159,8 @@ Set `PYTHONUTF8=1` for scripts handling accents. The "Développeur" header toggl
 **Stored prices** (`prices.rs`)
 - Per-unit price = median over stack sizes of each size's cheapest price / qty (lower middle on even counts); equipment =
   cheapest lot. Every listing / weekly-average batch is appended to `<app data>/prices/history.jsonl` (call `history`).
-- `ObjectAveragePricesEvent` (role `avg_prices`) gives the 7-day average. Priority: override > AH unit > avg.
+- `ObjectAveragePricesEvent` (role `avg_prices`) gives the 7-day average (entry: gid + two int64, the price is the larger:
+  the other was never set on a 9679-entry capture). Priority: override > AH unit > avg.
 
 **Packets** (`packets.rs`): keeps the last 20 raw packets per type, decoded only when the tab lists/streams them.
 
@@ -165,7 +168,8 @@ Set `PYTHONUTF8=1` for scripts handling accents. The "Développeur" header toggl
 - Formula (kamamaster.fr, verified on a real break): runes = round2(3 × unit × jet × level / 200 + 1) × coef / 100 / rune
   weight; focus = own runes + half the weight of every other effect. Exo runes can't be focused. Expected values kept.
 - Coefficients in `<app data>/brisage/coefs.json` (typed, or from `DecraftResultEvent` role `decraft`: per stack, coef 0–1
-  float, stored = coef_min; uid resolved through `inventory::UidMap`, else guessed from runes). Every break appended to
+  float pair told apart by value (min / max), stored = min; rune gid = the Rune int that is a rune (type 78); uid resolved
+  through `inventory::UidMap`, else guessed from runes). Every break appended to
   `breaks.json` (data to later model coefficient evolution).
 - `drop` = `dropMonsterIds` non-empty (Temporis ignored). Breakable types in `BREAKABLE_TYPES`.
 
@@ -190,11 +194,16 @@ Set `PYTHONUTF8=1` for scripts handling accents. The "Développeur" header toggl
 - « Builds des joueurs »: another player's card (Card package, role `card`): CardViewResponse → Success → EquipmentCard
   {map worn position → preset.Equipment {gid, uid?, effects}} (or Unauthorized = private). Responses carry no character id:
   the CardViewRequest (named by anchor; view 1 = equipment) with the same envelope uid gives it (verified 3.7.12.12), name /
-  breed / level from CardInfoResponse (level counts Omega levels, 360 seen: the build uses ≤ 200). Build id `player-<id>`, replaced on each inspection (user fields kept); `rolls` = exact rolls,
+  breed / level from CardInfoResponse (level counts Omega levels, 360 seen: the build uses ≤ 200). The character's two
+  int64 (id + another) can't be told apart: the player is stored under both; its three plain int32 = breed (1..=20) /
+  level (largest other) / unknown (`breed_and_level`, not checked on a capture). Build id `player-<id>`, replaced on each inspection (user fields kept); `rolls` = exact rolls,
   counted when no lot is chosen. Event `stuff:player`. Base points / scrolls (EquipmentCard CharacteristicsInfo) not read.
   "Exporter vers Dofusbook" on a player build = `playerBuildLink` (`lib/dofusbookExport.ts`, 0 points / 100 scrolls).
 
-**Inventory** (`inventory.rs`): equipment from `InventoryContentEvent` (login only), updated by Object* events and
+**Inventory** (`inventory.rs`): ObjectItem gid / uid / quantity are unordered ints: the layout is learnt from the login
+inventory (gid = most often a pack item, uid = most distinct; `learned` object_gid / object_uid), else guessed per object
+(verified on 1487 captured objects). The content's two ObjectItemInventory lists and the entry's two ObjectItem fields are
+both read (only one ever set on captures). Equipment from `InventoryContentEvent` (login only), updated by Object* events and
 `ObjectMovementEvent` (named by anchor; uid / position told apart by value). Role `inventory`. Characteristics from
 `CharacterCharacteristicsEvent`: unnamed ints told apart by value (base = invocations 1, prospection ≥ 100, six stats
 costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
@@ -206,7 +215,9 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   absence from FightSynchronizeEvent, or a spawn information without `alive` (role `fight.alive`; live fighters carry true). Summoned copies of starting monsters (doubles) are ignored, and so are the
   players' summons (summoner not a monster of the fight; summon details kept when a later message lacks them).
 - Poisons (effects 1131–1140): added by FightBoostAddEvent / FightJoinRunningEvent (role `boost`), removed by
-  FightBoostRemoveEvent. Player = every character id seen in CharacterSelectionRequest (fixed per character; all kept
+  FightBoostRemoveEvent (its only int32 = buff uid). Which of FightRemovableEffect's eight int32 is the uid is learnt: a
+  removed uid found in a single int of the recent buffs votes (`layout.json` boost_votes; learnt right on the real capture).
+  Player = every character id seen in CharacterSelectionRequest (fixed per character; all kept
   in `<app data>/combat/me.json`, so a login needs to be seen once per character).
 - Monster notes from `work/monster_notes.csv` (author's sheet, not committed) and tags from `work/dofusdb_monsters.json`
   (DofusDB API returns empty tags since mid-2026 → fallback Loutil_old dump); `danger` column → cross-monster warnings.

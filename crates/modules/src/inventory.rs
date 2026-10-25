@@ -47,20 +47,81 @@ fn points_cost(id: i64, value: i64) -> i64 {
 const BAG: i64 = 63;
 
 /// Obfuscated field names of the inventory messages (bindings.json `inventory`).
+/// Same-typed fields cannot be told apart after a game update, so they come as lists told apart by value: `objects` = the
+/// content's two ObjectItemInventory lists, `item` = the entry's two ObjectItem fields (see `entry_item`), `ints` = the
+/// object's gid / uid / quantity (see `object_ints`).
 #[derive(Deserialize, Clone)]
 pub(crate) struct Bindings {
-    pub objects: String,
-    pub item: String,
+    pub objects: Vec<String>,
+    pub item: Vec<String>,
     pub position: String,
-    pub gid: String,
-    pub uid: String,
-    pub quantity: String,
+    pub ints: Vec<String>,
     pub effects: String,
     pub added: String,
     pub added_list: String,
     pub modified: String,
     pub deleted: String,
     pub deleted_list: String,
+}
+
+/// Which of an ObjectItem's three ints (`Bindings::ints`) are the gid and the uid (the quantity is the third): learnt from
+/// the login inventory (`learn_layout`), as field names.
+type Layout = Option<(String, String)>;
+
+/// The ObjectItem layout from many objects at once (the login inventory): the gid is the int that is most often an item
+/// of the pack, the uid of the two others the one with the most distinct values (quantities repeat: 1, 100...).
+fn learn_layout(data: &loutil_data::Data, b: &Bindings, objects: &[DynamicMessage]) -> Layout {
+    if objects.len() < 10 || b.ints.len() != 3 {
+        return None;
+    }
+    let col = |f: &str| objects.iter().map(|o| int(o, f)).collect::<Vec<i64>>();
+    let items = |f: &String| col(f).iter().filter(|g| data.items.contains_key(g)).count();
+    let gid = b.ints.iter().max_by_key(|f| items(f))?;
+    let distinct = |f: &String| {
+        let mut v = col(f);
+        v.sort_unstable();
+        v.dedup();
+        (v.len(), v.last().copied().unwrap_or(0))
+    };
+    let uid = b.ints.iter().filter(|f| *f != gid).max_by_key(|f| distinct(f))?;
+    Some((gid.clone(), uid.clone()))
+}
+
+/// (gid, uid, quantity) of an ObjectItem: by the learnt layout, else guessed from this object alone: the gid is its int that
+/// is an item of the pack (the larger one when several are, the largest being taken for the uid when there are three), the
+/// uid the larger other one (0 = unset: then the other is the quantity).
+pub(crate) fn object_ints(data: &loutil_data::Data, b: &Bindings, it: &DynamicMessage, layout: &Layout) -> (i64, i64, i64) {
+    if let Some((g, u)) = layout {
+        let q = b.ints.iter().find(|f| *f != g && *f != u).map_or(1, |f| int(it, f));
+        return (int(it, g), int(it, u), q);
+    }
+    let mut ints: Vec<i64> = b.ints.iter().map(|f| int(it, f)).collect();
+    ints.sort_unstable();
+    let items: Vec<usize> = (0..ints.len()).filter(|&i| data.items.contains_key(&ints[i])).collect();
+    let at = match items[..] {
+        [] => ints.len().saturating_sub(2),
+        [i] => i,
+        _ if items.len() == ints.len() => items[items.len() - 2],
+        _ => *items.last().unwrap(),
+    };
+    if ints.len() != 3 {
+        return (ints.get(at).copied().unwrap_or(0), 0, 1);
+    }
+    let gid = ints.remove(at);
+    let (lo, hi) = (ints[0], ints[1]);
+    if lo == 0 {
+        (gid, 0, hi)
+    } else {
+        (gid, hi, lo)
+    }
+}
+
+/// The ObjectItem of an ObjectItemInventory: the one of its two ObjectItem fields that is set (the other one is, so far,
+/// never seen set: when both are, the one holding an item of the pack).
+fn entry_item(data: &loutil_data::Data, b: &Bindings, inv: &DynamicMessage, layout: &Layout) -> Option<DynamicMessage> {
+    let set: Vec<DynamicMessage> = b.item.iter().filter(|f| inv.has_field_by_name(f)).filter_map(|f| inv.get_field_by_name(f)?.as_message().cloned()).collect();
+    let known = |it: &DynamicMessage| data.items.contains_key(&object_ints(data, b, it, layout).0);
+    set.iter().find(|it| known(it)).or(set.first()).cloned()
 }
 
 /// An equipment piece as last seen in the inventory: its gid, stack size and effect values ([action, value]).
@@ -152,9 +213,9 @@ impl Inventory {
 
     /// ObjectItemInventory -> (uid, item) for equipment, shaped like an auction lot (`effects` compared with the item's defaults)
     /// so the UI can reuse the lot helpers; `prices` is empty.
-    fn item(ctx: &Ctx, b: &Bindings, eb: &ObjectEffect, inv: &DynamicMessage, t: f64) -> Option<(i64, Value)> {
-        let it = inv.get_field_by_name(&b.item)?.as_message()?.clone();
-        let (gid, uid) = (int(&it, &b.gid), int(&it, &b.uid));
+    fn item(ctx: &Ctx, b: &Bindings, eb: &ObjectEffect, inv: &DynamicMessage, t: f64, layout: &Layout) -> Option<(i64, Value)> {
+        let it = entry_item(&ctx.data, b, inv, layout)?;
+        let (gid, uid, quantity) = object_ints(&ctx.data, b, &it, layout);
         if !ctx.data.is_equipment(gid) {
             return None;
         }
@@ -166,7 +227,7 @@ impl Inventory {
             uid,
             json!({
                 "uid": uid, "gid": gid, "name": ctx.data.item_name(gid), "level": info.map(|i| i.level), "icon": info.map(|i| i.icon_id),
-                "quantity": int(&it, &b.quantity), "position": position, "equipped": position != BAG, "updated": t,
+                "quantity": quantity, "position": position, "equipped": position != BAG, "updated": t,
                 "prices": [], "density": density, "effects": ctx.data.compare_effects(stats, Some(gid)),
             }),
         ))
@@ -327,8 +388,23 @@ impl Module for Inventory {
             _ => {}
         }
         let Some((b, eb)) = self.bindings(ctx) else { return };
+        let objects = || b.objects.iter().flat_map(|f| messages(msg, f)).collect::<Vec<_>>();
+        if m.name == CONTENT {
+            // the login inventory: enough objects to learn which int is which
+            let items: Vec<DynamicMessage> = objects().iter().filter_map(|x| entry_item(&ctx.data, b, x, &None)).collect();
+            if let Some((g, u)) = learn_layout(&ctx.data, b, &items) {
+                let mut c = self.store.lock();
+                if c.learn("object_gid", &g) | c.learn("object_uid", &u) {
+                    ctx.log(format!("inventory: object fields (gid, uid) = ({g}, {u})"));
+                }
+            }
+        }
+        let layout: Layout = {
+            let c = self.store.lock();
+            c.learned("object_gid").zip(c.learned("object_uid")).filter(|(g, u)| b.ints.contains(g) && b.ints.contains(u))
+        };
         let parse = |l: Vec<DynamicMessage>| -> Vec<(i64, Value)> {
-            let out: Vec<(i64, Value)> = l.iter().filter_map(|x| Self::item(ctx, b, eb, x, t)).collect();
+            let out: Vec<(i64, Value)> = l.iter().filter_map(|x| Self::item(ctx, b, eb, x, t, &layout)).collect();
             let mut u = self.uids.lock();
             for (uid, it) in &out {
                 if let Some(seen) = Seen::of(it) {
@@ -352,7 +428,8 @@ impl Module for Inventory {
             match m.name.as_str() {
                 CONTENT => {
                     s.clear();
-                    s.extend(parse(messages(msg, &b.objects)));
+                    // both lists of the content (only one was ever filled on the captures)
+                    s.extend(parse(objects()));
                     true
                 }
                 ADDED => put(s, parse(one(&b.added))),
@@ -391,23 +468,24 @@ mod tests {
         let (content, deleted) = (proto.obf_for_clear(CONTENT).unwrap(), proto.obf_for_clear(DELETED).unwrap());
         let md = proto.message(&content).unwrap();
         let sub = |m: &loutil_proto::MessageDescriptor, f: &str| m.get_field_by_name(f).unwrap().kind().as_message().unwrap().clone();
-        let (inv_md, item_md) = (sub(&md, &b.objects), sub(&sub(&md, &b.objects), &b.item));
+        let (inv_md, item_md) = (sub(&md, &b.objects[0]), sub(&sub(&md, &b.objects[0]), &b.item[0]));
         let equip = *data.items.keys().find(|g| data.is_equipment(**g) && !data.items[g].effects.is_empty()).unwrap();
         let resource = *data.items.keys().find(|g| !data.is_equipment(**g)).unwrap();
         let entry = |gid: i64, uid: i32, pos: i32| {
             let mut it = DynamicMessage::new(item_md.clone());
-            it.set_field_by_name(&b.gid, PbValue::I32(gid as i32));
-            it.set_field_by_name(&b.uid, PbValue::I32(uid));
-            it.set_field_by_name(&b.quantity, PbValue::I32(1));
+            // the ints in any order: told apart by value
+            for (f, v) in b.ints.iter().zip([1, gid as i32, uid]) {
+                it.set_field_by_name(f, PbValue::I32(v));
+            }
             let mut inv = DynamicMessage::new(inv_md.clone());
-            inv.set_field_by_name(&b.item, PbValue::Message(it));
+            inv.set_field_by_name(&b.item[0], PbValue::Message(it));
             inv.set_field_by_name(&b.position, PbValue::I32(pos));
             PbValue::Message(inv)
         };
         let mut msg = DynamicMessage::new(md);
-        msg.set_field_by_name(&b.objects, PbValue::List(vec![entry(equip, 1001, 6), entry(resource, 1002, 63)]));
+        msg.set_field_by_name(&b.objects[0], PbValue::List(vec![entry(equip, 5400001, 6), entry(resource, 5400002, 63)]));
         let mut del = DynamicMessage::new(proto.message(&deleted).unwrap());
-        del.set_field_by_name(&b.deleted, PbValue::I32(1001));
+        del.set_field_by_name(&b.deleted, PbValue::I32(5400001));
         let message = |name: &str, decoded: DynamicMessage| testkit::msg(name, Some(decoded), 5.0);
         let inv = Inventory::new();
         inv.on_message(&message(CONTENT, msg), &hub.ctx);
@@ -424,7 +502,7 @@ mod tests {
         let (uid_f, pos_f) = (ints[0].clone(), ints[ints.len() - 1].clone());
         let moved = |pos: i32| {
             let mut m = DynamicMessage::new(move_md.clone());
-            m.set_field_by_name(&uid_f, PbValue::I32(1001));
+            m.set_field_by_name(&uid_f, PbValue::I32(5400001));
             m.set_field_by_name(&pos_f, PbValue::I32(pos));
             m
         };
@@ -506,5 +584,27 @@ mod tests {
         assert_eq!(c["carac"]["12"], json!({"base": 0, "scroll": 0}));
         assert_eq!(c["carac"].as_object().unwrap().len(), 6, "only the six characteristics");
         assert_eq!(c["t"], json!(7.0));
+    }
+
+    /// Dev check on a capture: `INV_PAYLOAD=<file holding an InventoryContentEvent payload in hex> cargo test -p loutil-modules
+    /// real_login -- --nocapture`: the object fields are learnt and the equipment read (gid / uid / quantity told apart by value).
+    #[test]
+    fn real_login() {
+        let Ok(path) = std::env::var("INV_PAYLOAD") else { return };
+        let Some((hub, proto)) = testkit::hub("loutil-inventory-real") else { return };
+        let h = std::fs::read_to_string(path).unwrap();
+        let payload: Vec<u8> = (0..h.trim().len() / 2).map(|i| u8::from_str_radix(&h[2 * i..2 * i + 2], 16).unwrap()).collect();
+        let decoded = proto.decode(&proto.obf_for_clear(CONTENT).unwrap(), &payload);
+        let inv = Inventory::new();
+        inv.on_message(&testkit::msg(CONTENT, decoded, 1.0), &hub.ctx);
+        let l = inv.call("list", Value::Null, &hub.ctx).unwrap();
+        let items = l["items"].as_array().unwrap();
+        eprintln!("learned {}; {} equipment pieces:", l["learned"], items.len());
+        for i in items.iter().take(5) {
+            eprintln!("  {} {} uid {} x{} pos {}", i["gid"], i["name"], i["uid"], i["quantity"], i["position"]);
+        }
+        assert!(!items.is_empty());
+        assert!(l["learned"]["object_gid"].is_string() && l["learned"]["object_uid"].is_string());
+        assert!(items.iter().all(|i| i["name"].is_string() && i["uid"].as_i64() > i["gid"].as_i64()), "gid / uid told apart");
     }
 }

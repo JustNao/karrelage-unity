@@ -163,11 +163,13 @@ impl Prices {
     fn on_average_prices(&self, m: &Message, ctx: &Ctx) {
         let (Some(msg), Some(b)) = (m.decoded.as_ref(), ctx.data.bindings.get("avg_prices")) else { return };
         let field = |k: &str| b[k].as_str().unwrap_or_default();
+        // two int64 per entry that cannot be told apart after an update: the price and one never set (seen on captures)
+        let prices: Vec<&str> = b["prices"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
         let mut changed = vec![];
         let mut hist = serde_json::Map::new();
         let mut s = self.store.lock();
         for e in messages(msg, field("items")) {
-            let (gid, price) = (int(&e, field("gid")), int(&e, field("price")));
+            let (gid, price) = (int(&e, field("gid")), prices.iter().map(|f| int(&e, f)).max().unwrap_or(0));
             if price <= 0 || !ctx.data.items.contains_key(&gid) {
                 continue;
             }

@@ -32,8 +32,14 @@
  },
  "llg": {
   "fields": {
-   "gdpw": "uid",
-   "gdqh": "spell_id"
+   "gdpw": "ints_2",
+   "gdqh": "ints_8",
+   "gdps": "ints_1",
+   "gdpx": "ints_3",
+   "gdqb": "ints_4",
+   "gdqd": "ints_5",
+   "gdqe": "ints_6",
+   "gdqg": "ints_7"
   }
  },
  "kas": {
@@ -52,24 +58,27 @@
  },
  "isr.isp": {
   "fields": {
-   "fsvy": "price"
+   "fsvy": "prices_1",
+   "fsvz": "prices_2"
   }
  },
  "irl": {
   "fields": {
-   "fsro": "objects"
+   "fsro": "objects_1",
+   "fsrn": "objects_2"
   }
  },
  "lmy": {
   "fields": {
-   "gdxj": "item"
+   "gdxj": "items_1",
+   "gdxn": "items_2"
   }
  },
  "lef": {
   "fields": {
-   "gcif": "gid",
-   "gcig": "uid",
-   "gcie": "quantity"
+   "gcif": "ints_1",
+   "gcig": "ints_2",
+   "gcie": "ints_3"
   }
  },
  "kao.kam": {
@@ -97,14 +106,14 @@
  },
  "kag.kae": {
   "fields": {
-   "fyeh": "coef_min",
-   "fyei": "coef_max"
+   "fyeh": "coefs_1",
+   "fyei": "coefs_2"
   }
  },
  "kag.kae.kac": {
   "fields": {
-   "fyed": "rune_gid",
-   "fyec": "rune_qty"
+   "fyed": "ints_1",
+   "fyec": "ints_2"
   }
  },
  "lcs.lcq.lco.lcl.lci": {
@@ -138,10 +147,12 @@
  },
  "kvn": {
   "fields": {
-   "gbck": "id",
+   "gbck": "ids_1",
    "gbcm": "name",
-   "gbcl": "breed",
-   "gbcn": "level"
+   "gbcl": "ints_1",
+   "gbcn": "ints_2",
+   "gbcr": "ids_2",
+   "gbct": "ints_3"
   }
  },
  "kxh": {
