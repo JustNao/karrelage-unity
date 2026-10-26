@@ -586,6 +586,26 @@ mod tests {
         assert_eq!(c["t"], json!(7.0));
     }
 
+    /// Real ObjectAddedEvent / ObjectModifiedEvent payloads (3.7.12.12, an item taken from the bank, a forgemagie result).
+    #[test]
+    fn real_added_and_modified() {
+        let Some((hub, proto)) = testkit::hub("loutil-inventory-events") else { return };
+        let hex = |h: &str| (0..h.len() / 2).map(|i| u8::from_str_radix(&h[2 * i..2 * i + 2], 16).unwrap()).collect::<Vec<u8>>();
+        let added = "12a4010a9f01180120a6cb0128a295163a0528da02507d3a04284550763a042844507e3a042823507b3a04282150773a042814507c3a05280c50a6033a05280c50a8033a05280850d3013a05280850d4013a05280850a0033a05280650aa033a05280650ac033a05280350f0053a05280350a0013a0528015080013a05280150fc153a05280450d7013a05280450da013a05280850f3053a05280850a3013a05281450a503203f";
+        let modified = "0a160a12180120a6990128848fa0043a052804508a01203f";
+        let inv = Inventory::new();
+        for (name, h) in [(ADDED, added), (MODIFIED, modified)] {
+            let decoded = proto.decode(&proto.obf_for_clear(name).unwrap(), &hex(h));
+            assert!(decoded.is_some(), "{name} decoded");
+            inv.on_message(&testkit::msg(name, decoded, 1.0), &hub.ctx);
+        }
+        let l = inv.call("list", Value::Null, &hub.ctx).unwrap();
+        let items: Vec<(Value, Value)> = l["items"].as_array().unwrap().iter().map(|i| (i["uid"].clone(), i["gid"].clone())).collect();
+        eprintln!("{items:?}");
+        assert!(items.contains(&(json!(363170), json!(26022))), "added");
+        assert!(items.contains(&(json!(8914820), json!(19622))), "modified");
+    }
+
     /// Dev check on a capture: `INV_PAYLOAD=<file holding an InventoryContentEvent payload in hex> cargo test -p loutil-modules
     /// real_login -- --nocapture`: the object fields are learnt and the equipment read (gid / uid / quantity told apart by value).
     #[test]
