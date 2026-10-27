@@ -9,7 +9,7 @@
   import { persisted, writeJSON } from "./lib/persist.svelte";
   import FloatingShell from "./lib/components/FloatingShell.svelte";
 
-  /** Floating fight window (combat.html): the Combat tab's monsters, their notes (display level = the app's setting) and the
+  /** Floating fight window (combat.html): the current fight's monsters, their notes (display level = the app's setting) and the
    *  tags worth showing, in a small always-on-top window over the game. Its height follows its content (up to 80 % of the
    *  screen, then it scrolls); where the user drops it is remembered for the next fight. Only the living monsters worth a
    *  look (a red tag, or a note shown at the display level) are listed, unless "tous" is on; a dead one slides away. */
@@ -101,7 +101,7 @@
     >{settings.combat.overlayGrow === "up" ? "⤒" : "⤓"}</button>
   {/snippet}
   {#if !settings.combat.enabled}
-    <div class="mut msg">Suivi des combats désactivé (onglet Combat).</div>
+    <div class="mut msg">Suivi des combats désactivé (onglet Automation).</div>
   {:else if !fight.fighters.length}
     <div class="mut msg">En attente d'un combat…</div>
   {:else if !list.length && fight.active}

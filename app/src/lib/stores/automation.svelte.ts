@@ -20,16 +20,18 @@ const DEFAULTS = {
    *  best one is worth at least `threshold` (stored price), `soundLow` below it (or when its price is unknown). */
   songes: { enabled: true, sound: "crowd-applause", soundLow: "crowd-disappointed", volume: 0.6, threshold: 8_000_000 },
   /** Songes: a goblin NPC of the Songes (King Gob, Gobséric, Gobledore, Bog: lib/automation.ts SONGE_GOBLINS) is in the room
-   *  entered (or appears in it). One sound per room. */
+   *  entered (or appears in it). One sound per goblin, one after the other. */
   goblins: { enabled: true, sound: "goblin", volume: 0.7 },
   /** Monstres: on every map change (and when a group appears on the map), a searched monster is in one of its groups. One
    *  sound per map, however many match. `gids` = the searched monsters (pack gids, names shown from the pack). */
   monsters: { enabled: true, sound: "pop", volume: 0.6, gids: [] as number[] },
+  /** Combat: the player's turn starts. `unfocusedOnly`: only while Dofus is not the foreground window. */
+  turn: { enabled: false, sound: "pop", volume: 0.6, unfocusedOnly: true },
 };
 export type Rules = typeof DEFAULTS;
 export type RuleId = keyof Rules;
 export const RULE_DEFAULTS: Rules = DEFAULTS;
-export const RULE_TITLES: Record<RuleId, string> = { exoDo: "Exo % dommages à briser", songes: "Légende lootée", goblins: "Gobelin dans la salle", monsters: "Monstre recherché sur la carte" };
+export const RULE_TITLES: Record<RuleId, string> = { exoDo: "Exo % dommages à briser", songes: "Légende lootée", goblins: "Gobelin dans la salle", monsters: "Monstre recherché sur la carte", turn: "À votre tour" };
 
 export const rules = persisted<Rules>(KEY, DEFAULTS, { sections: true });
 

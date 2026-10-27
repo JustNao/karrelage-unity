@@ -15,8 +15,9 @@ export const DEFAULT_SOUND = SOUNDS[0].id;
 
 const cache = new Map<string, HTMLAudioElement>();
 
-/** Plays a sound of the pool at `volume` (0-1); an unknown id or a blocked playback is ignored. */
-export function playSound(id: string, volume: number) {
+/** Plays a sound of the pool at `volume` (0-1), `times` times one after the other; an unknown id or a blocked playback is
+ *  ignored. */
+export function playSound(id: string, volume: number, times = 1) {
   const s = SOUNDS.find((x) => x.id === id);
   if (!s) return;
   let a = cache.get(s.id);
@@ -24,5 +25,6 @@ export function playSound(id: string, volume: number) {
   // a fresh element per play, so quick repeats overlap instead of cutting each other
   const p = a.cloneNode() as HTMLAudioElement;
   p.volume = Math.min(1, Math.max(0, volume));
+  if (times > 1) p.onended = () => playSound(id, volume, times - 1);
   void p.play().catch(() => {});
 }

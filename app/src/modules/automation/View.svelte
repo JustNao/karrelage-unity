@@ -4,9 +4,11 @@
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
   import Switch from "../../lib/components/Switch.svelte";
   import { kamasFull } from "../../lib/fmt";
+  import { settings, type CombatShow } from "../../lib/stores/settings.svelte";
+  import { openCombatOverlay } from "../../lib/stores/combat.svelte";
   import MonsterSearch from "./MonsterSearch.svelte";
 
-  /** Automation: rules checked on every scan, fight end or map change (lib/automation.ts), one section per tab, like Paramètres. A triggered rule
+  /** Automation: rules checked on every scan, fight end, turn or map change (and the fight following, Combat section) (lib/automation.ts), one section per tab, like Paramètres. A triggered rule
    *  plays its sound and shows up in the header « Notifications ». */
 
   /** "2,500,000", "2.5M", "500k" -> kamas; empty or unreadable -> null (no limit). */
@@ -136,6 +138,53 @@
           </div>
         </div>
       </section>
+      <section>
+        <h2>Combat</h2>
+        <div class="rule" class:off={!rules.turn.enabled}>
+          <div class="rh">
+            <Switch bind:checked={rules.turn.enabled} label="Activer la règle" />
+            <div class="lb">
+              <div><b>{RULE_TITLES.turn}</b></div>
+              <div class="mut">
+                Un son au début de chacun de vos tours de jeu (votre personnage est reconnu à la connexion : connectez-vous une fois
+                par personnage, application ouverte).
+              </div>
+            </div>
+          </div>
+          <div class="params">
+            <label class="chk" title="Ne pas sonner quand la fenêtre de Dofus est au premier plan">
+              <input type="checkbox" bind:checked={rules.turn.unfocusedOnly} /> Seulement si le jeu n'est pas au premier plan
+            </label>
+            {@render sound(rules.turn)}
+          </div>
+        </div>
+        <div class="rule" class:off={!settings.combat.enabled}>
+          <div class="rh">
+            <Switch bind:checked={settings.combat.enabled} label="Suivre les combats" />
+            <div class="lb">
+              <div><b>Suivre les monstres des combats</b></div>
+              <div class="mut">
+                Détecte les monstres du combat en cours (paquets du placement et des tours) et affiche leurs remarques et les poisons
+                PA / PM dans la fenêtre flottante.
+              </div>
+            </div>
+          </div>
+          <div class="params">
+            <label title="Remarques affichées pour chaque monstre">
+              Informations
+              <select value={settings.combat.show} onchange={(e) => (settings.combat.show = e.currentTarget.value as CombatShow)}>
+                <option value="warning">Avertissements</option>
+                <option value="invulnerable">Avertissements + invulnérabilités</option>
+                <option value="all">Avertissements + invulnérabilités + conseils</option>
+              </select>
+            </label>
+            <label class="chk" title="Petite fenêtre toujours au premier plan (sauf jeu en plein écran exclusif) : elle s'ouvre au début d'un combat, là où vous l'avez laissée, et se ferme à la fin">
+              <input type="checkbox" bind:checked={settings.combat.overlay} /> Fenêtre flottante pendant les combats
+            </label>
+            <button class="mini" onclick={() => openCombatOverlay()} title="Afficher la fenêtre flottante maintenant (pour la placer sur le jeu : elle rouvrira au même endroit)">⧉ Afficher</button>
+          </div>
+        </div>
+      </section>
     </div>
   </SmoothScroll>
 </div>
@@ -153,6 +202,8 @@
   .params { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; padding-left: 56px; }
   .params label { display: inline-flex; align-items: center; gap: 6px; }
   .params input[type="number"] { width: 70px; }
+  .params .chk { cursor: pointer; }
+  .params .chk input { margin: 0; }
   .params input.price { width: 110px; text-align: right; }
   .snd { display: inline-flex; align-items: center; gap: 6px; }
   .snd input[type="range"] { width: 110px; }

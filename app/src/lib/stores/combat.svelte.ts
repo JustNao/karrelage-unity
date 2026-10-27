@@ -1,13 +1,13 @@
 import { call, on } from "../api";
 import { closeFloating, openFloating, savedPos } from "../floating";
-import { app } from "../app.svelte";
 import { settings, type CombatShow } from "./settings.svelte";
+import { rules } from "./automation.svelte";
 import { TAGS } from "../monsterTags";
 
 /**
  * Current fight (crates/modules/src/combat.rs): the monsters fought and their notes, followed from startup whatever tab is
  * open (App.svelte calls `startCombat` once the backend is ready). The feature switch `settings.combat.enabled` is pushed
- * to the backend; `autoOpen` opens the Combat tab when a fight starts.
+ * to the backend, and so is the Automation « À votre tour » rule (`combat:turn` is only sent while it is on).
  */
 export interface Notes {
   warning?: string[];
@@ -75,15 +75,17 @@ export async function startCombat() {
         .then(() => !on && Object.assign(fight, { seen: false, active: false, started: 0, ended: null, fighters: [], poisons: [] }))
         .catch(() => {});
     });
+    $effect(() => {
+      const on = rules.turn.enabled;
+      call("combat", "set_turn", { on }, true).catch(() => {});
+    });
     // the floating window follows the fight: shown when it starts (or when the setting is switched on during one), closed when it ends
     $effect(() => {
       const want = settings.combat.enabled && settings.combat.overlay && fight.active;
       void (want ? openCombatOverlay(false) : closeCombatOverlay());
     });
   });
-  await followFight(() => {
-    if (settings.combat.enabled && settings.combat.autoOpen) app.tab = "combat";
-  });
+  await followFight();
 }
 
 /** Where the user left the floating window (logical px: x, y = top edge, bottom = bottom edge), remembered by the window itself. */

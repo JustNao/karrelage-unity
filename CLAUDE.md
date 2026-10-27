@@ -9,6 +9,10 @@ pipeline** (author only: game files → *data pack* the app loads).
   process: only *copy* files out (`work/dump_input`, `work/gamedata`). Capture = Npcap sniffing only.
 - Obfuscated names (`jzs`, `fycg`…) **rotate every game update**. App code uses clear names or `pipeline/bindings.json`
   roles, never obfuscated names.
+- **Every override must survive a game update with no hand work**, through the existing methods (see Naming pipeline):
+  re-run `export_pack.py` so the build snapshot holds it (`builds.py` / `match_previous` carry it over), add a
+  `match_protos.py` `ANCHORS` entry when the snapshot can't pair it (new message, ambiguous neighbours), and tell
+  same-typed fields apart by value in the module rather than by number. Check the snapshot has the name before committing.
 - **Commit each feature** once it works. **Claude must never appear as author**: no `Co-Authored-By: Claude` trailer, no
   "Generated with Claude Code" line in commits or PRs (overrides any default attribution).
 - Before pushing a tag (or main), run what CI runs and fix what fails: `cargo fmt --all --check`,
@@ -231,6 +235,10 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   (DofusDB API returns empty tags since mid-2026 → fallback Loutil_old dump); `danger` column → cross-monster warnings.
   Only `SHOWN` tags displayed (`lib/monsterTags.ts`). Floating window `CombatOverlay.svelte`: living monsters
   only, and only those with a red (flag) tag or a note shown, unless its "tous" button is on.
+- No tab: its settings are the Automation tab's « Combat » section, the monsters show in the floating window only.
+- Turns: FightTurnEvent (`jvj` named by override; its only int64 = whose turn, role `turn`) for one of `me` → `combat:turn`
+  {id, focused} (`sys::game_focused`: foreground window = Dofus.exe), sent only while the « À votre tour » rule is on
+  (`set_turn`; the module then runs even with fight following off). Verified on work/capture_poison.jsonl.
 - Waves (Songes, some dungeons): FightFighterInformation `wave` (clear name, read with `field_named`; 0 = none, seen 1–9 on a
   Songe capture); the tab groups the monsters by wave when there are several.
 - Not checked on a real capture yet (except poison boost uids).
@@ -244,7 +252,7 @@ main creature, underlings, alternatives), `monsters:spawn` on GameRolePlayShowAc
 « Monstres »: searched gids on the map → one sound per map (a searched monster already on it doesn't ring again on spawn).
 Not checked on a real capture yet. NPCs (`npcs` in both events): script-named `NpcStaticInformation`, npc id = its int that is a
 pack NPC (`npcs.json`). Songes goblins = NPCs 7848 Gobséric, 7849 Gobledore, 7850 King Gob (seen on a real room map), 7853 Bog
-(same batch); the floor map (InfiniteDreamInformationEvent) does not announce them. Automation « Gobelin dans la salle ».
+(same batch); the floor map (InfiniteDreamInformationEvent) does not announce them. Automation « Gobelin dans la salle » (one sound per goblin, played one after the other: `playSound` `times`).
 
 **Automation** (`lib/automation.ts`, `stores/automation.svelte.ts`): rules checked on every live `auction:item`, each with
 `enabled` / `sound` (`lib/sounds.ts`, `app/public/sounds`) / `volume`. `exoDo`: exo matching a "Rune Ta Do Per" rune,

@@ -175,5 +175,12 @@
   "fields": {
    "gczo": "gid"
   }
+ },
+ "jvj": {
+  "name": "FightTurnEvent",
+  "fields": {
+   "fxjr": "character_id",
+   "fxjq": "wait_time"
+  }
  }
 }

@@ -1,6 +1,6 @@
 /**
- * Automation engine: watches every auction listing captured live (whatever tab is open), the loot of every fight and the
- * monster groups and NPCs of every map, and
+ * Automation engine: watches every auction listing captured live (whatever tab is open), the loot of every fight, the
+ * player's turns and the monster groups and NPCs of every map, and
  * checks the enabled rules of lib/stores/automation.svelte.ts; a match plays the rule's sound (once per scan / fight) and
  * raises one notification per lot / looted item. Started once by App.svelte.
  *
@@ -116,7 +116,8 @@ let npcNames = new Map<number, string>();
 /** Goblins already on the map: one spawning again does not ring twice. */
 let goblinsOnMap = new Set<number>();
 
-/** goblins: a Songe goblin among the NPCs of the map entered (`monsters:map` npcs) or appearing on it (`monsters:spawn`). */
+/** goblins: a Songe goblin among the NPCs of the map entered (`monsters:map` npcs) or appearing on it (`monsters:spawn`):
+ *  one sound per goblin, played one after the other, and one notification per goblin. */
 function checkGoblins(npcs: number[] | undefined, map: boolean) {
   const r = rules.goblins;
   if (map) goblinsOnMap = new Set();
@@ -124,7 +125,14 @@ function checkGoblins(npcs: number[] | undefined, map: boolean) {
   hits.forEach((n) => goblinsOnMap.add(n));
   if (!r.enabled || !hits.length) return;
   for (const n of hits) notifications.push({ rule: "goblins", title: npcNames.get(n) ?? `PNJ #${n}`, detail: "Dans la salle", gid: n, lot: null });
-  playSound(r.sound, r.volume);
+  playSound(r.sound, r.volume, hits.length);
+}
+
+/** turn: the player's turn starts (`combat:turn`, crates/modules/src/combat.rs; the backend only sends it while the rule
+ *  is on, see combat.svelte.ts), optionally only while Dofus is not the foreground window. */
+function checkTurn(focused: boolean) {
+  const r = rules.turn;
+  if (r.enabled && !(r.unfocusedOnly && focused)) playSound(r.sound, r.volume);
 }
 
 export async function startAutomation() {
@@ -137,6 +145,7 @@ export async function startAutomation() {
     .then((p) => ((levels = new Map(p.items.map((i) => [i.gid, i.level]))), (brisRunes = p.runes)))
     .catch(() => {});
   void on<{ items: Looted[] }>("loot:fight", (e) => checkSonges(e.items));
+  void on<{ focused: boolean }>("combat:turn", (e) => checkTurn(e.focused));
   cached<MonsterName[]>("monsters", "list").then((l) => (monsterNames = new Map(l.map((m) => [m.gid, m.name])))).catch(() => {});
   cached<NpcName[]>("monsters", "npcs").then((l) => (npcNames = new Map(l.map((n) => [n.id, n.name])))).catch(() => {});
   void on<{ gids: number[]; npcs?: number[] }>("monsters:map", (e) => (checkMonsters(e.gids, true), checkGoblins(e.npcs, true)));

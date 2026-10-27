@@ -178,5 +178,9 @@
    "CardInfoResponse.success.info.ints_2",
    "CardInfoResponse.success.info.ints_3"
   ]
+ },
+ "turn": {
+  "_doc": "A fighter's turn starts: FightTurnEvent {character_id (its only int64: the fighter whose turn it is), wait_time (int32, tenths of a second: 900 for players), round...} (confirmed on work/capture_poison.jsonl). The player's turn = character_id is one of the player's characters (combat.rs `me`).",
+  "fighter": "FightTurnEvent.character_id"
  }
 }

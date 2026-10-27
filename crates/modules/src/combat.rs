@@ -36,6 +36,8 @@ pub const BOOST_REMOVE: &str = "FightBoostRemoveEvent";
 /// Client requests at login: the character's id = the player's fighter id.
 pub const SELECT: &str = "CharacterSelectionRequest";
 pub const FIRST_SELECT: &str = "CharacterFirstSelectionRequest";
+/// A fighter's turn starts (the player's: `combat:turn`, Automation « À votre tour »).
+pub const TURN: &str = "FightTurnEvent";
 
 /// PA / PM poisons: effects table ids ("#2 dommages <element> pour #1 PA / PM utilisé") -> (PA | PM, element).
 const POISONS: [(i64, &str, &str); 10] = [
@@ -65,6 +67,12 @@ struct BoostBindings {
     remove_uid: String,
     /// CharacterSelectionRequest / CharacterFirstSelectionRequest character_id
     character: Vec<String>,
+}
+
+/// Obfuscated field name of the turn start (bindings.json `turn`): FightTurnEvent's character_id.
+#[derive(Deserialize, Clone)]
+struct TurnBindings {
+    fighter: String,
 }
 
 /// A PA / PM poison running on a fighter: target and effect id (see `POISONS`).
@@ -216,6 +224,9 @@ struct Fight {
 pub struct Combat {
     bind: Role<Bindings>,
     enabled: AtomicBool,
+    /// the player's turn is announced (`combat:turn`), even with the fight following off
+    turn: AtomicBool,
+    turn_bind: Role<TurnBindings>,
     fight: Mutex<Fight>,
     /// `layout.json`, written in the background (a vote comes with most fighter messages)
     layout: Store<Layout>,
@@ -301,6 +312,8 @@ impl Combat {
         Self {
             bind: Role::new(),
             enabled: AtomicBool::new(true),
+            turn: AtomicBool::new(false),
+            turn_bind: Role::new(),
             fight: Mutex::new(Fight::default()),
             layout: Store::default(),
             boost_bind: Role::new(),
@@ -408,11 +421,11 @@ impl Module for Combat {
     }
 
     fn interest(&self) -> Interest {
-        Interest::Types(&[JOIN, JOIN_RUNNING, SHOW, REFRESH, SYNC, ACTION, END, BOOST_ADD, BOOST_REMOVE, SELECT, FIRST_SELECT])
+        Interest::Types(&[JOIN, JOIN_RUNNING, SHOW, REFRESH, SYNC, ACTION, END, BOOST_ADD, BOOST_REMOVE, SELECT, FIRST_SELECT, TURN])
     }
 
     fn wants(&self) -> bool {
-        self.enabled.load(Ordering::Relaxed)
+        self.enabled.load(Ordering::Relaxed) || self.turn.load(Ordering::Relaxed)
     }
 
     fn init(&self, ctx: &Ctx) {
@@ -463,6 +476,18 @@ impl Module for Combat {
                 });
                 ctx.emit("combat", "fight", self.state(&ctx.data));
             }
+            return;
+        }
+        // the player's turn starts: {id, focused} (whether Dofus has the focus, the UI may ring only when it has not)
+        if m.name == TURN {
+            let id = self.turn_bind.get(ctx, "turn").zip(m.decoded.as_ref()).map(|(b, d)| int(d, &b.fighter));
+            if self.turn.load(Ordering::Relaxed) && id.is_some_and(|id| self.me.lock().contains(&id)) {
+                ctx.emit("combat", "turn", json!({"id": id, "focused": crate::sys::game_focused()}));
+            }
+            return;
+        }
+        // only the turns are wanted (fight following off)
+        if !self.enabled.load(Ordering::Relaxed) {
             return;
         }
         let changed = {
@@ -571,7 +596,7 @@ impl Module for Combat {
     fn call(&self, method: &str, args: Value, ctx: &Ctx) -> Result<Value> {
         match method {
             "state" => Ok(self.state(&ctx.data)),
-            // the feature switch (Combat tab / Paramètres): off = the fight messages are not even decoded
+            // the feature switch (Automation tab): off = the fight messages are not even decoded
             "set_enabled" => {
                 let on = args["on"].as_bool().unwrap_or(true);
                 self.enabled.store(on, Ordering::Relaxed);
@@ -579,6 +604,12 @@ impl Module for Combat {
                     *self.fight.lock() = Fight::default();
                 }
                 Ok(json!({"enabled": on}))
+            }
+            // Automation « À votre tour »: announce the player's turns
+            "set_turn" => {
+                let on = args["on"].as_bool().unwrap_or(false);
+                self.turn.store(on, Ordering::Relaxed);
+                Ok(json!({"turn": on}))
             }
             "clear" => {
                 *self.fight.lock() = Fight::default();
@@ -636,6 +667,41 @@ mod tests {
         let learnt: Vec<String> = logs.lock().iter().filter(|l| l.contains("buff uid")).cloned().collect();
         eprintln!("{learnt:?}");
         assert_eq!(learnt.len(), 1, "the buff uid int is learnt from the removals, once");
+    }
+
+    /// The same recorded fight with the player's character known (Hinae, from its card): `combat:turn` is sent for its turn
+    /// starts only (the recording holds one; the other players' and the monsters' are left out). Skipped without the file.
+    #[test]
+    fn announces_the_players_turns() {
+        let Some(pack) = testkit::pack() else { return };
+        let rec = pack.join("../work/capture_poison.jsonl");
+        if !rec.exists() {
+            return;
+        }
+        let (hub, proto) = testkit::hub("loutil-combat-turn").unwrap();
+        let dir = testkit::temp_dir("loutil-combat-turn2");
+        std::fs::create_dir_all(dir.join("combat")).unwrap();
+        std::fs::write(dir.join("combat/me.json"), r#"{"id": 40895840551, "ids": [40895840551]}"#).unwrap();
+        let turns: Arc<Mutex<Vec<Value>>> = Default::default();
+        let sink = turns.clone();
+        let emit = Arc::new(move |e: &str, v: Value| {
+            if e == "combat:turn" {
+                sink.lock().push(v);
+            }
+        });
+        let hub = crate::Hub::new(hub.ctx.data.clone(), proto, dir, emit, Arc::new(|_| {}));
+        hub.call("combat", "set_turn", json!({"on": true})).unwrap();
+        let hex = |s: &str| (0..s.len() / 2).map(|i| u8::from_str_radix(&s[2 * i..2 * i + 2], 16).unwrap()).collect::<Vec<u8>>();
+        for line in std::fs::read_to_string(&rec).unwrap().lines() {
+            let r: Value = serde_json::from_str(line).unwrap();
+            let (Some(h), Some(len)) = (r["hex"].as_str(), r["len"].as_u64()) else { continue };
+            if h.len() / 2 < len as usize {
+                continue;
+            }
+            hub.handle(RawMessage { t: r["t"].as_f64().unwrap_or(0.0), srv: "x".into(), dir: "S->C", payload: hex(h) });
+        }
+        let ids: Vec<i64> = turns.lock().iter().filter_map(|v| v["id"].as_i64()).collect();
+        assert_eq!(ids, vec![40895840551]);
     }
 
     /// A PA poison put on the player, then its end (FightBoostRemoveEvent with the buff uid); one on a monster is ignored.

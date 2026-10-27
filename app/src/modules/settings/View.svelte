@@ -1,7 +1,6 @@
 <script lang="ts">
-  import { SETTING_DEFAULTS, settings, type CombatShow } from "../../lib/stores/settings.svelte";
+  import { SETTING_DEFAULTS, settings } from "../../lib/stores/settings.svelte";
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
-  import Switch from "../../lib/components/Switch.svelte";
 
   /** Paramètres: one section per tab (general UI settings will come first). Values live in lib/stores/settings.svelte.ts. */
   const clampZ = (v: number) => (Number.isFinite(v) ? Math.min(5, Math.max(0.5, Math.round(v * 10) / 10)) : SETTING_DEFAULTS.hdv.goodZ);
@@ -31,50 +30,6 @@
             />
             <span class="mut">σ</span>
             <button class="mini" disabled={settings.hdv.goodZ === SETTING_DEFAULTS.hdv.goodZ} onclick={() => (settings.hdv.goodZ = SETTING_DEFAULTS.hdv.goodZ)} title="Revenir à la valeur par défaut ({SETTING_DEFAULTS.hdv.goodZ} σ)">Par défaut</button>
-          </div>
-        </div>
-      </section>
-      <section>
-        <h2>Combat</h2>
-        <div class="row">
-          <div class="lb">
-            <div>Suivre les combats</div>
-            <div class="mut">Détecte les monstres du combat en cours (paquets du placement et des tours) et affiche leurs remarques dans l'onglet Combat.</div>
-          </div>
-          <div class="ctl">
-            <Switch bind:checked={settings.combat.enabled} label="Suivre les combats" />
-          </div>
-        </div>
-        <div class="row">
-          <div class="lb">
-            <div>Informations affichées</div>
-            <div class="mut">Avertissements seuls, avec les invulnérabilités, ou avec aussi les conseils.</div>
-          </div>
-          <div class="ctl">
-            <select value={settings.combat.show} onchange={(e) => (settings.combat.show = e.currentTarget.value as CombatShow)}>
-              <option value="warning">Avertissements</option>
-              <option value="invulnerable">Avertissements + invulnérabilités</option>
-              <option value="all">Avertissements + invulnérabilités + conseils</option>
-            </select>
-          </div>
-        </div>
-        <div class="row">
-          <div class="lb">
-            <div>Ouvrir l'onglet au début d'un combat</div>
-            <div class="mut">Affiche l'onglet Combat dès qu'un combat commence.</div>
-          </div>
-          <div class="ctl"><input type="checkbox" bind:checked={settings.combat.autoOpen} /></div>
-        </div>
-        <div class="row">
-          <div class="lb">
-            <div>Fenêtre flottante pendant les combats</div>
-            <div class="mut">
-              Petite fenêtre Combat toujours au premier plan (sauf jeu en plein écran exclusif) : elle s'ouvre au début d'un combat, là où
-              vous l'avez laissée, et se ferme à la fin.
-            </div>
-          </div>
-          <div class="ctl">
-            <Switch bind:checked={settings.combat.overlay} label="Fenêtre flottante pendant les combats" />
           </div>
         </div>
       </section>
