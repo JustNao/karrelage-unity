@@ -1881,7 +1881,7 @@ checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
 name = "loutil-app"
-version = "1.9.0"
+version = "1.9.1"
 dependencies = [
  "anyhow",
  "loutil-core",
@@ -1897,7 +1897,7 @@ dependencies = [
 
 [[package]]
 name = "loutil-core"
-version = "1.9.0"
+version = "1.9.1"
 dependencies = [
  "anyhow",
  "libloading 0.8.9",
@@ -1909,7 +1909,7 @@ dependencies = [
 
 [[package]]
 name = "loutil-data"
-version = "1.9.0"
+version = "1.9.1"
 dependencies = [
  "anyhow",
  "regex",
@@ -1919,7 +1919,7 @@ dependencies = [
 
 [[package]]
 name = "loutil-modules"
-version = "1.9.0"
+version = "1.9.1"
 dependencies = [
  "anyhow",
  "loutil-core",
@@ -1936,7 +1936,7 @@ dependencies = [
 
 [[package]]
 name = "loutil-proto"
-version = "1.9.0"
+version = "1.9.1"
 dependencies = [
  "anyhow",
  "parking_lot",
