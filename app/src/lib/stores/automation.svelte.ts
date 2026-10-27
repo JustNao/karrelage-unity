@@ -26,7 +26,7 @@ const DEFAULTS = {
    *  sound per map, however many match. `gids` = the searched monsters (pack gids, names shown from the pack). */
   monsters: { enabled: true, sound: "pop", volume: 0.6, gids: [] as number[] },
   /** Combat: the player's turn starts. `unfocusedOnly`: only while Dofus is not the foreground window. */
-  turn: { enabled: false, sound: "pop", volume: 0.6, unfocusedOnly: true },
+  turn: { enabled: false, sound: "water-drop", volume: 0.6, unfocusedOnly: true },
 };
 export type Rules = typeof DEFAULTS;
 export type RuleId = keyof Rules;

@@ -10,6 +10,7 @@ export const SOUNDS: Sound[] = [
   { id: "crowd-disappointed", name: "Foule déçue", src: "/sounds/crowd-disappointed.mp3" },
   { id: "pop", name: "Pop", src: "/sounds/pop.mp3" },
   { id: "goblin", name: "Alerte", src: "/sounds/goblin-alert.mp3" },
+  { id: "water-drop", name: "Water drop", src: "/sounds/water-droplet-drip.mp3" },
 ];
 export const DEFAULT_SOUND = SOUNDS[0].id;
 
