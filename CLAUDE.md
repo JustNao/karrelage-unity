@@ -238,7 +238,8 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
 - No tab: its settings are the Automation tab's « Combat » section, the monsters show in the floating window only.
 - Turns: FightTurnEvent (`jvj` named by override; its only int64 = whose turn, role `turn`) for one of `me` → `combat:turn`
   {id, focused} (`sys::game_focused`: foreground window = Dofus.exe), sent only while the « À votre tour » rule is on
-  (`set_turn`; the module then runs even with fight following off). Verified on work/capture_poison.jsonl.
+  (`set_turn`; the module then runs even with fight following off). The game still starts a dead fighter's turns: skipped
+  when the latest TimelineRefreshEvent flags it (TimelineFighter `dead`). Verified on work/capture_poison.jsonl.
 - Waves (Songes, some dungeons): FightFighterInformation `wave` (clear name, read with `field_named`; 0 = none, seen 1–9 on a
   Songe capture); the tab groups the monsters by wave when there are several.
 - Not checked on a real capture yet (except poison boost uids).

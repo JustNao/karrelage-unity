@@ -38,6 +38,8 @@ pub const SELECT: &str = "CharacterSelectionRequest";
 pub const FIRST_SELECT: &str = "CharacterFirstSelectionRequest";
 /// A fighter's turn starts (the player's: `combat:turn`, Automation « À votre tour »).
 pub const TURN: &str = "FightTurnEvent";
+/// Turn order, every fighter flagged dead or not (refreshed after each death): no turn sound for a dead player.
+pub const TIMELINE: &str = "TimelineRefreshEvent";
 
 /// PA / PM poisons: effects table ids ("#2 dommages <element> pour #1 PA / PM utilisé") -> (PA | PM, element).
 const POISONS: [(i64, &str, &str); 10] = [
@@ -69,10 +71,28 @@ struct BoostBindings {
     character: Vec<String>,
 }
 
-/// Obfuscated field name of the turn start (bindings.json `turn`): FightTurnEvent's character_id.
+/// Obfuscated field names of the turn start (bindings.json `turn`): FightTurnEvent's character_id, TimelineFighter's
+/// fighter_id and dead (absent in older packs: every turn rings).
 #[derive(Deserialize, Clone)]
 struct TurnBindings {
     fighter: String,
+    #[serde(default)]
+    timeline_id: Option<String>,
+    #[serde(default)]
+    timeline_dead: Option<String>,
+}
+
+/// The fighters a timeline flags dead (every TimelineFighter under `m`).
+fn timeline_dead(id: &str, dead: &str, m: &DynamicMessage, out: &mut BTreeSet<i64>) {
+    if m.descriptor().get_field_by_name(id).is_some() {
+        if m.get_field_by_name(dead).and_then(|v| v.as_bool()) == Some(true) {
+            out.insert(int(m, id));
+        }
+        return;
+    }
+    for c in children(m) {
+        timeline_dead(id, dead, c, out);
+    }
 }
 
 /// A PA / PM poison running on a fighter: target and effect id (see `POISONS`).
@@ -227,6 +247,8 @@ pub struct Combat {
     /// the player's turn is announced (`combat:turn`), even with the fight following off
     turn: AtomicBool,
     turn_bind: Role<TurnBindings>,
+    /// the fighters the latest timeline flags dead
+    dead: Mutex<BTreeSet<i64>>,
     fight: Mutex<Fight>,
     /// `layout.json`, written in the background (a vote comes with most fighter messages)
     layout: Store<Layout>,
@@ -314,6 +336,7 @@ impl Combat {
             enabled: AtomicBool::new(true),
             turn: AtomicBool::new(false),
             turn_bind: Role::new(),
+            dead: Mutex::new(BTreeSet::new()),
             fight: Mutex::new(Fight::default()),
             layout: Store::default(),
             boost_bind: Role::new(),
@@ -421,7 +444,7 @@ impl Module for Combat {
     }
 
     fn interest(&self) -> Interest {
-        Interest::Types(&[JOIN, JOIN_RUNNING, SHOW, REFRESH, SYNC, ACTION, END, BOOST_ADD, BOOST_REMOVE, SELECT, FIRST_SELECT, TURN])
+        Interest::Types(&[JOIN, JOIN_RUNNING, SHOW, REFRESH, SYNC, ACTION, END, BOOST_ADD, BOOST_REMOVE, SELECT, FIRST_SELECT, TURN, TIMELINE])
     }
 
     fn wants(&self) -> bool {
@@ -478,10 +501,25 @@ impl Module for Combat {
             }
             return;
         }
-        // the player's turn starts: {id, focused} (whether Dofus has the focus, the UI may ring only when it has not)
+        // a new fight: nobody is dead yet (its timeline follows)
+        if m.name == JOIN || m.name == JOIN_RUNNING {
+            self.dead.lock().clear();
+        }
+        // the turn order lists every fighter (the whole list: replaces the dead ones)
+        if m.name == TIMELINE {
+            let b = self.turn_bind.get(ctx, "turn");
+            if let (Some(id), Some(dead), Some(d)) = (b.and_then(|b| b.timeline_id.as_deref()), b.and_then(|b| b.timeline_dead.as_deref()), &m.decoded) {
+                let mut out = BTreeSet::new();
+                timeline_dead(id, dead, d, &mut out);
+                *self.dead.lock() = out;
+            }
+            return;
+        }
+        // the player's turn starts (alive): {id, focused} (whether Dofus has the focus, the UI may ring only when it has not)
         if m.name == TURN {
             let id = self.turn_bind.get(ctx, "turn").zip(m.decoded.as_ref()).map(|(b, d)| int(d, &b.fighter));
-            if self.turn.load(Ordering::Relaxed) && id.is_some_and(|id| self.me.lock().contains(&id)) {
+            let mine = id.is_some_and(|id| self.me.lock().contains(&id) && !self.dead.lock().contains(&id));
+            if self.turn.load(Ordering::Relaxed) && mine {
                 ctx.emit("combat", "turn", json!({"id": id, "focused": crate::sys::game_focused()}));
             }
             return;
@@ -670,7 +708,9 @@ mod tests {
     }
 
     /// The same recorded fight with the player's character known (Hinae, from its card): `combat:turn` is sent for its turn
-    /// starts only (the recording holds one; the other players' and the monsters' are left out). Skipped without the file.
+    /// starts only (the recording holds one; the other players' and the monsters' are left out). Monster -3 is passed off as
+    /// a character too: the game still starts its turns after its death (twice in the recording), which must not ring.
+    /// Skipped without the file.
     #[test]
     fn announces_the_players_turns() {
         let Some(pack) = testkit::pack() else { return };
@@ -681,7 +721,7 @@ mod tests {
         let (hub, proto) = testkit::hub("loutil-combat-turn").unwrap();
         let dir = testkit::temp_dir("loutil-combat-turn2");
         std::fs::create_dir_all(dir.join("combat")).unwrap();
-        std::fs::write(dir.join("combat/me.json"), r#"{"id": 40895840551, "ids": [40895840551]}"#).unwrap();
+        std::fs::write(dir.join("combat/me.json"), r#"{"id": 40895840551, "ids": [-3, 40895840551]}"#).unwrap();
         let turns: Arc<Mutex<Vec<Value>>> = Default::default();
         let sink = turns.clone();
         let emit = Arc::new(move |e: &str, v: Value| {

@@ -182,5 +182,11 @@
    "fxjr": "character_id",
    "fxjq": "wait_time"
   }
+ },
+ "jvu.jvr": {
+  "fields": {
+   "fxld": "fighter_id",
+   "fxle": "dead"
+  }
  }
 }

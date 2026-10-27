@@ -180,7 +180,9 @@
   ]
  },
  "turn": {
-  "_doc": "A fighter's turn starts: FightTurnEvent {character_id (its only int64: the fighter whose turn it is), wait_time (int32, tenths of a second: 900 for players), round...} (confirmed on work/capture_poison.jsonl). The player's turn = character_id is one of the player's characters (combat.rs `me`).",
-  "fighter": "FightTurnEvent.character_id"
+  "_doc": "A fighter's turn starts: FightTurnEvent {character_id (its only int64: the fighter whose turn it is), wait_time (int32, tenths of a second: 900 for players), round...} (confirmed on work/capture_poison.jsonl). The player's turn = character_id is one of the player's characters (combat.rs `me`). TimelineRefreshEvent (turn order, refreshed after each death) lists every fighter as TimelineFighter {fighter_id (its only int64), dead (its only bool, set once dead: checked against the deaths of the capture)}: no turn sound for a dead fighter.",
+  "fighter": "FightTurnEvent.character_id",
+  "timeline_id": "TimelineFighter.fighter_id",
+  "timeline_dead": "TimelineFighter.dead"
  }
 }
