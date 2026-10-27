@@ -114,6 +114,7 @@ export const NOTE_KINDS: Record<keyof Notes, { icon: string; title: string }> = 
 
 /** The kinds of notes shown for a display level. */
 export const KINDS: Record<CombatShow, (keyof Notes)[]> = {
+  none: [],
   warning: ["warning"],
   invulnerable: ["warning", "invulnerable"],
   all: ["warning", "invulnerable", "tips"],

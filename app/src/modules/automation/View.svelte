@@ -5,6 +5,7 @@
   import Switch from "../../lib/components/Switch.svelte";
   import { kamasFull } from "../../lib/fmt";
   import { settings, type CombatShow } from "../../lib/stores/settings.svelte";
+  import Segmented from "../../lib/components/Segmented.svelte";
   import { openCombatOverlay } from "../../lib/stores/combat.svelte";
   import MonsterSearch from "./MonsterSearch.svelte";
 
@@ -19,6 +20,13 @@
     return v > 0 ? Math.round(v) : null;
   }
   const priceText = (v: number | null) => (v != null ? kamasFull(v).replace(/\s*K$/, "") : "");
+  /** Notes shown for each monster of the fight (floating window). */
+  const SHOW: { id: CombatShow; label: string; title?: string }[] = [
+    { id: "none", label: "Rien", title: "Aucune remarque : seulement les tags des monstres" },
+    { id: "warning", label: "Avertissements" },
+    { id: "invulnerable", label: "+ Invulnérabilités" },
+    { id: "all", label: "+ Conseils" },
+  ];
   const clampCoef = (v: number) => (Number.isFinite(v) ? Math.max(0, Math.round(v)) : RULE_DEFAULTS.exoDo.maxEven);
 </script>
 
@@ -170,14 +178,7 @@
             </div>
           </div>
           <div class="params">
-            <label title="Remarques affichées pour chaque monstre">
-              Informations
-              <select value={settings.combat.show} onchange={(e) => (settings.combat.show = e.currentTarget.value as CombatShow)}>
-                <option value="warning">Avertissements</option>
-                <option value="invulnerable">Avertissements + invulnérabilités</option>
-                <option value="all">Avertissements + invulnérabilités + conseils</option>
-              </select>
-            </label>
+            <Segmented bind:value={settings.combat.show} options={SHOW} label="Informations affichées" />
             <label class="chk" title="Petite fenêtre toujours au premier plan (sauf jeu en plein écran exclusif) : elle s'ouvre au début d'un combat, là où vous l'avez laissée, et se ferme à la fin">
               <input type="checkbox" bind:checked={settings.combat.overlay} /> Fenêtre flottante pendant les combats
             </label>

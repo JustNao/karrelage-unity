@@ -16,7 +16,7 @@ const DEFAULTS = {
   combat: {
     /** Follow the monsters of the current fight (off: the fight messages are not even decoded). */
     enabled: true,
-    /** Notes shown per monster: warnings only, + invulnerabilities, + tips. */
+    /** Notes shown per monster: none (tags only), warnings only, + invulnerabilities, + tips. */
     show: "all" as CombatShow,
     /** Floating (always on top) fight window: shown while a fight runs, closed when it ends. */
     overlay: false,
@@ -24,7 +24,7 @@ const DEFAULTS = {
     overlayGrow: "down" as "down" | "up",
   },
 };
-export type CombatShow = "warning" | "invulnerable" | "all";
+export type CombatShow = "none" | "warning" | "invulnerable" | "all";
 export type Settings = typeof DEFAULTS;
 export const SETTING_DEFAULTS: Settings = DEFAULTS;
 
