@@ -230,9 +230,10 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   FightBoostRemoveEvent (its only int32 = buff uid). Which of FightRemovableEffect's eight int32 is the uid is learnt: a
   removed uid found in a single int of the recent buffs votes (`layout.json` boost_votes; learnt right on the real capture).
   Player = every character id seen in CharacterSelectionRequest (fixed per character; all kept
-  in `<app data>/combat/me.json`, so a login needs to be seen once per character). Fallback: names typed in Automation
-  (`settings.combat.characters` → `set_names`) matched by value against any string of a script-named
-  NamedFighterInformation / NamedActor under a fighter's ActorPositionInformation; a match adds its actor id to `me`.
+  in `<app data>/combat/me.json`, so a login needs to be seen once per character). Fallback: names added in Automation
+  (`add_name`, one per entry, kept as `pending` in me.json) matched by value against any string of a script-named
+  NamedFighterInformation / NamedActor under a fighter's ActorPositionInformation; a match adds its actor id to `me`. Known
+  ids without a name take their fighter's single non-empty string (verified: Hinae on capture_poison); `remove` forgets one.
 - Monster notes from `work/monster_notes.csv` (author's sheet, not committed) and tags from `work/dofusdb_monsters.json`
   (DofusDB API returns empty tags since mid-2026 → fallback Loutil_old dump); `danger` column → cross-monster warnings.
   Only `SHOWN` tags displayed (`lib/monsterTags.ts`). Floating window `CombatOverlay.svelte`: living monsters

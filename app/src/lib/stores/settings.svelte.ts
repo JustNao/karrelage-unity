@@ -22,8 +22,6 @@ const DEFAULTS = {
     overlay: false,
     /** Which way the floating window grows with its content: its top edge stays put ("down") or its bottom edge ("up"). */
     overlayGrow: "down" as "down" | "up",
-    /** The player's character names (comma separated): found among the fighters when no login was seen (combat.rs `set_names`). */
-    characters: "",
   },
 };
 export type CombatShow = "none" | "warning" | "invulnerable" | "all";

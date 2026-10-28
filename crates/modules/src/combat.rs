@@ -5,7 +5,7 @@
 //! a monster, grade = one of its grades, level = a plausible level) votes for it; the winner is kept in `layout.json` (per
 //! field names, so a game update starts over) and then used for every fighter, even an unknown gid. Levels are often scaled
 //! (dungeons, dimensions...), so they are not required to match the grade. Strictly passive, like everything else.
-use crate::kit::{unknown, Role, Store};
+use crate::kit::{arg_i64, arg_str, unknown, Role, Store};
 use crate::{Ctx, Interest, Message, Module};
 use anyhow::Result;
 use loutil_data::Data;
@@ -41,7 +41,7 @@ pub const TURN: &str = "FightTurnEvent";
 /// Turn order, every fighter flagged dead or not (refreshed after each death): no turn sound for a dead player.
 pub const TIMELINE: &str = "TimelineRefreshEvent";
 /// Script-named messages carrying a character's name (fight placement / map actors), under its ActorPositionInformation:
-/// the fallback when no login was seen (names typed in the Automation tab, `set_names`).
+/// the fallback when no login was seen (names typed in the Automation tab, `add_name`), and the known characters' names.
 const NAMED: [&str; 2] = ["NamedFighterInformation", "NamedActor"];
 
 /// PA / PM poisons: effects table ids ("#2 dommages <element> pour #1 PA / PM utilisé") -> (PA | PM, element).
@@ -258,11 +258,26 @@ pub struct Combat {
     boost_bind: Role<BoostBindings>,
     /// obfuscated name of the fighters' `wave` field, found in the first fighter message that has it
     wave: Mutex<Option<String>>,
-    /// the player's characters: every character id seen at login (an id never changes), the last one logged in last;
-    /// kept in `me.json`, so the poisons are told apart without the login being seen again
-    me: Store<Vec<i64>>,
-    /// character names typed by the user (lowercase, Automation tab) not found in a fight yet: their fighter's id joins `me`
-    names: Mutex<Vec<String>>,
+    /// the player's characters, kept in `me.json`, so the poisons are told apart without the login being seen again
+    me: Store<Me>,
+}
+
+/// The player's characters (`me.json`).
+#[derive(Default)]
+struct Me {
+    /// every character id seen at login or found by name (an id never changes), the last one seen last
+    ids: Vec<i64>,
+    /// their names, read from a fight they are in
+    names: BTreeMap<i64, String>,
+    /// names typed by the user (Automation tab) not found in a fight yet: the fighter named so joins `ids`
+    pending: Vec<String>,
+}
+
+impl Me {
+    fn add(&mut self, id: i64) {
+        self.ids.retain(|x| *x != id);
+        self.ids.push(id);
+    }
 }
 
 impl Default for Combat {
@@ -317,26 +332,26 @@ fn wave_field(ctx: &Ctx, m: &DynamicMessage) -> Option<String> {
     ctx.proto.field_named(m.descriptor().full_name(), "wave").or_else(|| children(m).into_iter().find_map(|c| wave_field(ctx, c)))
 }
 
-/// Every (name, actor id) of a message whose ActorPositionInformation carries one of `names` (lowercase) in a `NAMED`
-/// message (any of its strings: NamedFighterInformation has two, told apart by value).
-fn named_actors(ctx: &Ctx, actor_id: &str, names: &[String], m: &DynamicMessage, out: &mut Vec<(String, i64)>) {
+/// Every (actor id, strings) of a message's ActorPositionInformation that has a `NAMED` message: its non-empty strings
+/// (NamedFighterInformation has two, the name told apart by value).
+fn named_actors(ctx: &Ctx, actor_id: &str, m: &DynamicMessage, out: &mut Vec<(i64, Vec<String>)>) {
     if m.descriptor().get_field_by_name(actor_id).is_none() {
         for c in children(m) {
-            named_actors(ctx, actor_id, names, c, out);
+            named_actors(ctx, actor_id, c, out);
         }
         return;
     }
-    if let Some(n) = name_in(ctx, names, m) {
-        out.push((n, int(m, actor_id)));
+    if let Some(strings) = strings_of_named(ctx, m) {
+        out.push((int(m, actor_id), strings));
     }
 }
 
-/// The name of `names` a `NAMED` message under `m` holds.
-fn name_in(ctx: &Ctx, names: &[String], m: &DynamicMessage) -> Option<String> {
+/// The non-empty strings of the first `NAMED` message under `m`.
+fn strings_of_named(ctx: &Ctx, m: &DynamicMessage) -> Option<Vec<String>> {
     if NAMED.contains(&ctx.proto.message_name(m.descriptor().full_name()).0.as_str()) {
-        return m.fields().find_map(|(_, v)| v.as_str().map(|s| s.trim().to_lowercase()).filter(|s| names.contains(s)));
+        return Some(m.fields().filter_map(|(_, v)| v.as_str().map(|s| s.trim().to_owned())).filter(|s| !s.is_empty()).collect());
     }
-    children(m).into_iter().find_map(|c| name_in(ctx, names, c))
+    children(m).into_iter().find_map(|c| strings_of_named(ctx, c))
 }
 
 /// The players' summons (Steamer turrets, Osamodas creatures...: monsters too): summoned by someone who is not a monster of
@@ -369,7 +384,6 @@ impl Combat {
             boost_bind: Role::new(),
             wave: Mutex::new(None),
             me: Store::default(),
-            names: Mutex::new(vec![]),
         }
     }
 
@@ -381,12 +395,38 @@ impl Combat {
         self.bind.get(ctx, "fight")
     }
 
-    /// The player's character id, from the id the game gives it (login, or a fighter named like it): saved.
-    fn add_me(&self, id: i64) {
-        self.me.update(|ids| {
-            ids.retain(|x| *x != id);
-            ids.push(id);
-        });
+    /// The fighters of a message: those named like a typed name join the player's characters, the player's characters
+    /// without a name get theirs (a single string: the other one is unknown). True when something changed (saved).
+    fn name_fighters(&self, ctx: &Ctx, actor_id: &str, d: &DynamicMessage) -> bool {
+        let wanted = {
+            let me = self.me.lock();
+            !me.pending.is_empty() || me.ids.iter().any(|id| !me.names.contains_key(id))
+        };
+        if !wanted {
+            return false;
+        }
+        let mut found = vec![];
+        named_actors(ctx, actor_id, d, &mut found);
+        let mut me = self.me.lock();
+        let mut changed = false;
+        for (id, strings) in found.into_iter().filter(|(id, _)| *id > 0) {
+            let typed = strings.iter().find_map(|s| me.pending.iter().position(|p| p.to_lowercase() == s.to_lowercase()).map(|k| (k, s.clone())));
+            if let Some((k, name)) = typed {
+                ctx.log(format!("combat: character « {name} » = {id}"));
+                me.pending.remove(k);
+                me.add(id);
+                me.names.insert(id, name);
+                changed = true;
+            } else if let ([name], true) = (&strings[..], me.ids.contains(&id) && !me.names.contains_key(&id)) {
+                me.names.insert(id, name.clone());
+                changed = true;
+            }
+        }
+        drop(me);
+        if changed {
+            self.me.touch();
+        }
+        changed
     }
 
     /// The buff int holding the uid: a removed uid found in a single int of the recent buffs votes for that int (saved).
@@ -460,7 +500,11 @@ impl Combat {
             })
             .collect();
         // PA / PM poisons on the player (none while the character is unknown: no login seen, no name found)
-        let mine = self.me.lock().clone();
+        let me = self.me.lock();
+        let mine = me.ids.clone();
+        let characters: Vec<Value> = me.ids.iter().map(|id| json!({"id": id, "name": me.names.get(id)})).collect();
+        let pending = me.pending.clone();
+        drop(me);
         let poisons: Vec<Value> = f
             .poisons
             .values()
@@ -470,7 +514,18 @@ impl Combat {
             })
             .collect();
         json!({"seen": f.seen, "active": f.seen && f.ended.is_none(), "started": f.started, "ended": f.ended, "fighters": list,
-               "poisons": poisons, "me": mine.last(), "mine": mine})
+               "poisons": poisons, "me": mine.last(), "mine": mine,
+               "characters": characters, "pending": pending})
+    }
+}
+
+impl Combat {
+    /// The player's characters changed (user action): saved now, the windows told.
+    fn changed_me(&self, ctx: &Ctx) -> Result<Value> {
+        self.me.flush();
+        let s = self.state(&ctx.data);
+        ctx.emit("combat", "fight", s.clone());
+        Ok(s)
     }
 }
 
@@ -488,10 +543,16 @@ impl Module for Combat {
     }
 
     fn init(&self, ctx: &Ctx) {
-        let saved = self.me.open(ctx, "combat", "me.json", |ids| json!({"id": ids.last(), "ids": ids}));
-        let ids: Vec<i64> = saved.as_ref().and_then(|v| v["ids"].as_array()).map(|a| a.iter().filter_map(Value::as_i64).collect()).unwrap_or_default();
+        let saved = self.me.open(ctx, "combat", "me.json", |me| json!({"id": me.ids.last(), "ids": me.ids, "names": me.names, "pending": me.pending}));
+        let saved = saved.unwrap_or_default();
+        let mut ids: Vec<i64> = saved["ids"].as_array().map(|a| a.iter().filter_map(Value::as_i64).collect()).unwrap_or_default();
         // older file: the last character only
-        *self.me.lock() = if ids.is_empty() { saved.and_then(|v| v["id"].as_i64()).into_iter().collect() } else { ids };
+        if ids.is_empty() {
+            ids.extend(saved["id"].as_i64());
+        }
+        let names = serde_json::from_value(saved["names"].clone()).unwrap_or_default();
+        let pending = serde_json::from_value(saved["pending"].clone()).unwrap_or_default();
+        *self.me.lock() = Me { ids, names, pending };
         let saved = self.layout.open(
             ctx,
             "combat",
@@ -529,7 +590,7 @@ impl Module for Combat {
         if m.name == SELECT || m.name == FIRST_SELECT {
             let id = self.boosts(ctx).zip(m.decoded.as_ref()).and_then(|(b, d)| b.character.iter().find(|f| d.has_field_by_name(f)).map(|f| int(d, f)));
             if let Some(id) = id.filter(|id| *id != 0) {
-                self.add_me(id);
+                self.me.update(|me| me.add(id));
                 ctx.emit("combat", "fight", self.state(&ctx.data));
             }
             return;
@@ -551,7 +612,7 @@ impl Module for Combat {
         // the player's turn starts (alive): {id, focused} (whether Dofus has the focus, the UI may ring only when it has not)
         if m.name == TURN {
             let id = self.turn_bind.get(ctx, "turn").zip(m.decoded.as_ref()).map(|(b, d)| int(d, &b.fighter));
-            let mine = id.is_some_and(|id| self.me.lock().contains(&id) && !self.dead.lock().contains(&id));
+            let mine = id.is_some_and(|id| self.me.lock().ids.contains(&id) && !self.dead.lock().contains(&id));
             if self.turn.load(Ordering::Relaxed) && mine {
                 ctx.emit("combat", "turn", json!({"id": id, "focused": crate::sys::game_focused()}));
             }
@@ -559,17 +620,8 @@ impl Module for Combat {
         }
         // the characters named by the user, found among the fighters (placement): before their first turn
         if matches!(m.name.as_str(), JOIN | JOIN_RUNNING | SHOW | REFRESH | SYNC) {
-            let names = self.names.lock().clone();
-            if let (false, Some(b), Some(d)) = (names.is_empty(), self.bindings(ctx), &m.decoded) {
-                let mut found = vec![];
-                named_actors(ctx, &b.actor_id, &names, d, &mut found);
-                let found: Vec<_> = found.into_iter().filter(|(_, id)| *id > 0).collect();
-                for (name, id) in &found {
-                    ctx.log(format!("combat: character « {name} » = {id}"));
-                    self.names.lock().retain(|n| n != name);
-                    self.add_me(*id);
-                }
-                if !found.is_empty() {
+            if let (Some(b), Some(d)) = (self.bindings(ctx), &m.decoded) {
+                if self.name_fighters(ctx, &b.actor_id, d) {
                     ctx.emit("combat", "fight", self.state(&ctx.data));
                 }
             }
@@ -699,18 +751,30 @@ impl Module for Combat {
                 self.turn.store(on, Ordering::Relaxed);
                 Ok(json!({"turn": on}))
             }
-            // Automation « Vos personnages »: names looked for among the fighters (no login seen)
-            "set_names" => {
-                let names: Vec<String> = args["names"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter_map(Value::as_str)
-                    .map(|s| s.trim().to_lowercase())
-                    .filter(|s| !s.is_empty())
-                    .collect();
-                *self.names.lock() = names;
-                Ok(self.state(&ctx.data))
+            // Automation « Vos personnages »: a name looked for among the fighters (no login seen); known already = nothing
+            "add_name" => {
+                let name = arg_str(&args, "name")?.trim().to_owned();
+                self.me.update(|me| {
+                    let same = |x: &String| x.to_lowercase() == name.to_lowercase();
+                    if !name.is_empty() && !me.pending.iter().any(same) && !me.names.values().any(same) {
+                        me.pending.push(name.clone());
+                    }
+                });
+                self.changed_me(ctx)
+            }
+            "remove_name" => {
+                let name = arg_str(&args, "name")?.to_owned();
+                self.me.update(|me| me.pending.retain(|x| *x != name));
+                self.changed_me(ctx)
+            }
+            // a character no longer the player's (a login with it adds it back)
+            "remove" => {
+                let id = arg_i64(&args, "id")?;
+                self.me.update(|me| {
+                    me.ids.retain(|x| *x != id);
+                    me.names.remove(&id);
+                });
+                self.changed_me(ctx)
             }
             "clear" => {
                 *self.fight.lock() = Fight::default();
@@ -805,6 +869,9 @@ mod tests {
         }
         let ids: Vec<i64> = turns.lock().iter().filter_map(|v| v["id"].as_i64()).collect();
         assert_eq!(ids, vec![40895840551]);
+        // the character known from its login gets its name from the fight (its card: Hinae)
+        let s = hub.call("combat", "state", Value::Null).unwrap();
+        assert_eq!(s["characters"][1], json!({"id": 40895840551i64, "name": "Hinae"}));
     }
 
     /// A PA poison put on the player, then its end (FightBoostRemoveEvent with the buff uid); one on a monster is ignored.
@@ -955,12 +1022,21 @@ mod tests {
         };
         let c = Combat::new();
         c.init(&hub.ctx);
-        c.call("set_names", json!({"names": [" Hinae ", ""]}), &hub.ctx).unwrap();
+        c.call("add_name", json!({"name": " Hinae "}), &hub.ctx).unwrap();
+        c.call("add_name", json!({"name": "hinae"}), &hub.ctx).unwrap();
+        assert_eq!(c.call("state", Value::Null, &hub.ctx).unwrap()["pending"], json!(["Hinae"]), "trimmed, once");
         c.on_message(&shown(77, "Someone"), &hub.ctx);
         assert_eq!(c.call("state", Value::Null, &hub.ctx).unwrap()["mine"], json!([]));
         c.on_message(&shown(4242, "hinae"), &hub.ctx);
-        assert_eq!(c.call("state", Value::Null, &hub.ctx).unwrap()["mine"], json!([4242]), "case and spaces ignored");
-        assert!(c.names.lock().is_empty(), "found: no longer looked for");
+        let s = c.call("state", Value::Null, &hub.ctx).unwrap();
+        assert_eq!(s["characters"], json!([{"id": 4242, "name": "hinae"}]), "case ignored");
+        assert_eq!(s["pending"], json!([]), "found: no longer looked for");
+        // a character seen at login gets its name from a fight
+        c.me.update(|me| me.add(55));
+        c.on_message(&shown(55, "Alt"), &hub.ctx);
+        assert_eq!(c.call("state", Value::Null, &hub.ctx).unwrap()["characters"][1], json!({"id": 55, "name": "Alt"}));
+        let s = c.call("remove", json!({"id": 4242}), &hub.ctx).unwrap();
+        assert_eq!(s["mine"], json!([55]));
     }
 
     /// A synthetic fight: placement shows a monster, the turn synchronisation lists it plus a summon, then the fight ends.

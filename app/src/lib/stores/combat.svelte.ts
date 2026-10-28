@@ -49,6 +49,10 @@ export interface Fight {
   me?: number | null;
   /** every character id known to be the player's (login seen, or found by name) */
   mine?: number[];
+  /** the same, with their names once seen in a fight */
+  characters?: { id: number; name: string | null }[];
+  /** names typed in the Automation tab, not found in a fight yet */
+  pending?: string[];
 }
 
 export const fight = $state<Fight>({ seen: false, active: false, started: 0, ended: null, fighters: [], poisons: [], me: null });
@@ -81,10 +85,6 @@ export async function startCombat() {
       const on = rules.turn.enabled;
       call("combat", "set_turn", { on }, true).catch(() => {});
     });
-    $effect(() => {
-      const names = characterNames(settings.combat.characters);
-      call("combat", "set_names", { names }, true).catch(() => {});
-    });
     // the floating window follows the fight: shown when it starts (or when the setting is switched on during one), closed when it ends
     $effect(() => {
       const want = settings.combat.enabled && settings.combat.overlay && fight.active;
@@ -94,8 +94,10 @@ export async function startCombat() {
   await followFight();
 }
 
-/** "Hinae, Autre" -> ["Hinae", "Autre"]. */
-export const characterNames = (s: string) => s.split(",").map((x) => x.trim()).filter(Boolean);
+/** The player's characters (Automation tab): a name to look for among the fighters, or one to forget. */
+export const addCharacterName = (name: string) => call<Fight>("combat", "add_name", { name }).then((f) => Object.assign(fight, f));
+export const removeCharacterName = (name: string) => call<Fight>("combat", "remove_name", { name }).then((f) => Object.assign(fight, f));
+export const removeCharacter = (id: number) => call<Fight>("combat", "remove", { id }).then((f) => Object.assign(fight, f));
 
 /** Where the user left the floating window (logical px: x, y = top edge, bottom = bottom edge), remembered by the window itself. */
 export const OVERLAY_POS_KEY = "karrelage.combat.overlayPos";

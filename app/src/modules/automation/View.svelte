@@ -6,7 +6,8 @@
   import { kamasFull } from "../../lib/fmt";
   import { settings, type CombatShow } from "../../lib/stores/settings.svelte";
   import Segmented from "../../lib/components/Segmented.svelte";
-  import { characterNames, fight, openCombatOverlay } from "../../lib/stores/combat.svelte";
+  import { addCharacterName, fight, openCombatOverlay, removeCharacter, removeCharacterName } from "../../lib/stores/combat.svelte";
+  import ConfirmButton from "../../lib/components/ConfirmButton.svelte";
   import Banner from "../../lib/components/Banner.svelte";
   import SearchBar, { matcher } from "../../lib/components/SearchBar.svelte";
   import MonsterSearch from "./MonsterSearch.svelte";
@@ -49,6 +50,12 @@
   });
   /** No character of the player known yet: neither the turn sound nor the poisons can tell it apart. */
   const unknownMe = $derived(!fight.mine?.length && (rules.turn.enabled || settings.combat.enabled));
+  /** The character name being typed (Vos personnages). */
+  let newName = $state("");
+  function addName() {
+    const n = newName.trim();
+    if (n) void addCharacterName(n).then(() => (newName = ""));
+  }
   const clampCoef = (v: number) => (Number.isFinite(v) ? Math.max(0, Math.round(v)) : RULE_DEFAULTS.exoDo.maxEven);
 </script>
 
@@ -81,14 +88,28 @@
           {#if unknownMe}
             <Banner tone="warn" inset>
               Personnage non reconnu : le son « {RULE_TITLES.turn} » ne se déclenchera pas et aucun poison ne sera affiché.
-              {#if characterNames(settings.combat.characters).length}Il sera reconnu au placement du prochain combat.{:else}Reconnectez-vous avec l'application ouverte, ou indiquez son nom ci-dessous.{/if}
+              {#if fight.pending?.length}Il sera reconnu au placement du prochain combat.{:else}Reconnectez-vous avec l'application ouverte, ou ajoutez son nom ci-dessous.{/if}
             </Banner>
           {/if}
-          <label class="me" title="Noms de vos personnages, séparés par des virgules : reconnus au placement d'un combat (utile si l'application n'était pas ouverte à la connexion)">
-            Vos personnages
-            <input type="text" placeholder="Nom1, Nom2" bind:value={settings.combat.characters} />
-            {#if fight.mine?.length}<span class="mut">{fight.mine.length} reconnu{fight.mine.length > 1 ? "s" : ""}</span>{/if}
-          </label>
+          <div class="me">
+            <span title="Reconnus à la connexion (application ouverte) ou par leur nom au placement d'un combat">Vos personnages</span>
+            {#each fight.characters ?? [] as c (c.id)}
+              <span class="chip" title="Personnage reconnu (id {c.id})">
+                {c.name ?? "nom au prochain combat"}
+                <ConfirmButton label="✕" confirmLabel="Oublier" mini title="Oublier ce personnage (une connexion avec lui le rajoute)" onconfirm={() => removeCharacter(c.id)} />
+              </span>
+            {/each}
+            {#each fight.pending ?? [] as n (n)}
+              <span class="chip wait" title="Pas encore vu : reconnu au placement d'un combat">
+                {n} <span class="mut">(en attente)</span>
+                <button class="mini" title="Ne plus chercher ce nom" onclick={() => removeCharacterName(n)}>✕</button>
+              </span>
+            {/each}
+            <form class="add" onsubmit={(e) => (e.preventDefault(), addName())}>
+              <input type="text" placeholder="Nom du personnage" bind:value={newName} />
+              <button class="mini" type="submit" disabled={!newName.trim()}>Ajouter</button>
+            </form>
+          </div>
         {#if shown.turn}
         <div class="rule" class:off={!rules.turn.enabled}>
           <div class="rh">
@@ -246,6 +267,9 @@
   .snd { display: inline-flex; align-items: center; gap: 6px; }
   .snd input[type="range"] { width: 110px; }
   .vol { min-width: 38px; }
-  .me { display: flex; align-items: center; gap: 8px; padding: 4px 0 4px 56px; }
-  .me input { width: 220px; }
+  .me { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 4px 0; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 4px 2px 10px; border: 1px solid var(--line); border-radius: 999px; }
+  .chip.wait { border-style: dashed; }
+  .add { display: inline-flex; gap: 6px; }
+  .add input { width: 170px; }
 </style>
