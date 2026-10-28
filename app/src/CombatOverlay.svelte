@@ -109,7 +109,7 @@
   {/if}
   {#if settings.combat.enabled}
     {#each fight.poisons ?? [] as p (p.action + ":" + p.target)}
-      <div class="poison" title={fight.me == null ? "Personnage pas encore identifié (reconnectez-vous, ou indiquez son nom dans Automatisation) : poisons de tous les joueurs" : ""}>{poisonText(p)}{fight.me == null ? " (un joueur)" : ""}</div>
+      <div class="poison">{poisonText(p)}</div>
     {/each}
   {/if}
   {#each list as g (g.key)}

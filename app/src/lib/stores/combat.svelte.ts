@@ -45,7 +45,7 @@ export interface Fight {
   ended: number | null;
   fighters: Fighter[];
   poisons?: Poison[];
-  /** the player's character id (null until a login was seen: poisons on any player are shown) */
+  /** the player's character id (null until a login was seen or a typed name found: no poison is shown) */
   me?: number | null;
   /** every character id known to be the player's (login seen, or found by name) */
   mine?: number[];

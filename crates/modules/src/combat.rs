@@ -459,12 +459,12 @@ impl Combat {
                 }))
             })
             .collect();
-        // PA / PM poisons on the player (on any player while the character is unknown: no login seen yet)
+        // PA / PM poisons on the player (none while the character is unknown: no login seen, no name found)
         let mine = self.me.lock().clone();
         let poisons: Vec<Value> = f
             .poisons
             .values()
-            .filter(|p| if mine.is_empty() { p.target > 0 } else { mine.contains(&p.target) })
+            .filter(|p| mine.contains(&p.target))
             .filter_map(|p| {
                 POISONS.iter().find(|x| x.0 == p.action).map(|&(a, kind, element)| json!({"action": a, "kind": kind, "element": element, "target": p.target}))
             })
@@ -834,6 +834,9 @@ mod tests {
         let message = |name: &str, decoded: DynamicMessage| testkit::msg(name, Some(decoded), 1.0);
         let c = Combat::new();
         c.init(&hub.ctx);
+        // no character known yet: no poison shown, whoever it is on
+        c.on_message(&message(BOOST_ADD, boost(6, 41, 1135)), &hub.ctx);
+        assert_eq!(c.call("state", Value::Null, &hub.ctx).unwrap()["poisons"], json!([]));
         let mut login = DynamicMessage::new(sel_md.clone());
         login.set_field_by_name(b.character.iter().find(|f| login.descriptor().get_field_by_name(f).is_some()).unwrap(), PbValue::I64(42));
         c.on_message(&message(SELECT, login), &hub.ctx);

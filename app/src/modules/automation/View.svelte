@@ -80,7 +80,7 @@
           <h2>Combat</h2>
           {#if unknownMe}
             <Banner tone="warn" inset>
-              Personnage non reconnu : le son « {RULE_TITLES.turn} » ne se déclenchera pas et les poisons de tous les joueurs seront affichés.
+              Personnage non reconnu : le son « {RULE_TITLES.turn} » ne se déclenchera pas et aucun poison ne sera affiché.
               {#if characterNames(settings.combat.characters).length}Il sera reconnu au placement du prochain combat.{:else}Reconnectez-vous avec l'application ouverte, ou indiquez son nom ci-dessous.{/if}
             </Banner>
           {/if}
