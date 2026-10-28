@@ -6,7 +6,8 @@
   import { kamasFull } from "../../lib/fmt";
   import { settings, type CombatShow } from "../../lib/stores/settings.svelte";
   import Segmented from "../../lib/components/Segmented.svelte";
-  import { openCombatOverlay } from "../../lib/stores/combat.svelte";
+  import { characterNames, fight, openCombatOverlay } from "../../lib/stores/combat.svelte";
+  import Banner from "../../lib/components/Banner.svelte";
   import SearchBar, { matcher } from "../../lib/components/SearchBar.svelte";
   import MonsterSearch from "./MonsterSearch.svelte";
 
@@ -30,7 +31,7 @@
   ];
   /** Each rule's description, also searched. */
   const DESC = {
-    turn: "Un son au début de chacun de vos tours de jeu, sauf si votre personnage est mort (votre personnage est reconnu à la connexion : connectez-vous une fois par personnage, application ouverte).",
+    turn: "Un son au début de chacun de vos tours de jeu, sauf si votre personnage est mort (votre personnage est reconnu à la connexion, application ouverte, ou par son nom ci-dessus).",
     follow: "Détecte les monstres du combat en cours (paquets du placement et des tours) et affiche leurs remarques et les poisons PA / PM dans la fenêtre flottante.",
     songes: "À la fin d'un combat, si quelqu'un du groupe a obtenu une « Légende … » (Ressource des Songes) : un son selon le prix enregistré de la meilleure, au-dessus ou en dessous du seuil (prix inconnu = en dessous), et une notification par Légende.",
     goblins: "En entrant dans une salle, si un gobelin des Songes s'y trouve (King Gob, Gobséric, Gobledore ou Bog) : un son par gobelin, l'un après l'autre, et une notification par gobelin.",
@@ -46,6 +47,8 @@
     const title = (k: keyof typeof DESC) => (k === "follow" ? FOLLOW : RULE_TITLES[k]);
     return Object.fromEntries((Object.keys(DESC) as (keyof typeof DESC)[]).map((k) => [k, m(SECTION[k], title(k), DESC[k])])) as Record<keyof typeof DESC, boolean>;
   });
+  /** No character of the player known yet: neither the turn sound nor the poisons can tell it apart. */
+  const unknownMe = $derived(!fight.mine?.length && (rules.turn.enabled || settings.combat.enabled));
   const clampCoef = (v: number) => (Number.isFinite(v) ? Math.max(0, Math.round(v)) : RULE_DEFAULTS.exoDo.maxEven);
 </script>
 
@@ -75,6 +78,17 @@
       {#if shown.turn || shown.follow}
         <section>
           <h2>Combat</h2>
+          {#if unknownMe}
+            <Banner tone="warn" inset>
+              Personnage non reconnu : le son « {RULE_TITLES.turn} » ne se déclenchera pas et les poisons de tous les joueurs seront affichés.
+              {#if characterNames(settings.combat.characters).length}Il sera reconnu au placement du prochain combat.{:else}Reconnectez-vous avec l'application ouverte, ou indiquez son nom ci-dessous.{/if}
+            </Banner>
+          {/if}
+          <label class="me" title="Noms de vos personnages, séparés par des virgules : reconnus au placement d'un combat (utile si l'application n'était pas ouverte à la connexion)">
+            Vos personnages
+            <input type="text" placeholder="Nom1, Nom2" bind:value={settings.combat.characters} />
+            {#if fight.mine?.length}<span class="mut">{fight.mine.length} reconnu{fight.mine.length > 1 ? "s" : ""}</span>{/if}
+          </label>
         {#if shown.turn}
         <div class="rule" class:off={!rules.turn.enabled}>
           <div class="rh">
@@ -232,4 +246,6 @@
   .snd { display: inline-flex; align-items: center; gap: 6px; }
   .snd input[type="range"] { width: 110px; }
   .vol { min-width: 38px; }
+  .me { display: flex; align-items: center; gap: 8px; padding: 4px 0 4px 56px; }
+  .me input { width: 220px; }
 </style>
