@@ -94,15 +94,13 @@
           <div class="me">
             <span title="Reconnus à la connexion (application ouverte) ou par leur nom au placement d'un combat">Vos personnages</span>
             {#each fight.characters ?? [] as c (c.id)}
-              <span class="chip" title="Personnage reconnu (id {c.id})">
-                {c.name ?? "nom au prochain combat"}
-                <ConfirmButton label="✕" confirmLabel="Oublier" mini title="Oublier ce personnage (une connexion avec lui le rajoute)" onconfirm={() => removeCharacter(c.id)} />
+              <span class="chip">
+                <ConfirmButton label="{c.name ?? 'nom au prochain combat'} ✕" confirmLabel="Oublier {c.name ?? 'ce personnage'} ?" mini title="Personnage reconnu (id {c.id}) : cliquer pour l'oublier (une connexion avec lui le rajoute)" onconfirm={() => removeCharacter(c.id)} />
               </span>
             {/each}
             {#each fight.pending ?? [] as n (n)}
-              <span class="chip wait" title="Pas encore vu : reconnu au placement d'un combat">
-                {n} <span class="mut">(en attente)</span>
-                <button class="mini" title="Ne plus chercher ce nom" onclick={() => removeCharacterName(n)}>✕</button>
+              <span class="chip wait">
+                <button class="mini" title="Pas encore vu (reconnu au placement d'un combat) : cliquer pour ne plus chercher ce nom" onclick={() => removeCharacterName(n)}>{n} <span class="mut">(en attente)</span> ✕</button>
               </span>
             {/each}
             <form class="add" onsubmit={(e) => (e.preventDefault(), addName())}>
@@ -268,8 +266,9 @@
   .snd input[type="range"] { width: 110px; }
   .vol { min-width: 38px; }
   .me { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 4px 0; }
-  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 4px 2px 10px; border: 1px solid var(--line); border-radius: 999px; }
-  .chip.wait { border-style: dashed; }
+  .chip { display: inline-flex; }
+  .chip :global(button) { border-radius: 999px; padding: 2px 10px; }
+  .chip.wait :global(button) { border-style: dashed; }
   .add { display: inline-flex; gap: 6px; }
   .add input { width: 170px; }
 </style>
