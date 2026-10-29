@@ -190,6 +190,8 @@ struct Fighter {
     dead: Option<bool>,
     /// Wave it belongs to (multi-wave fights: dungeons, Songes; 0 = none). None: not in the message.
     wave: Option<i64>,
+    /// Summoned by a monster (`summoned_monsters`): its gid is known, `ints` = [gid, grade or level, 0] (no arrangement).
+    gid: Option<i64>,
 }
 
 impl Fighter {
@@ -365,7 +367,52 @@ fn fighters(b: &Bindings, wave: Option<&str>, m: &DynamicMessage, out: &mut Vec<
     // proto3: an alive fighter carries alive = true, a dead one a spawn information without it
     let dead = b.alive.as_deref().and_then(|f| Some(!find(m, f)?.get_field_by_name(f)?.as_bool()?));
     let wave = wave.and_then(|f| Some(int(find(m, f)?, f)));
-    out.push((int(m, &b.actor_id), Fighter { ints: [x, y, z], summoned, summoner, spawned: false, dead, wave }));
+    out.push((int(m, &b.actor_id), Fighter { ints: [x, y, z], summoned, summoner, spawned: false, dead, wave, gid: None }));
+}
+
+/// The creatures a monster summons during the fight (GameActionFightEvent summons by context: script-named
+/// SummonContextInformation): its spawn information's Monster (two unordered ints: the gid = the one that is a pack monster,
+/// the other its grade or level), once per actor spawned (its summons: SpawnInformation {alive, position -> actor_id});
+/// summoned / summoner / wave as for the other fighters.
+fn summoned_monsters(ctx: &Ctx, b: &Bindings, m: &DynamicMessage, out: &mut Vec<(i64, Fighter)>) {
+    let name = m.descriptor().full_name().to_owned();
+    if ctx.proto.message_name(&name).0 != "SummonContextInformation" {
+        for c in children(m) {
+            summoned_monsters(ctx, b, c, out);
+        }
+        return;
+    }
+    let Some(spawn) = ctx.proto.field_named(&name, "spawn_information").and_then(|f| m.get_field_by_name(&f)?.as_message().cloned()) else { return };
+    // (gid, the other int): a pack monster whose other int is a plausible grade or level (both ints can be gids: 5815 level 270)
+    fn monster(data: &Data, m: &DynamicMessage) -> Option<(i64, i64)> {
+        let ints: Vec<i64> = scalar_ints(m).into_iter().map(|(_, v)| v).collect();
+        let other = |k: usize| ints.iter().enumerate().find(|(i, v)| *i != k && **v != 0).map_or(0, |(_, v)| *v);
+        let found = (0..ints.len()).find(|&k| data.monsters.contains_key(&ints[k]) && (0..=max_level(data)).contains(&other(k)));
+        match found {
+            Some(k) => Some((ints[k], other(k))),
+            None => children(m).into_iter().find_map(|c| monster(data, c)),
+        }
+    }
+    let Some((gid, other)) = monster(&ctx.data, &spawn) else { return };
+    let summoned = find(m, &b.summoned).and_then(|s| s.get_field_by_name(&b.summoned).and_then(|v| as_i64(&v))).unwrap_or(0) != 0;
+    let summoner = b.summoner.as_deref().and_then(|f| Some(int(find(m, f)?, f))).unwrap_or(0);
+    let wave = ctx.proto.field_named(&name, "wave").map(|f| int(m, &f));
+    let mut actors = vec![];
+    actor_messages(&b.actor_id, m, &mut actors);
+    for a in actors {
+        out.push((int(a, &b.actor_id), Fighter { ints: [gid, other, 0], summoned, summoner, spawned: true, dead: None, wave, gid: Some(gid) }));
+    }
+}
+
+/// Every message under `m` (itself included) that has the field `actor_id`.
+fn actor_messages<'a>(actor_id: &str, m: &'a DynamicMessage, out: &mut Vec<&'a DynamicMessage>) {
+    if m.descriptor().get_field_by_name(actor_id).is_some() {
+        out.push(m);
+        return;
+    }
+    for c in children(m) {
+        actor_messages(actor_id, c, out);
+    }
 }
 
 /// Obfuscated name of the fighters' `wave` field (clear name, so it survives updates): the first message under `m` that has one.
@@ -513,7 +560,7 @@ impl Combat {
 
     /// A message's fighters fit a single arrangement: one vote for it (saved).
     fn vote(&self, ctx: &Ctx, found: &[(i64, Fighter)]) {
-        let ok = fitting(&ctx.data, &found.iter().map(|(_, x)| x.ints).collect::<Vec<_>>());
+        let ok = fitting(&ctx.data, &found.iter().filter(|(_, x)| x.gid.is_none()).map(|(_, x)| x.ints).collect::<Vec<_>>());
         if ok.len() != 1 {
             return;
         }
@@ -529,7 +576,10 @@ impl Combat {
 
     /// The arrangement to read the fighters with: the learnt one, else the best fitting them all.
     fn arrangement(&self, data: &Data, f: &Fight) -> Option<usize> {
-        self.layout.lock().best().or_else(|| fitting(data, &f.fighters.values().map(|x| x.ints).collect::<Vec<_>>()).first().copied())
+        self.layout
+            .lock()
+            .best()
+            .or_else(|| fitting(data, &f.fighters.values().filter(|x| x.gid.is_none()).map(|x| x.ints).collect::<Vec<_>>()).first().copied())
     }
 
     /// The fight for the UI: {active, started, ended, fighters: [{actor, gid, name, grade, level, summoned, notes, tags}]}.
@@ -537,9 +587,17 @@ impl Combat {
     fn state(&self, data: &Data) -> Value {
         let f = self.fight.lock();
         let p = self.arrangement(data, &f);
-        let read = |x: &Fighter| match p {
-            Some(p) => PERMS[p].map(|i| x.ints[i]),
-            None => [x.ints.iter().copied().filter(|g| data.monsters.contains_key(g)).max().unwrap_or(x.ints[0]), 0, 0],
+        let read = |x: &Fighter| match (x.gid, p) {
+            // a monster's summon: its other int is a grade when it is one of its grades, else a level
+            (Some(g), _) => {
+                let levels = data.monsters.get(&g).map(|m| m.levels.as_slice()).unwrap_or_default();
+                match levels.get((x.ints[1] - 1).max(0) as usize).filter(|_| x.ints[1] >= 1) {
+                    Some(l) => [g, x.ints[1], *l],
+                    None => [g, 0, x.ints[1]],
+                }
+            }
+            (None, Some(p)) => PERMS[p].map(|i| x.ints[i]),
+            (None, None) => [x.ints.iter().copied().filter(|g| data.monsters.contains_key(g)).max().unwrap_or(x.ints[0]), 0, 0],
         };
         // doubles (Chafer Ronin...): summons of a monster that was placed at the start are left out
         let placed: BTreeSet<i64> = f.fighters.values().filter(|x| !x.summon()).map(|x| read(x)[0]).collect();
@@ -791,6 +849,9 @@ impl Module for Combat {
                             w.clone()
                         };
                         fighters(b, wave.as_deref(), d, &mut found);
+                        if m.name == ACTION {
+                            summoned_monsters(ctx, b, d, &mut found);
+                        }
                         if found.is_empty() {
                             return;
                         }
@@ -981,7 +1042,7 @@ mod tests {
     /// the character known, then with another one known instead (the only character of the fight is taken). Skipped without
     /// the file. The first fight's end also says the round (1), when each monster appeared and played, and the element of
     /// the last damage taken: on Crocodaille, a fire hit (action 99: teaches the element int) then "pire élément" (2832,
-    /// element read from that int: earth).
+    /// element read from that int: earth). Dragueuse's summon is listed.
     #[test]
     fn follows_the_players_confusion() {
         let Some(pack) = testkit::pack() else { return };
@@ -1025,6 +1086,9 @@ mod tests {
             assert_eq!(end["round"], 1);
             assert_eq!((fighter(-2)["hit"].clone(), fighter(-2)["since"].clone()), (json!(1), json!(1)), "earth hit");
             assert_eq!((fighter(-7)["played"].clone(), fighter(-5)["played"].clone()), (json!(1), Value::Null));
+            // Dragueuse's summon (summons by context: gid + level, no MonsterFighter)
+            let summon = fighter(-8);
+            assert_eq!((summon["gid"].clone(), summon["summoned"].clone(), summon["since"].clone()), (json!(5815), json!(true), json!(1)));
             // the first two fights (later ones may be appended to the recording)
             assert_eq!(seen.lock()[..7], [Value::Null, json!(1), json!(2), Value::Null, json!(1), json!(2), Value::Null], "{me}");
         }
@@ -1133,7 +1197,8 @@ mod tests {
             return;
         }
         // field order of this imaginary build: (grade, level, gid)
-        let fighter = |gid: i64, grade: i64| Fighter { ints: [grade, 200, gid], summoned: false, summoner: 0, spawned: false, dead: None, wave: None };
+        let fighter =
+            |gid: i64, grade: i64| Fighter { ints: [grade, 200, gid], summoned: false, summoner: 0, spawned: false, dead: None, wave: None, gid: None };
         let c = Combat::new();
         let found: Vec<(i64, Fighter)> =
             [(79, 3), (121, 2), (3462, 5), (1046, 1)].iter().enumerate().map(|(i, &(g, gr))| (-(i as i64) - 1, fighter(g, gr))).collect();
@@ -1198,7 +1263,7 @@ mod tests {
     /// A synthetic fight: placement shows a monster, the turn synchronisation lists it plus a summon, then the fight ends.
     #[test]
     fn ally_summons_are_not_enemies() {
-        let f = |summoner: i64| Fighter { ints: [1, 2, 3], summoned: summoner != 0, summoner, spawned: summoner != 0, dead: None, wave: None };
+        let f = |summoner: i64| Fighter { ints: [1, 2, 3], summoned: summoner != 0, summoner, spawned: summoner != 0, dead: None, wave: None, gid: None };
         // -1 a monster, -2 its summon; -3 a turret of the player 77, -4 summoned by that turret
         let fighters = BTreeMap::from([(-1, f(0)), (-2, f(-1)), (-3, f(77)), (-4, f(-3))]);
         assert_eq!(ally_summons(&fighters), BTreeSet::from([-3, -4]));

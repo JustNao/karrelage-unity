@@ -226,6 +226,10 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
 - Fight start: FightJoin(Running)Event; end: FightEndEvent; deaths: GameActionFightEvent `death` (role `fight.death`),
   absence from FightSynchronizeEvent, or a spawn information without `alive` (role `fight.alive`; live fighters carry true). Summoned copies of starting monsters (doubles) are ignored, and so are the
   players' summons (summoner not a monster of the fight; summon details kept when a later message lacks them).
+- Monsters' summons during the fight come as GameActionFightEvent summons by context (script-named SummonContextInformation:
+  spawn information Monster = gid + grade or level, two unordered ints, both can be gids: the gid is the one whose other int
+  is a plausible grade / level; actors = its SpawnInformation list), not as MonsterFighter: `summoned_monsters`, `Fighter.gid`
+  set (no arrangement vote). Verified on capture_harebourg (Dragueuse's summon 5815, level 270).
 - Poisons (effects 1131–1140): added by FightBoostAddEvent / FightJoinRunningEvent (role `boost`), removed by
   FightBoostRemoveEvent (its only int32 = buff uid). Which of FightRemovableEffect's eight int32 is the uid is learnt: a
   removed uid found in a single int of the recent buffs votes (`layout.json` boost_votes; learnt right on the real capture).
