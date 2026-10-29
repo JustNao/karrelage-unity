@@ -45,6 +45,9 @@ export interface Fight {
   ended: number | null;
   fighters: Fighter[];
   poisons?: Poison[];
+  /** the player's confusion: their spells land this many quarter turns clockwise around them (negative = counter clockwise);
+   *  null until a characteristics refresh carried it (lib/bosses.ts) */
+  confusion?: number | null;
   /** the player's character id (null until a login was seen or a typed name found: no poison is shown) */
   me?: number | null;
   /** every character id known to be the player's (login seen, or found by name) */
@@ -78,7 +81,7 @@ export async function startCombat() {
     $effect(() => {
       const on = settings.combat.enabled;
       call("combat", "set_enabled", { on }, true)
-        .then(() => !on && Object.assign(fight, { seen: false, active: false, started: 0, ended: null, fighters: [], poisons: [] }))
+        .then(() => !on && Object.assign(fight, { seen: false, active: false, started: 0, ended: null, fighters: [], poisons: [], confusion: null }))
         .catch(() => {});
     });
     $effect(() => {

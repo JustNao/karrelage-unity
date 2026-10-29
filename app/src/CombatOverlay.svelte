@@ -8,6 +8,8 @@
   import { tagsOf } from "./lib/monsterTags";
   import { persisted, writeJSON } from "./lib/persist.svelte";
   import FloatingShell from "./lib/components/FloatingShell.svelte";
+  import BossHint from "./lib/components/BossHint.svelte";
+  import { bossHints } from "./lib/bosses";
 
   /** Floating fight window (combat.html): the current fight's monsters, their notes (display level = the app's setting) and the
    *  tags worth showing, in a small always-on-top window over the game. Its height follows its content (up to 80 % of the
@@ -19,6 +21,7 @@
   const alive = $derived(sortedGroups(fight.fighters, settings.combat.show).filter((g) => g.alive > 0));
   const list = $derived(ui.all ? alive : alive.filter(worth));
   const hidden = $derived(alive.length - list.length);
+  const hints = $derived(settings.combat.enabled ? bossHints(fight) : []);
 
   let top = $state<HTMLElement>();
   let body = $state<HTMLElement>();
@@ -107,6 +110,9 @@
   {:else if !list.length && fight.active}
     <div class="mut msg">Rien à surveiller{hidden ? ` (${hidden} monstre${hidden > 1 ? "s" : ""})` : ""}</div>
   {/if}
+  {#each hints as h, i (i)}
+    <BossHint hint={h} />
+  {/each}
   {#if settings.combat.enabled}
     {#each fight.poisons ?? [] as p (p.action + ":" + p.target)}
       <div class="poison">{poisonText(p)}</div>

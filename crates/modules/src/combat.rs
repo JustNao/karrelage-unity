@@ -9,7 +9,7 @@ use crate::kit::{arg_i64, arg_str, unknown, Role, Store};
 use crate::{Ctx, Interest, Message, Module};
 use anyhow::Result;
 use loutil_data::Data;
-use loutil_proto::util::{as_i64, int};
+use loutil_proto::util::{as_i64, int, messages, scalar_ints};
 use loutil_proto::{DynamicMessage, PbValue, ReflectMessage};
 use parking_lot::Mutex;
 use serde::Deserialize;
@@ -40,6 +40,12 @@ pub const FIRST_SELECT: &str = "CharacterFirstSelectionRequest";
 pub const TURN: &str = "FightTurnEvent";
 /// Turn order, every fighter flagged dead or not (refreshed after each death): no turn sound for a dead player.
 pub const TIMELINE: &str = "TimelineRefreshEvent";
+/// A fighter's characteristics changed: the player's confusion is read (boss helpers).
+pub const STATS: &str = "FightRefreshCharacterStatsEvent";
+/// Characteristic `confusion`: the player's spells land this many quarter turns clockwise around them (negative = counter
+/// clockwise). Comte Harebourg's Comtoise sets it at each turn start from the player's life (effects 770-775, ±1 to ±3), every
+/// melee hit adds 1 (Pendultimatum, 771); the game sums them (seen: 1 then 2 after a melee hit, capture_harebourg).
+const CONFUSION: i64 = 74;
 /// Script-named messages carrying a character's name (fight placement / map actors), under its ActorPositionInformation:
 /// the fallback when no login was seen (names typed in the Automation tab, `add_name`), and the known characters' names.
 const NAMED: [&str; 2] = ["NamedFighterInformation", "NamedActor"];
@@ -96,6 +102,22 @@ fn timeline_dead(id: &str, dead: &str, m: &DynamicMessage, out: &mut BTreeSet<i6
     for c in children(m) {
         timeline_dead(id, dead, c, out);
     }
+}
+
+/// A characteristic of a fighter's stats refresh: (fighter id, value), None when the message does not carry it. Clear names
+/// (fighter_id, stats -> characteristics -> characteristic_id); the value is `detailed` (its unnamed ints add up to the total)
+/// or a plain `value` -> `total`.
+fn characteristic(ctx: &Ctx, m: &DynamicMessage, id: i64) -> Option<(i64, i64)> {
+    let field = |m: &DynamicMessage, clear: &str| ctx.proto.field_named(m.descriptor().full_name(), clear);
+    let stats = m.get_field_by_name(&field(m, "stats")?)?.as_message()?.clone();
+    let c = messages(&stats, &field(&stats, "characteristics")?).into_iter().find(|c| field(c, "characteristic_id").is_some_and(|f| int(c, &f) == id))?;
+    let sub = |clear: &str| field(&c, clear).filter(|f| c.has_field_by_name(f)).and_then(|f| c.get_field_by_name(&f)?.as_message().cloned());
+    let value = match (sub("detailed"), sub("value")) {
+        (Some(d), _) => scalar_ints(&d).iter().map(|(_, v)| v).sum(),
+        (None, Some(v)) => field(&v, "total").map_or(0, |f| int(&v, &f)),
+        _ => 0,
+    };
+    Some((int(m, &field(m, "fighter_id")?), value))
 }
 
 /// A PA / PM poison running on a fighter: target and effect id (see `POISONS`).
@@ -242,6 +264,8 @@ struct Fight {
     poisons: BTreeMap<Vec<i64>, Poison>,
     /// the ints of the latest buffs (any effect), to learn which one is the uid
     recent: VecDeque<Vec<i64>>,
+    /// fighter id -> its confusion (quarter turns, see `CONFUSION`), as last refreshed
+    confusion: BTreeMap<i64, i64>,
 }
 
 pub struct Combat {
@@ -513,8 +537,9 @@ impl Combat {
                 POISONS.iter().find(|x| x.0 == p.action).map(|&(a, kind, element)| json!({"action": a, "kind": kind, "element": element, "target": p.target}))
             })
             .collect();
+        let confusion = mine.iter().rev().find_map(|id| f.confusion.get(id));
         json!({"seen": f.seen, "active": f.seen && f.ended.is_none(), "started": f.started, "ended": f.ended, "fighters": list,
-               "poisons": poisons, "me": mine.last(), "mine": mine,
+               "poisons": poisons, "confusion": confusion, "me": mine.last(), "mine": mine,
                "characters": characters, "pending": pending})
     }
 }
@@ -535,7 +560,7 @@ impl Module for Combat {
     }
 
     fn interest(&self) -> Interest {
-        Interest::Types(&[JOIN, JOIN_RUNNING, SHOW, REFRESH, SYNC, ACTION, END, BOOST_ADD, BOOST_REMOVE, SELECT, FIRST_SELECT, TURN, TIMELINE])
+        Interest::Types(&[JOIN, JOIN_RUNNING, SHOW, REFRESH, SYNC, ACTION, END, BOOST_ADD, BOOST_REMOVE, SELECT, FIRST_SELECT, TURN, TIMELINE, STATS])
     }
 
     fn wants(&self) -> bool {
@@ -657,14 +682,19 @@ impl Module for Combat {
                     });
                     f.poisons.len() != before
                 }
+                STATS => {
+                    let Some((id, v)) = m.decoded.as_ref().and_then(|d| characteristic(ctx, d, CONFUSION)) else { return };
+                    f.confusion.insert(id, v) != Some(v)
+                }
                 END => {
                     let open = f.seen && f.ended.is_none();
                     if open {
                         f.ended = Some(t);
                     }
                     // the fight's buffs end with it: no poison warning left once it is over
-                    let had = !f.poisons.is_empty();
+                    let had = !f.poisons.is_empty() || !f.confusion.is_empty();
                     f.poisons.clear();
+                    f.confusion.clear();
                     open || had
                 }
                 _ => {
@@ -872,6 +902,44 @@ mod tests {
         // the character known from its login gets its name from the fight (its card: Hinae)
         let s = hub.call("combat", "state", Value::Null).unwrap();
         assert_eq!(s["characters"][1], json!({"id": 40895840551i64, "name": "Hinae"}));
+    }
+
+    /// A Comte Harebourg fight (work/capture_harebourg.jsonl, local only): the player's confusion goes from 1 quarter turn
+    /// (Comtoise at the turn start, full life) to 2 (a melee hit: Pendultimatum), and is gone once the fight ends. Skipped
+    /// without the file.
+    #[test]
+    fn follows_the_players_confusion() {
+        let Some(pack) = testkit::pack() else { return };
+        let rec = pack.join("../work/capture_harebourg.jsonl");
+        if !rec.exists() {
+            return;
+        }
+        let (hub, proto) = testkit::hub("loutil-combat-confusion").unwrap();
+        let dir = testkit::temp_dir("loutil-combat-confusion2");
+        std::fs::create_dir_all(dir.join("combat")).unwrap();
+        std::fs::write(dir.join("combat/me.json"), r#"{"ids": [19676332327]}"#).unwrap();
+        let seen: Arc<Mutex<Vec<Value>>> = Default::default();
+        let sink = seen.clone();
+        let emit = Arc::new(move |e: &str, v: Value| {
+            if e == "combat:fight" {
+                let mut s = sink.lock();
+                if s.last() != Some(&v["confusion"]) {
+                    s.push(v["confusion"].clone());
+                }
+            }
+        });
+        let hub = crate::Hub::new(hub.ctx.data.clone(), proto, dir, emit, Arc::new(|_| {}));
+        let hex = |s: &str| (0..s.len() / 2).map(|i| u8::from_str_radix(&s[2 * i..2 * i + 2], 16).unwrap()).collect::<Vec<u8>>();
+        for line in std::fs::read_to_string(&rec).unwrap().lines() {
+            let r: Value = serde_json::from_str(line).unwrap();
+            let (Some(h), Some(len)) = (r["hex"].as_str(), r["len"].as_u64()) else { continue };
+            if h.len() / 2 < len as usize {
+                continue;
+            }
+            let dir = if r["dir"] == "C->S" { "C->S" } else { "S->C" };
+            hub.handle(RawMessage { t: r["t"].as_f64().unwrap_or(0.0), srv: "x".into(), dir, payload: hex(h) });
+        }
+        assert_eq!(*seen.lock(), vec![Value::Null, json!(1), json!(2), Value::Null]);
     }
 
     /// A PA poison put on the player, then its end (FightBoostRemoveEvent with the buff uid); one on a monster is ignored.
