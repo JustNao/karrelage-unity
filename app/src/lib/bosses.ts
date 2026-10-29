@@ -35,8 +35,12 @@ const harebourg: Boss = {
   name: "Comte Harebourg",
   gids: [3416, 8184, 8185],
   hints(f) {
-    if (f.me == null) return [{ boss: this.name, text: "Personnage inconnu", detail: "Ajoute le nom de ton personnage dans l'onglet Automation (section Combat)." }];
-    if (f.confusion == null) return [{ boss: this.name, text: "Confusion pas encore lue", detail: "Elle est connue dès le début de ton prochain tour." }];
+    if (f.confusion == null)
+      return [
+        f.me == null
+          ? { boss: this.name, text: "Personnage inconnu", detail: "Ajoute le nom de ton personnage dans l'onglet Automation (section Combat)." }
+          : { boss: this.name, text: "Confusion pas encore lue", detail: "Elle est connue dès le début de ton prochain tour (en groupe : ajoute ton personnage dans Automation)." },
+      ];
     const c = f.confusion;
     return [
       {

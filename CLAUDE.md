@@ -250,7 +250,8 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   fight state. Comte Harebourg (gids 3416 / 8184 / 8185): the player's characteristic 74 `confusion` (FightRefreshCharacterStatsEvent,
   clear names, `confusion` in the state) = quarter turns their spells are turned clockwise around them. Comtoise sets it at each
   turn start from life % (>90 +1, 75–90 −1, 60–75 +2, 45–60 −2, 30–45 +3, <30 −3: spell levels' effects 770–775 criteria), each
-  melee hit adds 1 (Pendultimatum, 771). Seen 1 then 2 on work/capture_harebourg.jsonl; sign / quarter-turn unit not yet
+  melee hit adds 1 (Pendultimatum, 771). A character not known as the player's: the only character of the fight with a
+  confusion is taken (solo). Seen 1 then 2 (twice) on work/capture_harebourg.jsonl; sign / quarter-turn unit not yet
   confirmed against what the game shows.
 
 **Loot** (`loot.rs`): FightEndEvent → results → fighter id + `Loot` messages; item = the largest int that is a known gid

@@ -18,7 +18,8 @@
   const notesOf = (g: Group) => shown(g.notes, settings.combat.show);
   const ui = persisted("karrelage.combat.overlay", { all: false });
   const worth = (g: Group) => tagsOf(g.tags).some((t) => t.group === "flag") || notesOf(g).length > 0;
-  const alive = $derived(sortedGroups(fight.fighters, settings.combat.show).filter((g) => g.alive > 0));
+  // a finished fight leaves nothing (the window may stay open: opened by hand, or with the automatic opening off)
+  const alive = $derived(fight.active ? sortedGroups(fight.fighters, settings.combat.show).filter((g) => g.alive > 0) : []);
   const list = $derived(ui.all ? alive : alive.filter(worth));
   const hidden = $derived(alive.length - list.length);
   const hints = $derived(settings.combat.enabled ? bossHints(fight) : []);
@@ -105,7 +106,7 @@
   {/snippet}
   {#if !settings.combat.enabled}
     <div class="mut msg">Suivi des combats désactivé (onglet Automation).</div>
-  {:else if !fight.fighters.length}
+  {:else if !fight.active}
     <div class="mut msg">En attente d'un combat…</div>
   {:else if !list.length && fight.active}
     <div class="mut msg">Rien à surveiller{hidden ? ` (${hidden} monstre${hidden > 1 ? "s" : ""})` : ""}</div>

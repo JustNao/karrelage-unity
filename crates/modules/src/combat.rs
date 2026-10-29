@@ -537,7 +537,13 @@ impl Combat {
                 POISONS.iter().find(|x| x.0 == p.action).map(|&(a, kind, element)| json!({"action": a, "kind": kind, "element": element, "target": p.target}))
             })
             .collect();
-        let confusion = mine.iter().rev().find_map(|id| f.confusion.get(id));
+        // the player's confusion; a character not known as theirs (no login seen, no name typed): the only character of the
+        // fight that has one (solo fights)
+        let others: Vec<&i64> = f.confusion.iter().filter(|(id, _)| **id > 0).map(|(_, v)| v).collect();
+        let confusion = mine.iter().rev().find_map(|id| f.confusion.get(id)).or(match others[..] {
+            [v] => Some(v),
+            _ => None,
+        });
         json!({"seen": f.seen, "active": f.seen && f.ended.is_none(), "started": f.started, "ended": f.ended, "fighters": list,
                "poisons": poisons, "confusion": confusion, "me": mine.last(), "mine": mine,
                "characters": characters, "pending": pending})
@@ -904,9 +910,10 @@ mod tests {
         assert_eq!(s["characters"][1], json!({"id": 40895840551i64, "name": "Hinae"}));
     }
 
-    /// A Comte Harebourg fight (work/capture_harebourg.jsonl, local only): the player's confusion goes from 1 quarter turn
-    /// (Comtoise at the turn start, full life) to 2 (a melee hit: Pendultimatum), and is gone once the fight ends. Skipped
-    /// without the file.
+    /// Two Comte Harebourg fights (work/capture_harebourg.jsonl, local only): the player's confusion goes from 1 quarter turn
+    /// (Comtoise at the turn start, full life) to 2 (a melee hit: Pendultimatum), and is gone once each fight ends. Read with
+    /// the character known, then with another one known instead (the only character of the fight is taken). Skipped without
+    /// the file.
     #[test]
     fn follows_the_players_confusion() {
         let Some(pack) = testkit::pack() else { return };
@@ -914,32 +921,35 @@ mod tests {
         if !rec.exists() {
             return;
         }
-        let (hub, proto) = testkit::hub("loutil-combat-confusion").unwrap();
-        let dir = testkit::temp_dir("loutil-combat-confusion2");
-        std::fs::create_dir_all(dir.join("combat")).unwrap();
-        std::fs::write(dir.join("combat/me.json"), r#"{"ids": [19676332327]}"#).unwrap();
-        let seen: Arc<Mutex<Vec<Value>>> = Default::default();
-        let sink = seen.clone();
-        let emit = Arc::new(move |e: &str, v: Value| {
-            if e == "combat:fight" {
-                let mut s = sink.lock();
-                if s.last() != Some(&v["confusion"]) {
-                    s.push(v["confusion"].clone());
+        for (k, me) in [r#"{"ids": [19676332327]}"#, r#"{"ids": [97875525927]}"#].into_iter().enumerate() {
+            let (hub, proto) = testkit::hub("loutil-combat-confusion").unwrap();
+            let dir = testkit::temp_dir(&format!("loutil-combat-confusion{k}"));
+            std::fs::create_dir_all(dir.join("combat")).unwrap();
+            std::fs::write(dir.join("combat/me.json"), me).unwrap();
+            let seen: Arc<Mutex<Vec<Value>>> = Default::default();
+            let sink = seen.clone();
+            let emit = Arc::new(move |e: &str, v: Value| {
+                if e == "combat:fight" {
+                    let mut s = sink.lock();
+                    if s.last() != Some(&v["confusion"]) {
+                        s.push(v["confusion"].clone());
+                    }
                 }
+            });
+            let hub = crate::Hub::new(hub.ctx.data.clone(), proto, dir, emit, Arc::new(|_| {}));
+            let hex = |s: &str| (0..s.len() / 2).map(|i| u8::from_str_radix(&s[2 * i..2 * i + 2], 16).unwrap()).collect::<Vec<u8>>();
+            for line in std::fs::read_to_string(&rec).unwrap().lines() {
+                let r: Value = serde_json::from_str(line).unwrap();
+                let (Some(h), Some(len)) = (r["hex"].as_str(), r["len"].as_u64()) else { continue };
+                if h.len() / 2 < len as usize {
+                    continue;
+                }
+                let dir = if r["dir"] == "C->S" { "C->S" } else { "S->C" };
+                hub.handle(RawMessage { t: r["t"].as_f64().unwrap_or(0.0), srv: "x".into(), dir, payload: hex(h) });
             }
-        });
-        let hub = crate::Hub::new(hub.ctx.data.clone(), proto, dir, emit, Arc::new(|_| {}));
-        let hex = |s: &str| (0..s.len() / 2).map(|i| u8::from_str_radix(&s[2 * i..2 * i + 2], 16).unwrap()).collect::<Vec<u8>>();
-        for line in std::fs::read_to_string(&rec).unwrap().lines() {
-            let r: Value = serde_json::from_str(line).unwrap();
-            let (Some(h), Some(len)) = (r["hex"].as_str(), r["len"].as_u64()) else { continue };
-            if h.len() / 2 < len as usize {
-                continue;
-            }
-            let dir = if r["dir"] == "C->S" { "C->S" } else { "S->C" };
-            hub.handle(RawMessage { t: r["t"].as_f64().unwrap_or(0.0), srv: "x".into(), dir, payload: hex(h) });
+            // the first two fights (later ones may be appended to the recording)
+            assert_eq!(seen.lock()[..7], [Value::Null, json!(1), json!(2), Value::Null, json!(1), json!(2), Value::Null], "{me}");
         }
-        assert_eq!(*seen.lock(), vec![Value::Null, json!(1), json!(2), Value::Null]);
     }
 
     /// A PA poison put on the player, then its end (FightBoostRemoveEvent with the buff uid); one on a monster is ignored.
