@@ -17,12 +17,11 @@
    *  look (a red tag, or a note shown at the display level) are listed, unless "tous" is on; a dead one slides away. */
   const notesOf = (g: Group) => shown(g.notes, settings.combat.show);
   const ui = persisted("karrelage.combat.overlay", { all: false });
-  const worth = (g: Group) => tagsOf(g.tags).some((t) => t.group === "flag") || notesOf(g).length > 0;
+  const worth = (g: Group) => tagsOf(g.tags).some((t) => t.group === "flag") || notesOf(g).length > 0 || bossHints(fight, g.gid).length > 0;
   // a finished fight leaves nothing (the window may stay open: opened by hand, or with the automatic opening off)
   const alive = $derived(fight.active ? sortedGroups(fight.fighters, settings.combat.show).filter((g) => g.alive > 0) : []);
   const list = $derived(ui.all ? alive : alive.filter(worth));
   const hidden = $derived(alive.length - list.length);
-  const hints = $derived(settings.combat.enabled ? bossHints(fight) : []);
 
   let top = $state<HTMLElement>();
   let body = $state<HTMLElement>();
@@ -111,9 +110,6 @@
   {:else if !list.length && fight.active}
     <div class="mut msg">Rien à surveiller{hidden ? ` (${hidden} monstre${hidden > 1 ? "s" : ""})` : ""}</div>
   {/if}
-  {#each hints as h, i (i)}
-    <BossHint hint={h} />
-  {/each}
   {#if settings.combat.enabled}
     {#each fight.poisons ?? [] as p (p.action + ":" + p.target)}
       <div class="poison">{poisonText(p)}</div>
@@ -130,6 +126,9 @@
       {#if tags.length}
         <div class="tags">{#each tags as t (t.id)}<span class="tg {t.group}">{t.label}</span>{/each}</div>
       {/if}
+      {#each bossHints(fight, g.gid) as h, i (i)}
+        <BossHint hint={h} />
+      {/each}
       {#each notesOf(g) as [kind, lines] (kind)}
         {#each lines as l, i (i)}
           <div class="ln {kind}"><span class="ic">{NOTE_KINDS[kind].icon}</span><span>{l}</span></div>
