@@ -188,5 +188,11 @@
    "fxld": "fighter_id",
    "fxle": "dead"
   }
+ },
+ "jvi": {
+  "name": "FightNewRoundEvent",
+  "fields": {
+   "fxjj": "round_number"
+  }
  }
 }

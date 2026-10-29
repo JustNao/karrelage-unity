@@ -46,6 +46,13 @@ pub const STATS: &str = "FightRefreshCharacterStatsEvent";
 /// clockwise). Comte Harebourg's Comtoise sets it at each turn start from the player's life (effects 770-775, ±1 to ±3), every
 /// melee hit adds 1 (Pendultimatum, 771); the game sums them (seen: 1 then 2 after a melee hit, capture_harebourg).
 const CONFUSION: i64 = 74;
+/// A new round of the fight (its number: boss helpers count the rounds since a monster appeared).
+pub const ROUND: &str = "FightNewRoundEvent";
+
+/// Damage actions of a fixed element (effects table: 91-95 steals, 96-100 damage) -> element (0 neutral, 1 earth, 2 fire,
+/// 3 water, 4 air): they teach which LifePointsLost int is the element (`Combat::damage`), read for the others ("pire
+/// élément", spell-specific damage...).
+const ELEMENT_OF: [(i64, i64); 10] = [(91, 3), (92, 1), (93, 4), (94, 2), (95, 0), (96, 3), (97, 1), (98, 4), (99, 2), (100, 0)];
 /// Script-named messages carrying a character's name (fight placement / map actors), under its ActorPositionInformation:
 /// the fallback when no login was seen (names typed in the Automation tab, `add_name`), and the known characters' names.
 const NAMED: [&str; 2] = ["NamedFighterInformation", "NamedActor"];
@@ -266,6 +273,14 @@ struct Fight {
     recent: VecDeque<Vec<i64>>,
     /// fighter id -> its confusion (quarter turns, see `CONFUSION`), as last refreshed
     confusion: BTreeMap<i64, i64>,
+    /// current round (0 = placement / not seen yet)
+    round: i64,
+    /// actor id -> round it first appeared in (placement = 1)
+    since: BTreeMap<i64, i64>,
+    /// actor id -> last round its turn started in
+    played: BTreeMap<i64, i64>,
+    /// actor id -> element of the last damage it took that was not neutral (see `ELEMENT_OF`)
+    hit: BTreeMap<i64, i64>,
 }
 
 pub struct Combat {
@@ -284,6 +299,8 @@ pub struct Combat {
     wave: Mutex<Option<String>>,
     /// the player's characters, kept in `me.json`, so the poisons are told apart without the login being seen again
     me: Store<Me>,
+    /// LifePointsLost int field -> votes for it being the element (see `ELEMENT_OF`), for the session
+    element_votes: Mutex<BTreeMap<String, u32>>,
 }
 
 /// The player's characters (`me.json`).
@@ -408,6 +425,7 @@ impl Combat {
             boost_bind: Role::new(),
             wave: Mutex::new(None),
             me: Store::default(),
+            element_votes: Mutex::new(BTreeMap::new()),
         }
     }
 
@@ -471,6 +489,28 @@ impl Combat {
         l.boost_uid()
     }
 
+    /// A damage line of a fight action (GameActionFightEvent life_points_lost): (target, element). The element is the
+    /// action's when fixed (`ELEMENT_OF`, which also votes for the LifePointsLost int holding it: the only one equal to it),
+    /// else the learnt int's value.
+    fn damage(&self, ctx: &Ctx, d: &DynamicMessage) -> Option<(i64, i64)> {
+        let field = |m: &DynamicMessage, clear: &str| ctx.proto.field_named(m.descriptor().full_name(), clear);
+        let lost_f = field(d, "life_points_lost").filter(|f| d.has_field_by_name(f))?;
+        let lost = d.get_field_by_name(&lost_f)?.as_message()?.clone();
+        let target_f = field(&lost, "target_id")?;
+        let action = int(d, &field(d, "action_id")?);
+        let fixed = ELEMENT_OF.iter().find(|x| x.0 == action).map(|x| x.1);
+        let mut votes = self.element_votes.lock();
+        if let Some(e) = fixed {
+            let ints = scalar_ints(&lost);
+            if let [(name, _)] = &ints.iter().filter(|(n, v)| *v == e && *n != target_f).collect::<Vec<_>>()[..] {
+                *votes.entry(name.clone()).or_default() += 1;
+            }
+        }
+        let learnt = votes.iter().max_by_key(|(_, v)| **v).map(|(n, _)| n.clone());
+        let element = fixed.or_else(|| learnt.map(|n| int(&lost, &n)))?;
+        Some((int(&lost, &target_f), element))
+    }
+
     /// A message's fighters fit a single arrangement: one vote for it (saved).
     fn vote(&self, ctx: &Ctx, found: &[(i64, Fighter)]) {
         let ok = fitting(&ctx.data, &found.iter().map(|(_, x)| x.ints).collect::<Vec<_>>());
@@ -515,6 +555,7 @@ impl Combat {
                 let m = data.monsters.get(&gid);
                 Some(json!({
                     "actor": actor, "gid": gid, "grade": grade, "level": level, "summoned": x.summon(), "dead": f.dead.contains(actor),
+                    "since": f.since.get(actor), "played": f.played.get(actor), "hit": f.hit.get(actor),
                     "wave": x.wave.unwrap_or(0),
                     "name": m.and_then(|m| data.text(m.name_id)).map(str::to_owned).unwrap_or_else(|| format!("monstre #{gid}")),
                     "notes": m.and_then(|m| m.notes.as_ref()),
@@ -545,7 +586,7 @@ impl Combat {
             _ => None,
         });
         json!({"seen": f.seen, "active": f.seen && f.ended.is_none(), "started": f.started, "ended": f.ended, "fighters": list,
-               "poisons": poisons, "confusion": confusion, "me": mine.last(), "mine": mine,
+               "poisons": poisons, "confusion": confusion, "round": f.round, "me": mine.last(), "mine": mine,
                "characters": characters, "pending": pending})
     }
 }
@@ -566,7 +607,7 @@ impl Module for Combat {
     }
 
     fn interest(&self) -> Interest {
-        Interest::Types(&[JOIN, JOIN_RUNNING, SHOW, REFRESH, SYNC, ACTION, END, BOOST_ADD, BOOST_REMOVE, SELECT, FIRST_SELECT, TURN, TIMELINE, STATS])
+        Interest::Types(&[JOIN, JOIN_RUNNING, SHOW, REFRESH, SYNC, ACTION, END, BOOST_ADD, BOOST_REMOVE, SELECT, FIRST_SELECT, TURN, TIMELINE, STATS, ROUND])
     }
 
     fn wants(&self) -> bool {
@@ -647,6 +688,16 @@ impl Module for Combat {
             if self.turn.load(Ordering::Relaxed) && mine {
                 ctx.emit("combat", "turn", json!({"id": id, "focused": crate::sys::game_focused()}));
             }
+            // whose turn it was this round (boss helpers: a check at the start of the boss's turn)
+            if let (Some(id), true) = (id, self.enabled.load(Ordering::Relaxed)) {
+                let mut f = self.fight.lock();
+                let round = f.round;
+                let changed = f.played.insert(id, round) != Some(round);
+                drop(f);
+                if changed {
+                    ctx.emit("combat", "fight", self.state(&ctx.data));
+                }
+            }
             return;
         }
         // the characters named by the user, found among the fighters (placement): before their first turn
@@ -661,6 +712,7 @@ impl Module for Combat {
         if !self.enabled.load(Ordering::Relaxed) {
             return;
         }
+        let damage = m.decoded.as_ref().filter(|_| m.name == ACTION).and_then(|d| self.damage(ctx, d));
         let changed = {
             let mut f = self.fight.lock();
             match m.name.as_str() {
@@ -688,6 +740,12 @@ impl Module for Combat {
                     });
                     f.poisons.len() != before
                 }
+                ROUND => {
+                    let Some(d) = &m.decoded else { return };
+                    let Some(n) = ctx.proto.field_named(d.descriptor().full_name(), "round_number") else { return };
+                    f.round = int(d, &n);
+                    true
+                }
                 STATS => {
                     let Some((id, v)) = m.decoded.as_ref().and_then(|d| characteristic(ctx, d, CONFUSION)) else { return };
                     f.confusion.insert(id, v) != Some(v)
@@ -702,6 +760,11 @@ impl Module for Combat {
                     f.poisons.clear();
                     f.confusion.clear();
                     open || had
+                }
+                // a damage line: the target's last element (neutral, or none: changes nothing, Kimbo)
+                ACTION if damage.is_some() => {
+                    let Some((target, element)) = damage else { return };
+                    (1..=4).contains(&element) && f.hit.insert(target, element) != Some(element)
                 }
                 _ => {
                     let (Some(b), Some(d)) = (self.bindings(ctx), &m.decoded) else { return };
@@ -744,7 +807,9 @@ impl Module for Combat {
                         // fighters the game says are dead (killed before the app saw it: started mid-fight)
                         dead.extend(found.iter().filter(|(_, x)| x.dead == Some(true)).map(|(a, _)| *a));
                         let mut next = f.fighters.clone();
+                        let round = f.round.max(1);
                         for (actor, mut x) in found {
+                            f.since.entry(actor).or_insert(round);
                             // first seen in a fight action = appeared during the fight (summon, double)
                             x.spawned = next.get(&actor).map_or(m.name == ACTION, |old| old.spawned);
                             // a message without the summon details (a wave's refresh...) keeps those seen before
@@ -913,7 +978,9 @@ mod tests {
     /// Two Comte Harebourg fights (work/capture_harebourg.jsonl, local only): the player's confusion goes from 1 quarter turn
     /// (Comtoise at the turn start, full life) to 2 (a melee hit: Pendultimatum), and is gone once each fight ends. Read with
     /// the character known, then with another one known instead (the only character of the fight is taken). Skipped without
-    /// the file.
+    /// the file. The first fight's end also says the round (1), when each monster appeared and played, and the element of
+    /// the last damage taken: on Crocodaille, a fire hit (action 99: teaches the element int) then "pire élément" (2832,
+    /// element read from that int: earth).
     #[test]
     fn follows_the_players_confusion() {
         let Some(pack) = testkit::pack() else { return };
@@ -927,9 +994,14 @@ mod tests {
             std::fs::create_dir_all(dir.join("combat")).unwrap();
             std::fs::write(dir.join("combat/me.json"), me).unwrap();
             let seen: Arc<Mutex<Vec<Value>>> = Default::default();
-            let sink = seen.clone();
+            let ended: Arc<Mutex<Option<Value>>> = Default::default();
+            let (sink, end_sink) = (seen.clone(), ended.clone());
             let emit = Arc::new(move |e: &str, v: Value| {
                 if e == "combat:fight" {
+                    let mut end = end_sink.lock();
+                    if end.is_none() && !v["ended"].is_null() {
+                        *end = Some(v.clone());
+                    }
                     let mut s = sink.lock();
                     if s.last() != Some(&v["confusion"]) {
                         s.push(v["confusion"].clone());
@@ -947,6 +1019,11 @@ mod tests {
                 let dir = if r["dir"] == "C->S" { "C->S" } else { "S->C" };
                 hub.handle(RawMessage { t: r["t"].as_f64().unwrap_or(0.0), srv: "x".into(), dir, payload: hex(h) });
             }
+            let end = ended.lock().clone().unwrap();
+            let fighter = |actor: i64| end["fighters"].as_array().unwrap().iter().find(|x| x["actor"] == actor).unwrap().clone();
+            assert_eq!(end["round"], 1);
+            assert_eq!((fighter(-2)["hit"].clone(), fighter(-2)["since"].clone()), (json!(1), json!(1)), "earth hit");
+            assert_eq!((fighter(-7)["played"].clone(), fighter(-5)["played"].clone()), (json!(1), Value::Null));
             // the first two fights (later ones may be appended to the recording)
             assert_eq!(seen.lock()[..7], [Value::Null, json!(1), json!(2), Value::Null, json!(1), json!(2), Value::Null], "{me}");
         }

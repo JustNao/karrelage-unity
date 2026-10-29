@@ -253,6 +253,12 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   melee hit adds 1 (Pendultimatum, 771). A character not known as the player's: the only character of the fight with a
   confusion is taken (solo). Seen 1 then 2 (twice) on work/capture_harebourg.jsonl; sign / quarter-turn unit not yet
   confirmed against what the game shows.
+- Rounds for the helpers: `round` from FightNewRoundEvent (named by override, `round_number`), per fighter `since` (round first
+  seen, placement = 1: rounds count from a boss's appearance, waves included), `played` (last round its FightTurnEvent came)
+  and `hit` (element of its last non-neutral damage: GameActionFightEvent life_points_lost; the element int is learnt from
+  actions 91–100, whose element is fixed, and read for the others, e.g. 2832 "pire élément"). Helpers: Pougnette (explodes
+  end of its 5th turn), Nileza (odd rounds ≥ 3), Klime (glyph from round 2), Kimbo (last element → glyph parity), Dantinéa
+  (Grokillages at 6, 11, 16…), Phossile (Abîme at 5, 9, 13…), from dofuspourlesnoobs; only rounds / elements checked on a capture.
 
 **Loot** (`loot.rs`): FightEndEvent → results → fighter id + `Loot` messages; item = the largest int that is a known gid
 (verified 3.7.12.12). Automation « Songes »: sound when a « Légende » (type 219) is looted, by price threshold.

@@ -30,6 +30,12 @@ export interface Fighter {
   tags: string[];
   /** the sheet's "intéraction dangereuse": tags that make the other monsters of the fight dangerous next to this one */
   danger?: string[];
+  /** round of the fight it appeared in (placement = 1) */
+  since?: number | null;
+  /** last round its turn started in */
+  played?: number | null;
+  /** element of the last damage it took that was not neutral (1 earth, 2 fire, 3 water, 4 air) */
+  hit?: number | null;
 }
 /** A PA / PM poison on the player ("X dommages <element> pour 1 PA / PM utilisé"). */
 export interface Poison {
@@ -48,6 +54,8 @@ export interface Fight {
   /** the player's confusion: their spells land this many quarter turns clockwise around them (negative = counter clockwise);
    *  null until a characteristics refresh carried it (lib/bosses.ts) */
   confusion?: number | null;
+  /** current round of the fight (0 = placement, or no new round seen yet) */
+  round?: number;
   /** the player's character id (null until a login was seen or a typed name found: no poison is shown) */
   me?: number | null;
   /** every character id known to be the player's (login seen, or found by name) */
