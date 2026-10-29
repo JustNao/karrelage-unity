@@ -303,6 +303,8 @@ pub struct Combat {
     me: Store<Me>,
     /// LifePointsLost int field -> votes for it being the element (see `ELEMENT_OF`), for the session
     element_votes: Mutex<BTreeMap<String, u32>>,
+    /// summoned Monster int field -> votes for it being the gid (see `summoned_monsters`), for the session
+    summon_votes: Mutex<BTreeMap<String, u32>>,
 }
 
 /// The player's characters (`me.json`).
@@ -374,26 +376,37 @@ fn fighters(b: &Bindings, wave: Option<&str>, m: &DynamicMessage, out: &mut Vec<
 /// SummonContextInformation): its spawn information's Monster (two unordered ints: the gid = the one that is a pack monster,
 /// the other its grade or level), once per actor spawned (its summons: SpawnInformation {alive, position -> actor_id});
 /// summoned / summoner / wave as for the other fighters.
-fn summoned_monsters(ctx: &Ctx, b: &Bindings, m: &DynamicMessage, out: &mut Vec<(i64, Fighter)>) {
+/// Which int is the gid is learnt (`votes`, per field name): a summon where a single int is a pack monster votes for it (levels
+/// go past the usual ones: Pougnette at 340 in a Songe); until then, of two monster ints, the one whose other int is one of
+/// its grades, else the larger.
+fn summoned_monsters(ctx: &Ctx, b: &Bindings, votes: &Mutex<BTreeMap<String, u32>>, m: &DynamicMessage, out: &mut Vec<(i64, Fighter)>) {
     let name = m.descriptor().full_name().to_owned();
     if ctx.proto.message_name(&name).0 != "SummonContextInformation" {
         for c in children(m) {
-            summoned_monsters(ctx, b, c, out);
+            summoned_monsters(ctx, b, votes, c, out);
         }
         return;
     }
     let Some(spawn) = ctx.proto.field_named(&name, "spawn_information").and_then(|f| m.get_field_by_name(&f)?.as_message().cloned()) else { return };
-    // (gid, the other int): a pack monster whose other int is a plausible grade or level (both ints can be gids: 5815 level 270)
-    fn monster(data: &Data, m: &DynamicMessage) -> Option<(i64, i64)> {
-        let ints: Vec<i64> = scalar_ints(m).into_iter().map(|(_, v)| v).collect();
-        let other = |k: usize| ints.iter().enumerate().find(|(i, v)| *i != k && **v != 0).map_or(0, |(_, v)| *v);
-        let found = (0..ints.len()).find(|&k| data.monsters.contains_key(&ints[k]) && (0..=max_level(data)).contains(&other(k)));
-        match found {
-            Some(k) => Some((ints[k], other(k))),
-            None => children(m).into_iter().find_map(|c| monster(data, c)),
+    // (gid, the other int) of the first message under the spawn information with a pack monster int (both can be gids:
+    // 5815 level 270)
+    fn monster(data: &Data, votes: &Mutex<BTreeMap<String, u32>>, m: &DynamicMessage) -> Option<(i64, i64)> {
+        let ints = scalar_ints(m);
+        let gids: Vec<usize> = (0..ints.len()).filter(|&k| data.monsters.contains_key(&ints[k].1)).collect();
+        if gids.is_empty() {
+            return children(m).into_iter().find_map(|c| monster(data, votes, c));
         }
+        let other = |k: usize| ints.iter().enumerate().find(|(i, (_, v))| *i != k && *v != 0).map_or(0, |(_, (_, v))| *v);
+        let mut v = votes.lock();
+        if let [k] = gids[..] {
+            *v.entry(ints[k].0.clone()).or_default() += 1;
+        }
+        let learnt = gids.iter().copied().filter(|&k| v.get(&ints[k].0).is_some()).max_by_key(|&k| v[&ints[k].0]);
+        let grade = |k: usize| data.monsters.get(&ints[k].1).is_some_and(|m| (1..=m.levels.len() as i64).contains(&other(k)));
+        let k = learnt.or_else(|| gids.iter().copied().find(|&k| grade(k))).or_else(|| gids.iter().copied().max_by_key(|&k| ints[k].1))?;
+        Some((ints[k].1, other(k)))
     }
-    let Some((gid, other)) = monster(&ctx.data, &spawn) else { return };
+    let Some((gid, other)) = monster(&ctx.data, votes, &spawn) else { return };
     let summoned = find(m, &b.summoned).and_then(|s| s.get_field_by_name(&b.summoned).and_then(|v| as_i64(&v))).unwrap_or(0) != 0;
     let summoner = b.summoner.as_deref().and_then(|f| Some(int(find(m, f)?, f))).unwrap_or(0);
     let wave = ctx.proto.field_named(&name, "wave").map(|f| int(m, &f));
@@ -473,6 +486,7 @@ impl Combat {
             wave: Mutex::new(None),
             me: Store::default(),
             element_votes: Mutex::new(BTreeMap::new()),
+            summon_votes: Mutex::new(BTreeMap::new()),
         }
     }
 
@@ -850,7 +864,7 @@ impl Module for Combat {
                         };
                         fighters(b, wave.as_deref(), d, &mut found);
                         if m.name == ACTION {
-                            summoned_monsters(ctx, b, d, &mut found);
+                            summoned_monsters(ctx, b, &self.summon_votes, d, &mut found);
                         }
                         if found.is_empty() {
                             return;
@@ -1092,6 +1106,41 @@ mod tests {
             // the first two fights (later ones may be appended to the recording)
             assert_eq!(seen.lock()[..7], [Value::Null, json!(1), json!(2), Value::Null, json!(1), json!(2), Value::Null], "{me}");
         }
+    }
+
+    /// An Obsidiantre fight in a Songe (work/capture_bosses.jsonl, local only): the Pougnette it summons (level 340, past the
+    /// usual levels) is listed, with the round it appeared in. Skipped without the file.
+    #[test]
+    fn lists_the_pougnette() {
+        let Some(pack) = testkit::pack() else { return };
+        let rec = pack.join("../work/capture_bosses.jsonl");
+        if !rec.exists() {
+            return;
+        }
+        let (hub, proto) = testkit::hub("loutil-combat-pougnette").unwrap();
+        let found: Arc<Mutex<Option<Value>>> = Default::default();
+        let sink = found.clone();
+        let emit = Arc::new(move |e: &str, v: Value| {
+            let mut s = sink.lock();
+            if e == "combat:fight" && s.is_none() {
+                *s = v["fighters"].as_array().unwrap().iter().find(|x| x["gid"] == 2951).cloned();
+            }
+        });
+        let hub = crate::Hub::new(hub.ctx.data.clone(), proto, testkit::temp_dir("loutil-combat-pougnette2"), emit, Arc::new(|_| {}));
+        let hex = |s: &str| (0..s.len() / 2).map(|i| u8::from_str_radix(&s[2 * i..2 * i + 2], 16).unwrap()).collect::<Vec<u8>>();
+        for line in std::fs::read_to_string(&rec).unwrap().lines() {
+            let r: Value = serde_json::from_str(line).unwrap();
+            let (Some(h), Some(len)) = (r["hex"].as_str(), r["len"].as_u64()) else { continue };
+            if h.len() / 2 < len as usize {
+                continue;
+            }
+            let dir = if r["dir"] == "C->S" { "C->S" } else { "S->C" };
+            hub.handle(RawMessage { t: r["t"].as_f64().unwrap_or(0.0), srv: "x".into(), dir, payload: hex(h) });
+        }
+        let p = found.lock().clone().expect("the Pougnette is listed");
+        eprintln!("{p}");
+        assert_eq!((p["name"].as_str(), p["level"].clone(), p["summoned"].clone()), (Some("Pougnette"), json!(340), json!(true)));
+        assert!(p["since"].as_i64().unwrap() >= 1);
     }
 
     /// A PA poison put on the player, then its end (FightBoostRemoveEvent with the buff uid); one on a monster is ignored.
