@@ -109,19 +109,14 @@ const klime: Boss = {
   },
 };
 
-/** Kimbo: the last element it took sets its glyphs: earth / water = odd (glyphs at odd distances from the Disciple), air /
- *  fire = even; a character starting their turn on a glyph dies. */
+/** Kimbo: the last element it took since its turn started sets its glyphs: earth / water = odd (glyphs at odd distances from
+ *  the Disciple), air / fire = even; a character starting their turn on a glyph dies. */
 const kimbo: Boss = {
   gids: [1045],
   hints(f, alive) {
-    return alive.slice(0, 1).map((x) => {
-      if (!x.hit) return { text: "Aucun élément subi pour l'instant", detail: "Terre / Eau : glyphes impaires · Air / Feu : glyphes paires" };
-      const odd = x.hit === 1 || x.hit === 3;
-      return {
-        text: `Glyphes ${odd ? "impaires" : "paires"} : reste à distance ${odd ? "paire" : "impaire"} du Disciple`,
-        detail: `Dernier élément subi : ${ELEMENTS[x.hit]}`,
-      };
-    });
+    return alive.slice(0, 1).map((x) =>
+      x.hit ? { text: `Dernier élément ${ELEMENTS[x.hit]}, glyphes ${x.hit === 1 || x.hit === 3 ? "impaires" : "paires"}` } : { text: "Kimbo pas encore tapé" },
+    );
   },
 };
 

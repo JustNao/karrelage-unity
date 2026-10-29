@@ -279,7 +279,7 @@ struct Fight {
     since: BTreeMap<i64, i64>,
     /// actor id -> last round its turn started in
     played: BTreeMap<i64, i64>,
-    /// actor id -> element of the last damage it took that was not neutral (see `ELEMENT_OF`)
+    /// actor id -> element of the last damage it took that was not neutral (see `ELEMENT_OF`), since its turn started
     hit: BTreeMap<i64, i64>,
 }
 
@@ -688,11 +688,12 @@ impl Module for Combat {
             if self.turn.load(Ordering::Relaxed) && mine {
                 ctx.emit("combat", "turn", json!({"id": id, "focused": crate::sys::game_focused()}));
             }
-            // whose turn it was this round (boss helpers: a check at the start of the boss's turn)
+            // whose turn it was this round (boss helpers: a check at the start of the boss's turn); the damage it took before
+            // is forgotten (Kimbo: hit again every turn)
             if let (Some(id), true) = (id, self.enabled.load(Ordering::Relaxed)) {
                 let mut f = self.fight.lock();
                 let round = f.round;
-                let changed = f.played.insert(id, round) != Some(round);
+                let changed = (f.played.insert(id, round) != Some(round)) | f.hit.remove(&id).is_some();
                 drop(f);
                 if changed {
                     ctx.emit("combat", "fight", self.state(&ctx.data));

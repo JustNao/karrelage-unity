@@ -34,7 +34,7 @@ export interface Fighter {
   since?: number | null;
   /** last round its turn started in */
   played?: number | null;
-  /** element of the last damage it took that was not neutral (1 earth, 2 fire, 3 water, 4 air) */
+  /** element of the last damage it took that was not neutral, since its turn started (1 earth, 2 fire, 3 water, 4 air) */
   hit?: number | null;
 }
 /** A PA / PM poison on the player ("X dommages <element> pour 1 PA / PM utilisé"). */

@@ -255,7 +255,7 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   confirmed against what the game shows.
 - Rounds for the helpers: `round` from FightNewRoundEvent (named by override, `round_number`), per fighter `since` (round first
   seen, placement = 1: rounds count from a boss's appearance, waves included), `played` (last round its FightTurnEvent came)
-  and `hit` (element of its last non-neutral damage: GameActionFightEvent life_points_lost; the element int is learnt from
+  and `hit` (element of its last non-neutral damage since its turn started: GameActionFightEvent life_points_lost; the element int is learnt from
   actions 91–100, whose element is fixed, and read for the others, e.g. 2832 "pire élément"). Helpers: Pougnette (explodes
   end of its 5th turn), Nileza (odd rounds ≥ 3), Klime (glyph from round 2), Kimbo (last element → glyph parity), Dantinéa
   (Grokillages at 6, 11, 16…), Phossile (Abîme at 5, 9, 13…), from dofuspourlesnoobs; only rounds / elements checked on a capture.
