@@ -508,6 +508,19 @@ impl Combat {
         self.bind.get(ctx, "fight")
     }
 
+    /// A character name to look for among the fighters (typed, or a game window's title); known already = nothing (saved).
+    fn want_name(&self, name: &str) {
+        let name = name.trim();
+        let same = |x: &String| x.to_lowercase() == name.to_lowercase();
+        let new = {
+            let me = self.me.lock();
+            !name.is_empty() && !me.pending.iter().any(same) && !me.names.values().any(same)
+        };
+        if new {
+            self.me.update(|me| me.pending.push(name.to_owned()));
+        }
+    }
+
     /// The fighters of a message: those named like a typed name join the player's characters, the player's characters
     /// without a name get theirs (a single string: the other one is unknown). True when something changed (saved).
     fn name_fighters(&self, ctx: &Ctx, actor_id: &str, d: &DynamicMessage) -> bool {
@@ -755,9 +768,13 @@ impl Module for Combat {
             }
             return;
         }
-        // a new fight: nobody is dead yet (its timeline follows)
+        // a new fight: nobody is dead yet (its timeline follows); the characters of the game windows' titles are looked for
+        // among its fighters (once per fight: a window enumeration)
         if m.name == JOIN || m.name == JOIN_RUNNING {
             self.dead.lock().clear();
+            for name in crate::sys::game_window_titles().iter().filter_map(|t| crate::sys::character_of_title(t)) {
+                self.want_name(&name);
+            }
         }
         // the turn order lists every fighter (the whole list: replaces the dead ones)
         if m.name == TIMELINE {
@@ -951,13 +968,7 @@ impl Module for Combat {
             }
             // Automation « Vos personnages »: a name looked for among the fighters (no login seen); known already = nothing
             "add_name" => {
-                let name = arg_str(&args, "name")?.trim().to_owned();
-                self.me.update(|me| {
-                    let same = |x: &String| x.to_lowercase() == name.to_lowercase();
-                    if !name.is_empty() && !me.pending.iter().any(same) && !me.names.values().any(same) {
-                        me.pending.push(name.clone());
-                    }
-                });
+                self.want_name(arg_str(&args, "name")?);
                 self.changed_me(ctx)
             }
             "remove_name" => {
