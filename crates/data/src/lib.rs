@@ -2,6 +2,7 @@
 //! plus the effect-template rendering and item helpers shared by feature modules.
 pub mod effects;
 pub mod items;
+pub mod maps;
 
 use anyhow::{Context, Result};
 use serde::Deserialize;

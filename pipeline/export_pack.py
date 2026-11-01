@@ -141,6 +141,9 @@ ids.update(v["nameId"] for v in npcs.values())
 dump("npcs.json", npcs)
 # breeds: base skins only (player cards: the breed int is the one whose skin the look shows)
 dump("breeds.json", {k: {"skins": v["skins"]} for k, v in gd.breeds.items()})
+# map cells (walkable / line of sight / placement flags, extract_gamedata.py `maps`): the Combat tab's map
+if (gd.D / "maps.bin").exists():
+    shutil.copy(gd.D / "maps.bin", out / "maps.bin")
 
 for lang in ("fr", "en"):
     f = gd.D / "i18n" / f"{lang}.bin"

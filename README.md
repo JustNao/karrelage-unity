@@ -99,7 +99,7 @@ Le plus simple : en mode développeur, l'onglet **Proto** compare le pack au jeu
 # copie (sans jamais les modifier) GameAssembly.dll + global-metadata.dat dans work/dump_input/, extraction avec Il2CppInspectorRedux,
 # puis DummyDlls -> protos avec protodec : voir from_game() dans update_names.py pour les commandes exactes
 python pipeline/build_protos.py             # compile les protos, écrit work/pb/protocol.desc
-python pipeline/extract_gamedata.py --refresh   # copie les données et traductions du jeu dans work/gamedata, les lit avec UnityPy
+python pipeline/extract_gamedata.py --refresh   # copie les données, traductions et cartes du jeu dans work/gamedata, les lit avec UnityPy
 python pipeline/script_names.py             # noms en clair laissés par la table des scripts Unity -> work/script_names.json
 python pipeline/match_protos.py             # correspondance structurelle avec le build précédent puis la bêta, ancrée sur ces noms -> work/mapping.json
 python pipeline/import_reference_names.py <liste.txt>   # facultatif : liste communautaire obfusqué -> clair

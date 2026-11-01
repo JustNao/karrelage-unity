@@ -247,7 +247,8 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   (DofusDB API returns empty tags since mid-2026 → fallback Loutil_old dump); `danger` column → cross-monster warnings.
   Only `SHOWN` tags displayed (`lib/monsterTags.ts`). Floating window `CombatOverlay.svelte`: living monsters
   only, and only those with a red (flag) tag or a note shown, unless its "tous" button is on.
-- No tab: its settings are the Automation tab's « Combat » section, the monsters show in the floating window only.
+- Its settings are the Automation tab's « Combat » section, the monsters show in the floating window only (the Combat tab is
+  the fight map, below).
 - Turns: FightTurnEvent (`jvj` named by override; its only int64 = whose turn, role `turn`) for one of `me` → `combat:turn`
   {id, focused} (`sys::game_focused`: foreground window = Dofus.exe), sent only while the « À votre tour » rule is on
   (`set_turn`; the module then runs even with fight following off). The game still starts a dead fighter's turns: skipped
@@ -268,6 +269,21 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   actions 91–100, whose element is fixed, and read for the others, e.g. 2832 "pire élément"). Helpers: Pougnette (explodes
   end of its 5th turn), Nileza (odd rounds ≥ 3), Klime (glyph from round 2), Kimbo (last element → glyph parity), Dantinéa
   (Grokillages at 6, 11, 16…), Phossile (Abîme at 5, 9, 13…), from dofuspourlesnoobs; only rounds / elements checked on a capture.
+
+**Fight map / line of sight** (`fight_map.rs`, `crates/data/src/maps.rs`, `modules/combat`, `lib/fightMap.ts`)
+- Map cells from `Map/Data/mapdata_assets_world_*.bundle` (MonoBehaviour per map: `id`, `cellsData` of 560 {mov, los, red,
+  blue, altitude...}) → `maps.bin` (extract_gamedata.py `maps`: id-sorted records, a nibble per cell; ~16k maps, 4.6 MB,
+  0.9 MB zipped), read per map with a binary search (`Data::map_cells`, `call` only).
+- A fight has its own map: FightMapInformationEvent `map_id` (comes after the FightFighterShowEvents; until then the roleplay
+  map of MapComplementaryInformationEvent). Cells: 40 staggered rows of 14; coords x = a + r/14 + r%14, y = r%14 − a
+  (a = c/28, r = c%28); distance |dx| + |dy|.
+- Fighters: ActorPositionInformation → EntityDisposition `cell_id`, SpawnInformation `alive` / team (its only enum: 0 / 1),
+  kind from the FightFighterInformation oneof (named / ai / entity fighter). Moves: MapMovementEvent last cell, slide (end =
+  the unnamed cell that is not the target's), teleport / throw / drop `cell`, exchange_positions swaps, carry. Verified on 3
+  captures: every living fighter on a walkable cell of the pack map, never two on a cell (`fighters_stand_on_walkable_cells`).
+- Line of sight (`maps::sight`): supercover line between centres, a line exactly through a corner goes diagonally (side cells
+  not checked); blocked by `los` 0 cells and living fighters (target excepted, the player's own fighter ignored: it stands on
+  the hovered cell). Targets = walkable cells. Not yet compared with the game's own preview.
 
 **Loot** (`loot.rs`): FightEndEvent → results → fighter id + `Loot` messages; item = the largest int that is a known gid
 (verified 3.7.12.12). Automation « Songes »: sound when a « Légende » (type 219) is looted, by price threshold.

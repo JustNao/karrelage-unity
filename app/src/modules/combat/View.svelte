@@ -1,0 +1,121 @@
+<script lang="ts">
+  import { onMount } from "svelte";
+  import { call, listenAll } from "../../lib/api";
+  import { persisted } from "../../lib/persist.svelte";
+  import { fight } from "../../lib/stores/combat.svelte";
+  import type { FightMapState, Sight } from "../../lib/fightMap";
+  import Banner from "../../lib/components/Banner.svelte";
+  import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
+  import Minimap from "./Minimap.svelte";
+
+  /** Spell range of the line of sight (portée min / max), remembered. */
+  const range = persisted("karrelage.combat.range", { min: 1, max: 6 });
+
+  let live = $state.raw<FightMapState>({ map: null, fight: false, fighters: [] });
+  /** cells of `live.map` (undefined = loading, null = not in the pack) */
+  let cells = $state.raw<number[] | null | undefined>(undefined);
+  let loaded: number | null = null;
+  let hovered = $state<number | null>(null);
+  let pinned = $state<number | null>(null);
+  let sight = $state.raw<Sight | null>(null);
+
+  onMount(() => {
+    const off = listenAll({ "fightmap:state": (s: FightMapState) => (live = s) });
+    off.ready.then(() => call<FightMapState>("fightmap", "state")).then((s) => (live = s));
+    return off;
+  });
+
+  // the map's cells, asked again when the map changes
+  $effect(() => {
+    const map = live.map;
+    if (map === loaded) return;
+    loaded = map;
+    cells = undefined;
+    pinned = null;
+    if (map === null) return;
+    call<number[] | null>("fightmap", "cells", { map }).then((c) => map === loaded && (cells = c));
+  });
+
+  const mine = $derived(new Set(fight.mine ?? []));
+  /** the player's team: allies are drawn green, the others red */
+  const allies = $derived(live.fighters.find((f) => mine.has(f.id))?.team ?? null);
+  const names = $derived.by(() => {
+    const m = new Map<number, string>();
+    for (const f of fight.fighters) m.set(f.actor, f.name);
+    for (const c of fight.characters ?? []) if (c.name) m.set(c.id, c.name);
+    return m;
+  });
+  const from = $derived(pinned ?? hovered);
+
+  // line of sight from the hovered / pinned cell: the player's own fighter stands there instead of where it is now
+  let asked = 0;
+  $effect(() => {
+    const f = from, min = Math.max(0, range.min), max = Math.max(range.min, range.max);
+    void live.fighters; // fighters moved: asked again
+    if (f === null || !cells) return void (sight = null);
+    const n = ++asked;
+    call<Sight | null>("fightmap", "sight", { from: f, min, max, ignore: [...mine] }, true).then((s) => n === asked && (sight = s));
+  });
+
+  const pick = (c: number) => (pinned = pinned === c ? null : c);
+</script>
+
+<div class="view">
+  <SmoothScroll>
+    <div class="combat">
+      <div class="head">
+        <h2>Ligne de vue</h2>
+        <label title="Portée minimale du sort">Portée min <input type="number" min="0" max="63" bind:value={range.min} /></label>
+        <label title="Portée maximale du sort">max <input type="number" min="0" max="63" bind:value={range.max} /></label>
+        <span class="mut status">
+          {#if live.map === null}Aucune carte vue
+          {:else}{live.fight ? "Combat en cours" : "Hors combat"} · carte {live.map}{/if}
+        </span>
+      </div>
+      <p class="mut help">
+        Survolez une case : les cases à portée en ligne de vue s'éclairent, celles derrière un obstacle restent pâles. Un clic fige la
+        case (un second la libère). Votre personnage est compté comme déplacé sur la case survolée.
+      </p>
+      {#if live.map !== null && cells === null}
+        <Banner tone="warn" inset>Carte {live.map} absente du pack de données : mettez-le à jour.</Banner>
+      {:else if cells}
+        <div class="map">
+          <Minimap {cells} fighters={live.fighters} {allies} {mine} {names} {sight} {from} pinned={pinned !== null} onhover={(c) => (hovered = c)} onpick={pick} />
+        </div>
+        <div class="legend mut">
+          <span><i class="dot me"></i>Vous</span>
+          <span><i class="dot ally"></i>Alliés</span>
+          <span><i class="dot enemy"></i>Ennemis</span>
+          <span><i class="sq wall"></i>Obstacle</span>
+          <span><i class="sq seen"></i>En vue</span>
+          <span><i class="sq hidden"></i>Hors vue</span>
+        </div>
+      {:else if live.map === null}
+        <p class="mut">La carte s'affiche dès que vous changez de carte ou entrez en combat, application ouverte.</p>
+      {/if}
+    </div>
+  </SmoothScroll>
+</div>
+
+<style>
+  .view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .view > :global(.wrap) { flex: 1; }
+  .combat { max-width: 980px; font-family: var(--font); font-size: 13px; }
+  .head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+  h2 { font: 600 12px var(--font); letter-spacing: 0.08em; text-transform: uppercase; color: var(--mut); margin: 0; }
+  .head label { display: inline-flex; align-items: center; gap: 6px; }
+  .head input { width: 56px; }
+  .status { margin-left: auto; }
+  .help { font-size: 12px; margin: 8px 0 12px; }
+  .map { padding: 4px 0; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; margin-top: 8px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .dot { width: 12px; height: 8px; border-radius: 50%; display: inline-block; }
+  .dot.me { background: var(--gold); }
+  .dot.ally { background: var(--ok); }
+  .dot.enemy { background: var(--bad); }
+  .sq { width: 12px; height: 12px; display: inline-block; transform: rotate(45deg) scale(0.75); border: 1px solid var(--line); }
+  .sq.wall { background: color-mix(in srgb, var(--mut) 55%, var(--bg)); }
+  .sq.seen { background: color-mix(in srgb, var(--acc) 45%, var(--panel)); }
+  .sq.hidden { background: color-mix(in srgb, var(--acc) 20%, var(--panel)); }
+</style>

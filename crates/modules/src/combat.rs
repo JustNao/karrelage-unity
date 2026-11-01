@@ -332,7 +332,7 @@ impl Default for Combat {
 }
 
 /// Child messages of `m` (message fields, lists and map values), borrowed: fight messages are walked for every action.
-fn children(m: &DynamicMessage) -> Vec<&DynamicMessage> {
+pub(crate) fn children(m: &DynamicMessage) -> Vec<&DynamicMessage> {
     let mut out = vec![];
     for (_, v) in m.fields() {
         match v {

@@ -4,8 +4,9 @@
 
 Reads work/gamedata/bundles/*.asset.bundle (UnityFS, ScriptableObjects with managed references) via UnityPy and writes
 work/gamedata/{items,effects,characteristics,itemtypes}.json.  i18n (work/gamedata/i18n/<lang>.bin) is read lazily by gamedata.py.
+Map cells (Map/Data/mapdata_assets_world_*.bundle, copied to work/gamedata/maps) -> work/gamedata/maps.bin (see `maps`).
 """
-import sys, json, pathlib, shutil, warnings, argparse
+import sys, json, pathlib, shutil, struct, warnings, argparse
 
 root = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(root / "tools" / "pylib"))
@@ -15,6 +16,7 @@ import UnityPy
 GAME = pathlib.Path(r"C:\Users\nao3n\AppData\Local\Ankama\Dofus-dofus3\Dofus_Data\StreamingAssets\Content")
 OUT = root / "work" / "gamedata"
 BUNDLES = OUT / "bundles"
+MAP_BUNDLES = OUT / "maps"
 TABLES = ["items", "effects", "characteristics", "itemtypes", "itemsets", "itemsupertypes", "spells", "recipes", "monsters", "npcs", "breeds"]
 UnityPy.config.FALLBACK_UNITY_VERSION = "6000.3.16f1"   # bundles ship with a stripped version; matches UnityPlayer.dll
 
@@ -28,6 +30,39 @@ def refresh():
         shutil.copyfile(GAME / "Data" / f"data_assets_{t}dataroot.asset.bundle", BUNDLES / f"data_assets_{t}dataroot.asset.bundle")
     for lang in ("fr", "en"):
         shutil.copyfile(GAME / "I18n" / f"{lang}.bin", OUT / "i18n" / f"{lang}.bin")
+    MAP_BUNDLES.mkdir(exist_ok=True)
+    for f in (GAME / "Map" / "Data").glob("mapdata_assets_world_*.bundle"):
+        dst = MAP_BUNDLES / f.name
+        if not dst.exists() or dst.stat().st_size != f.stat().st_size or dst.stat().st_mtime < f.stat().st_mtime:
+            shutil.copyfile(f, dst)
+
+
+MAP_CELLS = 560
+CELL_FLAGS = (("mov", 1), ("los", 2), ("red", 4), ("blue", 8))
+
+
+def maps():
+    """Every map's cell flags -> maps.bin: b"KMAP", u32 version 1, u32 count, then `count` records sorted by map id:
+    i64 map id + 280 bytes, two cells a byte (cell 2k in the low nibble, 2k+1 in the high one), nibble bits: 1 walkable (mov),
+    2 lets line of sight through (los), 4 red placement, 8 blue placement."""
+    out = {}
+    for f in sorted(MAP_BUNDLES.glob("mapdata_assets_world_*.bundle")):
+        for o in UnityPy.load(str(f)).objects:
+            if o.type.name != "MonoBehaviour":
+                continue
+            t = o.read_typetree()
+            cells = t.get("cellsData")
+            if not cells or len(cells) != MAP_CELLS:
+                continue
+            nib = [0] * MAP_CELLS
+            for c in cells:
+                nib[c["cellNumber"]] = sum(bit for k, bit in CELL_FLAGS if c.get(k))
+            out[t["id"]] = bytes(nib[i] | nib[i + 1] << 4 for i in range(0, MAP_CELLS, 2))
+    with open(OUT / "maps.bin", "wb") as w:
+        w.write(b"KMAP" + struct.pack("<II", 1, len(out)))
+        for k in sorted(out):
+            w.write(struct.pack("<q", k) + out[k])
+    return len(out)
 
 
 def rows(name, with_refs=False):
@@ -102,6 +137,7 @@ def main():
     for n, d in (("items", items), ("effects", effects), ("characteristics", chars), ("itemtypes", types), ("spells", spells), ("recipes", recipes), ("itemsets", sets), ("monsters", monsters), ("npcs", npcs), ("breeds", breeds)):
         (OUT / f"{n}.json").write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
         print(n, len(d))
+    print("maps", maps())
 
 
 if __name__ == "__main__":
