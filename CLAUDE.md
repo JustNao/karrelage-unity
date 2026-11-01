@@ -227,8 +227,10 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   absence from FightSynchronizeEvent, or a spawn information without `alive` (role `fight.alive`; live fighters carry true). Summoned copies of starting monsters (doubles) are ignored, and so are the
   players' summons (summoner not a monster of the fight; summon details kept when a later message lacks them).
 - Monsters' summons during the fight come as GameActionFightEvent summons by context (script-named SummonContextInformation:
-  spawn information Monster = gid + grade or level, two unordered ints, both can be gids: the gid field is learnt per session
-  from summons with a single monster int, else the one whose other int is one of its grades, else the larger; actors = its
+  spawn information Monster = gid + grade or level, two unordered ints, both can be gids: the gid field is learnt (`layout.json`
+  `summon_votes`, per `Message.field`) from summons with a single monster int, else the one whose other int is one of its
+  grades, else a level of the fight's monsters (Songes: one room level for all), else the larger (Champ Champ 59 at level 226
+  was read as Moon 226); actors = its
   SpawnInformation list), not as MonsterFighter: `summoned_monsters`, `Fighter.gid` set (no arrangement vote). Levels go past
   the usual ones (Pougnette 340 in a Songe). Verified on capture_harebourg (5815 level 270) and capture_bosses (Pougnette).
 - Poisons (effects 1131–1140): added by FightBoostAddEvent / FightJoinRunningEvent (role `boost`), removed by

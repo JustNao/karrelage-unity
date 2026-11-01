@@ -206,13 +206,15 @@ pub(crate) const PERMS: [[usize; 3]; 6] = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 
 
 /// Learnt arrangement of the MonsterFighter ints: votes per `PERMS` entry, for the build whose field names are `fields`;
 /// and which FightRemovableEffect int is the buff uid: votes per int of `boost_fields` (a FightBoostRemoveEvent uid found
-/// in a single int of the buffs seen votes for it).
+/// in a single int of the buffs seen votes for it); and which int of a monster's summon is its gid: votes per
+/// `Message.field` (see `summoned_monsters`; those of another build are dropped).
 #[derive(Default)]
 struct Layout {
     fields: Vec<String>,
     votes: [u32; 6],
     boost_fields: Vec<String>,
     boost_votes: Vec<u32>,
+    summon_votes: BTreeMap<String, u32>,
 }
 
 impl Layout {
@@ -303,8 +305,6 @@ pub struct Combat {
     me: Store<Me>,
     /// LifePointsLost int field -> votes for it being the element (see `ELEMENT_OF`), for the session
     element_votes: Mutex<BTreeMap<String, u32>>,
-    /// summoned Monster int field -> votes for it being the gid (see `summoned_monsters`), for the session
-    summon_votes: Mutex<BTreeMap<String, u32>>,
 }
 
 /// The player's characters (`me.json`).
@@ -376,37 +376,48 @@ fn fighters(b: &Bindings, wave: Option<&str>, m: &DynamicMessage, out: &mut Vec<
 /// SummonContextInformation): its spawn information's Monster (two unordered ints: the gid = the one that is a pack monster,
 /// the other its grade or level), once per actor spawned (its summons: SpawnInformation {alive, position -> actor_id});
 /// summoned / summoner / wave as for the other fighters.
-/// Which int is the gid is learnt (`votes`, per field name): a summon where a single int is a pack monster votes for it (levels
-/// go past the usual ones: Pougnette at 340 in a Songe); until then, of two monster ints, the one whose other int is one of
-/// its grades, else the larger.
-fn summoned_monsters(ctx: &Ctx, b: &Bindings, votes: &Mutex<BTreeMap<String, u32>>, m: &DynamicMessage, out: &mut Vec<(i64, Fighter)>) {
+/// Which int is the gid is learnt (`Layout::summon_votes`, saved): a summon where a single int is a pack monster votes for it
+/// (levels go past the usual ones: Pougnette at 340 in a Songe); until then, of two monster ints, the one whose other int is
+/// one of its grades, else a level of the fight's monsters (`levels`: a Songe's room level, the same for all), else the larger
+/// (Champ Champ 59 at level 226 = Moon's gid).
+fn summoned_monsters(ctx: &Ctx, b: &Bindings, layout: &Store<Layout>, levels: &BTreeSet<i64>, m: &DynamicMessage, out: &mut Vec<(i64, Fighter)>) {
     let name = m.descriptor().full_name().to_owned();
     if ctx.proto.message_name(&name).0 != "SummonContextInformation" {
         for c in children(m) {
-            summoned_monsters(ctx, b, votes, c, out);
+            summoned_monsters(ctx, b, layout, levels, c, out);
         }
         return;
     }
     let Some(spawn) = ctx.proto.field_named(&name, "spawn_information").and_then(|f| m.get_field_by_name(&f)?.as_message().cloned()) else { return };
     // (gid, the other int) of the first message under the spawn information with a pack monster int (both can be gids:
     // 5815 level 270)
-    fn monster(data: &Data, votes: &Mutex<BTreeMap<String, u32>>, m: &DynamicMessage) -> Option<(i64, i64)> {
+    fn monster(data: &Data, layout: &Store<Layout>, levels: &BTreeSet<i64>, m: &DynamicMessage) -> Option<(i64, i64)> {
         let ints = scalar_ints(m);
         let gids: Vec<usize> = (0..ints.len()).filter(|&k| data.monsters.contains_key(&ints[k].1)).collect();
         if gids.is_empty() {
-            return children(m).into_iter().find_map(|c| monster(data, votes, c));
+            return children(m).into_iter().find_map(|c| monster(data, layout, levels, c));
         }
+        let key = |k: usize| format!("{}.{}", m.descriptor().full_name(), ints[k].0);
         let other = |k: usize| ints.iter().enumerate().find(|(i, (_, v))| *i != k && *v != 0).map_or(0, |(_, (_, v))| *v);
-        let mut v = votes.lock();
-        if let [k] = gids[..] {
-            *v.entry(ints[k].0.clone()).or_default() += 1;
+        let learnt = {
+            let mut l = layout.lock();
+            if let [k] = gids[..] {
+                *l.summon_votes.entry(key(k)).or_default() += 1;
+            }
+            let v = &l.summon_votes;
+            gids.iter().copied().filter(|&k| v.contains_key(&key(k))).max_by_key(|&k| v[&key(k)])
+        };
+        if let [_] = gids[..] {
+            layout.touch();
         }
-        let learnt = gids.iter().copied().filter(|&k| v.get(&ints[k].0).is_some()).max_by_key(|&k| v[&ints[k].0]);
         let grade = |k: usize| data.monsters.get(&ints[k].1).is_some_and(|m| (1..=m.levels.len() as i64).contains(&other(k)));
-        let k = learnt.or_else(|| gids.iter().copied().find(|&k| grade(k))).or_else(|| gids.iter().copied().max_by_key(|&k| ints[k].1))?;
+        let k = learnt
+            .or_else(|| gids.iter().copied().find(|&k| grade(k)))
+            .or_else(|| gids.iter().copied().find(|&k| levels.contains(&other(k))))
+            .or_else(|| gids.iter().copied().max_by_key(|&k| ints[k].1))?;
         Some((ints[k].1, other(k)))
     }
-    let Some((gid, other)) = monster(&ctx.data, votes, &spawn) else { return };
+    let Some((gid, other)) = monster(&ctx.data, layout, levels, &spawn) else { return };
     let summoned = find(m, &b.summoned).and_then(|s| s.get_field_by_name(&b.summoned).and_then(|v| as_i64(&v))).unwrap_or(0) != 0;
     let summoner = b.summoner.as_deref().and_then(|f| Some(int(find(m, f)?, f))).unwrap_or(0);
     let wave = ctx.proto.field_named(&name, "wave").map(|f| int(m, &f));
@@ -486,7 +497,6 @@ impl Combat {
             wave: Mutex::new(None),
             me: Store::default(),
             element_votes: Mutex::new(BTreeMap::new()),
-            summon_votes: Mutex::new(BTreeMap::new()),
         }
     }
 
@@ -701,9 +711,15 @@ impl Module for Combat {
             ctx,
             "combat",
             "layout.json",
-            |l| json!({"fields": l.fields, "votes": l.votes, "boost_fields": l.boost_fields, "boost_votes": l.boost_votes}),
+            |l| json!({"fields": l.fields, "votes": l.votes, "boost_fields": l.boost_fields, "boost_votes": l.boost_votes, "summon_votes": l.summon_votes}),
         );
         let mut l = self.layout.lock();
+        // summon votes of fields this build still has (`Message.field`)
+        let summons: BTreeMap<String, u32> = saved.as_ref().and_then(|s| serde_json::from_value(s["summon_votes"].clone()).ok()).unwrap_or_default();
+        l.summon_votes = summons
+            .into_iter()
+            .filter(|(k, _)| k.rsplit_once('.').is_some_and(|(msg, f)| ctx.proto.message(msg).is_some_and(|d| d.get_field_by_name(f).is_some())))
+            .collect();
         if let Some(b) = self.boosts(ctx) {
             l.boost_fields = b.ints.clone();
             l.boost_votes = vec![0; b.ints.len()];
@@ -864,7 +880,12 @@ impl Module for Combat {
                         };
                         fighters(b, wave.as_deref(), d, &mut found);
                         if m.name == ACTION {
-                            summoned_monsters(ctx, b, &self.summon_votes, d, &mut found);
+                            // the levels of the fight's monsters (Songes: the room's, the same for all)
+                            let levels: BTreeSet<i64> = match self.arrangement(&ctx.data, &f).filter(|_| f.ended.is_none()) {
+                                Some(p) => f.fighters.values().filter(|x| x.gid.is_none()).map(|x| x.ints[PERMS[p][2]]).collect(),
+                                None => BTreeSet::new(),
+                            };
+                            summoned_monsters(ctx, b, &self.layout, &levels, d, &mut found);
                         }
                         if found.is_empty() {
                             return;
