@@ -1,14 +1,30 @@
 <script lang="ts">
   import { SETTING_DEFAULTS, settings } from "../../lib/stores/settings.svelte";
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
+  import Switch from "../../lib/components/Switch.svelte";
 
-  /** Paramètres: one section per tab (general UI settings will come first). Values live in lib/stores/settings.svelte.ts. */
+  /** Paramètres: general settings first, then one section per tab. Values live in lib/stores/settings.svelte.ts. */
   const clampZ = (v: number) => (Number.isFinite(v) ? Math.min(5, Math.max(0.5, Math.round(v * 10) / 10)) : SETTING_DEFAULTS.hdv.goodZ);
 </script>
 
 <div class="view">
   <SmoothScroll>
     <div class="settings">
+      <section>
+        <h2>Général</h2>
+        <div class="row">
+          <div class="lb">
+            <div>Garder en arrière-plan à la fermeture</div>
+            <div class="mut">
+              Fermer la fenêtre laisse Karrelage tourner dans la zone de notification (la capture et les fenêtres flottantes continuent).
+              Clic sur son icône pour la rouvrir, clic droit pour « Ouvrir » ou « Quitter ».
+            </div>
+          </div>
+          <div class="ctl">
+            <Switch bind:checked={settings.general.closeToTray} label="Garder en arrière-plan à la fermeture" />
+          </div>
+        </div>
+      </section>
       <section>
         <h2>HDV</h2>
         <div class="row">

@@ -9,6 +9,10 @@ import { persisted } from "../persist.svelte";
 const KEY = "karrelage.settings";
 
 const DEFAULTS = {
+  general: {
+    /** Closing the window keeps the app running in the notification area (right click on its icon: open / quit). */
+    closeToTray: false,
+  },
   hdv: {
     /** A lot this many residual standard deviations above the price / density trend is a good deal. */
     goodZ: 2,

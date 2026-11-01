@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { app } from "./lib/app.svelte";
-  import { call, captureSet, listenAll, quitApp, restartApp } from "./lib/api";
+  import { call, captureSet, listenAll, quitApp, restartApp, setCloseToTray } from "./lib/api";
+  import { settings } from "./lib/stores/settings.svelte";
   import { modules } from "./lib/registry";
   import Banner from "./lib/components/Banner.svelte";
   import ProgressBar from "./lib/components/ProgressBar.svelte";
@@ -75,6 +76,11 @@
         else upd = { state: "installing", pct: 80 + Math.round((p.done / Math.max(p.total, 1)) * 20), label: "Installation…" };
       },
     });
+  });
+
+  // closing the window hides it in the notification area (Paramètres « Général »): the shell is told at startup and on change
+  $effect(() => {
+    setCloseToTray(settings.general.closeToTray).catch(() => {});
   });
 
   // restore the capture state the user left at the last close (once, as soon as the backend is ready)

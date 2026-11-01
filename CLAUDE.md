@@ -95,7 +95,8 @@ Set `PYTHONUTF8=1` for scripts handling accents. The "Développeur" header toggl
 - `fmt.ts` (kamas use "," thousands: "2,380,000 K"; other numbers French format), `price.ts` (`AH_TAX` 2 %, `afterTax`,
   `effectivePrice`: override > AH unit > weekly avg), icon stores `itemIcons` / `statIcons` (`iconOfElement`).
 - `registry.ts` `discover(glob)`: tabs and Crafting sub-tabs register by existing.
-- Settings: `stores/settings.svelte.ts` (`DEFAULTS` + a row in the Paramètres tab, one section per tab).
+- Settings: `stores/settings.svelte.ts` (`DEFAULTS` + a row in the Paramètres tab, « Général » first, then one section per
+  tab). `general.closeToTray`: closing hides the main window, tray icon (`main.rs` `build_tray`) opens / quits.
 - Window capabilities: `default.json` (main), `overlay.json` (floating), `splash.json`. `setSize` & co. need explicit grants.
 
 ## Naming pipeline
@@ -238,7 +239,8 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   removed uid found in a single int of the recent buffs votes (`layout.json` boost_votes; learnt right on the real capture).
   Player = every character id seen in CharacterSelectionRequest (fixed per character; all kept
   in `<app data>/combat/me.json`, so a login needs to be seen once per character). Fallback: names added in Automation
-  (`add_name`, one per entry, kept as `pending` in me.json) matched by value against any string of a script-named
+  (`add_name`, one per entry, kept as `pending` in me.json), and at each fight join the characters of the Dofus.exe window
+  titles (`sys::game_window_titles`, "Everstone - Steamer - 3.7.12.12 - Release" → Everstone), matched by value against any string of a script-named
   NamedFighterInformation / NamedActor under a fighter's ActorPositionInformation; a match adds its actor id to `me`. Known
   ids without a name take their fighter's single non-empty string (verified: Hinae on capture_poison); `remove` forgets one.
 - Monster notes from `work/monster_notes.csv` (author's sheet, not committed) and tags from `work/dofusdb_monsters.json`
