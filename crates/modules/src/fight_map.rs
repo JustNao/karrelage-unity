@@ -80,6 +80,8 @@ pub struct FightMap {
     turn: Role<TurnBindings>,
     /// Escape watched (the overlay is open): its polling thread runs while this is true.
     escape: Arc<AtomicBool>,
+    /// The Dofus window the in-game view covers: it gets the focus back when the view closes.
+    covered: Mutex<Option<isize>>,
 }
 
 #[derive(serde::Deserialize)]
@@ -300,12 +302,19 @@ impl Module for FightMap {
     /// 560 cells (bits 1 walkable, 2 sight goes through, 4 / 8 red / blue placement) or null; `sight` {from, min, max,
     /// ignore?: [fighter ids]}: {seen, hidden} cells of the current map at distance min..=max from `from`, the living
     /// fighters blocking the sight (but the ones of `ignore` and whoever stands on `from`). `window`: the Dofus window's client
-    /// area {x, y, width, height} (screen pixels) or null; `watch_escape` {on}: `fightmap:escape` at each Escape press while on.
+    /// area {x, y, width, height} (screen pixels) or null; `watch_escape` {on}: `fightmap:escape` at each Escape press while on;
+    /// `release`: the view closes: Escape no longer watched, the keyboard focus back to the Dofus window it covered.
     fn call(&self, method: &str, args: Value, ctx: &Ctx) -> Result<Value> {
         match method {
             "state" => Ok(self.state.lock().json()),
             "window" => {
-                Ok(crate::sys::game_client_rect().map_or(Value::Null, |(x, y, width, height)| json!({"x": x, "y": y, "width": width, "height": height})))
+                let Some(w) = crate::sys::game_window() else { return Ok(Value::Null) };
+                *self.covered.lock() = Some(w.handle);
+                Ok(json!({"x": w.x, "y": w.y, "width": w.width, "height": w.height}))
+            }
+            "release" => {
+                self.escape.store(false, Ordering::Relaxed);
+                Ok(json!(crate::sys::focus_game(*self.covered.lock())))
             }
             "watch_escape" => {
                 let on = args["on"].as_bool().unwrap_or(false);

@@ -57,8 +57,9 @@
   });
   const nameOf = (f: MapFighter) => names.get(f.id) ?? (mine.has(f.id) ? "votre personnage" : f.kind === "player" ? "ce personnage" : "ce monstre");
 
+  /** Escape no longer watched and the game focused again first (its own shortcuts work at once), then the window goes. */
   async function close() {
-    await call("fightmap", "watch_escape", { on: false }, true).catch(() => {});
+    await call("fightmap", "release", {}, true).catch(() => {});
     await win.close();
   }
 

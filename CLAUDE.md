@@ -78,7 +78,7 @@ Set `PYTHONUTF8=1` for scripts handling accents. The "Développeur" header toggl
   `lock()`+`touch()` / `update` / `flush()` for user actions). Never `save_json` on the capture thread.
 - `arg_i64` / `arg_str` / `unknown(module, method)` for `call`.
 - `needs_decoded() -> false` for modules reading only names / raw bytes; `wants() -> false` to skip a module (feature off).
-- `sys::system_tool("System32/curl.exe")`, `sys::http()`, `sys::unix_secs_f64`, `sys::game_client_rect()` (Dofus window's picture).
+- `sys::system_tool("System32/curl.exe")`, `sys::http()`, `sys::unix_secs_f64`, `sys::game_window()` (Dofus window: handle + picture area), `sys::focus_game`.
 - Tests: `testkit::hub(name)` (skipped without a pack), `testkit::msg`, `testkit::pack()`, `temp_dir()`.
 - `Proto::field_named` for exact clear-name paths.
 

@@ -91,9 +91,18 @@ pub fn game_window_titles() -> Vec<String> {
     vec![]
 }
 
-/// The client area (the game's picture, without the frame) of the Dofus window in the foreground, else of the first one, in
-/// screen pixels: (x, y, width, height). None without a Dofus window (or elsewhere than Windows).
-pub fn game_client_rect() -> Option<(i32, i32, i32, i32)> {
+/// A Dofus window: its handle (for [`focus_game`]) and its client area (the game's picture, without the frame) in screen
+/// pixels.
+pub struct GameWindow {
+    pub handle: isize,
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
+
+/// The Dofus window in the foreground, else the first one. None without a Dofus window (or elsewhere than Windows).
+pub fn game_window() -> Option<GameWindow> {
     #[cfg(windows)]
     {
         use windows_sys::Win32::Foundation::{POINT, RECT};
@@ -107,10 +116,28 @@ pub fn game_client_rect() -> Option<(i32, i32, i32, i32)> {
         let mut at = POINT { x: 0, y: 0 };
         // SAFETY: plain reads of a window's geometry into locals
         let ok = unsafe { GetClientRect(w, &mut r) != 0 && ClientToScreen(w, &mut at) != 0 };
-        (ok && r.right > 0 && r.bottom > 0).then_some((at.x, at.y, r.right, r.bottom))
+        (ok && r.right > 0 && r.bottom > 0).then_some(GameWindow { handle: w as isize, x: at.x, y: at.y, width: r.right, height: r.bottom })
     }
     #[cfg(not(windows))]
     None
+}
+
+/// Gives the keyboard focus back to a Dofus window: `handle` from [`game_window`] while it is still a Dofus window, else the
+/// first one. Works while this app has the foreground (Windows refuses it to a background process). False when it failed.
+pub fn focus_game(handle: Option<isize>) -> bool {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
+        let windows = dofus_windows();
+        let w = windows.iter().find(|(w, _)| Some(*w as isize) == handle).or(windows.first());
+        // SAFETY: a live top-level window handle just enumerated
+        w.is_some_and(|(w, _)| unsafe { SetForegroundWindow(*w) } != 0)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = handle;
+        false
+    }
 }
 
 /// System-wide shortcuts (RegisterHotKey), owned by a thread of their own that waits for them: `on_key(n)` runs (on that

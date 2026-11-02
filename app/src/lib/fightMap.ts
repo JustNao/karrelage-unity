@@ -48,10 +48,11 @@ export function diamond(cell: number, w: number): string {
 /** Size of the whole map drawn with diamonds `w` wide. */
 export const mapSize = (w: number): [number, number] => [ROW * w + w / 2, (ROWS * w) / 4 + w / 4];
 
-/** The « Ligne de vue en jeu » shortcut: closes the in-game view when it is open, else opens it during a fight. */
+/** The « Ligne de vue en jeu » shortcut (and the fight popup's « LdV » button): closes the in-game view when it is open, the
+ *  game getting the keyboard focus back (not the popup clicked), else opens it during a fight. */
 export async function toggleFightMapOverlay() {
   if (await WebviewWindow.getByLabel(OVERLAY)) {
-    await call("fightmap", "watch_escape", { on: false }, true).catch(() => {});
+    await call("fightmap", "release", {}, true).catch(() => {});
     return closeFloating(OVERLAY);
   }
   const s = await call<FightMapState>("fightmap", "state", {}, true);
