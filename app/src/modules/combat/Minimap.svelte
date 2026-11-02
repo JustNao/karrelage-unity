@@ -45,12 +45,15 @@
       class:seen={seen.has(c)}
       class:hidden={hidden.has(c)}
       class:from={from === c}
-      class:pinned={pinned && from === c}
       onmouseenter={() => k === "floor" && onhover(c)}
       onclick={() => k === "floor" && onpick(c)}
       role="presentation"
     />
   {/each}
+  <!-- the pinned cell's border, drawn after every cell (SVG paints in order: the neighbours' borders would cover it) -->
+  {#if pinned && from !== null}
+    <polygon points={diamond(from, W)} class="pinned" />
+  {/if}
   {#each shown as f (f.id)}
     {@const [x, y] = centre(f.cell, W)}
     <g class="fighter {side(f)}" class:summon={f.summoned} transform="translate({x} {y})" onmouseenter={() => onhover(f.cell)} onclick={() => onpick(f.cell)} role="presentation">
@@ -71,7 +74,7 @@
   .seen:hover { fill: color-mix(in srgb, var(--acc) 60%, var(--panel)); }
   .hidden { fill: color-mix(in srgb, var(--acc) 20%, var(--panel)); }
   .from { fill: var(--gold); }
-  .pinned { stroke: var(--fg); stroke-width: 2; }
+  .pinned { fill: none; stroke: var(--fg); stroke-width: 2; pointer-events: none; }
   .fighter { cursor: crosshair; }
   .fighter ellipse { stroke: var(--bg); stroke-width: 2; }
   .fighter.enemy ellipse { fill: var(--bad); }
