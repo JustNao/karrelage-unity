@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { app } from "./lib/app.svelte";
-  import { call, captureSet, listenAll, quitApp, restartApp, setCloseToTray } from "./lib/api";
+  import { call, captureSet, listenAll, on, quitApp, restartApp, setCloseToTray } from "./lib/api";
   import { settings } from "./lib/stores/settings.svelte";
   import { modules } from "./lib/registry";
   import Banner from "./lib/components/Banner.svelte";
@@ -93,6 +93,7 @@
     void startAutomation(); // automation rules watch every scan, whatever tab is open (needs the data pack)
     void startCombat(); // the current fight is followed whatever tab is open
     onShortcut("los", () => void toggleFightMapOverlay().catch(() => {}));
+    void on("fightmap:toggle", () => void toggleFightMapOverlay().catch(() => {})); // the fight popup's « LdV » button
     void startShortcuts(); // global shortcuts (Paramètres « Raccourcis »)
     if (app.capture && !s.on && !s.npcapError) captureSet(true).catch((e) => (err = String(e)));
   });

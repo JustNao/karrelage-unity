@@ -4,7 +4,8 @@
   import { app } from "../../lib/app.svelte";
   import { fight } from "../../lib/stores/combat.svelte";
   import { settings } from "../../lib/stores/settings.svelte";
-  import { ALL_RANGE as RANGE, type FightMapState, type Sight } from "../../lib/fightMap";
+  import { onStored, readJSON, removeKey } from "../../lib/persist.svelte";
+  import { ALL_RANGE as RANGE, CALIBRATION_KEY, type Calibration, type FightMapState, type Sight } from "../../lib/fightMap";
   import Banner from "../../lib/components/Banner.svelte";
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
   import Minimap from "./Minimap.svelte";
@@ -17,10 +18,18 @@
   let pinned = $state<number | null>(null);
   let sight = $state.raw<Sight | null>(null);
 
+  /** The in-game view's calibration (saved by its window: followed through the storage events) */
+  let calibrated = $state(readJSON<Calibration | null>(CALIBRATION_KEY, null) !== null);
+  function forget() {
+    removeKey(CALIBRATION_KEY);
+    calibrated = false;
+  }
+
   onMount(() => {
     const off = listenAll({ "fightmap:state": (s: FightMapState) => (live = s) });
     off.ready.then(() => call<FightMapState>("fightmap", "state")).then((s) => (live = s));
-    return off;
+    const stored = onStored<Calibration>(CALIBRATION_KEY, (c) => (calibrated = c !== null));
+    return () => (off(), stored());
   });
 
   // the map's cells, asked again when the map changes (shown during a fight only)
@@ -66,6 +75,12 @@
         <span class="mut status">
           {live.fight ? "Combat en cours" : "Hors combat"}{#if app.dev && live.fight && live.map !== null}&nbsp;· carte {live.map}{/if}
         </span>
+        <button
+          class="mini"
+          disabled={!calibrated}
+          onclick={forget}
+          title={calibrated ? "Oublier le calage de la vue en jeu : il sera redemandé au prochain usage du raccourci" : "Aucun calage enregistré"}
+        >Effacer le calage</button>
       </div>
       <p class="mut help">
         Survolez une case : les cases en ligne de vue s'éclairent, celles derrière un obstacle restent pâles. Un clic fige la

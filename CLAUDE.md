@@ -289,9 +289,10 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   not checked); blocked by `los` 0 cells and living fighters (target excepted, the player's own fighter ignored: it stands on
   the hovered cell). Targets = walkable cells, no range limit. The tab shows the map during a fight only (state cleared at
   FightEndEvent); the map id only in developer mode.
-- In-game view (`FightMapOverlay.svelte`, fightmap.html, shortcut `los`, toggled by `toggleFightMapOverlay`): a window over the
+- In-game view (`FightMapOverlay.svelte`, fightmap.html, shortcut `los` default Ctrl+Maj+T, or the fight popup's « LdV » button
+  → `fightmap:toggle` to the main window, the only one allowed to create windows; `toggleFightMapOverlay`): a window over the
   Dofus client area (`fightmap.window`, physical px). Calibration (`lib/fightMap.ts` `calibrate`, localStorage
-  `karrelage.combat.calibration`, valid for one client size): clicks on the player's cell then the fighter farthest on both
+  `karrelage.combat.calibration`, valid for one client size, « Effacer le calage » in the Combat tab): clicks on the player's cell then the fighter farthest on both
   axes give ox/oy/sx/sy (sx ≈ sy checked); hover = window takes the mouse, click pins and lets it through
   (`setIgnoreCursorEvents`). Closed by the shortcut, Escape (`watch_escape`: GetAsyncKeyState polled, not taken from the game),
   the end of the player's turn (`fightmap:turn`: another fighter's turn after one of `me`) or of the fight. Not yet tried on the

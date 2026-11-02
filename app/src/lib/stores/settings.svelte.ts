@@ -30,7 +30,7 @@ const DEFAULTS = {
   /** Global keyboard shortcuts (lib/shortcuts.ts), one per name: work while the game has the focus. */
   shortcuts: {
     /** In-game line of sight over the fight (FightMapOverlay.svelte). */
-    los: { mods: 1, vk: 0x56, label: "Alt+V" } as Binding,
+    los: { mods: 2 | 4, vk: 0x54, label: "Ctrl+Maj+T" } as Binding,
   },
 };
 /** A shortcut: `mods` = Alt 1 | Ctrl 2 | Shift 4 | Win 8, `vk` = Windows virtual key code (0 = none), `label` as shown. */

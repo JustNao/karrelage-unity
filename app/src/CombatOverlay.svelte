@@ -2,6 +2,7 @@
   import { onMount, tick } from "svelte";
   import { slide } from "svelte/transition";
   import { invoke } from "@tauri-apps/api/core";
+  import { emitTo } from "@tauri-apps/api/event";
   import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
   import { fight, followFight, NOTE_KINDS, OVERLAY_POS_KEY, OVERLAY_WIDTH, poisonText, shown, sortedGroups, type Group } from "./lib/stores/combat.svelte";
   import { settings } from "./lib/stores/settings.svelte";
@@ -90,6 +91,12 @@
     {#if fight.seen && !fight.active}<span class="mut">terminé</span>{/if}
   {/snippet}
   {#snippet actions()}
+    {#if fight.active}
+      <!-- the main window opens / closes the in-game view (only it may create windows) -->
+      <button class="x los" onclick={() => void emitTo("main", "fightmap:toggle")}
+        title="Ligne de vue sur le jeu : ouvrir / fermer (comme le raccourci {settings.shortcuts.los.vk ? settings.shortcuts.los.label : 'Ligne de vue en jeu'})"
+      >LdV</button>
+    {/if}
     {#if alive.length}
       <button class="x all" class:on={ui.all} onclick={() => (ui.all = !ui.all)}
         title={ui.all ? "Tous les monstres affichés : cliquer pour ne garder que ceux à surveiller" : "Seuls les monstres à surveiller (tag rouge ou note) sont affichés : cliquer pour tous les voir"}
@@ -159,7 +166,8 @@
   .tg { font-size: 10px; padding: 0 5px; border-radius: 4px; line-height: 16px; white-space: nowrap; border: 1px solid; }
   .tg.flag { color: var(--bad); border-color: rgba(229, 100, 110, 0.45); }
   .tg.control { color: var(--warn); border-color: rgba(224, 176, 74, 0.45); }
-  .x.all { font-size: 11px; }
+  .x.all, .x.los { font-size: 11px; }
+  .x.los:hover { color: var(--acc); }
   .x.all.on, .x.all:hover { color: var(--acc); }
   .poison { margin: 6px 8px; padding: 5px 8px; border-radius: 6px; background: rgba(229, 100, 110, 0.22); border: 1px solid rgba(229, 100, 110, 0.6); color: #ffd7da; font-weight: 600; animation: flash 0.45s ease-in-out 4 alternate; }
   /* a poison just applied: the background flashes to catch the eye, then settles */
