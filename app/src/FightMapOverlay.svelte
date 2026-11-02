@@ -28,6 +28,8 @@
   /** calibration clicks so far (physical px of the client area) */
   let clicks = $state.raw<[number, number][]>([]);
   let failed = $state(false);
+  /** the mouse during the calibration (CSS px): a cross about a cell wide is drawn there */
+  let pointer = $state<[number, number] | null>(null);
   let hovered = $state<number | null>(null);
   let pinned = $state<number | null>(null);
   let sight = $state.raw<Sight | null>(null);
@@ -41,19 +43,18 @@
   });
   const alive = $derived(live.fighters.filter((f) => f.alive && !f.carried && f.cell >= 0));
 
-  /** The two fighters to click: the player's character, then the fighter farthest from it on both axes (the calibration is
-   *  more precise the farther apart they are); without a known character, two monsters. */
+  /** The two fighters to click: the two farthest apart on both axes (the calibration is more precise the farther apart they
+   *  are), the player's character first when it is one of them. */
   const targets = $derived.by((): [MapFighter, MapFighter] | null => {
-    const first = alive.find((f) => mine.has(f.id)) ?? alive.find((f) => f.kind === "monster");
-    if (!first) return null;
-    const [ax, ay] = centre(first.cell, 1);
-    const spread = (f: MapFighter) => {
-      const [x, y] = centre(f.cell, 1);
-      return Math.min(Math.abs(x - ax), 2 * Math.abs(y - ay));
-    };
-    const others = alive.filter((f) => f.id !== first.id && !mine.has(f.id));
-    const second = others.reduce<MapFighter | null>((best, f) => (!best || spread(f) > spread(best) ? f : best), null);
-    return second ? [first, second] : null;
+    const at = alive.map((f) => [f, ...centre(f.cell, 1)] as const);
+    let best: [MapFighter, MapFighter] | null = null, most = -1;
+    for (let i = 0; i < at.length; i++)
+      for (let j = i + 1; j < at.length; j++) {
+        const [a, ax, ay] = at[i], [b, bx, by] = at[j];
+        const spread = Math.min(Math.abs(bx - ax), 2 * Math.abs(by - ay));
+        if (spread > most) [best, most] = [mine.has(b.id) && !mine.has(a.id) ? [b, a] : [a, b], spread];
+      }
+    return best;
   });
   const nameOf = (f: MapFighter) => names.get(f.id) ?? (mine.has(f.id) ? "votre personnage" : f.kind === "player" ? "ce personnage" : "ce monstre");
 
@@ -135,7 +136,12 @@
     }
   }
 
+  /** a cell's width (CSS px) guessed before the calibration: the map is 14.5 cells wide and about 10 high, the game's bars
+   *  take some of the height */
+  const crossW = $derived(Math.min(window.innerWidth / 15, window.innerHeight / 12));
+
   function move(e: MouseEvent) {
+    if (mode === "calibrate") pointer = [e.clientX, e.clientY];
     if (mode !== "hover" || !cal || !cells) return;
     const c = cellAt(cal, ...at(e));
     hovered = c !== null && cells[c] & MOV ? c : null;
@@ -171,6 +177,13 @@
         <p class="mut">Une seule fois par taille de fenêtre du jeu. Échap pour annuler.</p>
       {/if}
     </div>
+    {#if pointer}
+      {@const [x, y] = pointer}
+      <svg width="100%" height="100%" class="cross">
+        <path d="M{x - crossW / 2} {y}H{x + crossW / 2}M{x} {y - crossW / 4}V{y + crossW / 4}" class="under" />
+        <path d="M{x - crossW / 2} {y}H{x + crossW / 2}M{x} {y - crossW / 4}V{y + crossW / 4}" />
+      </svg>
+    {/if}
   {:else if cal && (mode === "hover" || mode === "pinned")}
     <svg width="100%" height="100%">
       {#each sight?.seen ?? [] as c (c)}
@@ -191,7 +204,9 @@
   :global(html), :global(body) { background: transparent !important; }
   /* nearly transparent rather than transparent: the window must still get the mouse while it is not let through */
   .overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.01); font-family: var(--font); font-size: 13px; cursor: crosshair; }
-  .overlay.calibrating { background: rgba(0, 0, 0, 0.18); }
+  .overlay.calibrating { background: rgba(0, 0, 0, 0.18); cursor: none; }
+  .cross path { stroke: #fff; stroke-width: 1; }
+  .cross path.under { stroke: rgba(0, 0, 0, 0.8); stroke-width: 3; }
   svg { position: absolute; inset: 0; pointer-events: none; }
   .seen { fill: rgba(90, 169, 255, 0.35); stroke: rgba(90, 169, 255, 0.9); stroke-width: 1; }
   .from { fill: rgba(242, 194, 48, 0.45); stroke: #f2c230; stroke-width: 2; }
