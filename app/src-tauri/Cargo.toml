@@ -16,6 +16,7 @@ loutil-core = { path = "../../crates/core" }
 loutil-data = { path = "../../crates/data" }
 loutil-proto = { path = "../../crates/proto" }
 loutil-modules = { path = "../../crates/modules" }
+tauri-plugin-window-state = "2"
 
 [target.'cfg(windows)'.dependencies]
 # SetWindowPos: move + resize a floating window in one step (already in the tree through tauri)

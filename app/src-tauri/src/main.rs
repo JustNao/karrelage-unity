@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 use tauri::{AppHandle, Emitter, Manager};
+use tauri_plugin_window_state::{AppHandleExt, StateFlags, WindowExt};
 
 const LANG: &str = "fr";
 
@@ -149,13 +150,35 @@ fn splash_done(app: AppHandle) {
     show_main(&app)
 }
 
+/// Window place (monitor, size, maximized) kept between launches by tauri-plugin-window-state, main window only (the floating
+/// ones keep theirs, `floating.ts`). Its position and size are restored while it is still hidden (`setup`), maximized just
+/// before it shows (maximizing at creation could show it early): it opens straight where it was left.
+fn window_state_flags() -> StateFlags {
+    StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED
+}
+
+/// No place saved yet (first launch): the main window opens maximized.
+static FIRST_LAUNCH: AtomicBool = AtomicBool::new(false);
+
+/// Written now: the hidden window's place would otherwise only be saved when the app exits (a shutdown may never tell it).
+fn save_window_place(app: &AppHandle) {
+    let _ = app.save_window_state(window_state_flags());
+}
+
 fn show_main(app: &AppHandle) {
+    // once: the 20 s safety net must not bring back a window hidden in the notification area meanwhile
+    static SHOWN: AtomicBool = AtomicBool::new(false);
+    if SHOWN.swap(true, Ordering::Relaxed) {
+        return;
+    }
     if let Some(w) = app.get_webview_window("main") {
-        if !w.is_visible().unwrap_or(true) {
+        if FIRST_LAUNCH.load(Ordering::Relaxed) {
             let _ = w.maximize();
-            let _ = w.show();
-            let _ = w.set_focus();
+        } else {
+            let _ = w.restore_state(StateFlags::MAXIMIZED);
         }
+        let _ = w.show();
+        let _ = w.set_focus();
     }
     if let Some(s) = app.get_webview_window("splash") {
         let _ = s.close();
@@ -166,6 +189,7 @@ fn show_main(app: &AppHandle) {
 #[tauri::command]
 fn restart_app(app: AppHandle) {
     loutil_modules::flush_all();
+    save_window_place(&app);
     app.restart()
 }
 
@@ -244,6 +268,23 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
     tray.build(app)?.set_visible(CLOSE_TO_TRAY.load(Ordering::Relaxed))
 }
 
+/// Both startup windows are created hidden: the main one goes back where it was left (position + size, see
+/// `window_state_flags`), the splash shows centred on that monitor.
+fn place_windows(app: &tauri::App) {
+    let file = app.path().app_config_dir().map(|d| d.join(app.handle().filename()));
+    FIRST_LAUNCH.store(!file.is_ok_and(|f| f.is_file()), Ordering::Relaxed);
+    let Some(main) = app.get_webview_window("main") else { return };
+    let _ = main.restore_state(StateFlags::SIZE | StateFlags::POSITION);
+    let Some(splash) = app.get_webview_window("splash") else { return };
+    if let (Ok(Some(m)), Ok(size)) = (main.current_monitor(), splash.outer_size()) {
+        let (at, area) = (m.position(), m.size());
+        let x = at.x + (area.width as i32 - size.width as i32) / 2;
+        let y = at.y + (area.height as i32 - size.height as i32) / 2;
+        let _ = splash.set_position(tauri::PhysicalPosition::new(x, y));
+    }
+    let _ = splash.show();
+}
+
 /// Quit so the app installer started by `update.app_install` can replace the files (it relaunches the app itself).
 #[tauri::command]
 fn quit_app(app: AppHandle) {
@@ -272,8 +313,12 @@ fn main() {
     let log = Arc::new(Mutex::new(VecDeque::new()));
     tauri::Builder::default()
         .manage(AppState { core: OnceLock::new(), error: OnceLock::new(), log: log.clone() })
+        .plugin(
+            tauri_plugin_window_state::Builder::new().with_state_flags(window_state_flags()).with_filter(|l| l == "main").skip_initial_state("main").build(),
+        )
         .setup(move |app| {
             build_tray(app)?;
+            place_windows(app);
             // load the data pack off the UI thread: blocking `setup` left the window unpainted (black + white webview) meanwhile
             let handle = app.handle().clone();
             std::thread::spawn(move || {
@@ -294,6 +339,7 @@ fn main() {
             // in the background: the capture and the floating windows keep running
             tauri::WindowEvent::CloseRequested { api, .. } if w.label() == "main" && CLOSE_TO_TRAY.load(Ordering::Relaxed) => {
                 api.prevent_close();
+                save_window_place(w.app_handle());
                 let _ = w.hide();
             }
             tauri::WindowEvent::Destroyed if w.label() == "main" => w.app_handle().exit(0),
