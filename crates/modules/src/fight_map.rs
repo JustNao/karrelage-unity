@@ -9,8 +9,11 @@
 //! Moves: MapMovementEvent (last cell of `cells`) and GameActionFightEvent slide (its two unnamed cells: the end is the one
 //! that is not the target's cell), teleport_on_same_map, exchange_positions (caster and target swap), carry / throw / drop
 //! character, death (its only int).
+//!
+//! In-game overlay (FightMapOverlay.svelte, opened by a shortcut): `window` = the Dofus window's client area to cover,
+//! `fightmap:turn` {id} at each turn start, `fightmap:escape` when Escape is pressed while `watch_escape` is on.
 use crate::combat::children;
-use crate::kit::{arg_i64, unknown};
+use crate::kit::{arg_i64, unknown, Role};
 use crate::{Ctx, Interest, Message, Module};
 use anyhow::Result;
 use loutil_data::maps::{sight, MAP_CELLS};
@@ -20,6 +23,8 @@ use parking_lot::Mutex;
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashSet};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 const MAP: &str = "MapComplementaryInformationEvent";
 const FIGHT_MAP: &str = "FightMapInformationEvent";
@@ -30,6 +35,8 @@ const SYNC: &str = "FightSynchronizeEvent";
 const ACTION: &str = "GameActionFightEvent";
 const MOVE: &str = "MapMovementEvent";
 const END: &str = "FightEndEvent";
+/// A fighter's turn starts (role `turn`, shared with combat.rs): the overlay clears when the player's turn is over.
+const TURN: &str = "FightTurnEvent";
 const POSITION: &str = "ActorPositionInformation";
 const FIGHTER: &str = "FightFighterInformation";
 const SPAWN: &str = "SpawnInformation";
@@ -70,6 +77,15 @@ pub struct FightMap {
     state: Mutex<State>,
     /// The cells of the last map asked for (hovering asks for the line of sight again and again).
     cells: Mutex<Option<(i64, Option<Vec<u8>>)>>,
+    turn: Role<TurnBindings>,
+    /// Escape watched (the overlay is open): its polling thread runs while this is true.
+    escape: Arc<AtomicBool>,
+}
+
+#[derive(serde::Deserialize)]
+struct TurnBindings {
+    /// FightTurnEvent's character_id: the fighter whose turn starts.
+    fighter: String,
 }
 
 fn name(ctx: &Ctx, m: &DynamicMessage) -> String {
@@ -209,11 +225,17 @@ impl Module for FightMap {
     }
 
     fn interest(&self) -> Interest {
-        Interest::Types(&[MAP, FIGHT_MAP, JOIN, SHOW, REFRESH, SYNC, ACTION, MOVE, END])
+        Interest::Types(&[MAP, FIGHT_MAP, JOIN, SHOW, REFRESH, SYNC, ACTION, MOVE, END, TURN])
     }
 
     fn on_message(&self, m: &Message, ctx: &Ctx) {
         let Some(d) = m.decoded.as_ref() else { return };
+        if m.name == TURN {
+            if let Some(b) = self.turn.get(ctx, "turn") {
+                ctx.emit("fightmap", "turn", json!({"id": int(d, &b.fighter)}));
+            }
+            return;
+        }
         let mut s = self.state.lock();
         let changed = match m.name.as_str() {
             MAP => {
@@ -277,10 +299,24 @@ impl Module for FightMap {
     /// `state`: {map, fight, fighters: [{id, cell, team, kind, alive, summoned, carried}]}; `cells` {map}: the flags of its
     /// 560 cells (bits 1 walkable, 2 sight goes through, 4 / 8 red / blue placement) or null; `sight` {from, min, max,
     /// ignore?: [fighter ids]}: {seen, hidden} cells of the current map at distance min..=max from `from`, the living
-    /// fighters blocking the sight (but the ones of `ignore` and whoever stands on `from`).
+    /// fighters blocking the sight (but the ones of `ignore` and whoever stands on `from`). `window`: the Dofus window's client
+    /// area {x, y, width, height} (screen pixels) or null; `watch_escape` {on}: `fightmap:escape` at each Escape press while on.
     fn call(&self, method: &str, args: Value, ctx: &Ctx) -> Result<Value> {
         match method {
             "state" => Ok(self.state.lock().json()),
+            "window" => {
+                Ok(crate::sys::game_client_rect().map_or(Value::Null, |(x, y, width, height)| json!({"x": x, "y": y, "width": width, "height": height})))
+            }
+            "watch_escape" => {
+                let on = args["on"].as_bool().unwrap_or(false);
+                if on && !self.escape.swap(true, Ordering::Relaxed) {
+                    let emit = ctx.emitter();
+                    crate::sys::watch_escape(self.escape.clone(), move || emit("fightmap:escape", Value::Null));
+                } else if !on {
+                    self.escape.store(false, Ordering::Relaxed);
+                }
+                Ok(Value::Null)
+            }
             "cells" => Ok(self.cells(ctx, arg_i64(&args, "map")?).map_or(Value::Null, |c| json!(c))),
             "sight" => {
                 let from = arg_i64(&args, "from")?;

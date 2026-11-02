@@ -2,9 +2,21 @@
   import { SETTING_DEFAULTS, settings } from "../../lib/stores/settings.svelte";
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
   import Switch from "../../lib/components/Switch.svelte";
+  import KeyCapture from "../../lib/components/KeyCapture.svelte";
+  import Banner from "../../lib/components/Banner.svelte";
+  import { SHORTCUTS, sameBinding, type ShortcutName } from "../../lib/shortcuts";
+  import { taken } from "../../lib/stores/shortcuts.svelte";
 
   /** Paramètres: general settings first, then one section per tab. Values live in lib/stores/settings.svelte.ts. */
-  const clampZ = (v: number) => (Number.isFinite(v) ? Math.min(5, Math.max(0.5, Math.round(v * 10) / 10)) : SETTING_DEFAULTS.hdv.goodZ);
+  const isDefault = (n: ShortcutName) => sameBinding(settings.shortcuts[n], SETTING_DEFAULTS.shortcuts[n]);
+  const resetKey = (n: ShortcutName) => (settings.shortcuts[n] = { ...SETTING_DEFAULTS.shortcuts[n] });
+  const resetKeys = () => SHORTCUTS.forEach((s) => resetKey(s.name));
+  /** Another shortcut with the same combination (only one of them can work). */
+  const clash = (n: ShortcutName) => {
+    const b = settings.shortcuts[n];
+    return b.vk ? SHORTCUTS.find((s) => s.name !== n && sameBinding(settings.shortcuts[s.name], b)) : undefined;
+  };
+  const clampZ =(v: number) => (Number.isFinite(v) ? Math.min(5, Math.max(0.5, Math.round(v * 10) / 10)) : SETTING_DEFAULTS.hdv.goodZ);
 </script>
 
 <div class="view">
@@ -24,6 +36,31 @@
             <Switch bind:checked={settings.general.closeToTray} label="Garder en arrière-plan à la fermeture" />
           </div>
         </div>
+      </section>
+      <section>
+        <h2 class="with-action">
+          Raccourcis
+          <button class="mini" disabled={SHORTCUTS.every((s) => isDefault(s.name))} onclick={resetKeys} title="Remettre tous les raccourcis par défaut">Tout réinitialiser</button>
+        </h2>
+        <p class="mut intro">Raccourcis globaux : ils marchent quand le jeu est au premier plan (le jeu ne reçoit alors pas ces touches).</p>
+        {#each SHORTCUTS as s (s.name)}
+          {@const other = clash(s.name)}
+          <div class="row">
+            <div class="lb">
+              <div>{s.title}</div>
+              <div class="mut">{s.desc}</div>
+              {#if taken.get(s.name) && settings.shortcuts[s.name].vk}
+                <Banner tone="warn" inset>{settings.shortcuts[s.name].label} est déjà pris par un autre programme : choisissez une autre combinaison.</Banner>
+              {:else if other}
+                <Banner tone="warn" inset>Même combinaison que « {other.title} ».</Banner>
+              {/if}
+            </div>
+            <div class="ctl">
+              <KeyCapture label={s.title} value={settings.shortcuts[s.name]} onchange={(b) => (settings.shortcuts[s.name] = b)} />
+              <button class="mini" disabled={isDefault(s.name)} onclick={() => resetKey(s.name)} title="Revenir au raccourci par défaut ({SETTING_DEFAULTS.shortcuts[s.name].label})">Par défaut</button>
+            </div>
+          </div>
+        {/each}
       </section>
       <section>
         <h2>HDV</h2>
@@ -59,6 +96,10 @@
   .settings { max-width: 760px; font-family: var(--font); font-size: 13px; }
   section { margin-bottom: 20px; }
   h2 { font: 600 12px var(--font); letter-spacing: 0.08em; text-transform: uppercase; color: var(--mut); margin: 4px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+  h2.with-action { display: flex; align-items: center; justify-content: space-between; }
+  h2 .mini { text-transform: none; letter-spacing: normal; font-weight: 400; }
+  .intro { font-size: 12px; margin: 0 0 4px; }
+  .lb :global(.banner) { margin-top: 6px; }
   .row { display: flex; gap: 20px; align-items: flex-start; justify-content: space-between; padding: 8px 0; }
   .lb .mut { font-size: 12px; margin-top: 2px; }
   .ctl { display: flex; gap: 6px; align-items: center; flex: none; }

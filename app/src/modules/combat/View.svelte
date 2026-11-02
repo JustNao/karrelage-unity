@@ -3,13 +3,11 @@
   import { call, listenAll } from "../../lib/api";
   import { app } from "../../lib/app.svelte";
   import { fight } from "../../lib/stores/combat.svelte";
-  import type { FightMapState, Sight } from "../../lib/fightMap";
+  import { settings } from "../../lib/stores/settings.svelte";
+  import { ALL_RANGE as RANGE, type FightMapState, type Sight } from "../../lib/fightMap";
   import Banner from "../../lib/components/Banner.svelte";
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
   import Minimap from "./Minimap.svelte";
-
-  /** Range of the line of sight: every cell of the map (no spell range). */
-  const RANGE = { min: 1, max: 99 };
 
   let live = $state.raw<FightMapState>({ map: null, fight: false, fighters: [] });
   /** cells of `live.map` (undefined = loading, null = not in the pack) */
@@ -72,6 +70,7 @@
       <p class="mut help">
         Survolez une case : les cases en ligne de vue s'éclairent, celles derrière un obstacle restent pâles. Un clic fige la
         case (un second la libère). Votre personnage est compté comme déplacé sur la case survolée.
+        {#if settings.shortcuts.los.vk}Directement sur le jeu : <b>{settings.shortcuts.los.label}</b> (modifiable dans Paramètres › Raccourcis).{/if}
       </p>
       {#if !live.fight}
         <p class="mut">La carte du combat s'affiche dès qu'un combat commence, application ouverte.</p>

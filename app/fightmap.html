@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <title>Ligne de vue</title>
+    <!-- transparent window over the game picture, opened by the « Ligne de vue en jeu » shortcut (lib/stores/fightMap.svelte.ts) -->
+    <style>
+      html, body, #app { margin: 0; height: 100%; background: transparent !important; overflow: hidden; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/fightmap.ts"></script>
+  </body>
+</html>

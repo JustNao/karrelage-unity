@@ -27,7 +27,18 @@ const DEFAULTS = {
     /** Which way the floating window grows with its content: its top edge stays put ("down") or its bottom edge ("up"). */
     overlayGrow: "down" as "down" | "up",
   },
+  /** Global keyboard shortcuts (lib/shortcuts.ts), one per name: work while the game has the focus. */
+  shortcuts: {
+    /** In-game line of sight over the fight (FightMapOverlay.svelte). */
+    los: { mods: 1, vk: 0x56, label: "Alt+V" } as Binding,
+  },
 };
+/** A shortcut: `mods` = Alt 1 | Ctrl 2 | Shift 4 | Win 8, `vk` = Windows virtual key code (0 = none), `label` as shown. */
+export interface Binding {
+  mods: number;
+  vk: number;
+  label: string;
+}
 export type CombatShow = "none" | "warning" | "invulnerable" | "all";
 export type Settings = typeof DEFAULTS;
 export const SETTING_DEFAULTS: Settings = DEFAULTS;

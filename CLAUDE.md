@@ -78,7 +78,7 @@ Set `PYTHONUTF8=1` for scripts handling accents. The "Développeur" header toggl
   `lock()`+`touch()` / `update` / `flush()` for user actions). Never `save_json` on the capture thread.
 - `arg_i64` / `arg_str` / `unknown(module, method)` for `call`.
 - `needs_decoded() -> false` for modules reading only names / raw bytes; `wants() -> false` to skip a module (feature off).
-- `sys::system_tool("System32/curl.exe")`, `sys::http()`, `sys::unix_secs_f64`.
+- `sys::system_tool("System32/curl.exe")`, `sys::http()`, `sys::unix_secs_f64`, `sys::game_client_rect()` (Dofus window's picture).
 - Tests: `testkit::hub(name)` (skipped without a pack), `testkit::msg`, `testkit::pack()`, `temp_dir()`.
 - `Proto::field_named` for exact clear-name paths.
 
@@ -95,6 +95,10 @@ Set `PYTHONUTF8=1` for scripts handling accents. The "Développeur" header toggl
 - `fmt.ts` (kamas use "," thousands: "2,380,000 K"; other numbers French format), `price.ts` (`AH_TAX` 2 %, `afterTax`,
   `effectivePrice`: override > AH unit > weekly avg), icon stores `itemIcons` / `statIcons` (`iconOfElement`).
 - `registry.ts` `discover(glob)`: tabs and Crafting sub-tabs register by existing.
+- Global shortcuts: `settings.shortcuts.<name>` {mods, vk, label} + an entry in `lib/shortcuts.ts` `SHORTCUTS` (Paramètres
+  « Raccourcis »: rebind / reset each / reset all) + `onShortcut(name, fn)` (App.svelte). `shortcuts.rs` registers them with
+  RegisterHotKey on its own thread (`sys::Hotkeys`; the game doesn't get the keys), released while a binding is typed. `vk` =
+  `KeyboardEvent.keyCode` (layout-aware, what RegisterHotKey wants), not `code`.
 - Settings: `stores/settings.svelte.ts` (`DEFAULTS` + a row in the Paramètres tab, « Général » first, then one section per
   tab). `general.closeToTray`: closing hides the main window, tray icon (`main.rs` `build_tray`) opens / quits.
 - Window capabilities: `default.json` (main), `overlay.json` (floating), `splash.json`. `setSize` & co. need explicit grants.
@@ -285,6 +289,13 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   not checked); blocked by `los` 0 cells and living fighters (target excepted, the player's own fighter ignored: it stands on
   the hovered cell). Targets = walkable cells, no range limit. The tab shows the map during a fight only (state cleared at
   FightEndEvent); the map id only in developer mode.
+- In-game view (`FightMapOverlay.svelte`, fightmap.html, shortcut `los`, toggled by `toggleFightMapOverlay`): a window over the
+  Dofus client area (`fightmap.window`, physical px). Calibration (`lib/fightMap.ts` `calibrate`, localStorage
+  `karrelage.combat.calibration`, valid for one client size): clicks on the player's cell then the fighter farthest on both
+  axes give ox/oy/sx/sy (sx ≈ sy checked); hover = window takes the mouse, click pins and lets it through
+  (`setIgnoreCursorEvents`). Closed by the shortcut, Escape (`watch_escape`: GetAsyncKeyState polled, not taken from the game),
+  the end of the player's turn (`fightmap:turn`: another fighter's turn after one of `me`) or of the fight. Not yet tried on the
+  real game (calibration assumes the grid scales linearly with no camera zoom).
 
 **Loot** (`loot.rs`): FightEndEvent → results → fighter id + `Loot` messages; item = the largest int that is a known gid
 (verified 3.7.12.12). Automation « Songes »: sound when a « Légende » (type 219) is looted, by price threshold.
