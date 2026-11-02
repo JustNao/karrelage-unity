@@ -283,7 +283,8 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   captures: every living fighter on a walkable cell of the pack map, never two on a cell (`fighters_stand_on_walkable_cells`).
 - Line of sight (`maps::sight`): supercover line between centres, a line exactly through a corner goes diagonally (side cells
   not checked); blocked by `los` 0 cells and living fighters (target excepted, the player's own fighter ignored: it stands on
-  the hovered cell). Targets = walkable cells. Not yet compared with the game's own preview.
+  the hovered cell). Targets = walkable cells, no range limit. The tab shows the map during a fight only (state cleared at
+  FightEndEvent); the map id only in developer mode.
 
 **Loot** (`loot.rs`): FightEndEvent → results → fighter id + `Loot` messages; item = the largest int that is a known gid
 (verified 3.7.12.12). Automation « Songes »: sound when a « Légende » (type 219) is looted, by price threshold.

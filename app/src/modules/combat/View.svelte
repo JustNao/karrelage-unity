@@ -1,15 +1,15 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { call, listenAll } from "../../lib/api";
-  import { persisted } from "../../lib/persist.svelte";
+  import { app } from "../../lib/app.svelte";
   import { fight } from "../../lib/stores/combat.svelte";
   import type { FightMapState, Sight } from "../../lib/fightMap";
   import Banner from "../../lib/components/Banner.svelte";
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
   import Minimap from "./Minimap.svelte";
 
-  /** Spell range of the line of sight (portée min / max), remembered. */
-  const range = persisted("karrelage.combat.range", { min: 1, max: 6 });
+  /** Range of the line of sight: every cell of the map (no spell range). */
+  const RANGE = { min: 1, max: 99 };
 
   let live = $state.raw<FightMapState>({ map: null, fight: false, fighters: [] });
   /** cells of `live.map` (undefined = loading, null = not in the pack) */
@@ -25,9 +25,9 @@
     return off;
   });
 
-  // the map's cells, asked again when the map changes
+  // the map's cells, asked again when the map changes (shown during a fight only)
   $effect(() => {
-    const map = live.map;
+    const map = live.fight ? live.map : null;
     if (map === loaded) return;
     loaded = map;
     cells = undefined;
@@ -50,11 +50,11 @@
   // line of sight from the hovered / pinned cell: the player's own fighter stands there instead of where it is now
   let asked = 0;
   $effect(() => {
-    const f = from, min = Math.max(0, range.min), max = Math.max(range.min, range.max);
+    const f = from;
     void live.fighters; // fighters moved: asked again
     if (f === null || !cells) return void (sight = null);
     const n = ++asked;
-    call<Sight | null>("fightmap", "sight", { from: f, min, max, ignore: [...mine] }, true).then((s) => n === asked && (sight = s));
+    call<Sight | null>("fightmap", "sight", { from: f, ...RANGE, ignore: [...mine] }, true).then((s) => n === asked && (sight = s));
   });
 
   const pick = (c: number) => (pinned = pinned === c ? null : c);
@@ -65,19 +65,18 @@
     <div class="combat">
       <div class="head">
         <h2>Ligne de vue</h2>
-        <label title="Portée minimale du sort">Portée min <input type="number" min="0" max="63" bind:value={range.min} /></label>
-        <label title="Portée maximale du sort">max <input type="number" min="0" max="63" bind:value={range.max} /></label>
         <span class="mut status">
-          {#if live.map === null}Aucune carte vue
-          {:else}{live.fight ? "Combat en cours" : "Hors combat"} · carte {live.map}{/if}
+          {live.fight ? "Combat en cours" : "Hors combat"}{#if app.dev && live.fight && live.map !== null}&nbsp;· carte {live.map}{/if}
         </span>
       </div>
       <p class="mut help">
-        Survolez une case : les cases à portée en ligne de vue s'éclairent, celles derrière un obstacle restent pâles. Un clic fige la
+        Survolez une case : les cases en ligne de vue s'éclairent, celles derrière un obstacle restent pâles. Un clic fige la
         case (un second la libère). Votre personnage est compté comme déplacé sur la case survolée.
       </p>
-      {#if live.map !== null && cells === null}
-        <Banner tone="warn" inset>Carte {live.map} absente du pack de données : mettez-le à jour.</Banner>
+      {#if !live.fight}
+        <p class="mut">La carte du combat s'affiche dès qu'un combat commence, application ouverte.</p>
+      {:else if live.map !== null && cells === null}
+        <Banner tone="warn" inset>Carte du combat absente du pack de données : mettez-le à jour.</Banner>
       {:else if cells}
         <div class="map">
           <Minimap {cells} fighters={live.fighters} {allies} {mine} {names} {sight} {from} pinned={pinned !== null} onhover={(c) => (hovered = c)} onpick={pick} />
@@ -90,8 +89,6 @@
           <span><i class="sq seen"></i>En vue</span>
           <span><i class="sq hidden"></i>Hors vue</span>
         </div>
-      {:else if live.map === null}
-        <p class="mut">La carte s'affiche dès que vous changez de carte ou entrez en combat, application ouverte.</p>
       {/if}
     </div>
   </SmoothScroll>
@@ -103,8 +100,6 @@
   .combat { max-width: 980px; font-family: var(--font); font-size: 13px; }
   .head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
   h2 { font: 600 12px var(--font); letter-spacing: 0.08em; text-transform: uppercase; color: var(--mut); margin: 0; }
-  .head label { display: inline-flex; align-items: center; gap: 6px; }
-  .head input { width: 56px; }
   .status { margin-left: auto; }
   .help { font-size: 12px; margin: 8px 0 12px; }
   .map { padding: 4px 0; }

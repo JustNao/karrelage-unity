@@ -229,7 +229,15 @@ impl Module for FightMap {
                 s.fighters.clear();
                 true
             }
-            END => std::mem::replace(&mut s.fight, false),
+            // the map is only shown during a fight: nothing kept once it is over
+            END => {
+                let was = std::mem::replace(&mut s.fight, false);
+                s.fight_map = None;
+                s.fighters.clear();
+                was
+            }
+            // fighters only matter during a fight
+            _ if !s.fight => false,
             SHOW | REFRESH | SYNC => {
                 let mut found = vec![];
                 fighters(ctx, d, None, &mut found);
@@ -335,6 +343,9 @@ mod tests {
                     _ => {}
                 }
                 let s = hub.call("fightmap", "state", Value::Null).unwrap();
+                if r["name"] == END {
+                    assert!(s["fight"] == false && s["fighters"].as_array().unwrap().is_empty(), "{name}: cleared at the fight's end");
+                }
                 if s["fight"] != true || s["map"].is_null() || !fight_map {
                     continue;
                 }
