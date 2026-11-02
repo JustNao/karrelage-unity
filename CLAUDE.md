@@ -292,7 +292,7 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
 - In-game view (`FightMapOverlay.svelte`, fightmap.html, shortcut `los` default Ctrl+Maj+T, or the fight popup's « LdV » button
   → `fightmap:toggle` to the main window, the only one allowed to create windows; `toggleFightMapOverlay`): a window over the
   Dofus client area (`fightmap.window`, physical px). Calibration (`lib/fightMap.ts` `calibrate`, localStorage
-  `karrelage.combat.calibration`, valid for one client size, « Effacer le calage » in the Combat tab): clicks on the centres of the two fighters farthest apart on
+  `karrelage.combat.calibration`, valid for one client size, « Effacer la calibration » in the Combat tab): clicks on the centres of the two fighters farthest apart on
   both axes (the player's first if one of them; a cell-sized cross replaces the cursor) give ox/oy/sx/sy (sx ≈ sy checked); hover = window takes the mouse, click pins and lets it through
   (`setIgnoreCursorEvents`). Closed by the shortcut, Escape (`watch_escape`: GetAsyncKeyState polled, not taken from the game),
   the end of the player's turn (`fightmap:turn`: another fighter's turn after one of `me`) or of the fight. Not yet tried on the

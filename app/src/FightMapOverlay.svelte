@@ -165,7 +165,7 @@
 <div class="overlay" class:calibrating={mode === "calibrate"} onclick={click} onmousemove={move}>
   {#if mode === "calibrate"}
     <div class="popup">
-      <b>Calage de la ligne de vue</b>
+      <b>Calibration de la ligne de vue</b>
       {#if !targets}
         <p>Il faut au moins deux combattants placés. Échap pour fermer.</p>
       {:else}

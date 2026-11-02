@@ -79,8 +79,8 @@
           class="mini"
           disabled={!calibrated}
           onclick={forget}
-          title={calibrated ? "Oublier le calage de la vue en jeu : il sera redemandé au prochain usage du raccourci" : "Aucun calage enregistré"}
-        >Effacer le calage</button>
+          title={calibrated ? "Oublier la calibration de la vue en jeu : il sera redemandé au prochain usage du raccourci" : "Aucune calibration enregistrée"}
+        >Effacer la calibration</button>
       </div>
       <p class="mut help">
         Survolez une case : les cases en ligne de vue s'éclairent, celles derrière un obstacle restent pâles. Un clic fige la
