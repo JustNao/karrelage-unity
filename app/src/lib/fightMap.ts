@@ -75,7 +75,7 @@ export async function pressFightMapOverlay(view: OverlayView, hold: boolean) {
     return void (pendingPress = { view, hold });
   }
   const s = await call<FightMapState>("fightmap", "state", {}, true);
-  if (s.fight && s.map !== null) await openFloating(OVERLAY, { url: `fightmap.html?view=${view}&hold=${hold ? 1 : 0}`, title: "Vue en jeu", width: 800, height: 600, focus: view !== "portals" });
+  if (s.fight && s.map !== null) await openFloating(OVERLAY, { url: `fightmap.html?view=${view}&hold=${hold ? 1 : 0}`, title: "Vue en jeu", width: 800, height: 600, focus: view !== "portals", clearBackground: true });
 }
 const OVERLAY = "fightmap";
 /** the in-game view window listens (it said `fightmap:ready`) */
@@ -99,7 +99,7 @@ export async function prewarmFightMapOverlay() {
     made = true;
     if (await WebviewWindow.getByLabel(OVERLAY)) return;
     overlayReady = false;
-    await openFloating(OVERLAY, { url: "fightmap.html?prewarm=1", title: "Vue en jeu", width: 800, height: 600, focus: false, visible: false });
+    await openFloating(OVERLAY, { url: "fightmap.html?prewarm=1", title: "Vue en jeu", width: 800, height: 600, focus: false, visible: false, clearBackground: true });
   };
   await on<FightMapState>("fightmap:state", (s) => void ensure(s).catch(() => {}));
   void call<FightMapState>("fightmap", "state", {}, true).then(ensure).catch(() => {});

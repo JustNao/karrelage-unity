@@ -20,6 +20,9 @@ export interface FloatingOptions {
   focus?: boolean;
   /** Shown at once (false: created hidden, it shows itself later). */
   visible?: boolean;
+  /** The webview's own background transparent too (painted before the page: white otherwise, a flash when the window first
+   *  shows). Only for a window that is never dragged: on the fight popup it came with a second, unmovable copy of it. */
+  clearBackground?: boolean;
 }
 
 /** Open the window, or bring it forward when it is already open (`focus`). True when it was already open. */
@@ -43,6 +46,7 @@ export async function openFloating(label: string, o: FloatingOptions): Promise<b
     resizable: false,
     focus: o.focus ?? true,
     visible: o.visible ?? true,
+    ...(o.clearBackground ? { backgroundColor: [0, 0, 0, 0] as [number, number, number, number] } : {}),
   });
   return false;
 }

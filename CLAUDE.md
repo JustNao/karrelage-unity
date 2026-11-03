@@ -305,7 +305,8 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   (`prewarmFightMapOverlay`; it answers `fightmap:ready`, a press before that waits); once loaded it goes on screen empty,
   click-through and not focusable (`idle`), shortcuts draw a view in it (`open`: placed on the Dofus window again,
   calibration checked), closing empties it again; only the fight's end closes it. Never hidden / shown again: WebView2
-  flashes white on show. A transparent `backgroundColor` (tried) came with a second, unmovable copy of the fight popup.
+  flashes white on show (the first show still did): this window alone gets a transparent `backgroundColor`
+  (`clearBackground`), which on every floating window came with a second, unmovable copy of the fight popup.
 - Class help (`lib/classHelp.ts`): Steamer turrets (gids 5831 Bathyscaphe, 5832 Chalutier, 5833 Foreuse, 5835 Gardienne, 5836
   Harponneuse, 5837 Tactirelle) of the player (summoner in `me`, else same team): the cells ≤ 7 from each and in its line of sight
   (bonus zone), the mouse let through (the cursor is polled: over a turret's cell, its zone forward). Fighters carry `monsters` (their monster info's ints that are pack monsters: the gid,
