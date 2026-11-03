@@ -47,7 +47,11 @@
   let clicks = $state.raw<[number, number][]>([]);
   let failed = $state(false);
   /** when the calibration ended */
-  let shownAt = 0;
+  let calibratedAt = 0;
+  /** `open` is under way (the window placed, the focus set...): a close asked meanwhile waits for it (`closeAsked`: "any" =
+   *  Escape, the shortcut again, the end of the turn; "click" = a click, which only closes the portal simulation) */
+  let opening = false;
+  let closeAsked: "any" | "click" | null = null;
   /** the mouse during the calibration (CSS px): a cross about a cell wide is drawn there */
   let pointer = $state<[number, number] | null>(null);
 
@@ -79,25 +83,36 @@
    *  portal simulation does not take the focus (the game keeps its spell selected). */
   async function open(v: OverlayView, h: boolean) {
     [view, hold, sticky, clicks, failed, pointer] = [v, h, false, [], false, null];
-    const rect = await place();
-    if (!rect || !live.fight || !cells) return void hide();
-    size = { width: rect.width, height: rect.height };
-    const saved = readJSON<Calibration | null>(CALIBRATION_KEY, null);
-    cal = saved && saved.width === rect.width && saved.height === rect.height ? saved : null;
-    mode = cal ? "show" : "calibrate";
-    shownAt = Date.now();
-    const focus = view !== "portals" || mode === "calibrate";
-    await win.setFocusable(focus).catch(() => {});
-    // the mouse taken only when the view needs it (calibration, line of sight): click-through is the WS_EX_LAYERED style, and
-    // its first removal in the window's life flashed white (the class help and the portals keep letting the mouse through)
-    if (mode === "calibrate" || view === "los") await win.setIgnoreCursorEvents(false);
-    shown = true;
-    if (focus) await win.setFocus().catch(() => {});
-    else void call("fightmap", "refocus", {}, true).catch(() => {});
-    await call("fightmap", "watch_escape", { on: true });
+    [opening, closeAsked] = [true, null];
+    // Escape and clicks watched from now on: one while the view is still opening closes it once it is open
+    void call("fightmap", "watch_escape", { on: true }).catch(() => {});
+    try {
+      const rect = await place();
+      if (!rect || !live.fight || !cells) return void (await call("fightmap", "release", {}, true).catch(() => {}));
+      size = { width: rect.width, height: rect.height };
+      const saved = readJSON<Calibration | null>(CALIBRATION_KEY, null);
+      cal = saved && saved.width === rect.width && saved.height === rect.height ? saved : null;
+      mode = cal ? "show" : "calibrate";
+      const focus = view !== "portals" || mode === "calibrate";
+      await win.setFocusable(focus).catch(() => {});
+      // the mouse taken only when the view needs it (calibration, line of sight): click-through is the WS_EX_LAYERED style,
+      // and its first removal in the window's life flashed white (the class help and the portals keep letting the mouse through)
+      if (mode === "calibrate" || view === "los") await win.setIgnoreCursorEvents(false);
+      shown = true;
+      if (focus) await win.setFocus().catch(() => {});
+      else void call("fightmap", "refocus", {}, true).catch(() => {});
+    } finally {
+      opening = false;
+    }
+    if (closeAsked === "any" || (closeAsked === "click" && closesOnClick())) return void hide();
     // let go while the view was opening (a quick press)
     if (hold && !(await call<boolean>("shortcuts", "held", { name: view }).catch(() => true))) letGo();
   }
+
+  /** A click (cast or cancelled spell) closes the portal simulation opened by its key, not during its calibration. */
+  const closesOnClick = () => view === "portals" && !hold && mode === "show";
+  /** Closes the view, or once it is open when it is still opening. */
+  const closeSoon = (by: "any" | "click") => (opening ? void (closeAsked = closeAsked === "any" ? "any" : by) : void hide());
 
   /** The window put on the Dofus window's client area (it may have moved since): that area, null without a Dofus window. */
   async function place() {
@@ -143,14 +158,16 @@
     let mineTurn = false;
     const off = listenAll({
       "fightmap:state": (s: FightMapState) => (live = s),
-      "fightmap:escape": () => void hide(),
+      "fightmap:escape": () => closeSoon("any"),
       // (the calibration's last click comes back from the click watcher too: not that one)
-      "fightmap:click": () => shown && view === "portals" && !hold && mode === "show" && Date.now() - shownAt > 500 && void hide(),
+      "fightmap:click": () => (opening || (shown && closesOnClick() && Date.now() - calibratedAt > 500)) && closeSoon("click"),
       "fightmap:turn": ({ id }: { id: number }) => {
         if (mine.has(id)) mineTurn = true;
-        else if (mineTurn) void hide();
+        else if (mineTurn) closeSoon("any");
       },
       "fightmap:press": (p: { view: OverlayView; hold: boolean }) => {
+        // pressed again while opening: closed once open (another view's shortcut meanwhile is left out)
+        if (opening) return void (p.view === view && closeSoon("any"));
         if (!shown) return void open(p.view, p.hold).catch(() => void hide());
         if (p.view === view) return void hide();
         [view, hold, sticky] = [p.view, p.hold, false];
@@ -218,7 +235,7 @@
     writeJSON(CALIBRATION_KEY, c);
     cal = c;
     mode = "show";
-    shownAt = Date.now();
+    calibratedAt = Date.now();
     if (view === "portals") void win.setFocusable(false).then(() => call("fightmap", "refocus", {}, true)).catch(() => {});
     // the shortcut was let go during the calibration: the view stays until it is pressed again (or Escape...)
     if (hold && !(await call<boolean>("shortcuts", "held", { name: view }).catch(() => true))) hold = false;
