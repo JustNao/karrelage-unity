@@ -11,28 +11,41 @@
    * comes out past the exit (`cast`: the spell's way, thin); the main line is always the new network's way from the
    * new portal. The simulations of every
    * cell come at once (asked again when portals or fighters change): hovering is a lookup.
+   * The mouse on one of the player's open portals when the simulation opens (`polled`: its first cursor read): that portal is
+   * the `start`, the way shown is from it through each simulated network (cleared with the view).
    */
-  let { cal, live, mine, dpr, pointed, simulate, net = $bindable(null) }: {
+  let { cal, live, mine, dpr, pointed, polled, simulate, net = $bindable(null), start = $bindable(undefined) }: {
     cal: Calibration;
     live: FightMapState;
     mine: Set<number>;
     dpr: number;
     pointed: number | null;
+    polled: boolean;
     simulate: boolean;
     net?: PortalNet | null;
+    /** undefined: not chosen yet; null: none */
+    start?: number | null;
   } = $props();
 
   const author = $derived(portalAuthor(live, mine));
 
+  // the start: chosen once, where the mouse was when the simulation opened
+  $effect(() => {
+    if (!simulate) return void (start = undefined);
+    if (!polled || start !== undefined) return;
+    const at = pointed;
+    start = at !== null && (live.portals ?? []).some((p) => p.author === author && p.cell === at && p.open) ? at : null;
+  });
+
   let all = $state.raw<{ base: PortalNet; sims: Record<string, PortalNet> } | null>(null);
   let asked = 0;
   $effect(() => {
-    const who = author;
+    const [who, from] = [author, start];
     void live.portals;
     void live.fighters;
-    if (who === null) return void (all = null);
+    if (who === null || (simulate && from === undefined)) return void (all = null);
     const n = ++asked;
-    call<{ base: PortalNet; sims: Record<string, PortalNet> }>("fightmap", "portals", { author: who, all: simulate }, true)
+    call<{ base: PortalNet; sims: Record<string, PortalNet> }>("fightmap", "portals", { author: who, all: simulate, ...(from != null && { start: from }) }, true)
       .then((r) => n === asked && (all = simulate ? r : { base: r as unknown as PortalNet, sims: {} }))
       .catch(() => {});
   });
@@ -63,6 +76,9 @@
       <polygon points={screenDiamond(cal, p.cell, dpr)} class="portal" class:closed={!p.open} class:added={p.cell === net.added}
         style:--c={portalColour(p.number, full)} />
     {/each}
+    {#if start != null}
+      <polygon points={screenDiamond(cal, start, dpr)} class="start" />
+    {/if}
     {#if cast}
       <polyline points={cast} class="cast" />
     {/if}
@@ -90,6 +106,7 @@
   .portal.closed, .badge.closed { --c: #8c9096; }
   .portal.closed { stroke-dasharray: 4 3; }
   .portal.added { stroke-dasharray: 6 3; fill-opacity: 0.4; }
+  .start { fill: none; stroke: #fff; stroke-width: 3.5; }
   .dropped { fill: rgba(140, 144, 150, 0.25); stroke: #8c9096; stroke-width: 2; stroke-dasharray: 4 3; }
   .cross { stroke: #ff4d4d; stroke-width: 3; stroke-linecap: round; }
   .exit { fill: #fff; stroke: #fff; stroke-width: 2; animation: pulse 0.9s ease-in-out infinite alternate; }

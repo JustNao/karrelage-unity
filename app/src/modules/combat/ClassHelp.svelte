@@ -45,7 +45,8 @@
       Votre raccourci du sort Portail dans le jeu : le jeu la reçoit toujours, et un portail est simulé sur la case sous la
       souris (le plus ancien barré s'il y en a 4 ; sur un de vos portails, le sort traverse le réseau et le portail sort après la
       sortie, décalé comme à l'entrée), avec la redirection jusqu'à la sortie et son bonus de dommages. La touche à
-      nouveau, un clic (le sort est lancé ou annulé) ou Échap l'effacent.
+      nouveau, un clic (le sort est lancé ou annulé) ou Échap l'effacent. La touche pressée la souris sur un de vos portails : le
+      chemin affiché part de ce portail (pour chaque nouveau portail simulé), jusqu'à la fermeture.
     </div>
     {#if clash}<Banner tone="warn" inset>Même touche que « {clash.title} » : ce raccourci la prend, le jeu ne la reçoit pas.</Banner>{/if}
   </div>

@@ -26,9 +26,14 @@
   } = $props();
 
   let net = $state.raw<PortalNet | null>(null);
+  /** the portal the simulation's way starts from (PortalLayer.svelte) */
+  let start = $state<number | null | undefined>(undefined);
+  const startNumber = $derived(start == null ? null : net?.portals.find((p) => p.cell === start)?.number ?? null);
 
   /** the cell under the mouse */
   let pointed = $state<number | null>(null);
+  /** the cursor was read once: `pointed` is where it was when the view opened */
+  let polled = $state(false);
 
   onMount(() => {
     void win.setIgnoreCursorEvents(true);
@@ -39,7 +44,7 @@
     const tick = async () => {
       if (origin) {
         const p = await cursorPosition().catch(() => null);
-        if (on) pointed = p && cellAt(cal, p.x - origin.x, p.y - origin.y);
+        if (on) [pointed, polled] = [p && cellAt(cal, p.x - origin.x, p.y - origin.y), true];
       }
       if (on) poll = setTimeout(tick, 16);
     };
@@ -89,7 +94,7 @@
     <polygon points={screenDiamond(cal, a.turret.cell, dpr)} style:stroke={look(a.turret).colour} class="turret" />
   {/each}
 </svg>
-{#if settings.classHelp.eliotrope.enabled}<PortalLayer {cal} {live} {mine} {dpr} {pointed} {simulate} bind:net />{/if}
+{#if settings.classHelp.eliotrope.enabled}<PortalLayer {cal} {live} {mine} {dpr} {pointed} {polled} {simulate} bind:net bind:start />{/if}
 {#snippet zone(a: { turret: MapFighter; seen: number[] })}
   {#each a.seen as c (c)}
     <polygon points={screenDiamond(cal, c, dpr)} style:fill={look(a.turret).colour} style:stroke={look(a.turret).colour}
@@ -100,6 +105,7 @@
 <div class="pill">
   {#if simulate}
     Portail simulé sous la souris
+    {#if start != null}· départ : {startNumber === null ? "votre portail disparaît" : `portail n° ${startNumber}`}{/if}
     {#if net && net.path.length > 1}· sortie à {net.distance} cases : <b>+{net.distance * PORTAL_BONUS} % de dommages</b>{/if}
     {#if net?.via}· lancé dans un portail : {net.added === null ? "la case de sortie est prise ou hors de la carte" : "le nouveau portail sort après le dernier de la redirection"}{/if}
     {#if net?.dropped != null}· <span class="chip" style:color="#ff4d4d">✕ le n° 1 disparaît</span>
