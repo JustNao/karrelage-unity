@@ -31,6 +31,8 @@ export interface PortalNet {
   added: number | null;
   /** the oldest portal, gone because of the simulated one */
   dropped: number | null;
+  /** the number of the portal the simulated one is put on (it replaces it) */
+  replaced: number | null;
   /** from the entrance to the exit */
   path: number[];
   /** cells between the path's portals */

@@ -283,28 +283,28 @@ fn fighters(ctx: &Ctx, m: &DynamicMessage, outer: Option<&Outer>, out: &mut Vec<
     }
 }
 
-/// A caster's network (`net`: (cell, open) from the oldest) as `portals` tells it, `add` on one of its portals = the way from
-/// it, on a `free` cell = a portal simulated there (the oldest one goes when there are already four) and the way from it.
+/// A caster's network (`net`: (cell, open) from the oldest) as `portals` tells it, with a portal simulated on `add` when it
+/// is a `free` cell, and the way from it. A portal can be put on one of the portals: that one is replaced (`replaced` = its
+/// number; the new one is the newest), else the oldest one goes when there are already four (`dropped`).
 fn simulate(net: &[(i64, bool)], add: Option<i64>, free: &dyn Fn(i64) -> bool) -> Value {
     let mut net = net.to_vec();
-    let (mut added, mut dropped) = (None, None);
-    let entrance = match add {
-        Some(c) if net.iter().any(|(p, _)| *p == c) => Some(c),
-        Some(c) if free(c) => {
-            if net.len() >= MAX_PORTALS {
-                dropped = Some(net.remove(0).0);
-            }
-            net.push((c, true));
-            added = Some(c);
-            added
+    let (mut added, mut dropped, mut replaced) = (None, None, None);
+    if let Some(c) = add.filter(|c| free(*c)) {
+        if let Some(i) = net.iter().position(|(p, _)| *p == c) {
+            net.remove(i);
+            replaced = Some(i + 1);
+        } else if net.len() >= MAX_PORTALS {
+            dropped = Some(net.remove(0).0);
         }
-        _ => None,
-    };
+        net.push((c, true));
+        added = Some(c);
+    }
+    let entrance = added;
     let open: Vec<usize> = net.iter().filter(|(_, o)| *o).map(|(c, _)| *c as usize).collect();
     let path = entrance.map(|e| portal_path(&open, e as usize)).unwrap_or_default();
     let length: i32 = path.windows(2).map(|w| distance(w[0], w[1])).sum();
     let portals: Vec<Value> = net.iter().enumerate().map(|(i, (c, o))| json!({"cell": c, "number": i + 1, "open": o})).collect();
-    json!({"portals": portals, "added": added, "dropped": dropped, "path": path, "distance": length})
+    json!({"portals": portals, "added": added, "dropped": dropped, "replaced": replaced, "path": path, "distance": length})
 }
 
 impl FightMap {
@@ -511,10 +511,11 @@ impl Module for FightMap {
     /// area {x, y, width, height} (screen pixels) or null; `watch_escape` {on}: `fightmap:escape` at each Escape press while on, `fightmap:click` at each left / right click;
     /// `release`: the view closes: Escape no longer watched, the keyboard focus back to the Dofus window it covered.
     /// State `portals`: [{cell, author, open}] in the order they were put down. Call `portals` {author, add?: cell}: that
-    /// caster's network {portals: [{cell, number (1 = oldest), open}], added, dropped, path: [cells], distance}; `add` on one
-    /// of the portals = the way from it, on a free walkable cell = a portal simulated there (`added`; `dropped` = the oldest,
-    /// gone when there were four) and the way from it; the path's `distance` = cells between its portals. `all: true`
-    /// instead: {base: the network without `add`, sims: {cell: the same with `add` = cell}} for every free cell and portal.
+    /// caster's network {portals: [{cell, number (1 = oldest), open}], added, dropped, replaced, path: [cells], distance};
+    /// `add` on a free walkable cell (one of the portals too) = a portal simulated there (`added`; `replaced` = the number of
+    /// the portal it was put on, else `dropped` = the oldest, gone when there were four) and the way from it; the path's
+    /// `distance` = cells between its portals. `all: true` instead: {base: the network without `add`, sims: {cell: the same
+    /// with `add` = cell}} for every free cell.
     fn call(&self, method: &str, args: Value, ctx: &Ctx) -> Result<Value> {
         match method {
             "state" => Ok(self.state.lock().json()),
@@ -553,10 +554,8 @@ impl Module for FightMap {
                 let free = |c: i64| (0..MAP_CELLS as i64).contains(&c) && !taken.contains(&c) && cells.as_ref().is_some_and(|m| m[c as usize] & MOV != 0);
                 if args["all"].as_bool() == Some(true) {
                     // every cell at once: hovering is then a lookup, with no call per cell
-                    let sims: serde_json::Map<String, Value> = (0..MAP_CELLS as i64)
-                        .filter(|&c| free(c) || net.iter().any(|(p, _)| *p == c))
-                        .map(|c| (c.to_string(), simulate(&net, Some(c), &free)))
-                        .collect();
+                    let sims: serde_json::Map<String, Value> =
+                        (0..MAP_CELLS as i64).filter(|&c| free(c)).map(|c| (c.to_string(), simulate(&net, Some(c), &free))).collect();
                     return Ok(json!({"base": simulate(&net, None, &free), "sims": sims}));
                 }
                 Ok(simulate(&net, args["add"].as_i64(), &free))
@@ -691,12 +690,14 @@ mod tests {
             }
             if cells.len() == 4 {
                 let net = hub.call("fightmap", "portals", json!({"author": eliotrope, "add": 332})).unwrap();
+                // a portal put on portal 2: it replaces it, the way from it is the game's
                 assert_eq!(net["path"], json!([332, 265, 188, 257]), "the game's way from portal 2");
-                assert!(net["added"].is_null() && net["dropped"].is_null());
+                assert!(net["added"] == 332 && net["replaced"] == 2 && net["dropped"].is_null());
+                assert_eq!(net["portals"].as_array().unwrap().iter().map(|p| p["cell"].as_i64().unwrap()).collect::<Vec<_>>(), [188, 265, 257, 332]);
                 // a fifth portal: the oldest (188) goes
                 let free = (0..MAP_CELLS as i64).find_map(|c| {
                     let n = hub.call("fightmap", "portals", json!({"author": eliotrope, "add": c})).unwrap();
-                    (n["added"] == json!(c)).then_some(n)
+                    (n["added"] == json!(c) && n["replaced"].is_null()).then_some(n)
                 });
                 let n = free.expect("a free cell for a fifth portal");
                 // every cell at once: the same answers

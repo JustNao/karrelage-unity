@@ -43,7 +43,7 @@
     <div>Touche du sort Portail</div>
     <div class="mut">
       Votre raccourci du sort Portail dans le jeu : le jeu la reçoit toujours, et un portail est simulé sur la case sous la
-      souris (le plus ancien barré s'il y en a 4), avec la redirection jusqu'à la sortie et son bonus de dommages. La touche à
+      souris (sur un de vos portails, il le remplace ; sinon le plus ancien est barré s'il y en a 4), avec la redirection jusqu'à la sortie et son bonus de dommages. La touche à
       nouveau, un clic (le sort est lancé ou annulé) ou Échap l'effacent.
     </div>
     {#if clash}<Banner tone="warn" inset>Même touche que « {clash.title} » : ce raccourci la prend, le jeu ne la reçoit pas.</Banner>{/if}

@@ -7,7 +7,7 @@
    * Eliotrope portals in the in-game view (inside ClassLayer.svelte): the player's portals numbered by age, the two that go
    * first in colour once there are four. `simulate` (view `portals`): a portal put down on the cell under the mouse (the
    * oldest one struck out when there were four) and the way from it through the network to its exit, with its length and
-   * damage bonus (PORTAL_BONUS % per cell); the mouse on one of the portals: the way from that one. The simulations of every
+   * damage bonus (PORTAL_BONUS % per cell); on one of the portals, the new one replaces it. The simulations of every
    * cell come at once (asked again when portals or fighters change): hovering is a lookup.
    */
   let { cal, live, mine, dpr, pointed, simulate, net = $bindable(null) }: {
