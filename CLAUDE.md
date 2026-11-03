@@ -301,6 +301,7 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   the calibration), the shortcut again, Escape (`watch_escape`: GetAsyncKeyState polled, not taken from the game),
   the end of the player's turn (`fightmap:turn`: another fighter's turn after one of `me`) or of the fight. Not yet tried on the
   real game (calibration assumes the grid scales linearly with no camera zoom).
+- Floating windows get `backgroundColor` [0, 0, 0, 0]: WebView2 otherwise flashes white when a hidden window is shown.
 - The in-game view window is prewarmed: the main window creates it hidden (`?prewarm=1`) when a fight starts
   (`prewarmFightMapOverlay`; it answers `fightmap:ready`, a press before that waits), shortcuts show it (`open`: placed on
   the Dofus window again, calibration checked), closing hides it; only the fight's end closes it.
@@ -317,8 +318,8 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   capture_poison. Shown in the class help (F4: numbers, #1 / #2 coloured with four portals) and view `portals` (a portal
   simulated under the mouse, the oldest struck out with four; cast into one of the portals the spell goes through the
   network and lands at exit + (entrance − caster), `redirect`, verified on 5 casts of capture_poison, a Portail among them,
-  drawn thin (`cast`); the main line is the new network's way from the new portal, or from the portal under the mouse
-  when the key was pressed (`start`, kept until the view closes); the way to the exit + distance and damage bonus: +2 % per cell,
+  only the struck-out portal, the way (from the new portal, or from the portal under the mouse when the key was pressed:
+  `start`, kept until the view closes) and its length are drawn; the way to the exit + distance and damage bonus: +2 % per cell,
   `PORTAL_BONUS`). That view opens on the game's own Portail spell key (`settings.classHelp.eliotrope.portalKey`, Combat tab
   « Aide de classe », which also turns each class's help on / off): a *passive* shortcut (`shortcuts` `passive`,
   `sys::watch_bindings`: GetAsyncKeyState polled while the game has the focus, never taken from it), the window shown
