@@ -94,7 +94,7 @@
   .cross { stroke: #ff4d4d; stroke-width: 3; stroke-linecap: round; }
   .exit { fill: #fff; stroke: #fff; stroke-width: 2; animation: pulse 0.9s ease-in-out infinite alternate; }
   @keyframes pulse { from { fill-opacity: 0.1; } to { fill-opacity: 0.55; } }
-  .way { fill: none; stroke: #5aa9ff; stroke-opacity: 0.6; stroke-width: 3; stroke-linejoin: round; }
+  .way { fill: none; stroke: #ffd23c; stroke-opacity: 0.75; stroke-width: 3; stroke-linejoin: round; }
   .way.under { stroke: rgba(0, 0, 0, 0.35); stroke-opacity: 1; stroke-width: 5; }
   .cast { fill: none; stroke: #fff; stroke-opacity: 0.45; stroke-width: 1.5; stroke-dasharray: 5 4; stroke-linejoin: round; }
   .length.under { stroke: rgba(0, 0, 0, 0.75); stroke-width: 6; }
