@@ -1,13 +1,13 @@
 <script lang="ts">
   import { call } from "../lib/api";
   import { screenCentre, screenDiamond, type Calibration, type FightMapState } from "../lib/fightMap";
-  import { portalAuthor, portalColour, type PortalNet } from "../lib/classHelp";
+  import { PORTAL_BONUS, portalAuthor, portalColour, type PortalNet } from "../lib/classHelp";
 
   /**
    * Eliotrope portals in the in-game view (inside ClassLayer.svelte): the player's portals numbered by age, the two that go
    * first in colour once there are four. `simulate` (view `portals`): a portal put down on the cell under the mouse (the
-   * oldest one struck out when there were four) and the way from it through the network to its exit; the mouse on one of the
-   * portals: the way from that one.
+   * oldest one struck out when there were four) and the way from it through the network to its exit, with its length and
+   * damage bonus (PORTAL_BONUS % per cell); the mouse on one of the portals: the way from that one.
    */
   let { cal, live, mine, dpr, pointed, simulate, net = $bindable(null) }: {
     cal: Calibration;
@@ -38,6 +38,7 @@
   const exit = $derived(net && net.path.length > 1 ? net.path[net.path.length - 1] : null);
   /** size of a cell on screen (CSS px) */
   const cell = $derived([cal.sx / dpr, cal.sy / dpr]);
+  const label = $derived(net ? `${net.distance} cases · +${net.distance * PORTAL_BONUS} %` : "");
 </script>
 
 <svg width="100%" height="100%">
@@ -64,8 +65,8 @@
     {/each}
     {#if exit !== null}
       {@const [x, y] = screenCentre(cal, exit, dpr)}
-      <text x={x} y={y + cell[1] / 2.6} font-size={Math.max(12, cell[1] / 5)} class="length under">{net.distance} cases</text>
-      <text x={x} y={y + cell[1] / 2.6} font-size={Math.max(12, cell[1] / 5)} class="length">{net.distance} cases</text>
+      <text x={x} y={y + cell[1] / 2.6} font-size={Math.max(12, cell[1] / 5)} class="length under">{label}</text>
+      <text x={x} y={y + cell[1] / 2.6} font-size={Math.max(12, cell[1] / 5)} class="length">{label}</text>
     {/if}
   {/if}
 </svg>

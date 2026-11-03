@@ -312,7 +312,8 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   bool true. Four per caster (oldest dropped on a fifth); closed while a fighter stands on it or deactivated this turn. Way
   through the network = Eliotopy-v2's rule (nearest unvisited, ties by angle), matches the casts' `portals_id` on
   capture_poison. Shown in the class help (F4: numbers, #1 / #2 coloured with four portals) and view `portals` (shortcut
-  F5, held: a portal simulated under the mouse, the oldest struck out, the way to the exit + distance). FightJoinRunningEvent
+  F5, held: a portal simulated under the mouse, the oldest struck out, the way to the exit + distance and
+  damage bonus: +2 % per cell, `PORTAL_BONUS`). FightJoinRunningEvent
   `marks` (rejoining a fight) not read.
 
 **Loot** (`loot.rs`): FightEndEvent → results → fighter id + `Loot` messages; item = the largest int that is a known gid

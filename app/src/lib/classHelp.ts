@@ -37,6 +37,9 @@ export interface PortalNet {
   distance: number;
 }
 
+/** Damage bonus of a spell through the portals: % per cell between them along the way. */
+export const PORTAL_BONUS = 2;
+
 /** With four portals: the next one to go (#1) and the one after (#2) stand out. */
 export const portalColour = (number: number, full: boolean) => (full && number === 1 ? "#ff4d4d" : full && number === 2 ? "#ffa53c" : "#5aa9ff");
 

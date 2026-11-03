@@ -4,7 +4,7 @@
   import { call } from "../lib/api";
   import { settings } from "../lib/stores/settings.svelte";
   import { cellAt, screenDiamond, type Calibration, type FightMapState, type MapFighter, type Sight } from "../lib/fightMap";
-  import { TURRET_RANGE, TURRETS, turretOf, type PortalNet } from "../lib/classHelp";
+  import { PORTAL_BONUS, TURRET_RANGE, TURRETS, turretOf, type PortalNet } from "../lib/classHelp";
   import PortalLayer from "./PortalLayer.svelte";
 
   /**
@@ -94,14 +94,14 @@
 <div class="pill">
   {#if simulate}
     Portail simulé sous la souris
+    {#if net && net.path.length > 1}· sortie à {net.distance} cases : <b>+{net.distance * PORTAL_BONUS} % de dommages</b>{/if}
     {#if net?.dropped != null}· <span class="chip" style:color="#ff4d4d">✕ le n° 1 disparaît</span>
-    {:else if net && net.path.length > 1}· sortie à {net.distance} cases
-    {:else if !net?.added}· survolez une case libre ou un portail{/if}
+    {:else if !net?.added && !net?.path.length}· survolez une case libre ou un portail{/if}
   {:else if areas.length}
     Tourelles ({TURRET_RANGE} PO, en ligne de vue) :
     {#each areas as a (a.turret.id)}<span class="chip" style:color={look(a.turret).colour}>■ {look(a.turret).name}</span>{/each}
   {:else if portals}
-    Portails : {portals}
+    Portails : {portals} (+{PORTAL_BONUS} % de dommages par case parcourue)
     {#if portals >= 4}<span class="chip" style:color="#ff4d4d">■ 1 part au prochain</span><span class="chip" style:color="#ffa53c">■ 2 ensuite</span>{/if}
     {#if settings.shortcuts.portals.vk}· {settings.shortcuts.portals.label} pour simuler un portail{/if}
   {:else}Aucune aide pour ce combat (Steamer : aucune tourelle posée, Éliotrope : aucun portail){/if}
