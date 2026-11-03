@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { getCurrentWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
+  import { emitTo } from "@tauri-apps/api/event";
   import { call, listenAll } from "./lib/api";
   import { readJSON, writeJSON } from "./lib/persist.svelte";
   import { fight, followFight } from "./lib/stores/combat.svelte";
@@ -18,6 +19,8 @@
    *   game's portal spell key, closed by a click too: the spell is cast, or cancelled).
    * - Closed when the held shortcut is let go (unless a cell is pinned, or during the calibration), by its shortcut pressed
    *   again, Escape, the end of the player's turn or of the fight. Another view's shortcut switches to that view.
+   * - Kept for the whole fight (`?prewarm=1`: created hidden by the main window when the fight starts): closing hides it and a
+   *   shortcut shows it again at once (`fightmap:press` → `open`); only the fight's end closes the window.
    */
   const win = getCurrentWindow();
   const dpr = window.devicePixelRatio || 1;
@@ -27,6 +30,8 @@
   let view = $state<OverlayView>(asked === "classHelp" || asked === "portals" ? asked : "los");
   /** shown while the view's shortcut is held: closed when it is let go */
   let hold = $state(params.get("hold") === "1");
+  /** on screen (a prewarmed window waits hidden for a shortcut) */
+  let shown = $state(false);
   /** a pinned cell (line of sight): the view stays once the shortcut is let go */
   let sticky = $state(false);
   let live = $state.raw<FightMapState>({ map: null, fight: true, fighters: [] });
@@ -34,6 +39,8 @@
   let cal = $state.raw<Calibration | null>(null);
   let size = { width: 0, height: 0 };
   let mode = $state<"loading" | "calibrate" | "show">("loading");
+  /** the Dofus window's client area the view covers (physical px), as last applied to this window */
+  let placed: { x: number; y: number; width: number; height: number } | null = null;
   /** calibration clicks so far (physical px of the client area) */
   let clicks = $state.raw<[number, number][]>([]);
   let failed = $state(false);
@@ -66,17 +73,53 @@
   });
   const nameOf = (f: MapFighter) => names.get(f.id) ?? (mine.has(f.id) ? "votre personnage" : f.kind === "player" ? "ce personnage" : "ce monstre");
 
-  /** Escape no longer watched and the game focused again first (its own shortcuts work at once), then the window goes. */
+  /** Shows `v` over the game: the window placed on the Dofus window (it may have moved), its calibration checked. The
+   *  portal simulation does not take the focus (the game keeps its spell selected). */
+  async function open(v: OverlayView, h: boolean) {
+    [view, hold, sticky, clicks, failed, pointer] = [v, h, false, [], false, null];
+    const rect = await call<{ x: number; y: number; width: number; height: number } | null>("fightmap", "window");
+    if (!rect || !live.fight || !cells) return void hide();
+    if (!placed || placed.x !== rect.x || placed.y !== rect.y || placed.width !== rect.width || placed.height !== rect.height) {
+      await win.setPosition(new PhysicalPosition(rect.x, rect.y));
+      await win.setSize(new PhysicalSize(rect.width, rect.height));
+      placed = rect;
+    }
+    size = { width: rect.width, height: rect.height };
+    const saved = readJSON<Calibration | null>(CALIBRATION_KEY, null);
+    cal = saved && saved.width === rect.width && saved.height === rect.height ? saved : null;
+    mode = cal ? "show" : "calibrate";
+    shownAt = Date.now();
+    const focus = view !== "portals" || mode === "calibrate";
+    await win.setFocusable(focus).catch(() => {});
+    shown = true;
+    await win.show();
+    if (focus) await win.setFocus().catch(() => {});
+    else void call("fightmap", "refocus", {}, true).catch(() => {});
+    await call("fightmap", "watch_escape", { on: true });
+    // let go while the view was opening (a quick press)
+    if (hold && !(await call<boolean>("shortcuts", "held", { name: view }).catch(() => true))) letGo();
+  }
+
+  /** Escape no longer watched and the game focused again first (its own shortcuts work at once), then the view hides (the
+   *  window stays, ready for the next shortcut). */
+  async function hide() {
+    if (!shown) return;
+    shown = false;
+    await call("fightmap", "release", {}, true).catch(() => {});
+    await win.hide();
+  }
+
+  /** The fight is over: the window goes (the main window makes a new one at the next fight). */
   let closing = false;
   async function close() {
     if (closing) return;
     closing = true;
-    await call("fightmap", "release", {}, true).catch(() => {});
+    if (shown) await call("fightmap", "release", {}, true).catch(() => {});
     await win.close();
   }
 
-  /** Shown while held: closes once the shortcut is up, unless something keeps it (calibration, pinned cell). */
-  const letGo = () => hold && !sticky && mode === "show" && void close();
+  /** Shown while held: hides once the shortcut is up, unless something keeps it (calibration, pinned cell). */
+  const letGo = () => hold && !sticky && mode === "show" && void hide();
 
   onMount(() => {
     const following = followFight();
@@ -84,37 +127,33 @@
     let mineTurn = false;
     const off = listenAll({
       "fightmap:state": (s: FightMapState) => (live = s),
-      "fightmap:escape": () => void close(),
+      "fightmap:escape": () => void hide(),
       // (the calibration's last click comes back from the click watcher too: not that one)
-      "fightmap:click": () => view === "portals" && !hold && mode === "show" && Date.now() - shownAt > 500 && void close(),
+      "fightmap:click": () => shown && view === "portals" && !hold && mode === "show" && Date.now() - shownAt > 500 && void hide(),
       "fightmap:turn": ({ id }: { id: number }) => {
         if (mine.has(id)) mineTurn = true;
-        else if (mineTurn) void close();
+        else if (mineTurn) void hide();
       },
       "fightmap:press": (p: { view: OverlayView; hold: boolean }) => {
-        if (p.view === view) return void close();
+        if (!shown) return void open(p.view, p.hold).catch(() => void hide());
+        if (p.view === view) return void hide();
         [view, hold, sticky] = [p.view, p.hold, false];
+        void win.setFocusable(view !== "portals" || mode === "calibrate").catch(() => {});
       },
       "shortcuts:released": ({ name }: { name: string }) => name === view && letGo(),
     });
-    const key = (e: KeyboardEvent) => e.key === "Escape" && void close();
+    const key = (e: KeyboardEvent) => e.key === "Escape" && void hide();
     window.addEventListener("keydown", key);
     (async () => {
       await off.ready;
-      const [state, rect] = await Promise.all([call<FightMapState>("fightmap", "state"), call<{ x: number; y: number; width: number; height: number } | null>("fightmap", "window")]);
+      const state = await call<FightMapState>("fightmap", "state");
       live = state;
-      if (!rect || !state.fight || state.map === null) return void close();
+      if (!state.fight || state.map === null) return void close();
       cells = await call<number[] | null>("fightmap", "cells", { map: state.map });
       if (!cells) return void close();
-      size = { width: rect.width, height: rect.height };
-      await win.setPosition(new PhysicalPosition(rect.x, rect.y));
-      await win.setSize(new PhysicalSize(rect.width, rect.height));
-      await call("fightmap", "watch_escape", { on: true });
-      const saved = readJSON<Calibration | null>(CALIBRATION_KEY, null);
-      cal = saved && saved.width === rect.width && saved.height === rect.height ? saved : null;
-      mode = cal ? "show" : "calibrate";
-      // let go while the window was opening (a quick press)
-      if (hold && !(await call<boolean>("shortcuts", "held", { name: view }).catch(() => true))) letGo();
+      loadedMap = state.map;
+      if (params.get("prewarm") !== "1") await open(view, hold);
+      await emitTo("main", "fightmap:ready");
     })().catch(() => void close());
     return () => {
       off();
@@ -133,9 +172,9 @@
   let loadedMap: number | null = null;
   $effect(() => {
     const map = live.map;
-    if (mode === "loading" || map === null || map === loadedMap) return;
-    if (loadedMap !== null) call<number[] | null>("fightmap", "cells", { map }).then((c) => (cells = c));
+    if (loadedMap === null || map === null || map === loadedMap) return;
     loadedMap = map;
+    call<number[] | null>("fightmap", "cells", { map }).then((c) => (cells = c));
   });
 
   async function click(e: MouseEvent) {
@@ -150,6 +189,7 @@
     cal = c;
     mode = "show";
     shownAt = Date.now();
+    if (view === "portals") void win.setFocusable(false).then(() => call("fightmap", "refocus", {}, true)).catch(() => {});
     // the shortcut was let go during the calibration: the view stays until it is pressed again (or Escape...)
     if (hold && !(await call<boolean>("shortcuts", "held", { name: view }).catch(() => true))) hold = false;
   }
@@ -159,6 +199,8 @@
   const crossW = Math.min(window.innerWidth / 15, window.innerHeight / 12);
 </script>
 
+<!-- hidden: nothing drawn, the layers (their mouse polling) stopped -->
+{#if shown}
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div class="overlay" class:calibrating={mode === "calibrate"} onclick={click} onmousemove={(e) => mode === "calibrate" && (pointer = [e.clientX, e.clientY])}>
   {#if mode === "calibrate"}
@@ -190,6 +232,7 @@
     {/if}
   {/if}
 </div>
+{/if}
 
 <style>
   :global(html), :global(body) { background: transparent !important; }

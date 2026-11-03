@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "overlay",
-  "description": "Floating windows (scan list, fight popup, in-game line of sight): events, read their own window state, move / resize / close themselves, let the mouse through",
+  "description": "Floating windows (scan list, fight popup, in-game line of sight): events, read their own window state, move / resize / show / hide / close themselves, let the mouse through, take the focus or not",
   "windows": ["scanlist", "combat", "fightmap"],
   "permissions": [
     "core:event:default",
@@ -10,6 +10,10 @@
     "core:window:allow-close",
     "core:window:allow-set-size",
     "core:window:allow-set-position",
-    "core:window:allow-set-ignore-cursor-events"
+    "core:window:allow-set-ignore-cursor-events",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-set-focus",
+    "core:window:allow-set-focusable"
   ]
 }

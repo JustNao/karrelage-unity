@@ -1,5 +1,5 @@
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { call } from "./api";
+import { call, on } from "./api";
 import { emitTo } from "@tauri-apps/api/event";
 import { openFloating } from "./floating";
 
@@ -65,15 +65,45 @@ export const mapSize = (w: number): [number, number] => [ROW * w + w / 2, (ROWS 
  *  portal simulated under the mouse (the Eliotrope's passive portal key). */
 export type OverlayView = "los" | "classHelp" | "portals";
 
-/** A view's shortcut was pressed (`hold`: shown while it is held), or the fight popup's « LdV » button clicked: opens the
- *  in-game view during a fight, else tells the open one (it closes when it shows that view, else switches to it). The portal
- *  simulation leaves the focus to the game: its key and the spell's click are the game's. */
+/** A view's shortcut was pressed (`hold`: shown while it is held), or the fight popup's « LdV » button clicked: tells the
+ *  in-game view window (shown: it closes when it shows that view, else switches to it; hidden: it shows that view), or opens
+ *  it during a fight when it is not there. The portal simulation leaves the focus to the game: its key and the spell's click
+ *  are the game's. A press while the prewarmed window is still loading waits for it. */
 export async function pressFightMapOverlay(view: OverlayView, hold: boolean) {
-  if (await WebviewWindow.getByLabel(OVERLAY)) return emitTo(OVERLAY, "fightmap:press", { view, hold });
+  if (await WebviewWindow.getByLabel(OVERLAY)) {
+    if (overlayReady) return emitTo(OVERLAY, "fightmap:press", { view, hold });
+    return void (pendingPress = { view, hold });
+  }
   const s = await call<FightMapState>("fightmap", "state", {}, true);
   if (s.fight && s.map !== null) await openFloating(OVERLAY, { url: `fightmap.html?view=${view}&hold=${hold ? 1 : 0}`, title: "Vue en jeu", width: 800, height: 600, focus: view !== "portals" });
 }
 const OVERLAY = "fightmap";
+/** the in-game view window listens (it said `fightmap:ready`) */
+let overlayReady = false;
+let pendingPress: { view: OverlayView; hold: boolean } | null = null;
+
+/** Main window: during a fight, the in-game view window is kept ready but hidden (`?prewarm=1`) so a shortcut shows it at
+ *  once instead of loading a window; it closes itself at the fight's end. */
+export async function prewarmFightMapOverlay() {
+  await on("fightmap:ready", () => {
+    overlayReady = true;
+    const p = pendingPress;
+    pendingPress = null;
+    if (p) void emitTo(OVERLAY, "fightmap:press", p);
+  });
+  /** a window asked for in this fight (so fighters' moves don't look it up again) */
+  let made = false;
+  const ensure = async (s: FightMapState) => {
+    if (!s.fight) return void (overlayReady = made = false);
+    if (made || s.map === null) return;
+    made = true;
+    if (await WebviewWindow.getByLabel(OVERLAY)) return;
+    overlayReady = false;
+    await openFloating(OVERLAY, { url: "fightmap.html?prewarm=1", title: "Vue en jeu", width: 800, height: 600, focus: false, visible: false });
+  };
+  await on<FightMapState>("fightmap:state", (s) => void ensure(s).catch(() => {}));
+  void call<FightMapState>("fightmap", "state", {}, true).then(ensure).catch(() => {});
+}
 
 /** Line of sight with no spell range: every cell of the map. */
 export const ALL_RANGE = { min: 1, max: 99 };

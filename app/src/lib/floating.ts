@@ -18,6 +18,8 @@ export interface FloatingOptions {
   pos?: { x: number; y: number } | null;
   /** Take the focus (false when it opens by itself during the game). */
   focus?: boolean;
+  /** Shown at once (false: created hidden, it shows itself later). */
+  visible?: boolean;
 }
 
 /** Open the window, or bring it forward when it is already open (`focus`). True when it was already open. */
@@ -40,6 +42,7 @@ export async function openFloating(label: string, o: FloatingOptions): Promise<b
     skipTaskbar: true,
     resizable: false,
     focus: o.focus ?? true,
+    visible: o.visible ?? true,
   });
   return false;
 }

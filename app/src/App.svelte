@@ -11,7 +11,7 @@
   import { startAutomation } from "./lib/automation";
   import { startCombat } from "./lib/stores/combat.svelte";
   import { onShortcut, startShortcuts } from "./lib/stores/shortcuts.svelte";
-  import { pressFightMapOverlay } from "./lib/fightMap";
+  import { prewarmFightMapOverlay, pressFightMapOverlay } from "./lib/fightMap";
 
   const tabs = $derived(modules.filter((m) => app.dev || !m.devOnly));
   const active = $derived(tabs.find((m) => m.id === app.tab) ?? tabs[0]);
@@ -96,6 +96,7 @@
     onShortcut("classHelp", () => void pressFightMapOverlay("classHelp", true).catch(() => {}));
     onShortcut("portalKey", () => void pressFightMapOverlay("portals", false).catch(() => {})); // the Eliotrope's portal spell key
     void on("fightmap:toggle", () => void pressFightMapOverlay("los", false).catch(() => {})); // the fight popup's « LdV » button
+    void prewarmFightMapOverlay().catch(() => {}); // the in-game view kept ready (hidden) during fights
     void startShortcuts(); // global shortcuts (Paramètres « Raccourcis »)
     if (app.capture && !s.on && !s.npcapError) captureSet(true).catch((e) => (err = String(e)));
   });

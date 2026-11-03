@@ -529,6 +529,7 @@ impl Module for FightMap {
     /// fighters blocking the sight (but the ones of `ignore` and whoever stands on `from`). `window`: the Dofus window's client
     /// area {x, y, width, height} (screen pixels) or null; `watch_escape` {on}: `fightmap:escape` at each Escape press while on, `fightmap:click` at each left / right click;
     /// `release`: the view closes: Escape no longer watched, the keyboard focus back to the Dofus window it covered.
+    /// `refocus`: that window gets the focus back if it lost it (the view was shown without taking it).
     /// State `portals`: [{cell, author, open}] in the order they were put down. Call `portals` {author, add?: cell}: that
     /// caster's network {portals: [{cell, number (1 = oldest), open}], added, dropped, via, path: [cells], distance} with
     /// the Portail spell cast on `add` (`simulate`): a free walkable cell = a portal there, one of the open portals = the
@@ -548,6 +549,7 @@ impl Module for FightMap {
                 self.escape.store(false, Ordering::Relaxed);
                 Ok(json!(crate::sys::focus_game(*self.covered.lock())))
             }
+            "refocus" => Ok(json!(!crate::sys::game_focused() && crate::sys::focus_game(*self.covered.lock()))),
             "watch_escape" => {
                 let on = args["on"].as_bool().unwrap_or(false);
                 if on && !self.escape.swap(true, Ordering::Relaxed) {
