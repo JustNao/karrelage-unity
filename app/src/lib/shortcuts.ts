@@ -6,6 +6,8 @@
 import type { Binding, Settings } from "./stores/settings.svelte";
 
 export type ShortcutName = keyof Settings["shortcuts"];
+/** Passive shortcuts: watched without being taken from the game (lib/stores/shortcuts.svelte.ts `passiveBinds`). */
+export type PassiveName = "portalKey";
 
 /** What each shortcut does, in the order of the Paramètres tab. */
 export const SHORTCUTS: { name: ShortcutName; title: string; desc: string }[] = [
@@ -24,15 +26,8 @@ export const SHORTCUTS: { name: ShortcutName; title: string; desc: string }[] = 
       "Pendant un combat, tant que la touche est enfoncée. Steamer : la zone de chaque tourelle (7 PO et en ligne de vue) " +
       "où votre personnage reçoit son bonus ; la souris sur une tourelle met sa zone en avant. " +
       "Éliotrope : vos portails numérotés, et avec 4 portails les deux qui partiront en premier en couleur ; un sort passant " +
-      "par les portails gagne 2 % de dommages par case parcourue entre eux. Même calibration que la ligne de vue.",
-  },
-  {
-    name: "portals",
-    title: "Simulation de portail en jeu",
-    desc:
-      "Éliotrope, pendant un combat, tant que la touche est enfoncée : un portail est simulé sur la case sous la souris. " +
-      "Avec 4 portails, le plus ancien disparaît (barré) ; la redirection depuis le nouveau portail est tracée jusqu'à sa sortie, " +
-      "avec la distance parcourue et le bonus de dommages (+2 % par case). Sur un de vos portails : la redirection depuis celui-ci.",
+      "par les portails gagne 2 % de dommages par case parcourue entre eux. Même calibration que la ligne de vue. " +
+      "Réglages par classe (dont la simulation de portail) : onglet Combat, « Aide de classe ».",
   },
 ];
 

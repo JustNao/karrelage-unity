@@ -61,16 +61,17 @@ export function diamond(cell: number, w: number): string {
 /** Size of the whole map drawn with diamonds `w` wide. */
 export const mapSize = (w: number): [number, number] => [ROW * w + w / 2, (ROWS * w) / 4 + w / 4];
 
-/** What the in-game view shows (FightMapOverlay.svelte): the line of sight, the class help, or the class help with a portal
- *  simulated under the mouse; named like their shortcut. */
+/** What the in-game view shows (FightMapOverlay.svelte): the line of sight, the class help (named like their shortcut), or a
+ *  portal simulated under the mouse (the Eliotrope's passive portal key). */
 export type OverlayView = "los" | "classHelp" | "portals";
 
 /** A view's shortcut was pressed (`hold`: shown while it is held), or the fight popup's « LdV » button clicked: opens the
- *  in-game view during a fight, else tells the open one (it closes when it shows that view, else switches to it). */
+ *  in-game view during a fight, else tells the open one (it closes when it shows that view, else switches to it). The portal
+ *  simulation leaves the focus to the game: its key and the spell's click are the game's. */
 export async function pressFightMapOverlay(view: OverlayView, hold: boolean) {
   if (await WebviewWindow.getByLabel(OVERLAY)) return emitTo(OVERLAY, "fightmap:press", { view, hold });
   const s = await call<FightMapState>("fightmap", "state", {}, true);
-  if (s.fight && s.map !== null) await openFloating(OVERLAY, { url: `fightmap.html?view=${view}&hold=${hold ? 1 : 0}`, title: "Vue en jeu", width: 800, height: 600 });
+  if (s.fight && s.map !== null) await openFloating(OVERLAY, { url: `fightmap.html?view=${view}&hold=${hold ? 1 : 0}`, title: "Vue en jeu", width: 800, height: 600, focus: view !== "portals" });
 }
 const OVERLAY = "fightmap";
 

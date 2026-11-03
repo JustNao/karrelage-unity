@@ -219,27 +219,81 @@ impl Hotkeys {
     }
 }
 
-/// Watches the Escape key while `on` stays true (polled, never taken from the game): `on_press` runs at each press.
-pub fn watch_escape(on: std::sync::Arc<std::sync::atomic::AtomicBool>, on_press: impl Fn() + Send + 'static) {
+/// Virtual key codes of Escape and the left / right mouse buttons (`watch_presses`).
+pub const VK_ESCAPE: i32 = 0x1B;
+pub const VK_LBUTTON: i32 = 0x01;
+pub const VK_RBUTTON: i32 = 0x02;
+
+/// Whether a key (virtual key code, mouse buttons too) is down.
+#[cfg(windows)]
+fn key_down(vk: i32) -> bool {
+    // SAFETY: reads the key's state
+    unsafe { windows_sys::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState(vk) as u16 & 0x8000 != 0 }
+}
+
+/// Watches keys / mouse buttons (`vks`) while `on` stays true (polled, never taken from the game): `on_press(vk)` at each
+/// press.
+pub fn watch_presses(on: std::sync::Arc<std::sync::atomic::AtomicBool>, vks: Vec<i32>, on_press: impl Fn(i32) + Send + 'static) {
     #[cfg(windows)]
     {
         use std::sync::atomic::Ordering;
-        use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_ESCAPE};
-        let _ = std::thread::Builder::new().name("escape".into()).spawn(move || {
-            let mut down = true; // a press already held when the watch starts does not count
+        let _ = std::thread::Builder::new().name("presses".into()).spawn(move || {
+            let mut down: Vec<bool> = vks.iter().map(|_| true).collect(); // a press already held when the watch starts does not count
             while on.load(Ordering::Relaxed) {
-                // SAFETY: reads the key's state
-                let now = unsafe { GetAsyncKeyState(VK_ESCAPE as i32) } as u16 & 0x8000 != 0;
-                if now && !down {
-                    on_press();
+                for (vk, was) in vks.iter().zip(down.iter_mut()) {
+                    let now = key_down(*vk);
+                    if now && !*was {
+                        on_press(*vk);
+                    }
+                    *was = now;
                 }
-                down = now;
-                std::thread::sleep(Duration::from_millis(40));
+                std::thread::sleep(Duration::from_millis(30));
             }
         });
     }
     #[cfg(not(windows))]
-    let _ = (on, on_press);
+    let _ = (on, vks, on_press);
+}
+
+/// Watches key combinations without taking them from the game (unlike `Hotkeys`): `binds` = (mods, vk) as for
+/// `Hotkeys::set`, polled while the list is not empty (the thread then ends and clears `running`; start it again after
+/// filling the list). `on_press(i)` when combination `i` is pressed while the game has the focus.
+pub fn watch_bindings(
+    binds: std::sync::Arc<parking_lot::Mutex<Vec<(u32, u32)>>>,
+    running: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    on_press: impl Fn(usize) + Send + 'static,
+) {
+    #[cfg(windows)]
+    {
+        use std::sync::atomic::Ordering;
+        // Alt, Ctrl, Shift, Win (left or right)
+        const MODS: [(u32, &[i32]); 4] = [(1, &[0x12]), (2, &[0x11]), (4, &[0x10]), (8, &[0x5B, 0x5C])];
+        let _ = std::thread::Builder::new().name("passive-keys".into()).spawn(move || {
+            let mut down: Vec<bool> = vec![];
+            loop {
+                let now = binds.lock().clone();
+                if now.is_empty() {
+                    running.store(false, Ordering::Relaxed);
+                    return;
+                }
+                down.resize(now.len(), true);
+                let mods = MODS.iter().filter(|(_, vks)| vks.iter().any(|vk| key_down(*vk))).fold(0, |m, (bit, _)| m | bit);
+                for (i, (m, vk)) in now.iter().enumerate() {
+                    let pressed = *vk != 0 && key_down(*vk as i32) && mods == *m;
+                    if pressed && !down[i] && game_focused() {
+                        on_press(i);
+                    }
+                    down[i] = pressed;
+                }
+                std::thread::sleep(Duration::from_millis(25));
+            }
+        });
+    }
+    #[cfg(not(windows))]
+    {
+        running.store(false, std::sync::atomic::Ordering::Relaxed);
+        let _ = (binds, on_press);
+    }
 }
 
 /// The character of a Dofus window title "Character - Class - Version" (seen: "Everstone - Steamer - 3.7.12.12 - Release";

@@ -33,8 +33,18 @@ const DEFAULTS = {
     los: { mods: 0, vk: 0x72, label: "F3" } as Binding,
     /** Class help over the fight while held (fightmap/ClassLayer.svelte: the Steamer's turrets, the Eliotrope's portals). */
     classHelp: { mods: 0, vk: 0x73, label: "F4" } as Binding,
-    /** Class help with a portal simulated under the mouse while held (fightmap/PortalLayer.svelte). */
-    portals: { mods: 0, vk: 0x74, label: "F5" } as Binding,
+  },
+  /** Class help (Combat tab « Aide de classe »), per class. */
+  classHelp: {
+    /** The turrets' bonus zones in the class help view. */
+    steamer: { enabled: true },
+    eliotrope: {
+      /** The portals in the class help view, and the portal simulation. */
+      enabled: true,
+      /** The game's own key of the portal spell: watched without being taken from the game (passive shortcut `portalKey`),
+       *  it shows a portal simulated under the mouse until pressed again, a click or Escape. */
+      portalKey: { mods: 0, vk: 0, label: "" } as Binding,
+    },
   },
 };
 /** A shortcut: `mods` = Alt 1 | Ctrl 2 | Shift 4 | Win 8, `vk` = Windows virtual key code (0 = none), `label` as shown. */

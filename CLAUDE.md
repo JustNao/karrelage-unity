@@ -311,9 +311,12 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   0), mark id = the field unmark / activate `mark_id` points at (voted in memory; every mark followed for it), active = any
   bool true. Four per caster (oldest dropped on a fifth); closed while a fighter stands on it or deactivated this turn. Way
   through the network = Eliotopy-v2's rule (nearest unvisited, ties by angle), matches the casts' `portals_id` on
-  capture_poison. Shown in the class help (F4: numbers, #1 / #2 coloured with four portals) and view `portals` (shortcut
-  F5, held: a portal simulated under the mouse, the oldest struck out, the way to the exit + distance and
-  damage bonus: +2 % per cell, `PORTAL_BONUS`). FightJoinRunningEvent
+  capture_poison. Shown in the class help (F4: numbers, #1 / #2 coloured with four portals) and view `portals` (a portal
+  simulated under the mouse, the oldest struck out, the way to the exit + distance and damage bonus: +2 % per cell,
+  `PORTAL_BONUS`). That view opens on the game's own Portail spell key (`settings.classHelp.eliotrope.portalKey`, Combat tab
+  « Aide de classe », which also turns each class's help on / off): a *passive* shortcut (`shortcuts` `passive`,
+  `sys::watch_bindings`: GetAsyncKeyState polled while the game has the focus, never taken from it), the window opened
+  without the focus; closed by the key again, a left / right click (`fightmap:click`, polled with Escape) or Escape. FightJoinRunningEvent
   `marks` (rejoining a fight) not read.
 
 **Loot** (`loot.rs`): FightEndEvent → results → fighter id + `Loot` messages; item = the largest int that is a known gid

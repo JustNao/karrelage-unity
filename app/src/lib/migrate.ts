@@ -9,6 +9,15 @@ try {
   }
 } catch {}
 
+/** The held portal simulation shortcut (F5, never released) became the Eliotrope's passive portal key (Combat tab). */
+try {
+  const saved = JSON.parse(localStorage.getItem("karrelage.settings") ?? "null");
+  if (saved?.shortcuts?.portals) {
+    delete saved.shortcuts.portals;
+    localStorage.setItem("karrelage.settings", JSON.stringify(saved));
+  }
+} catch {}
+
 /** 1.10.0's line of sight shortcut Ctrl+Maj+T, never changed by the user, becomes the new default (F3, held). */
 try {
   const saved = JSON.parse(localStorage.getItem("karrelage.settings") ?? "null");

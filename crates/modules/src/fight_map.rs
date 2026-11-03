@@ -17,7 +17,8 @@
 //! current turn. Verified on work/capture_poison.jsonl (mark ids 1 to 4, the casts' `portals_id` order).
 //!
 //! In-game overlay (FightMapOverlay.svelte, opened by a shortcut): `window` = the Dofus window's client area to cover,
-//! `fightmap:turn` {id} at each turn start, `fightmap:escape` when Escape is pressed while `watch_escape` is on.
+//! `fightmap:turn` {id} at each turn start, `fightmap:escape` / `fightmap:click` when Escape / a mouse button is pressed while
+//! `watch_escape` is on.
 use crate::combat::children;
 use crate::kit::{arg_i64, unknown, Role};
 use crate::{Ctx, Interest, Message, Module};
@@ -483,7 +484,7 @@ impl Module for FightMap {
     /// 560 cells (bits 1 walkable, 2 sight goes through, 4 / 8 red / blue placement) or null; `sight` {from, min, max,
     /// ignore?: [fighter ids]}: {seen, hidden} cells of the current map at distance min..=max from `from`, the living
     /// fighters blocking the sight (but the ones of `ignore` and whoever stands on `from`). `window`: the Dofus window's client
-    /// area {x, y, width, height} (screen pixels) or null; `watch_escape` {on}: `fightmap:escape` at each Escape press while on;
+    /// area {x, y, width, height} (screen pixels) or null; `watch_escape` {on}: `fightmap:escape` at each Escape press while on, `fightmap:click` at each left / right click;
     /// `release`: the view closes: Escape no longer watched, the keyboard focus back to the Dofus window it covered.
     /// State `portals`: [{cell, author, open}] in the order they were put down. Call `portals` {author, add?: cell}: that
     /// caster's network {portals: [{cell, number (1 = oldest), open}], added, dropped, path: [cells], distance}; `add` on one
@@ -505,7 +506,10 @@ impl Module for FightMap {
                 let on = args["on"].as_bool().unwrap_or(false);
                 if on && !self.escape.swap(true, Ordering::Relaxed) {
                     let emit = ctx.emitter();
-                    crate::sys::watch_escape(self.escape.clone(), move || emit("fightmap:escape", Value::Null));
+                    let vks = vec![crate::sys::VK_ESCAPE, crate::sys::VK_LBUTTON, crate::sys::VK_RBUTTON];
+                    crate::sys::watch_presses(self.escape.clone(), vks, move |vk| {
+                        emit(if vk == crate::sys::VK_ESCAPE { "fightmap:escape" } else { "fightmap:click" }, Value::Null)
+                    });
                 } else if !on {
                     self.escape.store(false, Ordering::Relaxed);
                 }

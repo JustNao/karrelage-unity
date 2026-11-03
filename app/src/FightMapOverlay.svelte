@@ -14,7 +14,8 @@
    * - No calibration for this window size: the player clicks the centres of the two fighters named (lib/fightMap.ts
    *   `calibrate`), and it goes on.
    * - Then the view's layer: line of sight from the hovered cell (fightmap/LosLayer.svelte), or the class help
-   *   (fightmap/ClassLayer.svelte; view `portals`: with an Eliotrope portal simulated on the cell under the mouse).
+   *   (fightmap/ClassLayer.svelte; view `portals`: an Eliotrope portal simulated on the cell under the mouse, opened by the
+   *   game's portal spell key, closed by a click too: the spell is cast, or cancelled).
    * - Closed when the held shortcut is let go (unless a cell is pinned, or during the calibration), by its shortcut pressed
    *   again, Escape, the end of the player's turn or of the fight. Another view's shortcut switches to that view.
    */
@@ -36,6 +37,8 @@
   /** calibration clicks so far (physical px of the client area) */
   let clicks = $state.raw<[number, number][]>([]);
   let failed = $state(false);
+  /** when the calibration ended */
+  let shownAt = 0;
   /** the mouse during the calibration (CSS px): a cross about a cell wide is drawn there */
   let pointer = $state<[number, number] | null>(null);
 
@@ -82,6 +85,8 @@
     const off = listenAll({
       "fightmap:state": (s: FightMapState) => (live = s),
       "fightmap:escape": () => void close(),
+      // (the calibration's last click comes back from the click watcher too: not that one)
+      "fightmap:click": () => view === "portals" && !hold && mode === "show" && Date.now() - shownAt > 500 && void close(),
       "fightmap:turn": ({ id }: { id: number }) => {
         if (mine.has(id)) mineTurn = true;
         else if (mineTurn) void close();
@@ -144,6 +149,7 @@
     writeJSON(CALIBRATION_KEY, c);
     cal = c;
     mode = "show";
+    shownAt = Date.now();
     // the shortcut was let go during the calibration: the view stays until it is pressed again (or Escape...)
     if (hold && !(await call<boolean>("shortcuts", "held", { name: view }).catch(() => true))) hold = false;
   }
@@ -180,7 +186,7 @@
     {#if view === "los"}
       <LosLayer {cal} {cells} {live} {mine} {dpr} {win} {hold} bind:sticky />
     {:else}
-      <ClassLayer {cal} {live} {mine} {dpr} {win} {hold} simulate={view === "portals"} shortcut={view} />
+      <ClassLayer {cal} {live} {mine} {dpr} {win} {hold} simulate={view === "portals"} />
     {/if}
   {/if}
 </div>

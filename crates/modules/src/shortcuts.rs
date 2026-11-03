@@ -2,6 +2,8 @@
 //! Windows (they work while the game has the focus, and the game does not get them) and `shortcuts:pressed` {name} is sent
 //! when one is pressed, `shortcuts:released` {name} when its key is let go (shortcuts held down: `held` {name} tells whether it
 //! still is). `shortcuts:status` {name, ok}: false = another program already holds that combination.
+//! Passive shortcuts (`passive`: the class help's Eliotrope portal key, the game's own spell key): watched by polling, the
+//! game still gets them; `shortcuts:pressed` {name, passive: true} when pressed while the game has the focus.
 use crate::kit::unknown;
 use crate::sys::Hotkeys;
 use crate::{Ctx, Interest, Module};
@@ -9,6 +11,7 @@ use anyhow::Result;
 use parking_lot::Mutex;
 use serde_json::{json, Value};
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 
 #[derive(Default)]
@@ -19,6 +22,11 @@ pub struct Shortcuts {
     names: Arc<Mutex<Vec<String>>>,
     /// Shortcuts whose key is down.
     held: Arc<Mutex<HashSet<String>>>,
+    /// Passive shortcuts: names and (mods, vk), in the same order.
+    passive_names: Arc<Mutex<Vec<String>>>,
+    passive: Arc<Mutex<Vec<(u32, u32)>>>,
+    /// The passive shortcuts' polling thread runs.
+    watching: Arc<AtomicBool>,
 }
 
 impl Shortcuts {
@@ -41,7 +49,8 @@ impl Module for Shortcuts {
     }
 
     /// `set` {binds: {name: {mods, vk} | null}}: (re)binds each named shortcut (`mods` = Alt 1 | Ctrl 2 | Shift 4 | Win 8,
-    /// `vk` = Windows virtual key code; null or vk 0 = unbound). `held` {name}: whether its key is down.
+    /// `vk` = Windows virtual key code; null or vk 0 = unbound). `held` {name}: whether its key is down. `passive` {binds}: the
+    /// passive shortcuts, all of them (same format; none = no polling).
     fn call(&self, method: &str, args: Value, ctx: &Ctx) -> Result<Value> {
         match method {
             "set" => {
@@ -76,6 +85,27 @@ impl Module for Shortcuts {
                         })
                     };
                     keys.set(n as i32, b["mods"].as_u64().unwrap_or(0) as u32, b["vk"].as_u64().unwrap_or(0) as u32);
+                }
+                Ok(Value::Null)
+            }
+            "passive" => {
+                let binds: Vec<(String, u32, u32)> = args["binds"]
+                    .as_object()
+                    .into_iter()
+                    .flatten()
+                    .map(|(n, b)| (n.clone(), b["mods"].as_u64().unwrap_or(0) as u32, b["vk"].as_u64().unwrap_or(0) as u32))
+                    .filter(|(_, _, vk)| *vk != 0)
+                    .collect();
+                // names first: the thread reads the bindings, then their names
+                *self.passive_names.lock() = binds.iter().map(|(n, ..)| n.clone()).collect();
+                *self.passive.lock() = binds.iter().map(|(_, m, vk)| (*m, *vk)).collect();
+                if !binds.is_empty() && !self.watching.swap(true, Ordering::Relaxed) {
+                    let (emit, names) = (ctx.emitter(), self.passive_names.clone());
+                    crate::sys::watch_bindings(self.passive.clone(), self.watching.clone(), move |i| {
+                        if let Some(name) = names.lock().get(i).cloned() {
+                            emit("shortcuts:pressed", json!({"name": name, "passive": true}));
+                        }
+                    });
                 }
                 Ok(Value::Null)
             }
