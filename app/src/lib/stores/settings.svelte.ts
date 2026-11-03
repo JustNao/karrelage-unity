@@ -31,8 +31,10 @@ const DEFAULTS = {
   shortcuts: {
     /** In-game line of sight over the fight while held (FightMapOverlay.svelte). */
     los: { mods: 0, vk: 0x72, label: "F3" } as Binding,
-    /** Class help over the fight while held (fightmap/ClassLayer.svelte: the Steamer's turrets). */
+    /** Class help over the fight while held (fightmap/ClassLayer.svelte: the Steamer's turrets, the Eliotrope's portals). */
     classHelp: { mods: 0, vk: 0x73, label: "F4" } as Binding,
+    /** Class help with a portal simulated under the mouse while held (fightmap/PortalLayer.svelte). */
+    portals: { mods: 0, vk: 0x74, label: "F5" } as Binding,
   },
 };
 /** A shortcut: `mods` = Alt 1 | Ctrl 2 | Shift 4 | Win 8, `vk` = Windows virtual key code (0 = none), `label` as shown. */

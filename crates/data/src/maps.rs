@@ -116,9 +116,98 @@ pub fn sight(cells: &[u8], occupied: &HashSet<usize>, from: usize, min: i32, max
     (seen, hidden)
 }
 
+/// How `e` turns from `s` seen from `o`.
+#[derive(PartialEq)]
+enum Turn {
+    Same,
+    Opposite,
+    Anticlockwise,
+    Clockwise,
+}
+
+fn turn(o: (i32, i32), s: (i32, i32), e: (i32, i32)) -> Turn {
+    let (a, b) = ((s.0 - o.0, s.1 - o.1), (e.0 - o.0, e.1 - o.1));
+    match (a.0 * b.1 - a.1 * b.0).signum() {
+        1 => Turn::Anticlockwise,
+        -1 => Turn::Clockwise,
+        _ if (a.0 >= 0) == (b.0 >= 0) && (a.1 >= 0) == (b.1 >= 0) => Turn::Same,
+        _ => Turn::Opposite,
+    }
+}
+
+/// The angle from `s` to `e` seen from `o`, anticlockwise, in 0..2π.
+fn oriented_angle(o: (i32, i32), s: (i32, i32), e: (i32, i32)) -> f64 {
+    let (a, b) = ((s.0 - o.0, s.1 - o.1), (e.0 - o.0, e.1 - o.1));
+    let angle = || ((a.0 * b.1 - a.1 * b.0).abs() as f64).atan2((a.0 * b.0 + a.1 * b.1) as f64);
+    match turn(o, s, e) {
+        Turn::Same => 0.0,
+        Turn::Opposite => std::f64::consts::PI,
+        Turn::Anticlockwise => angle(),
+        Turn::Clockwise => std::f64::consts::TAU - angle(),
+    }
+}
+
+/// Eliotrope portals: the way through a network (`portals`: their cells, the open ones only) entered by `entrance` (one of
+/// them, else nothing). From each portal to the nearest one not gone through yet (|dx| + |dy|); between equally near ones,
+/// sorted by their angle from the (0, +1) direction anticlockwise, the one before the first clockwise turn of that order,
+/// else the first (the game's rule, as Eliotopy-v2 reads it). Every portal is gone through: the last one is the exit.
+/// Verified on a capture (the cast's `portals_id`: [2, 3, 1] then [2, 3, 1, 4]).
+pub fn portal_path(portals: &[usize], entrance: usize) -> Vec<usize> {
+    if !portals.contains(&entrance) {
+        return vec![];
+    }
+    let mut left: Vec<usize> = portals.iter().copied().filter(|&p| p != entrance).collect();
+    let mut path = vec![entrance];
+    while !left.is_empty() {
+        let o = coords(*path.last().unwrap());
+        let near = left.iter().map(|&p| distance(path[path.len() - 1], p)).min().unwrap();
+        let mut closest: Vec<usize> = (0..left.len()).filter(|&i| distance(path[path.len() - 1], left[i]) == near).collect();
+        let pick = if closest.len() == 1 {
+            closest[0]
+        } else {
+            let below = (o.0, o.1 + 1);
+            closest.sort_by(|&i, &j| oriented_angle(o, below, coords(left[i])).total_cmp(&oriented_angle(o, below, coords(left[j]))).then(i.cmp(&j)));
+            let n = closest.len();
+            let mut prev = n - 1;
+            let mut pick = closest[0];
+            for i in 0..n {
+                match turn(o, coords(left[closest[prev]]), coords(left[closest[i]])) {
+                    Turn::Opposite if n > 2 => {
+                        pick = closest[prev];
+                        break;
+                    }
+                    Turn::Opposite => break,
+                    Turn::Clockwise => {
+                        pick = closest[prev];
+                        break;
+                    }
+                    _ => prev = i,
+                }
+            }
+            pick
+        };
+        path.push(left.remove(pick));
+    }
+    path
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The portals of work/capture_poison.jsonl (mark ids 1 to 4 on cells 188, 332, 265, 257): the game went 2, 3, 1 with
+    /// three of them, 2, 3, 1, 4 with the fourth.
+    #[test]
+    fn portal_paths_follow_the_game() {
+        assert_eq!(portal_path(&[188, 332, 265], 332), vec![332, 265, 188]);
+        assert_eq!(portal_path(&[188, 332, 265, 257], 332), vec![332, 265, 188, 257]);
+        assert_eq!(portal_path(&[188, 332], 188), vec![188, 332]);
+        assert!(portal_path(&[188, 332], 5).is_empty(), "not entered by a portal");
+        // equally near: a choice by angle, and always the same one
+        let (o, a, b) = (cell_at(5, 1).unwrap(), cell_at(7, 1).unwrap(), cell_at(3, 1).unwrap());
+        assert_eq!(portal_path(&[o, a, b], o).len(), 3);
+        assert_eq!(portal_path(&[o, a, b], o), portal_path(&[o, b, a], o));
+    }
 
     #[test]
     fn coordinates_round_trip() {

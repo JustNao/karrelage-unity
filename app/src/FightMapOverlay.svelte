@@ -14,7 +14,7 @@
    * - No calibration for this window size: the player clicks the centres of the two fighters named (lib/fightMap.ts
    *   `calibrate`), and it goes on.
    * - Then the view's layer: line of sight from the hovered cell (fightmap/LosLayer.svelte), or the class help
-   *   (fightmap/ClassLayer.svelte).
+   *   (fightmap/ClassLayer.svelte; view `portals`: with an Eliotrope portal simulated on the cell under the mouse).
    * - Closed when the held shortcut is let go (unless a cell is pinned, or during the calibration), by its shortcut pressed
    *   again, Escape, the end of the player's turn or of the fight. Another view's shortcut switches to that view.
    */
@@ -22,7 +22,8 @@
   const dpr = window.devicePixelRatio || 1;
   const params = new URLSearchParams(location.search);
 
-  let view = $state<OverlayView>(params.get("view") === "classHelp" ? "classHelp" : "los");
+  const asked = params.get("view");
+  let view = $state<OverlayView>(asked === "classHelp" || asked === "portals" ? asked : "los");
   /** shown while the view's shortcut is held: closed when it is let go */
   let hold = $state(params.get("hold") === "1");
   /** a pinned cell (line of sight): the view stays once the shortcut is let go */
@@ -179,7 +180,7 @@
     {#if view === "los"}
       <LosLayer {cal} {cells} {live} {mine} {dpr} {win} {hold} bind:sticky />
     {:else}
-      <ClassLayer {cal} {live} {mine} {dpr} {win} {hold} />
+      <ClassLayer {cal} {live} {mine} {dpr} {win} {hold} simulate={view === "portals"} shortcut={view} />
     {/if}
   {/if}
 </div>

@@ -22,7 +22,16 @@ export const SHORTCUTS: { name: ShortcutName; title: string; desc: string }[] = 
     title: "Aide de classe en jeu",
     desc:
       "Pendant un combat, tant que la touche est enfoncée. Steamer : la zone de chaque tourelle (7 PO et en ligne de vue) " +
-      "où votre personnage reçoit son bonus ; la souris sur une tourelle met sa zone en avant. Même calibration que la ligne de vue.",
+      "où votre personnage reçoit son bonus ; la souris sur une tourelle met sa zone en avant. " +
+      "Éliotrope : vos portails numérotés, et avec 4 portails les deux qui partiront en premier en couleur. Même calibration que la ligne de vue.",
+  },
+  {
+    name: "portals",
+    title: "Simulation de portail en jeu",
+    desc:
+      "Éliotrope, pendant un combat, tant que la touche est enfoncée : un portail est simulé sur la case sous la souris. " +
+      "Avec 4 portails, le plus ancien disparaît (barré) ; la redirection depuis le nouveau portail est tracée jusqu'à sa sortie, " +
+      "avec la distance parcourue. Sur un de vos portails : la redirection depuis celui-ci.",
   },
 ];
 

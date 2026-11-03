@@ -94,6 +94,7 @@
     void startCombat(); // the current fight is followed whatever tab is open
     onShortcut("los", () => void pressFightMapOverlay("los", true).catch(() => {}));
     onShortcut("classHelp", () => void pressFightMapOverlay("classHelp", true).catch(() => {}));
+    onShortcut("portals", () => void pressFightMapOverlay("portals", true).catch(() => {}));
     void on("fightmap:toggle", () => void pressFightMapOverlay("los", false).catch(() => {})); // the fight popup's « LdV » button
     void startShortcuts(); // global shortcuts (Paramètres « Raccourcis »)
     if (app.capture && !s.on && !s.npcapError) captureSet(true).catch((e) => (err = String(e)));

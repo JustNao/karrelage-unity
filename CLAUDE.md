@@ -306,6 +306,14 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   (bonus zone), the mouse let through (the cursor is polled: over a turret's cell, its zone forward). Fighters carry `monsters` (their monster info's ints that are pack monsters: the gid,
   maybe a grade / level; summons: SummonContextInformation's spawn information) and `summoner` (stats, else the summon
   action's source); verified on capture_harebourg (the player's Harponneuse).
+- Eliotrope portals (`fight_map.rs`, `maps::portal_path`, `fightmap/PortalLayer.svelte`): GameActionFightEvent mark_cells
+  of action 1181; FightMark's ints are unnamed: cell = the MarkedCell int the mark repeats (set fields only: unset ints read
+  0), mark id = the field unmark / activate `mark_id` points at (voted in memory; every mark followed for it), active = any
+  bool true. Four per caster (oldest dropped on a fifth); closed while a fighter stands on it or deactivated this turn. Way
+  through the network = Eliotopy-v2's rule (nearest unvisited, ties by angle), matches the casts' `portals_id` on
+  capture_poison. Shown in the class help (F4: numbers, #1 / #2 coloured with four portals) and view `portals` (shortcut
+  F5, held: a portal simulated under the mouse, the oldest struck out, the way to the exit + distance). FightJoinRunningEvent
+  `marks` (rejoining a fight) not read.
 
 **Loot** (`loot.rs`): FightEndEvent → results → fighter id + `Loot` messages; item = the largest int that is a known gid
 (verified 3.7.12.12). Automation « Songes »: sound when a « Légende » (type 219) is looted, by price threshold.

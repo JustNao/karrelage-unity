@@ -26,10 +26,18 @@ export interface MapFighter {
   /** who summoned it (0: nobody / not told) */
   summoner: number;
 }
+/** An Eliotrope portal on the ground (closed: a fighter on it, or deactivated this turn). */
+export interface MapPortal {
+  cell: number;
+  author: number;
+  open: boolean;
+}
 export interface FightMapState {
   map: number | null;
   fight: boolean;
   fighters: MapFighter[];
+  /** in the order they were put down */
+  portals?: MapPortal[];
 }
 /** What a fighter on a cell reaches at the chosen range: cells in line of sight, and the ones behind an obstacle. */
 export interface Sight {
@@ -53,8 +61,9 @@ export function diamond(cell: number, w: number): string {
 /** Size of the whole map drawn with diamonds `w` wide. */
 export const mapSize = (w: number): [number, number] => [ROW * w + w / 2, (ROWS * w) / 4 + w / 4];
 
-/** What the in-game view shows (FightMapOverlay.svelte): the line of sight, or the class help; named like their shortcut. */
-export type OverlayView = "los" | "classHelp";
+/** What the in-game view shows (FightMapOverlay.svelte): the line of sight, the class help, or the class help with a portal
+ *  simulated under the mouse; named like their shortcut. */
+export type OverlayView = "los" | "classHelp" | "portals";
 
 /** A view's shortcut was pressed (`hold`: shown while it is held), or the fight popup's « LdV » button clicked: opens the
  *  in-game view during a fight, else tells the open one (it closes when it shows that view, else switches to it). */
