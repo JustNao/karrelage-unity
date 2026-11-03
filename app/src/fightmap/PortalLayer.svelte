@@ -8,7 +8,8 @@
    * first in colour once there are four. `simulate` (view `portals`): a portal put down on the cell under the mouse (the
    * oldest one struck out when there were four) and the way from it through the network to its exit, with its length and
    * damage bonus (PORTAL_BONUS % per cell); on one of the portals, the spell goes through the network and the new portal
-   * comes out past the exit (`via`: the way drawn on to it). The simulations of every
+   * comes out past the exit (`cast`: the spell's way, thin); the main line is always the new network's way from the
+   * new portal. The simulations of every
    * cell come at once (asked again when portals or fighters change): hovering is a lookup.
    */
   let { cal, live, mine, dpr, pointed, simulate, net = $bindable(null) }: {
@@ -41,9 +42,10 @@
   });
 
   const full = $derived((net?.portals.length ?? 0) >= 4);
-  const points = $derived(
-    [...(net?.path ?? []), ...(net?.via && net.added !== null ? [net.added] : [])].map((c) => screenCentre(cal, c, dpr).join(",")).join(" "),
-  );
+  const line = (cells: number[]) => cells.map((c) => screenCentre(cal, c, dpr).join(",")).join(" ");
+  const points = $derived(line(net?.path ?? []));
+  /** cast into a portal: the spell's way to where the new portal lands */
+  const cast = $derived(line(net?.cast ?? []));
   const exit = $derived(net && net.path.length > 1 ? net.path[net.path.length - 1] : null);
   /** size of a cell on screen (CSS px) */
   const cell = $derived([cal.sx / dpr, cal.sy / dpr]);
@@ -61,6 +63,9 @@
       <polygon points={screenDiamond(cal, p.cell, dpr)} class="portal" class:closed={!p.open} class:added={p.cell === net.added}
         style:--c={portalColour(p.number, full)} />
     {/each}
+    {#if cast}
+      <polyline points={cast} class="cast" />
+    {/if}
     {#if points && exit !== null}
       <polygon points={screenDiamond(cal, exit, dpr)} class="exit" />
       <polyline {points} class="way under" />
@@ -91,6 +96,7 @@
   @keyframes pulse { from { fill-opacity: 0.1; } to { fill-opacity: 0.55; } }
   .way { fill: none; stroke: #5aa9ff; stroke-opacity: 0.6; stroke-width: 3; stroke-linejoin: round; }
   .way.under { stroke: rgba(0, 0, 0, 0.35); stroke-opacity: 1; stroke-width: 5; }
+  .cast { fill: none; stroke: #fff; stroke-opacity: 0.45; stroke-width: 1.5; stroke-dasharray: 5 4; stroke-linejoin: round; }
   .length.under { stroke: rgba(0, 0, 0, 0.75); stroke-width: 6; }
   .badge { fill: var(--c); stroke: rgba(0, 0, 0, 0.7); stroke-width: 1.5; }
   .number { fill: #fff; font-weight: 700; text-anchor: middle; dominant-baseline: central; paint-order: stroke; stroke: rgba(0, 0, 0, 0.6); stroke-width: 2px; }

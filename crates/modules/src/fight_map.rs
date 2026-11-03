@@ -294,17 +294,19 @@ fn redirect(open: &[usize], entrance: usize, caster: usize) -> Option<(Vec<usize
 }
 
 /// A caster's network (`net`: (cell, open) from the oldest) as `portals` tells it, with the Portail spell simulated on `add`:
-/// on a `free` cell, a new portal there and the way a spell would take from it; on one of the open portals, the spell goes
-/// through the network from it (`path`, `via` = true) and the new portal lands past the exit (`redirect`, needs the
-/// `caster`'s cell). The oldest one goes when there are already four (`dropped`).
+/// on a `free` cell, a new portal there; on one of the open portals, the spell goes through the network from it (`cast`:
+/// its way, then the cell it lands on; `via` = true) and the new portal lands past the exit (`redirect`, needs the
+/// `caster`'s cell). The oldest one goes when there are already four (`dropped`). `path` = the new network's way from the
+/// new portal (what a spell cast into it would take).
 fn simulate(net: &[(i64, bool)], add: Option<i64>, free: &dyn Fn(i64) -> bool, caster: Option<i64>) -> Value {
     let mut net = net.to_vec();
     let open: Vec<usize> = net.iter().filter(|(_, o)| *o).map(|(c, _)| *c as usize).collect();
-    let (mut added, mut dropped, mut path, mut via) = (None, None, vec![], false);
+    let (mut added, mut dropped, mut path, mut cast) = (None, None, vec![], vec![]);
     let into = add.filter(|c| open.contains(&(*c as usize)));
     let landing = match (into, caster) {
         (Some(e), Some(from)) => redirect(&open, e as usize, from as usize).map(|(p, at)| {
-            (path, via) = (p, true);
+            cast = p;
+            cast.push(at);
             at as i64
         }),
         (Some(_), None) => None,
@@ -316,14 +318,12 @@ fn simulate(net: &[(i64, bool)], add: Option<i64>, free: &dyn Fn(i64) -> bool, c
         }
         net.push((c, true));
         added = Some(c);
-        if !via {
-            let open: Vec<usize> = net.iter().filter(|(_, o)| *o).map(|(c, _)| *c as usize).collect();
-            path = portal_path(&open, c as usize);
-        }
+        let open: Vec<usize> = net.iter().filter(|(_, o)| *o).map(|(c, _)| *c as usize).collect();
+        path = portal_path(&open, c as usize);
     }
     let length: i32 = path.windows(2).map(|w| distance(w[0], w[1])).sum();
     let portals: Vec<Value> = net.iter().enumerate().map(|(i, (c, o))| json!({"cell": c, "number": i + 1, "open": o})).collect();
-    json!({"portals": portals, "added": added, "dropped": dropped, "via": via, "path": path, "distance": length})
+    json!({"portals": portals, "added": added, "dropped": dropped, "via": !cast.is_empty(), "cast": cast, "path": path, "distance": length})
 }
 
 impl FightMap {
@@ -531,8 +531,9 @@ impl Module for FightMap {
     /// `release`: the view closes: Escape no longer watched, the keyboard focus back to the Dofus window it covered.
     /// State `portals`: [{cell, author, open}] in the order they were put down. Call `portals` {author, add?: cell}: that
     /// caster's network {portals: [{cell, number (1 = oldest), open}], added, dropped, via, path: [cells], distance} with
-    /// the Portail spell cast on `add` (`simulate`): a free walkable cell = a portal there and the way from it, one of the
-    /// open portals = the spell's way through the network and the portal past its exit (`via`); `dropped` = the oldest,
+    /// the Portail spell cast on `add` (`simulate`): a free walkable cell = a portal there, one of the open portals = the
+    /// spell's way through the network and the portal past its exit (`via`, `cast`); `path` = the new network's way from the
+    /// new portal; `dropped` = the oldest,
     /// gone when there were four; the path's `distance` = cells between its portals. `all: true` instead: {base: the network without `add`, sims: {cell: the same
     /// with `add` = cell}} for every free cell.
     fn call(&self, method: &str, args: Value, ctx: &Ctx) -> Result<Value> {
@@ -693,8 +694,12 @@ mod tests {
         // the oldest goes when the redirected portal is a fifth, and the way shown is the spell's
         let free = |c: i64| c != 325;
         let n = simulate(&[(188, true), (332, true), (265, true), (257, true)], Some(188), &free, Some(160));
-        assert_eq!(n["path"], json!(portal_path(&[188, 332, 265, 257], 188)));
-        assert!(n["via"] == true && n["dropped"] == 188 && n["added"].is_i64());
+        let mut way = portal_path(&[188, 332, 265, 257], 188);
+        let at = n["added"].as_i64().expect("a landing cell");
+        way.push(at as usize);
+        assert_eq!(n["cast"], json!(way), "the spell's way, then where it lands");
+        assert_eq!(n["path"], json!(portal_path(&[332, 265, 257, at as usize], at as usize)), "the new network's way from the new portal");
+        assert!(n["via"] == true && n["dropped"] == 188);
     }
 
     /// work/capture_poison.jsonl: an Eliotrope puts down portals on 188, 332, 265 then 257 (mark ids 1 to 4, the first one
@@ -729,16 +734,18 @@ mod tests {
             let at = s["fighters"].as_array().unwrap().iter().find(|f| f["id"] == eliotrope).map(|f| f["cell"].clone());
             if cells.len() == 3 && at == Some(json!(264)) && !predicted {
                 let n = hub.call("fightmap", "portals", json!({"author": eliotrope, "add": 332})).unwrap();
-                assert_eq!(n["path"], json!([332, 265, 188]));
+                assert_eq!(n["cast"], json!([332, 265, 188, 257]));
                 assert!(n["via"] == true && n["added"] == 257 && n["dropped"].is_null(), "{n}");
+                // the new network's way from the new portal: the game's 4 portal ways went 2, 3, 1, 4 from portal 2
+                assert_eq!(n["path"], json!(portal_path(&[188, 332, 265, 257], 257)));
                 predicted = true;
             }
             if cells.len() == 4 {
                 let net = hub.call("fightmap", "portals", json!({"author": eliotrope, "add": 332})).unwrap();
                 // into portal 2 from 264: the game's way, out 4 cells past its exit (325, the casts' target: a monster
                 // stands there, no portal)
-                assert_eq!(net["path"], json!([332, 265, 188, 257]), "the game's way from portal 2");
-                assert!(net["via"] == true && net["added"].is_null() && net["dropped"].is_null());
+                assert_eq!(net["cast"], json!([332, 265, 188, 257, 325]), "the game's way from portal 2");
+                assert!(net["via"] == true && net["added"].is_null() && net["dropped"].is_null() && net["path"] == json!([]));
                 assert!(predicted, "the 4th portal predicted from the Portail cast");
                 // a fifth portal: the oldest (188) goes
                 let free = (0..MAP_CELLS as i64).find_map(|c| {

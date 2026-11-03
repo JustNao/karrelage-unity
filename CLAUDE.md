@@ -313,7 +313,8 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   through the network = Eliotopy-v2's rule (nearest unvisited, ties by angle), matches the casts' `portals_id` on
   capture_poison. Shown in the class help (F4: numbers, #1 / #2 coloured with four portals) and view `portals` (a portal
   simulated under the mouse, the oldest struck out with four; cast into one of the portals the spell goes through the
-  network and lands at exit + (entrance − caster), `redirect`, verified on 5 casts of capture_poison, a Portail among them; the way to the exit + distance and damage bonus: +2 % per cell,
+  network and lands at exit + (entrance − caster), `redirect`, verified on 5 casts of capture_poison, a Portail among them,
+  drawn thin (`cast`); the main line is the new network's way from the new portal; the way to the exit + distance and damage bonus: +2 % per cell,
   `PORTAL_BONUS`). That view opens on the game's own Portail spell key (`settings.classHelp.eliotrope.portalKey`, Combat tab
   « Aide de classe », which also turns each class's help on / off): a *passive* shortcut (`shortcuts` `passive`,
   `sys::watch_bindings`: GetAsyncKeyState polled while the game has the focus, never taken from it), the window opened
