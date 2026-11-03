@@ -101,8 +101,8 @@
   {#if simulate}
     Portail simulé sous la souris
     {#if net && net.path.length > 1}· sortie à {net.distance} cases : <b>+{net.distance * PORTAL_BONUS} % de dommages</b>{/if}
-    {#if net?.replaced != null}· remplace le portail n° {net.replaced}
-    {:else if net?.dropped != null}· <span class="chip" style:color="#ff4d4d">✕ le n° 1 disparaît</span>
+    {#if net?.via}· lancé dans un portail : {net.added === null ? "la case de sortie est prise ou hors de la carte" : "le nouveau portail sort après le dernier de la redirection"}{/if}
+    {#if net?.dropped != null}· <span class="chip" style:color="#ff4d4d">✕ le n° 1 disparaît</span>
     {:else if !net?.added}· survolez une case libre{/if}
   {:else if areas.length}
     Tourelles ({TURRET_RANGE} PO, en ligne de vue) :

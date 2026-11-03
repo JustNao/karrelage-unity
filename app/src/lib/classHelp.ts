@@ -31,8 +31,8 @@ export interface PortalNet {
   added: number | null;
   /** the oldest portal, gone because of the simulated one */
   dropped: number | null;
-  /** the number of the portal the simulated one is put on (it replaces it) */
-  replaced: number | null;
+  /** cast into one of the portals: `path` = the spell's way through the network, `added` past its exit */
+  via: boolean;
   /** from the entrance to the exit */
   path: number[];
   /** cells between the path's portals */
