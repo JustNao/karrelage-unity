@@ -302,8 +302,8 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   the end of the player's turn (`fightmap:turn`: another fighter's turn after one of `me`) or of the fight. Not yet tried on the
   real game (calibration assumes the grid scales linearly with no camera zoom).
 - Class help (`lib/classHelp.ts`): Steamer turrets (gids 5831 Bathyscaphe, 5832 Chalutier, 5833 Foreuse, 5835 Gardienne, 5836
-  Harponneuse, 5837 Tactirelle) of the player (summoner in `me`, else same team): the cells ≤ 8 from each and in its line of sight
-  (bonus zone), the mouse let through. Fighters carry `monsters` (their monster info's ints that are pack monsters: the gid,
+  Harponneuse, 5837 Tactirelle) of the player (summoner in `me`, else same team): the cells ≤ 7 from each and in its line of sight
+  (bonus zone), the mouse let through (the cursor is polled: over a turret's cell, its zone forward). Fighters carry `monsters` (their monster info's ints that are pack monsters: the gid,
   maybe a grade / level; summons: SummonContextInformation's spawn information) and `summoner` (stats, else the summon
   action's source); verified on capture_harebourg (the player's Harponneuse).
 

@@ -21,8 +21,8 @@ export const SHORTCUTS: { name: ShortcutName; title: string; desc: string }[] = 
     name: "classHelp",
     title: "Aide de classe en jeu",
     desc:
-      "Pendant un combat, tant que la touche est enfoncée. Steamer : la zone de chaque tourelle (8 PO et en ligne de vue) " +
-      "où votre personnage reçoit son bonus. Même calibration que la ligne de vue.",
+      "Pendant un combat, tant que la touche est enfoncée. Steamer : la zone de chaque tourelle (7 PO et en ligne de vue) " +
+      "où votre personnage reçoit son bonus ; la souris sur une tourelle met sa zone en avant. Même calibration que la ligne de vue.",
   },
 ];
 

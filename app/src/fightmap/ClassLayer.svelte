@@ -1,15 +1,16 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import type { Window } from "@tauri-apps/api/window";
+  import { cursorPosition, type Window } from "@tauri-apps/api/window";
   import { call } from "../lib/api";
   import { settings } from "../lib/stores/settings.svelte";
-  import { screenCentre, screenDiamond, type Calibration, type FightMapState, type MapFighter, type Sight } from "../lib/fightMap";
+  import { cellAt, screenDiamond, type Calibration, type FightMapState, type MapFighter, type Sight } from "../lib/fightMap";
   import { TURRET_RANGE, TURRETS, turretOf } from "../lib/classHelp";
 
   /**
    * Class help in the in-game view (FightMapOverlay.svelte), the mouse let through (only to look at). Steamer: for each of the
    * player's turrets, the cells where the Steamer gets its bonus (at most TURRET_RANGE cells away and in its line of sight:
-   * the player's own fighters don't block it, they are the ones moving).
+   * the player's own fighters don't block it, they are the ones moving). The mouse over a turret's cell brings its zone forward
+   * (the cursor is polled: the window lets the mouse through).
    */
   let { cal, live, mine, dpr, win, hold }: {
     cal: Calibration;
@@ -20,9 +21,22 @@
     hold: boolean;
   } = $props();
 
+  /** the cell under the mouse */
+  let pointed = $state<number | null>(null);
+
   onMount(() => {
     void win.setIgnoreCursorEvents(true);
-    return () => void win.setIgnoreCursorEvents(false);
+    let origin: { x: number; y: number } | null = null;
+    void win.innerPosition().then((p) => (origin = p));
+    const poll = setInterval(async () => {
+      if (!origin) return;
+      const p = await cursorPosition().catch(() => null);
+      pointed = p && cellAt(cal, p.x - origin.x, p.y - origin.y);
+    }, 60);
+    return () => {
+      clearInterval(poll);
+      void win.setIgnoreCursorEvents(false);
+    };
   });
 
   /** The player's turrets: summoned by one of their characters, else of their team when the summoner is unknown; every turret
@@ -46,32 +60,40 @@
   });
 
   const look = (t: MapFighter) => TURRETS[turretOf(t.monsters)!];
+  /** the turret under the mouse: its zone forward, the others faded */
+  const focused = $derived(turrets.find((t) => t.cell === pointed)?.id ?? null);
   const keyLabel = $derived(settings.shortcuts.classHelp.vk ? settings.shortcuts.classHelp.label : "le raccourci");
 </script>
 
 <svg width="100%" height="100%">
   {#each areas as a (a.turret.id)}
-    {#each a.seen as c (c)}
-      <polygon points={screenDiamond(cal, c, dpr)} style:fill={look(a.turret).colour} style:stroke={look(a.turret).colour} class="area" />
-    {/each}
+    {#if a.turret.id !== focused}{@render zone(a)}{/if}
   {/each}
   {#each areas as a (a.turret.id)}
-    {@const [x, y] = screenCentre(cal, a.turret.cell, dpr)}
+    {#if a.turret.id === focused}{@render zone(a)}{/if}
     <polygon points={screenDiamond(cal, a.turret.cell, dpr)} style:stroke={look(a.turret).colour} class="turret" />
-    <text {x} y={y - (cal.sy * 0.25) / dpr - 4} class="name">{look(a.turret).name}</text>
   {/each}
 </svg>
+{#snippet zone(a: { turret: MapFighter; seen: number[] })}
+  {#each a.seen as c (c)}
+    <polygon points={screenDiamond(cal, c, dpr)} style:fill={look(a.turret).colour} style:stroke={look(a.turret).colour}
+      class="area" class:focused={a.turret.id === focused} class:faded={focused !== null && a.turret.id !== focused} />
+  {/each}
+{/snippet}
+
 <div class="pill">
   {#if areas.length}
     Tourelles ({TURRET_RANGE} PO, en ligne de vue) :
     {#each areas as a (a.turret.id)}<span class="chip" style:color={look(a.turret).colour}>■ {look(a.turret).name}</span>{/each}
   {:else}Aucune aide pour ce combat (Steamer : aucune tourelle posée){/if}
+  {#if areas.length && focused === null}· survolez une tourelle pour sa zone{/if}
   · {hold ? `lâchez ${keyLabel}` : `${keyLabel} ou Échap`} pour fermer
 </div>
 
 <style>
   .area { fill-opacity: 0.22; stroke-opacity: 0.8; stroke-width: 1; }
   .turret { fill: none; stroke-width: 3; }
-  .name { fill: #fff; font-size: 12px; font-weight: 600; text-anchor: middle; paint-order: stroke; stroke: rgba(0, 0, 0, 0.85); stroke-width: 3px; }
+  .area.focused { fill-opacity: 0.45; stroke-opacity: 1; stroke-width: 1.5; }
+  .area.faded { fill-opacity: 0.06; stroke-opacity: 0.2; }
   .chip { margin-left: 8px; font-weight: 600; }
 </style>
