@@ -1,6 +1,7 @@
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { call } from "./api";
-import { closeFloating, openFloating } from "./floating";
+import { emitTo } from "@tauri-apps/api/event";
+import { openFloating } from "./floating";
 
 /**
  * Fight map (crates/modules/src/fight_map.rs): the map being fought on and where every fighter stands, for the Combat tab's
@@ -20,6 +21,10 @@ export interface MapFighter {
   alive: boolean;
   summoned: boolean;
   carried: boolean;
+  /** ints of its monster information that are pack monsters (its gid among them) */
+  monsters: number[];
+  /** who summoned it (0: nobody / not told) */
+  summoner: number;
 }
 export interface FightMapState {
   map: number | null;
@@ -48,15 +53,15 @@ export function diamond(cell: number, w: number): string {
 /** Size of the whole map drawn with diamonds `w` wide. */
 export const mapSize = (w: number): [number, number] => [ROW * w + w / 2, (ROWS * w) / 4 + w / 4];
 
-/** The « Ligne de vue en jeu » shortcut (and the fight popup's « LdV » button): closes the in-game view when it is open, the
- *  game getting the keyboard focus back (not the popup clicked), else opens it during a fight. */
-export async function toggleFightMapOverlay() {
-  if (await WebviewWindow.getByLabel(OVERLAY)) {
-    await call("fightmap", "release", {}, true).catch(() => {});
-    return closeFloating(OVERLAY);
-  }
+/** What the in-game view shows (FightMapOverlay.svelte): the line of sight, or the class help; named like their shortcut. */
+export type OverlayView = "los" | "classHelp";
+
+/** A view's shortcut was pressed (`hold`: shown while it is held), or the fight popup's « LdV » button clicked: opens the
+ *  in-game view during a fight, else tells the open one (it closes when it shows that view, else switches to it). */
+export async function pressFightMapOverlay(view: OverlayView, hold: boolean) {
+  if (await WebviewWindow.getByLabel(OVERLAY)) return emitTo(OVERLAY, "fightmap:press", { view, hold });
   const s = await call<FightMapState>("fightmap", "state", {}, true);
-  if (s.fight && s.map !== null) await openFloating(OVERLAY, { url: "fightmap.html", title: "Ligne de vue", width: 800, height: 600 });
+  if (s.fight && s.map !== null) await openFloating(OVERLAY, { url: `fightmap.html?view=${view}&hold=${hold ? 1 : 0}`, title: "Vue en jeu", width: 800, height: 600 });
 }
 const OVERLAY = "fightmap";
 
@@ -100,6 +105,12 @@ export function cellAt(cal: Calibration, x: number, y: number): number | null {
     if (Math.abs(gx - cx) / 0.5 + Math.abs(gy - cy) / 0.25 <= 1) return c;
   }
   return null;
+}
+
+/** A cell's centre on screen, CSS px (`dpr` = window.devicePixelRatio). */
+export function screenCentre(cal: Calibration, c: number, dpr: number): [number, number] {
+  const [gx, gy] = centre(c, 1);
+  return [(cal.ox + cal.sx * gx) / dpr, (cal.oy + cal.sy * gy) / dpr];
 }
 
 /** A cell's diamond on screen: SVG points in CSS px (`dpr` = window.devicePixelRatio). */

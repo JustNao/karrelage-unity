@@ -98,7 +98,8 @@ Set `PYTHONUTF8=1` for scripts handling accents. The "Développeur" header toggl
 - Global shortcuts: `settings.shortcuts.<name>` {mods, vk, label} + an entry in `lib/shortcuts.ts` `SHORTCUTS` (Paramètres
   « Raccourcis »: rebind / reset each / reset all) + `onShortcut(name, fn)` (App.svelte). `shortcuts.rs` registers them with
   RegisterHotKey on its own thread (`sys::Hotkeys`; the game doesn't get the keys), released while a binding is typed. `vk` =
-  `KeyboardEvent.keyCode` (layout-aware, what RegisterHotKey wants), not `code`.
+  `KeyboardEvent.keyCode` (layout-aware, what RegisterHotKey wants), not `code`. Windows only tells the press: the key is then
+  polled until up → `shortcuts:released` {name} (held shortcuts; `held` {name}).
 - Settings: `stores/settings.svelte.ts` (`DEFAULTS` + a row in the Paramètres tab, « Général » first, then one section per
   tab). `general.closeToTray`: closing hides the main window, tray icon (`main.rs` `build_tray`) opens / quits.
 - Window capabilities: `default.json` (main), `overlay.json` (floating), `splash.json`. `setSize` & co. need explicit grants.
@@ -289,14 +290,22 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   not checked); blocked by `los` 0 cells and living fighters (target excepted, the player's own fighter ignored: it stands on
   the hovered cell). Targets = walkable cells, no range limit. The tab shows the map during a fight only (state cleared at
   FightEndEvent); the map id only in developer mode.
-- In-game view (`FightMapOverlay.svelte`, fightmap.html, shortcut `los` default Ctrl+Maj+T, or the fight popup's « LdV » button
-  → `fightmap:toggle` to the main window, the only one allowed to create windows; `toggleFightMapOverlay`): a window over the
+- In-game view (`FightMapOverlay.svelte` = shell: window, calibration, closing; layers `fightmap/LosLayer.svelte` and
+  `fightmap/ClassLayer.svelte`; fightmap.html `?view=los|classHelp&hold=1`): shortcuts `los` (F3) / `classHelp` (F4) shown while
+  held, or the fight popup's « LdV » button (no hold) → `fightmap:toggle` to the main window, the only one allowed to create
+  windows (`pressFightMapOverlay`; an open view gets `fightmap:press`: same view = close, else switch). A window over the
   Dofus client area (`fightmap.window`, physical px). Calibration (`lib/fightMap.ts` `calibrate`, localStorage
   `karrelage.combat.calibration`, valid for one client size, « Effacer la calibration » in the Combat tab): clicks on the centres of the two fighters farthest apart on
   both axes (the player's first if one of them; a cell-sized cross replaces the cursor) give ox/oy/sx/sy (sx ≈ sy checked); hover = window takes the mouse, click pins and lets it through
-  (`setIgnoreCursorEvents`). Closed by the shortcut, Escape (`watch_escape`: GetAsyncKeyState polled, not taken from the game),
+  (`setIgnoreCursorEvents`; a pinned cell keeps the view once the key is let go). Closed by letting go of the held key (not during
+  the calibration), the shortcut again, Escape (`watch_escape`: GetAsyncKeyState polled, not taken from the game),
   the end of the player's turn (`fightmap:turn`: another fighter's turn after one of `me`) or of the fight. Not yet tried on the
   real game (calibration assumes the grid scales linearly with no camera zoom).
+- Class help (`lib/classHelp.ts`): Steamer turrets (gids 5831 Bathyscaphe, 5832 Chalutier, 5833 Foreuse, 5835 Gardienne, 5836
+  Harponneuse, 5837 Tactirelle) of the player (summoner in `me`, else same team): the cells ≤ 8 from each and in its line of sight
+  (bonus zone), the mouse let through. Fighters carry `monsters` (their monster info's ints that are pack monsters: the gid,
+  maybe a grade / level; summons: SummonContextInformation's spawn information) and `summoner` (stats, else the summon
+  action's source); verified on capture_harebourg (the player's Harponneuse).
 
 **Loot** (`loot.rs`): FightEndEvent → results → fighter id + `Loot` messages; item = the largest int that is a known gid
 (verified 3.7.12.12). Automation « Songes »: sound when a « Légende » (type 219) is looted, by price threshold.

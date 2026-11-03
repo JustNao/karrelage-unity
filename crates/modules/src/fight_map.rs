@@ -40,6 +40,8 @@ const TURN: &str = "FightTurnEvent";
 const POSITION: &str = "ActorPositionInformation";
 const FIGHTER: &str = "FightFighterInformation";
 const SPAWN: &str = "SpawnInformation";
+/// GameActionFightEvent summons by context (script-named).
+const SUMMON: &str = "SummonContextInformation";
 
 #[derive(Clone, Serialize)]
 struct Fighter {
@@ -52,6 +54,11 @@ struct Fighter {
     summoned: bool,
     /// Carried by another fighter: on its cell, blocks nothing of its own.
     carried: bool,
+    /// The ints of its monster information that are pack monsters: its gid, maybe a grade or level too (they are unordered;
+    /// enough to recognise a creature whose gid is no level, e.g. the Steamer's turrets).
+    monsters: Vec<i64>,
+    /// Who summoned it (0: nobody, or not told).
+    summoner: i64,
 }
 
 #[derive(Default)]
@@ -119,6 +126,28 @@ fn find<'a>(ctx: &Ctx, m: &'a DynamicMessage, wanted: &str) -> Option<&'a Dynami
     children(m).into_iter().find_map(|c| find(ctx, c, wanted))
 }
 
+/// The ints of a subtree that are pack monsters (fighter positions left out).
+fn monster_ints(ctx: &Ctx, m: &DynamicMessage, out: &mut Vec<i64>) {
+    for (_, v) in scalar_ints(m) {
+        if ctx.data.monsters.contains_key(&v) && !out.contains(&v) {
+            out.push(v);
+        }
+    }
+    for c in children(m) {
+        if name(ctx, c) != POSITION {
+            monster_ints(ctx, c, out);
+        }
+    }
+}
+
+/// What a SpawnInformation tells of the fighters it holds: alive, team, monster ints.
+#[derive(Clone)]
+struct Outer {
+    alive: bool,
+    team: Option<i64>,
+    monsters: Vec<i64>,
+}
+
 /// SpawnInformation: (alive, team = its only enum field).
 fn spawn(ctx: &Ctx, m: &DynamicMessage) -> (bool, Option<i64>) {
     let alive = named_int(ctx, m, "alive").unwrap_or(0) != 0;
@@ -131,28 +160,53 @@ fn spawn(ctx: &Ctx, m: &DynamicMessage) -> (bool, Option<i64>) {
 }
 
 /// A fighter from its ActorPositionInformation (`outer` = the SpawnInformation holding it, for summons).
-fn position(ctx: &Ctx, m: &DynamicMessage, outer: Option<(bool, Option<i64>)>) -> Option<Fighter> {
+fn position(ctx: &Ctx, m: &DynamicMessage, outer: Option<&Outer>) -> Option<Fighter> {
     let id = named_int(ctx, m, "actor_id")?;
     let cell = named_child(ctx, m, "disposition").and_then(|d| named_int(ctx, d, "cell_id"))?;
     let info = find(ctx, m, FIGHTER);
-    let (alive, team) = info.and_then(|i| named_child(ctx, i, "spawn_information")).map(|s| spawn(ctx, s)).or(outer).unwrap_or((true, None));
+    let (alive, team) =
+        info.and_then(|i| named_child(ctx, i, "spawn_information")).map(|s| spawn(ctx, s)).or(outer.map(|o| (o.alive, o.team))).unwrap_or((true, None));
     let kind = info.and_then(|i| {
         [("named_fighter", "player"), ("ai_fighter", "monster"), ("entity_fighter", "creature")]
             .into_iter()
             .find(|(f, _)| named_child(ctx, i, f).is_some())
             .map(|(_, k)| k)
     });
-    let summoned = info.and_then(|i| named_child(ctx, i, "stats")).and_then(|s| named_int(ctx, s, "summoned")).unwrap_or(0) != 0;
-    Some(Fighter { id, cell, team, kind: kind.unwrap_or("other"), alive, summoned, carried: false })
+    let stats = info.and_then(|i| named_child(ctx, i, "stats"));
+    let summoned = stats.and_then(|s| named_int(ctx, s, "summoned")).unwrap_or(0) != 0;
+    let summoner = stats.and_then(|s| named_int(ctx, s, "summoner")).unwrap_or(0);
+    let mut monsters = vec![];
+    if let Some(ai) = info.and_then(|i| named_child(ctx, i, "ai_fighter")) {
+        monster_ints(ctx, ai, &mut monsters);
+    }
+    if monsters.is_empty() {
+        monsters = outer.map(|o| o.monsters.clone()).unwrap_or_default();
+    }
+    Some(Fighter { id, cell, team, kind: kind.unwrap_or("other"), alive, summoned, carried: false, monsters, summoner })
 }
 
 /// Every fighter positioned in a message.
-fn fighters(ctx: &Ctx, m: &DynamicMessage, outer: Option<(bool, Option<i64>)>, out: &mut Vec<Fighter>) {
+fn fighters(ctx: &Ctx, m: &DynamicMessage, outer: Option<&Outer>, out: &mut Vec<Fighter>) {
     match name(ctx, m).as_str() {
         POSITION => out.extend(position(ctx, m, outer)),
         SPAWN => {
-            let s = spawn(ctx, m);
-            children(m).into_iter().for_each(|c| fighters(ctx, c, Some(s), out));
+            let (alive, team) = spawn(ctx, m);
+            let mut monsters = vec![];
+            monster_ints(ctx, m, &mut monsters);
+            if monsters.is_empty() {
+                monsters = outer.map(|o| o.monsters.clone()).unwrap_or_default();
+            }
+            let o = Outer { alive, team, monsters };
+            children(m).into_iter().for_each(|c| fighters(ctx, c, Some(&o), out));
+        }
+        // a summon by context: its spawn information's monster (gid + grade or level) for every actor it spawns
+        SUMMON => {
+            let mut monsters = vec![];
+            if let Some(sp) = named_child(ctx, m, "spawn_information") {
+                monster_ints(ctx, sp, &mut monsters);
+            }
+            let o = Outer { monsters, ..outer.cloned().unwrap_or(Outer { alive: true, team: None, monsters: vec![] }) };
+            children(m).into_iter().for_each(|c| fighters(ctx, c, Some(&o), out));
         }
         _ => children(m).into_iter().for_each(|c| fighters(ctx, c, outer, out)),
     }
@@ -201,7 +255,9 @@ impl FightMap {
             let mut found = vec![];
             fighters(ctx, x, None, &mut found);
             let changed = !found.is_empty();
-            s.fighters.extend(found.into_iter().map(|f| (f.id, f)));
+            // the caster is the summoner when the summon does not say
+            let caster = named_int(ctx, d, "source_id").unwrap_or(0);
+            s.fighters.extend(found.into_iter().map(|f| (f.id, Fighter { summoner: if f.summoner == 0 { caster } else { f.summoner }, ..f })));
             return changed;
         }
         false
@@ -271,8 +327,16 @@ impl Module for FightMap {
                 let changed = !found.is_empty();
                 for f in found {
                     // a refresh without spawn information keeps what is known
-                    let kind = s.fighters.get(&f.id).map_or(f.kind, |old| if f.kind == "other" { old.kind } else { f.kind });
-                    s.fighters.insert(f.id, Fighter { kind, ..f });
+                    let f = match s.fighters.remove(&f.id) {
+                        Some(old) => Fighter {
+                            kind: if f.kind == "other" { old.kind } else { f.kind },
+                            monsters: if f.monsters.is_empty() { old.monsters } else { f.monsters },
+                            summoner: if f.summoner == 0 { old.summoner } else { f.summoner },
+                            ..f
+                        },
+                        None => f,
+                    };
+                    s.fighters.insert(f.id, f);
                 }
                 changed
             }
@@ -298,7 +362,7 @@ impl Module for FightMap {
         }
     }
 
-    /// `state`: {map, fight, fighters: [{id, cell, team, kind, alive, summoned, carried}]}; `cells` {map}: the flags of its
+    /// `state`: {map, fight, fighters: [{id, cell, team, kind, alive, summoned, carried, monsters, summoner}]}; `cells` {map}: the flags of its
     /// 560 cells (bits 1 walkable, 2 sight goes through, 4 / 8 red / blue placement) or null; `sight` {from, min, max,
     /// ignore?: [fighter ids]}: {seen, hidden} cells of the current map at distance min..=max from `from`, the living
     /// fighters blocking the sight (but the ones of `ignore` and whoever stands on `from`). `window`: the Dofus window's client
@@ -358,7 +422,8 @@ mod tests {
     use loutil_data::maps::MOV;
 
     /// Recorded fights (pipeline/sniff.py captures, local only: they hold the players' ids) replayed through the hub: the
-    /// fight map is found in the pack and every living fighter, after every message, stands on a walkable cell of it.
+    /// fight map is found in the pack and every living fighter, after every message, stands on a walkable cell of it; summons
+    /// carry their gid and summoner.
     /// Skipped without the files.
     #[test]
     fn fighters_stand_on_walkable_cells() {
@@ -373,6 +438,7 @@ mod tests {
             let (mut checked, mut moves) = (0, 0);
             let mut last = String::new();
             let mut fight_map = false;
+            let mut turret = false;
             for line in std::fs::read_to_string(&rec).unwrap().lines() {
                 let r: Value = serde_json::from_str(line).unwrap();
                 let (Some(h), Some(len)) = (r["hex"].as_str(), r["len"].as_u64()) else { continue };
@@ -408,6 +474,12 @@ mod tests {
                 }
                 let taken: HashSet<i64> = at.iter().map(|(_, c)| *c).collect();
                 assert_eq!(taken.len(), at.len(), "{name}: two fighters on one cell {at:?} ({:?})", r["name"]);
+                // a Steamer's turret (Harponneuse 5836) summoned by the player's character
+                turret |= s["fighters"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|f| f["monsters"].as_array().unwrap().contains(&json!(5836)) && f["summoner"].as_i64() > Some(0));
                 let now = format!("{at:?}");
                 if now != last && !last.is_empty() {
                     moves += 1;
@@ -417,6 +489,7 @@ mod tests {
             }
             eprintln!("{name}: {checked} fight states checked, {moves} position changes");
             assert!(checked > 0 && moves > 0, "{name}: fighters followed");
+            assert!(turret || name != "capture_harebourg", "{name}: the player's Harponneuse, with its gid and summoner");
         }
     }
 }

@@ -8,3 +8,13 @@ try {
     localStorage.removeItem(k);
   }
 } catch {}
+
+/** 1.10.0's line of sight shortcut Ctrl+Maj+T, never changed by the user, becomes the new default (F3, held). */
+try {
+  const saved = JSON.parse(localStorage.getItem("karrelage.settings") ?? "null");
+  const los = saved?.shortcuts?.los;
+  if (los && los.mods === 6 && los.vk === 0x54) {
+    delete saved.shortcuts.los;
+    localStorage.setItem("karrelage.settings", JSON.stringify(saved));
+  }
+} catch {}

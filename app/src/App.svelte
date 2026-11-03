@@ -11,7 +11,7 @@
   import { startAutomation } from "./lib/automation";
   import { startCombat } from "./lib/stores/combat.svelte";
   import { onShortcut, startShortcuts } from "./lib/stores/shortcuts.svelte";
-  import { toggleFightMapOverlay } from "./lib/fightMap";
+  import { pressFightMapOverlay } from "./lib/fightMap";
 
   const tabs = $derived(modules.filter((m) => app.dev || !m.devOnly));
   const active = $derived(tabs.find((m) => m.id === app.tab) ?? tabs[0]);
@@ -92,8 +92,9 @@
     restored = true;
     void startAutomation(); // automation rules watch every scan, whatever tab is open (needs the data pack)
     void startCombat(); // the current fight is followed whatever tab is open
-    onShortcut("los", () => void toggleFightMapOverlay().catch(() => {}));
-    void on("fightmap:toggle", () => void toggleFightMapOverlay().catch(() => {})); // the fight popup's « LdV » button
+    onShortcut("los", () => void pressFightMapOverlay("los", true).catch(() => {}));
+    onShortcut("classHelp", () => void pressFightMapOverlay("classHelp", true).catch(() => {}));
+    void on("fightmap:toggle", () => void pressFightMapOverlay("los", false).catch(() => {})); // the fight popup's « LdV » button
     void startShortcuts(); // global shortcuts (Paramètres « Raccourcis »)
     if (app.capture && !s.on && !s.npcapError) captureSet(true).catch((e) => (err = String(e)));
   });

@@ -140,8 +140,9 @@ pub fn focus_game(handle: Option<isize>) -> bool {
     }
 }
 
-/// System-wide shortcuts (RegisterHotKey), owned by a thread of their own that waits for them: `on_key(n)` runs (on that
-/// thread) each time shortcut `n` is pressed. Keys are set and changed with [`Hotkeys::set`].
+/// System-wide shortcuts (RegisterHotKey), owned by a thread of their own that waits for them: `on_key(n, true)` runs each
+/// time shortcut `n` is pressed, `on_key(n, false)` when its key is let go (polled: Windows only tells the press). Keys are set
+/// and changed with [`Hotkeys::set`].
 pub struct Hotkeys {
     #[cfg(windows)]
     thread: u32,
@@ -153,13 +154,14 @@ const SET_HOTKEY: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 1;
 impl Hotkeys {
     /// Starts the thread (None elsewhere than Windows). `on_set(n, ok)` tells whether each `set` could register its key (false:
     /// another program holds it).
-    pub fn start(on_key: impl Fn(i32) + Send + 'static, on_set: impl Fn(i32, bool) + Send + 'static) -> Option<Self> {
+    pub fn start(on_key: impl Fn(i32, bool) + Send + Sync + 'static, on_set: impl Fn(i32, bool) + Send + 'static) -> Option<Self> {
         #[cfg(windows)]
         {
             use windows_sys::Win32::System::Threading::GetCurrentThreadId;
-            use windows_sys::Win32::UI::Input::KeyboardAndMouse::{RegisterHotKey, UnregisterHotKey, HOT_KEY_MODIFIERS, MOD_NOREPEAT};
+            use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, RegisterHotKey, UnregisterHotKey, HOT_KEY_MODIFIERS, MOD_NOREPEAT};
             use windows_sys::Win32::UI::WindowsAndMessaging::{GetMessageW, PeekMessageW, MSG, PM_NOREMOVE, WM_HOTKEY};
             let (tx, rx) = std::sync::mpsc::channel();
+            let on_key = std::sync::Arc::new(on_key);
             std::thread::Builder::new()
                 .name("hotkeys".into())
                 .spawn(move || {
@@ -170,7 +172,18 @@ impl Hotkeys {
                         let _ = tx.send(GetCurrentThreadId());
                         while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
                             match msg.message {
-                                WM_HOTKEY => on_key(msg.wParam as i32),
+                                WM_HOTKEY => {
+                                    let (n, vk) = (msg.wParam as i32, (msg.lParam >> 16) as i32 & 0xFFFF);
+                                    on_key(n, true);
+                                    let on_key = on_key.clone();
+                                    let _ = std::thread::Builder::new().name("hotkey-release".into()).spawn(move || {
+                                        // (in the outer unsafe block: reads the key's state)
+                                        while GetAsyncKeyState(vk) as u16 & 0x8000 != 0 {
+                                            std::thread::sleep(Duration::from_millis(30));
+                                        }
+                                        on_key(n, false);
+                                    });
+                                }
                                 SET_HOTKEY => {
                                     let n = msg.wParam as i32;
                                     let (mods, vk) = ((msg.lParam >> 16) as HOT_KEY_MODIFIERS, (msg.lParam & 0xFFFF) as u32);
@@ -257,7 +270,7 @@ mod tests {
     #[test]
     fn registers_a_global_shortcut() {
         let (tx, rx) = std::sync::mpsc::channel();
-        let keys = super::Hotkeys::start(|_| {}, move |n, ok| tx.send((n, ok)).unwrap()).unwrap();
+        let keys = super::Hotkeys::start(|_, _| {}, move |n, ok| tx.send((n, ok)).unwrap()).unwrap();
         keys.set(7, 1 | 2 | 4, 0x87);
         assert_eq!(rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap(), (7, true));
         keys.set(7, 0, 0);

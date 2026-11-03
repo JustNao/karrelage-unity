@@ -4,35 +4,39 @@
   import { call, listenAll } from "./lib/api";
   import { readJSON, writeJSON } from "./lib/persist.svelte";
   import { fight, followFight } from "./lib/stores/combat.svelte";
-  import { settings } from "./lib/stores/settings.svelte";
-  import { ALL_RANGE, CALIBRATION_KEY, calibrate, cellAt, centre, MOV, screenDiamond, type Calibration, type FightMapState, type MapFighter, type Sight } from "./lib/fightMap";
+  import { CALIBRATION_KEY, calibrate, centre, type Calibration, type FightMapState, type MapFighter, type OverlayView } from "./lib/fightMap";
+  import LosLayer from "./fightmap/LosLayer.svelte";
+  import ClassLayer from "./fightmap/ClassLayer.svelte";
 
   /**
-   * In-game line of sight (fightmap.html): a transparent window over the Dofus window's picture, opened by the « Ligne de vue
-   * en jeu » shortcut during a fight (lib/stores/fightMap.svelte.ts).
-   * - No calibration for this window size: the player clicks the centre of their character's cell, then of the monster named
-   *   (lib/fightMap.ts `calibrate`), and it goes on.
-   * - Hover: the window takes the mouse; the cells in line of sight of the hovered cell are drawn (the player's character
-   *   counted as standing there). A click pins the cell: the window lets the mouse through, the player plays, the view follows
-   *   the fighters' moves.
-   * - Closed by the shortcut again, Escape, the end of the player's turn or of the fight.
+   * In-game view (fightmap.html): a transparent window over the Dofus window's picture during a fight, opened by a shortcut
+   * (lib/fightMap.ts `pressFightMapOverlay`; `?view=` los / classHelp, `&hold=1` = shown while the shortcut is held).
+   * - No calibration for this window size: the player clicks the centres of the two fighters named (lib/fightMap.ts
+   *   `calibrate`), and it goes on.
+   * - Then the view's layer: line of sight from the hovered cell (fightmap/LosLayer.svelte), or the class help
+   *   (fightmap/ClassLayer.svelte).
+   * - Closed when the held shortcut is let go (unless a cell is pinned, or during the calibration), by its shortcut pressed
+   *   again, Escape, the end of the player's turn or of the fight. Another view's shortcut switches to that view.
    */
   const win = getCurrentWindow();
   const dpr = window.devicePixelRatio || 1;
+  const params = new URLSearchParams(location.search);
 
+  let view = $state<OverlayView>(params.get("view") === "classHelp" ? "classHelp" : "los");
+  /** shown while the view's shortcut is held: closed when it is let go */
+  let hold = $state(params.get("hold") === "1");
+  /** a pinned cell (line of sight): the view stays once the shortcut is let go */
+  let sticky = $state(false);
   let live = $state.raw<FightMapState>({ map: null, fight: true, fighters: [] });
   let cells = $state.raw<number[] | null>(null);
   let cal = $state.raw<Calibration | null>(null);
   let size = { width: 0, height: 0 };
-  let mode = $state<"loading" | "calibrate" | "hover" | "pinned">("loading");
+  let mode = $state<"loading" | "calibrate" | "show">("loading");
   /** calibration clicks so far (physical px of the client area) */
   let clicks = $state.raw<[number, number][]>([]);
   let failed = $state(false);
   /** the mouse during the calibration (CSS px): a cross about a cell wide is drawn there */
   let pointer = $state<[number, number] | null>(null);
-  let hovered = $state<number | null>(null);
-  let pinned = $state<number | null>(null);
-  let sight = $state.raw<Sight | null>(null);
 
   const mine = $derived(new Set(fight.mine ?? []));
   const names = $derived.by(() => {
@@ -59,10 +63,16 @@
   const nameOf = (f: MapFighter) => names.get(f.id) ?? (mine.has(f.id) ? "votre personnage" : f.kind === "player" ? "ce personnage" : "ce monstre");
 
   /** Escape no longer watched and the game focused again first (its own shortcuts work at once), then the window goes. */
+  let closing = false;
   async function close() {
+    if (closing) return;
+    closing = true;
     await call("fightmap", "release", {}, true).catch(() => {});
     await win.close();
   }
+
+  /** Shown while held: closes once the shortcut is up, unless something keeps it (calibration, pinned cell). */
+  const letGo = () => hold && !sticky && mode === "show" && void close();
 
   onMount(() => {
     const following = followFight();
@@ -75,6 +85,11 @@
         if (mine.has(id)) mineTurn = true;
         else if (mineTurn) void close();
       },
+      "fightmap:press": (p: { view: OverlayView; hold: boolean }) => {
+        if (p.view === view) return void close();
+        [view, hold, sticky] = [p.view, p.hold, false];
+      },
+      "shortcuts:released": ({ name }: { name: string }) => name === view && letGo(),
     });
     const key = (e: KeyboardEvent) => e.key === "Escape" && void close();
     window.addEventListener("keydown", key);
@@ -91,7 +106,9 @@
       await call("fightmap", "watch_escape", { on: true });
       const saved = readJSON<Calibration | null>(CALIBRATION_KEY, null);
       cal = saved && saved.width === rect.width && saved.height === rect.height ? saved : null;
-      mode = cal ? "hover" : "calibrate";
+      mode = cal ? "show" : "calibrate";
+      // let go while the window was opening (a quick press)
+      if (hold && !(await call<boolean>("shortcuts", "held", { name: view }).catch(() => true))) letGo();
     })().catch(() => void close());
     return () => {
       off();
@@ -115,57 +132,31 @@
     loadedMap = map;
   });
 
-  const at = (e: MouseEvent): [number, number] => [e.clientX * dpr, e.clientY * dpr];
-
-  function click(e: MouseEvent) {
-    if (mode === "calibrate") {
-      if (!targets) return;
-      const next = [...clicks, at(e)];
-      if (next.length < 2) return void (clicks = next);
-      const c = calibrate(targets[0].cell, next[0], targets[1].cell, next[1], size.width, size.height);
-      clicks = [];
-      failed = !c;
-      if (!c) return;
-      writeJSON(CALIBRATION_KEY, c);
-      cal = c;
-      mode = "hover";
-    } else if (mode === "hover" && hovered !== null) {
-      pinned = hovered;
-      mode = "pinned";
-      void win.setIgnoreCursorEvents(true);
-    }
+  async function click(e: MouseEvent) {
+    if (mode !== "calibrate" || !targets) return;
+    const next = [...clicks, [e.clientX * dpr, e.clientY * dpr] as [number, number]];
+    if (next.length < 2) return void (clicks = next);
+    const c = calibrate(targets[0].cell, next[0], targets[1].cell, next[1], size.width, size.height);
+    clicks = [];
+    failed = !c;
+    if (!c) return;
+    writeJSON(CALIBRATION_KEY, c);
+    cal = c;
+    mode = "show";
+    // the shortcut was let go during the calibration: the view stays until it is pressed again (or Escape...)
+    if (hold && !(await call<boolean>("shortcuts", "held", { name: view }).catch(() => true))) hold = false;
   }
 
   /** a cell's width (CSS px) guessed before the calibration: the map is 14.5 cells wide and about 10 high, the game's bars
    *  take some of the height */
-  const crossW = $derived(Math.min(window.innerWidth / 15, window.innerHeight / 12));
-
-  function move(e: MouseEvent) {
-    if (mode === "calibrate") pointer = [e.clientX, e.clientY];
-    if (mode !== "hover" || !cal || !cells) return;
-    const c = cellAt(cal, ...at(e));
-    hovered = c !== null && cells[c] & MOV ? c : null;
-  }
-
-  // line of sight from the hovered / pinned cell, asked again when fighters move
-  let asked = 0;
-  $effect(() => {
-    const from = pinned ?? hovered;
-    void live.fighters;
-    if (from === null) return void (sight = null);
-    const n = ++asked;
-    call<Sight | null>("fightmap", "sight", { from, ...ALL_RANGE, ignore: [...mine] }, true).then((s) => n === asked && (sight = s));
-  });
-
-  const from = $derived(pinned ?? hovered);
-  const keyLabel = $derived(settings.shortcuts.los.vk ? settings.shortcuts.los.label : "le raccourci");
+  const crossW = Math.min(window.innerWidth / 15, window.innerHeight / 12);
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-<div class="overlay" class:calibrating={mode === "calibrate"} onclick={click} onmousemove={move}>
+<div class="overlay" class:calibrating={mode === "calibrate"} onclick={click} onmousemove={(e) => mode === "calibrate" && (pointer = [e.clientX, e.clientY])}>
   {#if mode === "calibrate"}
     <div class="popup">
-      <b>Calibration de la ligne de vue</b>
+      <b>Calibration de la vue en jeu</b>
       {#if !targets}
         <p>Il faut au moins deux combattants placés. Échap pour fermer.</p>
       {:else}
@@ -184,19 +175,12 @@
         <path d="M{x - crossW / 2} {y}H{x + crossW / 2}M{x} {y - crossW / 4}V{y + crossW / 4}" />
       </svg>
     {/if}
-  {:else if cal && (mode === "hover" || mode === "pinned")}
-    <svg width="100%" height="100%">
-      {#each sight?.seen ?? [] as c (c)}
-        <polygon points={screenDiamond(cal, c, dpr)} class="seen" />
-      {/each}
-      {#if from !== null}
-        <polygon points={screenDiamond(cal, from, dpr)} class="from" />
-      {/if}
-    </svg>
-    <div class="pill">
-      {#if mode === "hover"}Ligne de vue : survolez une case, clic pour la figer · Échap pour fermer
-      {:else}Ligne de vue figée · {keyLabel}, Échap ou la fin du tour l'effacent{/if}
-    </div>
+  {:else if mode === "show" && cal && cells}
+    {#if view === "los"}
+      <LosLayer {cal} {cells} {live} {mine} {dpr} {win} {hold} bind:sticky />
+    {:else}
+      <ClassLayer {cal} {live} {mine} {dpr} {win} {hold} />
+    {/if}
   {/if}
 </div>
 
@@ -205,14 +189,12 @@
   /* nearly transparent rather than transparent: the window must still get the mouse while it is not let through */
   .overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.01); font-family: var(--font); font-size: 13px; cursor: crosshair; }
   .overlay.calibrating { background: rgba(0, 0, 0, 0.18); cursor: none; }
+  .overlay :global(svg) { position: absolute; inset: 0; pointer-events: none; }
   .cross path { stroke: #fff; stroke-width: 1; }
   .cross path.under { stroke: rgba(0, 0, 0, 0.8); stroke-width: 3; }
-  svg { position: absolute; inset: 0; pointer-events: none; }
-  .seen { fill: rgba(90, 169, 255, 0.35); stroke: rgba(90, 169, 255, 0.9); stroke-width: 1; }
-  .from { fill: rgba(242, 194, 48, 0.45); stroke: #f2c230; stroke-width: 2; }
-  .popup, .pill { position: absolute; left: 50%; transform: translateX(-50%); background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4); pointer-events: none; }
+  .popup, .overlay :global(.pill) { position: absolute; left: 50%; transform: translateX(-50%); background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4); pointer-events: none; }
   .popup { top: 18%; padding: 12px 16px; max-width: 420px; text-align: center; }
   .popup p { margin: 8px 0 0; }
-  .pill { top: 10px; padding: 4px 12px; font-size: 12px; opacity: 0.9; }
+  .overlay :global(.pill) { top: 10px; padding: 4px 12px; font-size: 12px; opacity: 0.9; white-space: nowrap; }
   .bad { color: var(--bad); }
 </style>

@@ -13,9 +13,16 @@ export const SHORTCUTS: { name: ShortcutName; title: string; desc: string }[] = 
     name: "los",
     title: "Ligne de vue en jeu",
     desc:
-      "Pendant un combat : survolez une case du jeu pour voir les cases en ligne de vue, un clic la fige (vous pouvez alors jouer). " +
-      "Le raccourci, Échap ou la fin de votre tour l'effacent. Au premier usage (ou si la fenêtre du jeu change de taille), " +
-      "cliquez sur votre personnage puis sur le monstre indiqué pour caler la grille.",
+      "Pendant un combat, tant que la touche est enfoncée : survolez une case du jeu pour voir les cases en ligne de vue. " +
+      "Un clic fige la case : la vue reste après avoir lâché la touche (vous pouvez alors jouer), jusqu'au raccourci, Échap ou la fin de votre tour. " +
+      "Au premier usage (ou si la fenêtre du jeu change de taille), cliquez sur les deux combattants indiqués pour calibrer la grille.",
+  },
+  {
+    name: "classHelp",
+    title: "Aide de classe en jeu",
+    desc:
+      "Pendant un combat, tant que la touche est enfoncée. Steamer : la zone de chaque tourelle (8 PO et en ligne de vue) " +
+      "où votre personnage reçoit son bonus. Même calibration que la ligne de vue.",
   },
 ];
 
