@@ -60,7 +60,7 @@
   const exit = $derived(net && net.path.length > 1 ? net.path[net.path.length - 1] : null);
   /** size of a cell on screen (CSS px) */
   const cell = $derived([cal.sx / dpr, cal.sy / dpr]);
-  const label = $derived(net ? `${net.distance} cases · +${net.distance * PORTAL_BONUS} %` : "");
+  const label = $derived(net ? `+${net.distance * PORTAL_BONUS} %` : "");
 </script>
 
 <svg width="100%" height="100%">
@@ -90,8 +90,8 @@
     {/if}
     {#if exit !== null}
       {@const [x, y] = screenCentre(cal, exit, dpr)}
-      <text x={x} y={y + cell[1] / 2.6} font-size={Math.max(12, cell[1] / 5)} class="length under">{label}</text>
-      <text x={x} y={y + cell[1] / 2.6} font-size={Math.max(12, cell[1] / 5)} class="length">{label}</text>
+      <text x={x} y={y + cell[1] / 2.6} font-size={Math.max(10, cell[1] / 7)} class="length under">{label}</text>
+      <text x={x} y={y + cell[1] / 2.6} font-size={Math.max(10, cell[1] / 7)} class="length">{label}</text>
     {/if}
   {/if}
 </svg>
