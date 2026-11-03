@@ -88,8 +88,9 @@
     shownAt = Date.now();
     const focus = view !== "portals" || mode === "calibrate";
     await win.setFocusable(focus).catch(() => {});
-    // the mouse taken (calibration, line of sight); the class help lets it through again when it starts
-    await win.setIgnoreCursorEvents(false);
+    // the mouse taken only when the view needs it (calibration, line of sight): click-through is the WS_EX_LAYERED style, and
+    // its first removal in the window's life flashed white (the class help and the portals keep letting the mouse through)
+    if (mode === "calibrate" || view === "los") await win.setIgnoreCursorEvents(false);
     shown = true;
     if (focus) await win.setFocus().catch(() => {});
     else void call("fightmap", "refocus", {}, true).catch(() => {});
