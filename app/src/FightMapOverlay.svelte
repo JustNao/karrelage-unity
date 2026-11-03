@@ -170,10 +170,17 @@
       loadedMap = state.map;
       if (params.get("prewarm") !== "1") await open(view, hold);
       else {
-        // on screen once, empty and letting everything through: showing it later would flash
+        // on screen once, empty and letting everything through: showing it later would flash. Off the screen first: the
+        // first time the mouse is taken back (the click-through style removed: F3, calibration) flashes white, so that is done
+        // there, before the window is ever over the game
         await idle();
-        await place();
+        const rect = await place();
+        if (rect) await win.setPosition(new PhysicalPosition(-32000, -32000));
         await win.show();
+        await win.setIgnoreCursorEvents(false);
+        await new Promise((r) => setTimeout(r, 150)); // painted at least once without the style
+        await win.setIgnoreCursorEvents(true);
+        if (rect) await win.setPosition(new PhysicalPosition(rect.x, rect.y));
         void call("fightmap", "refocus", {}, true).catch(() => {});
       }
       await emitTo("main", "fightmap:ready");

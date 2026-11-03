@@ -307,8 +307,9 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   calibration checked), closing empties it again; only the fight's end closes it. Never hidden / shown again: WebView2
   flashes white on show (the first show still did): this window alone gets a transparent `backgroundColor`
   (`clearBackground`), which on every floating window came with a second, unmovable copy of the fight popup. Click-through
-  (`setIgnoreCursorEvents`) is tao's WS_EX_LAYERED style: the class help / portal views never take the mouse back (its
-  first removal flashed white at the first portal press).
+  (`setIgnoreCursorEvents`) is tao's WS_EX_LAYERED style and its first removal in the window's life flashes white: the
+  class help / portal views never take the mouse back, and the prewarmed window does that first removal once off screen
+  (-32000, -32000) before going over the game (F3 / calibration take the mouse).
 - Class help (`lib/classHelp.ts`): Steamer turrets (gids 5831 Bathyscaphe, 5832 Chalutier, 5833 Foreuse, 5835 Gardienne, 5836
   Harponneuse, 5837 Tactirelle) of the player (summoner in `me`, else same team): the cells ≤ 7 from each and in its line of sight
   (bonus zone), the mouse let through (the cursor is polled: over a turret's cell, its zone forward). Fighters carry `monsters` (their monster info's ints that are pack monsters: the gid,
