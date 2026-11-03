@@ -34,13 +34,19 @@
     void win.setIgnoreCursorEvents(true);
     let origin: { x: number; y: number } | null = null;
     void win.innerPosition().then((p) => (origin = p));
-    const poll = setInterval(async () => {
-      if (!origin) return;
-      const p = await cursorPosition().catch(() => null);
-      pointed = p && cellAt(cal, p.x - origin.x, p.y - origin.y);
-    }, 60);
+    // the cursor asked again as soon as it answers (about a frame apart, never two asks at once)
+    let on = true, poll = 0;
+    const tick = async () => {
+      if (origin) {
+        const p = await cursorPosition().catch(() => null);
+        if (on) pointed = p && cellAt(cal, p.x - origin.x, p.y - origin.y);
+      }
+      if (on) poll = setTimeout(tick, 16);
+    };
+    void tick();
     return () => {
-      clearInterval(poll);
+      on = false;
+      clearTimeout(poll);
       void win.setIgnoreCursorEvents(false);
     };
   });

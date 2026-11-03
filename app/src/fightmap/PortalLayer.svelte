@@ -7,7 +7,8 @@
    * Eliotrope portals in the in-game view (inside ClassLayer.svelte): the player's portals numbered by age, the two that go
    * first in colour once there are four. `simulate` (view `portals`): a portal put down on the cell under the mouse (the
    * oldest one struck out when there were four) and the way from it through the network to its exit, with its length and
-   * damage bonus (PORTAL_BONUS % per cell); the mouse on one of the portals: the way from that one.
+   * damage bonus (PORTAL_BONUS % per cell); the mouse on one of the portals: the way from that one. The simulations of every
+   * cell come at once (asked again when portals or fighters change): hovering is a lookup.
    */
   let { cal, live, mine, dpr, pointed, simulate, net = $bindable(null) }: {
     cal: Calibration;
@@ -21,16 +22,21 @@
 
   const author = $derived(portalAuthor(live, mine));
 
+  let all = $state.raw<{ base: PortalNet; sims: Record<string, PortalNet> } | null>(null);
   let asked = 0;
   $effect(() => {
-    const [who, add] = [author, simulate ? pointed : null];
+    const who = author;
     void live.portals;
     void live.fighters;
-    if (who === null) return void (net = null);
+    if (who === null) return void (all = null);
     const n = ++asked;
-    call<PortalNet>("fightmap", "portals", { author: who, ...(add !== null && { add }) }, true)
-      .then((r) => n === asked && (net = r))
+    call<{ base: PortalNet; sims: Record<string, PortalNet> }>("fightmap", "portals", { author: who, all: simulate }, true)
+      .then((r) => n === asked && (all = simulate ? r : { base: r as unknown as PortalNet, sims: {} }))
       .catch(() => {});
+  });
+  // the cell under the mouse: its simulation (none for an obstacle or a fighter's cell: the network as it is)
+  $effect(() => {
+    net = all && ((simulate && pointed !== null && all.sims[pointed]) || all.base);
   });
 
   const full = $derived((net?.portals.length ?? 0) >= 4);
@@ -80,9 +86,9 @@
   .cross { stroke: #ff4d4d; stroke-width: 3; stroke-linecap: round; }
   .exit { fill: #fff; stroke: #fff; stroke-width: 2; animation: pulse 0.9s ease-in-out infinite alternate; }
   @keyframes pulse { from { fill-opacity: 0.1; } to { fill-opacity: 0.55; } }
-  .way { fill: none; stroke: #f5f5f5; stroke-width: 3; stroke-linejoin: round; stroke-dasharray: 10 6; animation: flow 0.6s linear infinite; }
-  .way.under, .length.under { stroke: rgba(0, 0, 0, 0.75); stroke-width: 6; stroke-dasharray: none; animation: none; }
-  @keyframes flow { to { stroke-dashoffset: -16; } }
+  .way { fill: none; stroke: #5aa9ff; stroke-opacity: 0.6; stroke-width: 3; stroke-linejoin: round; }
+  .way.under { stroke: rgba(0, 0, 0, 0.35); stroke-opacity: 1; stroke-width: 5; }
+  .length.under { stroke: rgba(0, 0, 0, 0.75); stroke-width: 6; }
   .badge { fill: var(--c); stroke: rgba(0, 0, 0, 0.7); stroke-width: 1.5; }
   .number { fill: #fff; font-weight: 700; text-anchor: middle; dominant-baseline: central; paint-order: stroke; stroke: rgba(0, 0, 0, 0.6); stroke-width: 2px; }
   .length { fill: #fff; font-weight: 700; text-anchor: middle; dominant-baseline: central; }

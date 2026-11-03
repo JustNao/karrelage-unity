@@ -283,6 +283,30 @@ fn fighters(ctx: &Ctx, m: &DynamicMessage, outer: Option<&Outer>, out: &mut Vec<
     }
 }
 
+/// A caster's network (`net`: (cell, open) from the oldest) as `portals` tells it, `add` on one of its portals = the way from
+/// it, on a `free` cell = a portal simulated there (the oldest one goes when there are already four) and the way from it.
+fn simulate(net: &[(i64, bool)], add: Option<i64>, free: &dyn Fn(i64) -> bool) -> Value {
+    let mut net = net.to_vec();
+    let (mut added, mut dropped) = (None, None);
+    let entrance = match add {
+        Some(c) if net.iter().any(|(p, _)| *p == c) => Some(c),
+        Some(c) if free(c) => {
+            if net.len() >= MAX_PORTALS {
+                dropped = Some(net.remove(0).0);
+            }
+            net.push((c, true));
+            added = Some(c);
+            added
+        }
+        _ => None,
+    };
+    let open: Vec<usize> = net.iter().filter(|(_, o)| *o).map(|(c, _)| *c as usize).collect();
+    let path = entrance.map(|e| portal_path(&open, e as usize)).unwrap_or_default();
+    let length: i32 = path.windows(2).map(|w| distance(w[0], w[1])).sum();
+    let portals: Vec<Value> = net.iter().enumerate().map(|(i, (c, o))| json!({"cell": c, "number": i + 1, "open": o})).collect();
+    json!({"portals": portals, "added": added, "dropped": dropped, "path": path, "distance": length})
+}
+
 impl FightMap {
     pub fn new() -> Self {
         Self::default()
@@ -489,7 +513,8 @@ impl Module for FightMap {
     /// State `portals`: [{cell, author, open}] in the order they were put down. Call `portals` {author, add?: cell}: that
     /// caster's network {portals: [{cell, number (1 = oldest), open}], added, dropped, path: [cells], distance}; `add` on one
     /// of the portals = the way from it, on a free walkable cell = a portal simulated there (`added`; `dropped` = the oldest,
-    /// gone when there were four) and the way from it; the path's `distance` = cells between its portals.
+    /// gone when there were four) and the way from it; the path's `distance` = cells between its portals. `all: true`
+    /// instead: {base: the network without `add`, sims: {cell: the same with `add` = cell}} for every free cell and portal.
     fn call(&self, method: &str, args: Value, ctx: &Ctx) -> Result<Value> {
         match method {
             "state" => Ok(self.state.lock().json()),
@@ -518,38 +543,23 @@ impl Module for FightMap {
             "cells" => Ok(self.cells(ctx, arg_i64(&args, "map")?).map_or(Value::Null, |c| json!(c))),
             "portals" => {
                 let author = arg_i64(&args, "author")?;
-                let add = args["add"].as_i64();
-                let (map, mut net, taken) = {
+                let (map, net, taken) = {
                     let s = self.state.lock();
                     let net: Vec<(i64, bool)> = s.portals().into_iter().filter(|p| p.author == author).map(|p| (p.cell, p.open)).collect();
                     let taken: HashSet<i64> = s.fighters.values().filter(|f| f.alive && !f.carried).map(|f| f.cell).collect();
                     (s.map(), net, taken)
                 };
-                let (mut added, mut dropped) = (None, None);
-                // on one of the portals: the way from it; on a free walkable cell: a new portal there (the oldest one goes
-                // when there are already four)
-                let entrance = match add {
-                    Some(c) if net.iter().any(|(p, _)| *p == c) => Some(c),
-                    Some(c) => {
-                        let free = (0..MAP_CELLS as i64).contains(&c)
-                            && !taken.contains(&c)
-                            && map.and_then(|m| self.cells(ctx, m)).is_some_and(|cells| cells[c as usize] & MOV != 0);
-                        if free {
-                            if net.len() >= MAX_PORTALS {
-                                dropped = Some(net.remove(0).0);
-                            }
-                            net.push((c, true));
-                            added = Some(c);
-                        }
-                        added
-                    }
-                    None => None,
-                };
-                let open: Vec<usize> = net.iter().filter(|(_, o)| *o).map(|(c, _)| *c as usize).collect();
-                let path = entrance.map(|e| portal_path(&open, e as usize)).unwrap_or_default();
-                let length: i32 = path.windows(2).map(|w| distance(w[0], w[1])).sum();
-                let portals: Vec<Value> = net.iter().enumerate().map(|(i, (c, o))| json!({"cell": c, "number": i + 1, "open": o})).collect();
-                Ok(json!({"portals": portals, "added": added, "dropped": dropped, "path": path, "distance": length}))
+                let cells = map.and_then(|m| self.cells(ctx, m));
+                let free = |c: i64| (0..MAP_CELLS as i64).contains(&c) && !taken.contains(&c) && cells.as_ref().is_some_and(|m| m[c as usize] & MOV != 0);
+                if args["all"].as_bool() == Some(true) {
+                    // every cell at once: hovering is then a lookup, with no call per cell
+                    let sims: serde_json::Map<String, Value> = (0..MAP_CELLS as i64)
+                        .filter(|&c| free(c) || net.iter().any(|(p, _)| *p == c))
+                        .map(|c| (c.to_string(), simulate(&net, Some(c), &free)))
+                        .collect();
+                    return Ok(json!({"base": simulate(&net, None, &free), "sims": sims}));
+                }
+                Ok(simulate(&net, args["add"].as_i64(), &free))
             }
             "sight" => {
                 let from = arg_i64(&args, "from")?;
@@ -689,6 +699,11 @@ mod tests {
                     (n["added"] == json!(c)).then_some(n)
                 });
                 let n = free.expect("a free cell for a fifth portal");
+                // every cell at once: the same answers
+                let all = hub.call("fightmap", "portals", json!({"author": eliotrope, "all": true})).unwrap();
+                assert_eq!(all["sims"]["332"], net);
+                assert_eq!(all["sims"][n["added"].to_string()], n);
+                assert!(all["base"]["path"].as_array().unwrap().is_empty() && all["base"]["portals"].as_array().unwrap().len() == 4);
                 assert_eq!(n["dropped"], json!(188));
                 assert_eq!(n["portals"].as_array().unwrap().iter().map(|p| p["cell"].as_i64().unwrap()).collect::<Vec<_>>()[..3], [332, 265, 257]);
                 assert_eq!(n["path"].as_array().unwrap().len(), 4, "through every open portal");
