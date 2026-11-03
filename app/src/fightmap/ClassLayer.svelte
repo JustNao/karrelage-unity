@@ -49,10 +49,10 @@
       if (on) poll = setTimeout(tick, 16);
     };
     void tick();
+    // (the shell takes the mouse back when it needs it: its view emptied, the window keeps letting it through)
     return () => {
       on = false;
       clearTimeout(poll);
-      void win.setIgnoreCursorEvents(false);
     };
   });
 

@@ -19,8 +19,10 @@
    *   game's portal spell key, closed by a click too: the spell is cast, or cancelled).
    * - Closed when the held shortcut is let go (unless a cell is pinned, or during the calibration), by its shortcut pressed
    *   again, Escape, the end of the player's turn or of the fight. Another view's shortcut switches to that view.
-   * - Kept for the whole fight (`?prewarm=1`: created hidden by the main window when the fight starts): closing hides it and a
-   *   shortcut shows it again at once (`fightmap:press` → `open`); only the fight's end closes the window.
+   * - Kept for the whole fight (`?prewarm=1`: created hidden by the main window when the fight starts, then put on screen
+   *   once loaded, empty): closing empties it and lets the mouse through (`idle`; never hidden: WebView2 flashes white when a
+   *   hidden window is shown again), a shortcut draws a view at once (`fightmap:press` → `open`); only the fight's end closes
+   *   the window.
    */
   const win = getCurrentWindow();
   const dpr = window.devicePixelRatio || 1;
@@ -77,13 +79,8 @@
    *  portal simulation does not take the focus (the game keeps its spell selected). */
   async function open(v: OverlayView, h: boolean) {
     [view, hold, sticky, clicks, failed, pointer] = [v, h, false, [], false, null];
-    const rect = await call<{ x: number; y: number; width: number; height: number } | null>("fightmap", "window");
+    const rect = await place();
     if (!rect || !live.fight || !cells) return void hide();
-    if (!placed || placed.x !== rect.x || placed.y !== rect.y || placed.width !== rect.width || placed.height !== rect.height) {
-      await win.setPosition(new PhysicalPosition(rect.x, rect.y));
-      await win.setSize(new PhysicalSize(rect.width, rect.height));
-      placed = rect;
-    }
     size = { width: rect.width, height: rect.height };
     const saved = readJSON<Calibration | null>(CALIBRATION_KEY, null);
     cal = saved && saved.width === rect.width && saved.height === rect.height ? saved : null;
@@ -91,8 +88,9 @@
     shownAt = Date.now();
     const focus = view !== "portals" || mode === "calibrate";
     await win.setFocusable(focus).catch(() => {});
+    // the mouse taken (calibration, line of sight); the class help lets it through again when it starts
+    await win.setIgnoreCursorEvents(false);
     shown = true;
-    await win.show();
     if (focus) await win.setFocus().catch(() => {});
     else void call("fightmap", "refocus", {}, true).catch(() => {});
     await call("fightmap", "watch_escape", { on: true });
@@ -100,13 +98,30 @@
     if (hold && !(await call<boolean>("shortcuts", "held", { name: view }).catch(() => true))) letGo();
   }
 
-  /** Escape no longer watched and the game focused again first (its own shortcuts work at once), then the view hides (the
-   *  window stays, ready for the next shortcut). */
+  /** The window put on the Dofus window's client area (it may have moved since): that area, null without a Dofus window. */
+  async function place() {
+    const rect = await call<{ x: number; y: number; width: number; height: number } | null>("fightmap", "window");
+    if (rect && (!placed || placed.x !== rect.x || placed.y !== rect.y || placed.width !== rect.width || placed.height !== rect.height)) {
+      await win.setPosition(new PhysicalPosition(rect.x, rect.y));
+      await win.setSize(new PhysicalSize(rect.width, rect.height));
+      placed = rect;
+    }
+    return rect;
+  }
+
+  /** Nothing drawn, the mouse and the keyboard left to the game. */
+  async function idle() {
+    await win.setIgnoreCursorEvents(true);
+    await win.setFocusable(false).catch(() => {});
+  }
+
+  /** Escape no longer watched and the game focused again first (its own shortcuts work at once), then the view empties (the
+   *  window stays on screen, ready for the next shortcut). */
   async function hide() {
     if (!shown) return;
     shown = false;
     await call("fightmap", "release", {}, true).catch(() => {});
-    await win.hide();
+    await idle();
   }
 
   /** The fight is over: the window goes (the main window makes a new one at the next fight). */
@@ -153,6 +168,13 @@
       if (!cells) return void close();
       loadedMap = state.map;
       if (params.get("prewarm") !== "1") await open(view, hold);
+      else {
+        // on screen once, empty and letting everything through: showing it later would flash
+        await idle();
+        await place();
+        await win.show();
+        void call("fightmap", "refocus", {}, true).catch(() => {});
+      }
       await emitTo("main", "fightmap:ready");
     })().catch(() => void close());
     return () => {

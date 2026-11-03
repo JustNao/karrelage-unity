@@ -301,10 +301,11 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   the calibration), the shortcut again, Escape (`watch_escape`: GetAsyncKeyState polled, not taken from the game),
   the end of the player's turn (`fightmap:turn`: another fighter's turn after one of `me`) or of the fight. Not yet tried on the
   real game (calibration assumes the grid scales linearly with no camera zoom).
-- Floating windows get `backgroundColor` [0, 0, 0, 0]: WebView2 otherwise flashes white when a hidden window is shown.
 - The in-game view window is prewarmed: the main window creates it hidden (`?prewarm=1`) when a fight starts
-  (`prewarmFightMapOverlay`; it answers `fightmap:ready`, a press before that waits), shortcuts show it (`open`: placed on
-  the Dofus window again, calibration checked), closing hides it; only the fight's end closes it.
+  (`prewarmFightMapOverlay`; it answers `fightmap:ready`, a press before that waits); once loaded it goes on screen empty,
+  click-through and not focusable (`idle`), shortcuts draw a view in it (`open`: placed on the Dofus window again,
+  calibration checked), closing empties it again; only the fight's end closes it. Never hidden / shown again: WebView2
+  flashes white on show. A transparent `backgroundColor` (tried) came with a second, unmovable copy of the fight popup.
 - Class help (`lib/classHelp.ts`): Steamer turrets (gids 5831 Bathyscaphe, 5832 Chalutier, 5833 Foreuse, 5835 Gardienne, 5836
   Harponneuse, 5837 Tactirelle) of the player (summoner in `me`, else same team): the cells ≤ 7 from each and in its line of sight
   (bonus zone), the mouse let through (the cursor is polled: over a turret's cell, its zone forward). Fighters carry `monsters` (their monster info's ints that are pack monsters: the gid,

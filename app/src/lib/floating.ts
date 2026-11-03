@@ -37,8 +37,6 @@ export async function openFloating(label: string, o: FloatingOptions): Promise<b
     ...(o.pos ? { x: o.pos.x, y: o.pos.y } : {}),
     decorations: false,
     transparent: true,
-    // the webview's own background, painted before the page (showing a hidden window, loading): transparent too, not white
-    backgroundColor: [0, 0, 0, 0],
     shadow: false,
     alwaysOnTop: true,
     skipTaskbar: true,
