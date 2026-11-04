@@ -1,6 +1,6 @@
 <script lang="ts">
   import { settings } from "../../lib/stores/settings.svelte";
-  import { SHORTCUTS, sameBinding } from "../../lib/shortcuts";
+  import { NO_BINDING, SHORTCUTS, sameBinding } from "../../lib/shortcuts";
   import Switch from "../../lib/components/Switch.svelte";
   import KeyCapture from "../../lib/components/KeyCapture.svelte";
   import Banner from "../../lib/components/Banner.svelte";
@@ -34,6 +34,7 @@
     {#if clash}<Banner tone="warn" inset>Même touche que « {clash.title} » : un seul des deux raccourcis fonctionnera.</Banner>{/if}
   </div>
   <div class="ctl">
+    {#if key.vk}<button class="mini" title="Retirer cette touche : la case s'affiche à nouveau avec l'aide de classe" onclick={() => (settings.shortcuts.spellCell = { ...NO_BINDING })}>Retirer</button>{/if}
     <KeyCapture label="Touche de la position des sorts" value={key} onchange={(b) => (settings.shortcuts.spellCell = b)} />
   </div>
 </div>
@@ -46,5 +47,5 @@
   .row.off { opacity: 0.5; }
   .lb { flex: 1; min-width: 0; }
   .lb .mut { font-size: 12px; margin-top: 2px; }
-  .ctl { flex-shrink: 0; }
+  .ctl { flex-shrink: 0; display: flex; align-items: center; gap: 8px; }
 </style>
