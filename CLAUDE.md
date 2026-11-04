@@ -328,6 +328,9 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   game's own Portail spell key (`settings.classHelp.eliotrope.portalKey`, Combat tab « Aide de classe », which also turns each class's
   help on / off): a *passive* shortcut (`shortcuts` `passive`, `sys::watch_bindings`: GetAsyncKeyState polled while the game has the
   focus, never taken from it). Closed by the key again, a left / right click (`fightmap:click`, polled with Escape) or Escape.
+  A yellow cell = where a spell sent into the way shown ends up (`Sim.target`, `redirect`). Exil (view `exil`, key `exilKey`, call
+  `portals` `exil`): the same with the portal under a fighter (self included) instead of on a free cell; its mark is action 1181 too
+  (game's spell levels), then 1182 teleports the target. Not checked on an Exil cast of a capture yet (none recorded).
   FightJoinRunningEvent `marks` (rejoining a fight) not read.
 
 **Loot** (`loot.rs`): FightEndEvent → results → fighter id + `Loot` messages; item = the largest int that is a known gid

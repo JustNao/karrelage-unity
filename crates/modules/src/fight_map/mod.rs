@@ -455,10 +455,20 @@ impl Module for FightMap {
                     (s.map(), net, taken, caster)
                 };
                 let cells = map.and_then(|m| self.cells(ctx, m));
-                let free = |c: i64| (0..MAP_CELLS as i64).contains(&c) && !taken.contains(&c) && cells.as_ref().is_some_and(|m| m[c as usize] & MOV != 0);
+                let exil = args["exil"].as_bool().unwrap_or(false);
+                // where the portal can go: Portail a free cell, Exil under a fighter
+                let fits = |c: i64| {
+                    if exil {
+                        taken.contains(&c)
+                    } else {
+                        (0..MAP_CELLS as i64).contains(&c) && !taken.contains(&c) && cells.as_ref().is_some_and(|m| m[c as usize] & MOV != 0)
+                    }
+                };
+                let aimed = |c: i64| fits(c) || net.iter().any(|&(p, open)| open && p == c);
                 // every cell at once: hovering is then a lookup, with no call per cell
-                let sims: BTreeMap<i64, Sim> = (0..MAP_CELLS as i64).filter(|&c| free(c)).map(|c| (c, simulate(&net, Some(c), &free, caster, start))).collect();
-                Ok(json!({"base": simulate(&net, None, &free, caster, start), "sims": sims}))
+                let sims: BTreeMap<i64, Sim> =
+                    (0..MAP_CELLS as i64).filter(|&c| aimed(c)).map(|c| (c, simulate(&net, Some(c), &fits, caster, start))).collect();
+                Ok(json!({"base": simulate(&net, None, &fits, caster, start), "sims": sims}))
             }
             "sight" => {
                 let from = arg_i64(&args, "from")?;
@@ -613,6 +623,18 @@ mod tests {
                 let (_, n) = sims.iter().find(|(c, n)| c.parse().ok() == n["added"].as_i64() && n["via"] == false).expect("a free cell for a fifth portal");
                 assert_eq!(n["dropped"], json!(188));
                 assert_eq!(n["path"].as_array().unwrap().len(), 4, "through every open portal");
+                // Exil: under the monster on 325, directly or sent there through portal 2; never on an empty cell
+                let exil = hub.call("fightmap", "portals", json!({"author": eliotrope, "exil": true})).unwrap();
+                let under = &exil["sims"]["325"];
+                assert!(under["via"] == false && under["added"] == 325 && under["dropped"] == 188, "{under}");
+                assert_eq!(under["path"], json!(portal_path(&[332, 265, 257, 325], 325)));
+                let through = &exil["sims"]["332"];
+                assert!(through["via"] == true && through["added"] == 325, "{through}");
+                let fighters: HashSet<i64> =
+                    s["fighters"].as_array().unwrap().iter().filter(|f| f["alive"] == true).map(|f| f["cell"].as_i64().unwrap()).collect();
+                for (c, n) in exil["sims"].as_object().unwrap() {
+                    assert!(n["added"].is_null() || fighters.contains(&n["added"].as_i64().unwrap()), "cell {c}: {n}");
+                }
                 return;
             }
         }

@@ -1,6 +1,7 @@
 //! Marks on the ground of a fight and the Eliotrope's portals among them.
 //!
-//! GameActionFightEvent mark_cells of action 1181 (« Pose un portail ») = a portal: FightMark {author_id, cells: [MarkedCell]}
+//! GameActionFightEvent mark_cells of action 1181 (« Pose un portail », for the Portail and Exil spells alike: spell levels of
+//! the game's data; Exil's 1182 then teleports its target) = a portal: FightMark {author_id, cells: [MarkedCell]}
 //! whose other ints are unnamed: the cell = the MarkedCell's int that the mark repeats (its impact cell), the mark id = the int
 //! field that unmark_cells / activate_glyph_trap `mark_id` point at (learnt: a mark id found in a single field of a single mark
 //! votes for it, every mark is followed for that). Active = any of its bools true (one is unnamed). Four per caster, the oldest
@@ -161,13 +162,16 @@ pub(super) struct Sim {
     path: Vec<usize>,
     /// Cells between the path's portals.
     distance: i32,
+    /// Where a spell the caster sends into the path's first portal ends up (`redirect`; none when off the map).
+    target: Option<usize>,
 }
 
-/// The Portail spell cast on `add` in a caster's network (`net`: (cell, open) from the oldest): on a `free` cell, a new portal
-/// there; on one of the open portals, the spell goes through the network and the new portal lands past the exit (`redirect`,
-/// needs the `caster`'s cell). `start`: the portal the way shown starts from instead of the new one (none when that one is gone
-/// or closed; with no new portal, the way from it as the network is).
-pub(super) fn simulate(net: &[(i64, bool)], add: Option<i64>, free: &dyn Fn(i64) -> bool, caster: Option<i64>, start: Option<i64>) -> Sim {
+/// A portal spell cast on `add` in a caster's network (`net`: (cell, open) from the oldest): on a cell it `fits` (Portail: a free
+/// one, Exil: a fighter's; the Exil's portal counts as open, its target going through it), a new portal there; on one of the open
+/// portals, the spell goes through the network and the new portal lands past the exit (`redirect`, needs the `caster`'s cell).
+/// `start`: the portal the way shown starts from instead of the new one (none when that one is gone or closed; with no new
+/// portal, the way from it as the network is).
+pub(super) fn simulate(net: &[(i64, bool)], add: Option<i64>, fits: &dyn Fn(i64) -> bool, caster: Option<i64>, start: Option<i64>) -> Sim {
     let open_cells = |net: &[(i64, bool)]| net.iter().filter(|(_, o)| *o).map(|(c, _)| *c as usize).collect::<Vec<_>>();
     let mut net = net.to_vec();
     let open = open_cells(&net);
@@ -179,7 +183,7 @@ pub(super) fn simulate(net: &[(i64, bool)], add: Option<i64>, free: &dyn Fn(i64)
     };
     let via = into.is_some() && landing.is_some();
     let (mut added, mut dropped) = (None, None);
-    if let Some(c) = landing.filter(|c| free(*c) && !net.iter().any(|(p, _)| p == c)) {
+    if let Some(c) = landing.filter(|c| fits(*c) && !net.iter().any(|(p, _)| p == c)) {
         if net.len() >= MAX_PORTALS {
             dropped = Some(net.remove(0).0);
         }
@@ -190,9 +194,11 @@ pub(super) fn simulate(net: &[(i64, bool)], add: Option<i64>, free: &dyn Fn(i64)
         Some(s) => net.iter().any(|(p, o)| *p == s && *o).then_some(s),
         None => added,
     };
-    let path = entrance.map(|e| portal_path(&open_cells(&net), e as usize)).unwrap_or_default();
+    let open = open_cells(&net);
+    let path = entrance.map(|e| portal_path(&open, e as usize)).unwrap_or_default();
     let distance = path.windows(2).map(|w| distance(w[0], w[1])).sum();
-    Sim { added, dropped, via, path, distance }
+    let target = entrance.zip(caster).and_then(|(e, from)| redirect(&open, e as usize, from as usize)).map(|(_, at)| at);
+    Sim { added, dropped, via, path, distance, target }
 }
 
 #[cfg(test)]
@@ -221,5 +227,32 @@ mod tests {
         assert_eq!(simulate(&net, None, &free, None, Some(332)).path, [332, 265, 188], "no new portal: the way as it is");
         let four = [(188, true), (332, true), (265, true), (257, true)];
         assert!(simulate(&four, Some(100), &free, None, Some(188)).path.is_empty(), "the start goes with the fifth");
+    }
+
+    /// The cell a spell sent through the way shown ends up on: the capture's casts into portal 2 from 264 hit 325.
+    #[test]
+    fn spell_target_past_the_way_shown() {
+        let free = |_: i64| true;
+        let net = [(188, true), (332, true), (265, true)];
+        assert_eq!(simulate(&net, Some(257), &free, Some(264), Some(332)).target, Some(325));
+        let new = simulate(&net, Some(257), &free, Some(264), None);
+        assert_eq!(new.target, redirect(&[188, 332, 265, 257], 257, 264).map(|r| r.1), "through the new portal");
+        assert_eq!(simulate(&net, Some(257), &free, None, None).target, None, "the caster's cell is needed");
+        assert_eq!(simulate(&[], Some(257), &free, Some(264), None).target, None, "a lone portal leads nowhere");
+        assert_eq!(simulate(&net, None, &free, Some(264), None).target, None, "no portal to send it into");
+    }
+
+    /// Exil: a portal only under a fighter, then the same network as Portail's.
+    #[test]
+    fn exil_needs_a_fighter() {
+        let fighter = |c: i64| c == 257 || c == 325;
+        let net = [(188, true), (332, true), (265, true)];
+        let n = simulate(&net, Some(257), &fighter, Some(264), None);
+        assert_eq!(n.added, Some(257));
+        assert_eq!(n.path, portal_path(&[188, 332, 265, 257], 257));
+        assert_eq!(simulate(&net, Some(100), &fighter, Some(264), None).added, None, "nobody there");
+        // into a portal: comes out past the exit, on a fighter
+        let n = simulate(&net, Some(332), &fighter, Some(264), None);
+        assert!(n.via && n.added == Some(257));
     }
 }

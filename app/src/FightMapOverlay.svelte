@@ -18,7 +18,7 @@
    * - No calibration for this window size: fightmap/Calibration.svelte first, and it goes on.
    * - Then the view's layer: line of sight from the hovered cell (fightmap/LosLayer.svelte), the class help
    *   (fightmap/ClassLayer.svelte), or an Eliotrope portal simulated on the cell under the mouse (fightmap/PortalSimLayer.svelte:
-   *   opened by the game's Portail key, closed by a click too: the spell is cast, or cancelled).
+   *   opened by the game's Portail or Exil key, closed by a click too: the spell is cast, or cancelled).
    * - Closed when the held shortcut is let go (unless a cell is pinned, or during the calibration), by its shortcut pressed
    *   again, Escape, the end of the player's turn or of the fight. Another view's shortcut switches to that view.
    * - Kept for the whole fight: put on screen once loaded, empty (`warmUp`); closing just empties it (never hidden: WebView2
@@ -126,8 +126,8 @@
     if (hold && !(await call<boolean>("shortcuts", "held", { name: view }).catch(() => true))) letGo();
   }
 
-  /** A click (cast or cancelled spell) closes the portal simulation, not during its calibration. */
-  const closesOnClick = () => view === "portals" && cal !== null;
+  /** A click (cast or cancelled spell) closes a portal simulation, not during its calibration. */
+  const closesOnClick = () => (view === "portals" || view === "exil") && cal !== null;
   /** Closes the view, or once it is open when it is still opening. */
   const closeSoon = (by: "any" | "click") => (opening ? void (closeAsked = closeAsked === "any" ? "any" : by) : void hide());
 
@@ -252,6 +252,8 @@
       <LosLayer {cal} {cells} {live} {mine} {dpr} {hold} bind:sticky />
     {:else if view === "portals"}
       <PortalSimLayer {cal} {live} {mine} {dpr} {pointed} {polled} />
+    {:else if view === "exil"}
+      <PortalSimLayer {cal} {live} {mine} {dpr} {pointed} {polled} exil />
     {:else}
       <ClassLayer {cal} {live} {mine} {dpr} {hold} {pointed} />
     {/if}

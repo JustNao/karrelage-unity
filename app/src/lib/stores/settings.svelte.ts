@@ -44,6 +44,8 @@ const DEFAULTS = {
       /** The game's own key of the portal spell: watched without being taken from the game (passive shortcut `portalKey`),
        *  it shows a portal simulated under the mouse until pressed again, a click or Escape. */
       portalKey: { mods: 0, vk: 0, label: "" } as Binding,
+      /** The same for the Exil spell (passive shortcut `exilKey`): a portal simulated under the fighter under the mouse. */
+      exilKey: { mods: 0, vk: 0, label: "" } as Binding,
     },
   },
 };

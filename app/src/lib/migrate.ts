@@ -18,6 +18,16 @@ try {
   }
 } catch {}
 
+/** Saved settings merge section by section, so a saved `classHelp.eliotrope` hides the new `exilKey` default. */
+try {
+  const saved = JSON.parse(localStorage.getItem("karrelage.settings") ?? "null");
+  const eliotrope = saved?.classHelp?.eliotrope;
+  if (eliotrope && !eliotrope.exilKey) {
+    eliotrope.exilKey = { mods: 0, vk: 0, label: "" };
+    localStorage.setItem("karrelage.settings", JSON.stringify(saved));
+  }
+} catch {}
+
 /** 1.10.0's line of sight shortcut Ctrl+Maj+T, never changed by the user, becomes the new default (F3, held). */
 try {
   const saved = JSON.parse(localStorage.getItem("karrelage.settings") ?? "null");

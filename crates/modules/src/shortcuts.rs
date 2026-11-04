@@ -2,7 +2,7 @@
 //! Windows (they work while the game has the focus, and the game does not get them) and `shortcuts:pressed` {name} is sent
 //! when one is pressed, `shortcuts:released` {name} when its key is let go (shortcuts held down: `held` {name} tells whether it
 //! still is). `shortcuts:status` {name, ok}: false = another program already holds that combination.
-//! Passive shortcuts (`passive`: the class help's Eliotrope portal key, the game's own spell key): watched by polling, the
+//! Passive shortcuts (`passive`: the class help's Eliotrope portal and Exil keys, the game's own spell keys): watched by polling, the
 //! game still gets them; `shortcuts:pressed` {name, passive: true} when pressed while the game has the focus.
 use crate::kit::unknown;
 use crate::sys::Hotkeys;

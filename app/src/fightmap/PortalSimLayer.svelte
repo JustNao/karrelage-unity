@@ -1,7 +1,7 @@
 <script lang="ts">
   import { call } from "../lib/api";
   import { settings } from "../lib/stores/settings.svelte";
-  import { occupiedCells, screenCentre, type Calibration, type FightMapState } from "../lib/fightMap";
+  import { occupiedCells, screenCentre, screenDiamond, type Calibration, type FightMapState } from "../lib/fightMap";
   import { PORTAL_BONUS, playerPortals, portalAuthor, type PortalSims } from "../lib/classHelp";
 
   /**
@@ -9,18 +9,20 @@
    * Portail spell simulated on the cell under the mouse. On a free cell, a new portal there; on one of the portals, the spell
    * goes through the network and the new portal comes out past the exit. Only what changes is drawn, the game shows the portals
    * and their numbers: the X on the portal that goes when there were four, the new network's way from the new portal and its
-   * damage bonus (PORTAL_BONUS % per cell).
+   * damage bonus (PORTAL_BONUS % per cell), in yellow the cell a spell sent through that way ends up on.
+   * `exil`: the Exil spell instead (opened by its own key), the same on a fighter's cell: its portal goes under the fighter.
    * The mouse on one of the player's open portals when the view opens (`polled`: its first cursor read): that portal is the
    * `start`, the way shown is from it through each simulated network. The simulations of every cell come at once (asked again
    * when what they depend on changes): hovering is a lookup.
    */
-  let { cal, live, mine, dpr, pointed, polled }: {
+  let { cal, live, mine, dpr, pointed, polled, exil = false }: {
     cal: Calibration;
     live: FightMapState;
     mine: Set<number>;
     dpr: number;
     pointed: number | null;
     polled: boolean;
+    exil?: boolean;
   } = $props();
 
   const author = $derived(portalAuthor(live, mine));
@@ -43,12 +45,12 @@
     const [who, from] = [author, start];
     if (who === null || from === undefined) return void (all = null);
     const n = ++asked;
-    call<PortalSims>("fightmap", "portals", { author: who, ...(from !== null && { start: from }) }, true)
+    call<PortalSims>("fightmap", "portals", { author: who, exil, ...(from !== null && { start: from }) }, true)
       .then((r) => n === asked && (all = r))
       .catch(() => {});
   });
 
-  // the cell under the mouse: its simulation (none for an obstacle or a fighter's cell: the network as it is)
+  // the cell under the mouse: its simulation (none where the spell puts no portal: the network as it is)
   const sim = $derived(all && ((pointed !== null && all.sims[pointed]) || all.base));
   const exit = $derived(sim && sim.path.length > 1 ? sim.path[sim.path.length - 1] : null);
   const points = $derived((sim?.path ?? []).map((c) => screenCentre(cal, c, dpr).join(",")).join(" "));
@@ -60,11 +62,14 @@
   });
   /** size of a cell on screen (CSS px) */
   const cell = $derived([cal.sx / dpr, cal.sy / dpr]);
-  const key = $derived(settings.classHelp.eliotrope.portalKey);
+  const key = $derived(exil ? settings.classHelp.eliotrope.exilKey : settings.classHelp.eliotrope.portalKey);
 </script>
 
 <svg width="100%" height="100%">
   {#if sim}
+    {#if sim.target !== null}
+      <polygon points={screenDiamond(cal, sim.target, dpr)} class="target" />
+    {/if}
     {#if sim.dropped !== null}
       {@const [x, y] = screenCentre(cal, sim.dropped, dpr)}
       <path d="M{x - cell[0] / 5} {y - cell[1] / 10}L{x + cell[0] / 5} {y + cell[1] / 10}M{x + cell[0] / 5} {y - cell[1] / 10}L{x - cell[0] / 5} {y + cell[1] / 10}" class="cross" />
@@ -81,16 +86,18 @@
 </svg>
 
 <div class="pill">
-  Portail simulé sous la souris
+  {exil ? "Exil simulé sous la souris" : "Portail simulé sous la souris"}
   {#if start != null}· départ : {startNumber === null ? "votre portail disparaît" : `portail n° ${startNumber}`}{/if}
   {#if sim && sim.path.length > 1}· sortie à {sim.distance} cases : <b>+{sim.distance * PORTAL_BONUS} % de dommages</b>{/if}
-  {#if sim?.via}· lancé dans un portail : {sim.added === null ? "la case de sortie est prise ou hors de la carte" : "le nouveau portail sort après le dernier de la redirection"}{/if}
+  {#if sim?.target != null}· <span style:color="#ffd23c">case jaune : arrivée d'un sort</span>{/if}
+  {#if sim?.via}· lancé dans un portail : {sim.added === null ? (exil ? "aucun combattant à la sortie" : "la case de sortie est prise ou hors de la carte") : "le nouveau portail sort après le dernier de la redirection"}{/if}
   {#if sim?.dropped != null}· <span class="chip" style:color="#ff4d4d">✕ le n° 1 disparaît</span>
-  {:else if !sim?.added}· survolez une case libre{/if}
+  {:else if !sim?.added}· survolez {exil ? "un combattant" : "une case libre"}{/if}
   · {key.vk ? key.label : "le raccourci"}, un clic ou Échap pour fermer
 </div>
 
 <style>
+  .target { fill: rgba(255, 210, 60, 0.45); stroke: #ffd23c; stroke-width: 2; }
   .cross { stroke: #ff4d4d; stroke-width: 4; stroke-linecap: round; paint-order: stroke; }
   .way { fill: none; stroke: #ffd23c; stroke-opacity: 0.75; stroke-width: 3; stroke-linejoin: round; }
   .way.under { stroke: rgba(0, 0, 0, 0.35); stroke-opacity: 1; stroke-width: 5; }

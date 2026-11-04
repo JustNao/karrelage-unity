@@ -7,7 +7,7 @@ import type { Binding, Settings } from "./stores/settings.svelte";
 
 export type ShortcutName = keyof Settings["shortcuts"];
 /** Passive shortcuts: watched without being taken from the game (lib/stores/shortcuts.svelte.ts `passiveBinds`). */
-export type PassiveName = "portalKey";
+export type PassiveName = "portalKey" | "exilKey";
 
 /** What each shortcut does, in the order of the Paramètres tab. */
 export const SHORTCUTS: { name: ShortcutName; title: string; desc: string }[] = [

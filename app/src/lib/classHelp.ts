@@ -31,7 +31,7 @@ export interface PlayerPortal {
   open: boolean;
 }
 
-/** The Portail spell simulated on a cell (fight_map.rs `simulate`). */
+/** A portal spell (Portail or Exil) simulated on a cell (fight_map/portals.rs `simulate`). */
 export interface PortalSim {
   /** the new portal */
   added: number | null;
@@ -43,6 +43,8 @@ export interface PortalSim {
   path: number[];
   /** cells between the path's portals */
   distance: number;
+  /** where a spell the caster sends into the path's first portal ends up */
+  target: number | null;
 }
 
 /** Fight_map call `portals`: no spell cast (`base`) and cast on each cell it can be. */

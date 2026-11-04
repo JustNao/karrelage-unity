@@ -80,6 +80,7 @@
     Portails : {portals.length} (+{PORTAL_BONUS} % de dommages par case parcourue)
     {#if portals.length >= 4}<span class="chip" style:color="#ff4d4d">■ 1 part au prochain</span><span class="chip" style:color="#ffa53c">■ 2 ensuite</span>{/if}
     {#if settings.classHelp.eliotrope.portalKey.vk}· {settings.classHelp.eliotrope.portalKey.label} pour simuler un portail{/if}
+    {#if settings.classHelp.eliotrope.exilKey.vk}· {settings.classHelp.eliotrope.exilKey.label} pour simuler un Exil{/if}
   {:else}Aucune aide pour ce combat (Steamer : aucune tourelle posée, Éliotrope : aucun portail){/if}
   · {hold ? `lâchez ${keyLabel}` : `${keyLabel} ou Échap`} pour fermer
 </div>

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { settings } from "../../lib/stores/settings.svelte";
   import { SHORTCUTS, sameBinding } from "../../lib/shortcuts";
+  import type { Binding } from "../../lib/stores/settings.svelte";
   import { PORTAL_BONUS, TURRET_RANGE } from "../../lib/classHelp";
   import Switch from "../../lib/components/Switch.svelte";
   import KeyCapture from "../../lib/components/KeyCapture.svelte";
@@ -9,8 +10,12 @@
   /** Combat tab « Aide de classe »: what the in-game class help shows, per class (`settings.classHelp`). */
   const help = $derived(settings.classHelp);
   const view = $derived(settings.shortcuts.classHelp.vk ? settings.shortcuts.classHelp.label : null);
-  /** a global shortcut on the same keys takes them first: the portal key never reaches the game nor the simulation */
-  const clash = $derived(help.eliotrope.portalKey.vk ? SHORTCUTS.find((s) => sameBinding(settings.shortcuts[s.name], help.eliotrope.portalKey)) : undefined);
+  /** a global shortcut on the same keys takes them first: a spell key never reaches the game nor the simulation */
+  const clash = (key: Binding) => (key.vk ? SHORTCUTS.find((s) => sameBinding(settings.shortcuts[s.name], key)) : undefined);
+  const portalClash = $derived(clash(help.eliotrope.portalKey));
+  const exilClash = $derived(clash(help.eliotrope.exilKey));
+  /** the same key for both spells: both simulations would be asked at once */
+  const sameKeys = $derived(help.eliotrope.exilKey.vk !== 0 && sameBinding(help.eliotrope.portalKey, help.eliotrope.exilKey));
 </script>
 
 <div class="head">
@@ -44,14 +49,28 @@
     <div class="mut">
       Votre raccourci du sort Portail dans le jeu : le jeu la reçoit toujours, et un portail est simulé sur la case sous la
       souris (le plus ancien barré s'il y en a 4 ; sur un de vos portails, le sort traverse le réseau et le portail sort après la
-      sortie, décalé comme à l'entrée), avec la redirection jusqu'à la sortie et son bonus de dommages. La touche à
+      sortie, décalé comme à l'entrée), avec la redirection jusqu'à la sortie, son bonus de dommages et, en jaune, la case où
+      arriverait un sort envoyé dans ce chemin. La touche à
       nouveau, un clic (le sort est lancé ou annulé) ou Échap l'effacent. La touche pressée la souris sur un de vos portails : le
       chemin affiché part de ce portail (pour chaque nouveau portail simulé), jusqu'à la fermeture.
     </div>
-    {#if clash}<Banner tone="warn" inset>Même touche que « {clash.title} » : ce raccourci la prend, le jeu ne la reçoit pas.</Banner>{/if}
+    {#if portalClash}<Banner tone="warn" inset>Même touche que « {portalClash.title} » : ce raccourci la prend, le jeu ne la reçoit pas.</Banner>{/if}
   </div>
   <div class="ctl">
     <KeyCapture label="Touche du sort Portail" value={help.eliotrope.portalKey} onchange={(b) => (help.eliotrope.portalKey = b)} />
+  </div>
+</div>
+<div class="row sub" class:off={!help.eliotrope.enabled}>
+  <div class="lb">
+    <div>Touche du sort Exil</div>
+    <div class="mut">
+      Votre raccourci du sort Exil dans le jeu : la même simulation, le portail posé sous le combattant sous la souris.
+    </div>
+    {#if exilClash}<Banner tone="warn" inset>Même touche que « {exilClash.title} » : ce raccourci la prend, le jeu ne la reçoit pas.</Banner>{/if}
+    {#if sameKeys}<Banner tone="warn" inset>Même touche que le sort Portail : choisissez-en une autre.</Banner>{/if}
+  </div>
+  <div class="ctl">
+    <KeyCapture label="Touche du sort Exil" value={help.eliotrope.exilKey} onchange={(b) => (help.eliotrope.exilKey = b)} />
   </div>
 </div>
 
