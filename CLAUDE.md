@@ -281,7 +281,8 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   server's landing cell = `confusion` clockwise quarter turns on 10 casts at 1 and 2 (`maps::turned`; negative values not seen landing).
   Blue cell in the in-game view (`fightmap/SpellCellLayer.svelte`, call `turned`, `settings.combat.harebourgCell`, Combat tab « Général »):
   where a spell aimed at the cell under the mouse lands; with the class help, or alone (view / held shortcut `spellCell`, none by default,
-  which then takes it out of the class help).
+  which then takes it out of the class help). The confusion outlives the Comte for his wave (told by the author): the cell stays until
+  none of that wave's monsters is left and a later wave's is there (`spellTurn`).
 - Rounds for the helpers: `round` from FightNewRoundEvent (named by override, `round_number`), per fighter `since` (round first
   seen, placement = 1: rounds count from a boss's appearance, waves included), `played` (last round its FightTurnEvent came)
   and `hit` (element of its last non-neutral damage since its turn started: GameActionFightEvent life_points_lost; the element int is learnt from

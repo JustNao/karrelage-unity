@@ -62,10 +62,17 @@ const harebourg: Boss = {
 };
 
 /** How the player's spells are turned in a Comte Harebourg fight (fightmap/SpellCellLayer.svelte); null when they aren't, or
- *  while their confusion isn't known. */
+ *  while their confusion isn't known. The confusion outlives the Comte for the rest of his wave: it counts as over once none of
+ *  its monsters is left and a later wave's is there. */
 export function spellTurn(f: Fight): { caster: number; quarters: number } | null {
   if (!f.active || f.confusion == null || f.confused == null) return null;
-  if (!f.fighters.some((x) => HAREBOURG_GIDS.includes(x.gid) && !x.dead)) return null;
+  const comtes = f.fighters.filter((x) => HAREBOURG_GIDS.includes(x.gid));
+  if (!comtes.length) return null;
+  if (comtes.every((x) => x.dead)) {
+    const wave = Math.max(...comtes.map((x) => x.wave ?? 0));
+    const standing = f.fighters.filter((x) => !x.dead && !x.summoned);
+    if (!standing.some((x) => (x.wave ?? 0) === wave) && standing.some((x) => (x.wave ?? 0) > wave)) return null;
+  }
   return { caster: f.confused, quarters: f.confusion };
 }
 

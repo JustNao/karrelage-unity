@@ -8,7 +8,7 @@
   /**
    * Comte Harebourg in the in-game view: in blue, the cell a spell aimed at the cell under the mouse lands on (turned around the
    * caster by their confusion: crates/data/src/maps.rs `turned`). Drawn by the class help (ClassLayer.svelte), or alone with the
-   * shortcut `spellCell` when one is set. Every cell's landing comes at once (asked again when the caster moves or the confusion
+   * shortcut `spellCell` when one is set; it stays once the Comte is dead, until his wave is over (`spellTurn`). Every cell's landing comes at once (asked again when the caster moves or the confusion
    * changes): hovering is a lookup.
    */
   let { cal, live, dpr, pointed }: {
