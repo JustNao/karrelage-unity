@@ -3,7 +3,7 @@
   import { call } from "../lib/api";
   import { settings } from "../lib/stores/settings.svelte";
   import { occupiedCells, screenDiamond, type Calibration, type FightMapState, type MapFighter, type Sight } from "../lib/fightMap";
-  import { PORTAL_BONUS, playerPortals, TURRET_RANGE, TURRETS, turretOf } from "../lib/classHelp";
+  import { playerPortals, TURRET_RANGE, TURRETS, turretOf } from "../lib/classHelp";
   import PortalLayer from "./PortalLayer.svelte";
 
   /**
@@ -71,19 +71,17 @@
   {/each}
 {/snippet}
 
-<div class="pill">
-  {#if areas.length}
-    Tourelles ({TURRET_RANGE} PO, en ligne de vue) :
-    {#each areas as a (a.turret.id)}<span class="chip" style:color={look(a.turret).colour}>■ {look(a.turret).name}</span>{/each}
-    {#if focused === null}· survolez une tourelle pour sa zone{/if}
-  {:else if portals.length}
-    Portails : {portals.length} (+{PORTAL_BONUS} % de dommages par case parcourue)
-    {#if portals.length >= 4}<span class="chip" style:color="#ff4d4d">■ 1 part au prochain</span><span class="chip" style:color="#ffa53c">■ 2 ensuite</span>{/if}
-    {#if settings.classHelp.eliotrope.portalKey.vk}· {settings.classHelp.eliotrope.portalKey.label} pour simuler un portail{/if}
-    {#if settings.classHelp.eliotrope.exilKey.vk}· {settings.classHelp.eliotrope.exilKey.label} pour simuler un Exil{/if}
-  {:else}Aucune aide pour ce combat (Steamer : aucune tourelle posée, Éliotrope : aucun portail){/if}
-  · {hold ? `lâchez ${keyLabel}` : `${keyLabel} ou Échap`} pour fermer
-</div>
+<!-- no bar over the Eliotrope's portals: only the numbers on the map -->
+{#if areas.length || !portals.length}
+  <div class="pill">
+    {#if areas.length}
+      Tourelles ({TURRET_RANGE} PO, en ligne de vue) :
+      {#each areas as a (a.turret.id)}<span class="chip" style:color={look(a.turret).colour}>■ {look(a.turret).name}</span>{/each}
+      {#if focused === null}· survolez une tourelle pour sa zone{/if}
+    {:else}Aucune aide pour ce combat (Steamer : aucune tourelle posée, Éliotrope : aucun portail){/if}
+    · {hold ? `lâchez ${keyLabel}` : `${keyLabel} ou Échap`} pour fermer
+  </div>
+{/if}
 
 <style>
   .area { fill-opacity: 0.22; stroke-opacity: 0.8; stroke-width: 1; }

@@ -1,6 +1,5 @@
 <script lang="ts">
   import { call } from "../lib/api";
-  import { settings } from "../lib/stores/settings.svelte";
   import { occupiedCells, screenCentre, screenDiamond, type Calibration, type FightMapState } from "../lib/fightMap";
   import { PORTAL_BONUS, playerPortals, portalAuthor, type PortalSims } from "../lib/classHelp";
 
@@ -54,15 +53,8 @@
   const sim = $derived(all && ((pointed !== null && all.sims[pointed]) || all.base));
   const exit = $derived(sim && sim.path.length > 1 ? sim.path[sim.path.length - 1] : null);
   const points = $derived((sim?.path ?? []).map((c) => screenCentre(cal, c, dpr).join(",")).join(" "));
-  /** the start portal's number in the simulated network, null when it is the one that goes */
-  const startNumber = $derived.by(() => {
-    const number = portals.find((p) => p.cell === start)?.number;
-    if (number === undefined || sim?.dropped === start) return null;
-    return sim?.dropped != null ? number - 1 : number;
-  });
   /** size of a cell on screen (CSS px) */
   const cell = $derived([cal.sx / dpr, cal.sy / dpr]);
-  const key = $derived(exil ? settings.classHelp.eliotrope.exilKey : settings.classHelp.eliotrope.portalKey);
 </script>
 
 <svg width="100%" height="100%">
@@ -84,17 +76,6 @@
     {/if}
   {/if}
 </svg>
-
-<div class="pill">
-  {exil ? "Exil simulé sous la souris" : "Portail simulé sous la souris"}
-  {#if start != null}· départ : {startNumber === null ? "votre portail disparaît" : `portail n° ${startNumber}`}{/if}
-  {#if sim && sim.path.length > 1}· sortie à {sim.distance} cases : <b>+{sim.distance * PORTAL_BONUS} % de dommages</b>{/if}
-  {#if sim?.target != null}· <span style:color="#ffd23c">case jaune : arrivée d'un sort</span>{/if}
-  {#if sim?.via}· lancé dans un portail : {sim.added === null ? (exil ? "aucun combattant à la sortie" : "la case de sortie est prise ou hors de la carte") : "le nouveau portail sort après le dernier de la redirection"}{/if}
-  {#if sim?.dropped != null}· <span class="chip" style:color="#ff4d4d">✕ le n° 1 disparaît</span>
-  {:else if !sim?.added}· survolez {exil ? "un combattant" : "une case libre"}{/if}
-  · {key.vk ? key.label : "le raccourci"}, un clic ou Échap pour fermer
-</div>
 
 <style>
   .target { fill: rgba(255, 210, 60, 0.45); stroke: #ffd23c; stroke-width: 2; }
