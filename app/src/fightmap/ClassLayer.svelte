@@ -1,27 +1,28 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import { cursorPosition, type Window } from "@tauri-apps/api/window";
   import { call } from "../lib/api";
   import { settings } from "../lib/stores/settings.svelte";
-  import { cellAt, screenDiamond, type Calibration, type FightMapState, type MapFighter, type Sight } from "../lib/fightMap";
+  import { screenDiamond, type Calibration, type FightMapState, type MapFighter, type Sight } from "../lib/fightMap";
   import { PORTAL_BONUS, TURRET_RANGE, TURRETS, turretOf, type PortalNet } from "../lib/classHelp";
   import PortalLayer from "./PortalLayer.svelte";
 
   /**
    * Class help in the in-game view (FightMapOverlay.svelte), the mouse let through (only to look at). Steamer: for each of the
    * player's turrets, the cells where the Steamer gets its bonus (at most TURRET_RANGE cells away and in its line of sight:
-   * the player's own fighters don't block it, they are the ones moving). The mouse over a turret's cell brings its zone forward
-   * (the cursor is polled: the window lets the mouse through). Eliotrope: the portals (fightmap/PortalLayer.svelte), with a
+   * the player's own fighters don't block it, they are the ones moving). The mouse over a turret's cell (`pointed`) brings its
+   * zone forward. Eliotrope: the portals (fightmap/PortalLayer.svelte), with a
    * portal simulated under the mouse when `simulate` (view `portals`, the turrets left out). Each class can be turned off in
    * the Combat tab (`settings.classHelp`).
    */
-  let { cal, live, mine, dpr, win, hold, simulate }: {
+  let { cal, live, mine, dpr, hold, pointed, polled, simulate }: {
     cal: Calibration;
     live: FightMapState;
     mine: Set<number>;
     dpr: number;
-    win: Window;
     hold: boolean;
+    /** the cell under the mouse */
+    pointed: number | null;
+    /** the cursor was read once: `pointed` is where it was when the view opened */
+    polled: boolean;
     simulate: boolean;
   } = $props();
 
@@ -29,30 +30,6 @@
   /** the portal the simulation's way starts from (PortalLayer.svelte) */
   let start = $state<number | null | undefined>(undefined);
   const startNumber = $derived(start == null ? null : net?.portals.find((p) => p.cell === start)?.number ?? null);
-
-  /** the cell under the mouse */
-  let pointed = $state<number | null>(null);
-  /** the cursor was read once: `pointed` is where it was when the view opened */
-  let polled = $state(false);
-
-  onMount(() => {
-    let origin: { x: number; y: number } | null = null;
-    void win.innerPosition().then((p) => (origin = p));
-    // the cursor asked again as soon as it answers (about a frame apart, never two asks at once)
-    let on = true, poll = 0;
-    const tick = async () => {
-      if (origin) {
-        const p = await cursorPosition().catch(() => null);
-        if (on) [pointed, polled] = [p && cellAt(cal, p.x - origin.x, p.y - origin.y), true];
-      }
-      if (on) poll = setTimeout(tick, 16);
-    };
-    void tick();
-    return () => {
-      on = false;
-      clearTimeout(poll);
-    };
-  });
 
   /** The player's turrets: summoned by one of their characters, else of their team when the summoner is unknown; every turret
    *  when the player is not known. */

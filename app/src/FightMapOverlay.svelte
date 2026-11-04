@@ -1,11 +1,11 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { getCurrentWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
+  import { cursorPosition, getCurrentWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
   import { emitTo } from "@tauri-apps/api/event";
   import { call, listenAll } from "./lib/api";
   import { readJSON, writeJSON } from "./lib/persist.svelte";
   import { fight, followFight } from "./lib/stores/combat.svelte";
-  import { CALIBRATION_KEY, calibrate, centre, type Calibration, type FightMapState, type MapFighter } from "./lib/fightMap";
+  import { CALIBRATION_KEY, calibrate, cellAt, centre, type Calibration, type FightMapState, type MapFighter } from "./lib/fightMap";
   import type { OverlayPress, OverlayView } from "./lib/fightMapOverlay";
   import LosLayer from "./fightmap/LosLayer.svelte";
   import ClassLayer from "./fightmap/ClassLayer.svelte";
@@ -24,6 +24,9 @@
    *   flashes white when a hidden window is shown again); only the fight's end closes it.
    * - The mouse and the keyboard stay the game's unless the view needs them (`takesInput`).
    */
+  /** The cursor is asked for again this long after each answer (about a frame, never two asks at once). */
+  const CURSOR_POLL_MS = 16;
+
   const win = getCurrentWindow();
   const dpr = window.devicePixelRatio || 1;
 
@@ -97,6 +100,29 @@
         else await call("fightmap", "refocus", {}, true);
       })
       .catch(() => {});
+  });
+
+  /** The cell under the mouse, for the views that let it through (no mouse event then: polled). */
+  let pointed = $state<number | null>(null);
+  /** the cursor was read once: `pointed` is where it was when the view opened */
+  let polled = $state(false);
+  $effect(() => {
+    if (!shown || mode !== "show" || view === "los" || !cal || !placed) return;
+    const [grid, origin] = [cal, placed];
+    let on = true;
+    let timer = 0;
+    const tick = async () => {
+      const p = await cursorPosition().catch(() => null);
+      if (!on) return;
+      [pointed, polled] = [p && cellAt(grid, p.x - origin.x, p.y - origin.y), true];
+      timer = setTimeout(tick, CURSOR_POLL_MS);
+    };
+    polled = false;
+    void tick();
+    return () => {
+      on = false;
+      clearTimeout(timer);
+    };
   });
 
   /** Shows `v` over the game: the window placed on the Dofus window (it may have moved), its calibration checked. */
@@ -277,7 +303,7 @@
     {#if view === "los"}
       <LosLayer {cal} {cells} {live} {mine} {dpr} {hold} bind:sticky />
     {:else}
-      <ClassLayer {cal} {live} {mine} {dpr} {win} {hold} simulate={view === "portals"} />
+      <ClassLayer {cal} {live} {mine} {dpr} {hold} {pointed} {polled} simulate={view === "portals"} />
     {/if}
   {/if}
 </div>

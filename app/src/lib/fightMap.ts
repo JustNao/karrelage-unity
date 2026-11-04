@@ -91,7 +91,12 @@ export function calibrate(a: number, pa: [number, number], b: number, pb: [numbe
 /** The cell whose diamond holds the point (physical px of the client area), null outside the grid. */
 export function cellAt(cal: Calibration, x: number, y: number): number | null {
   const gx = (x - cal.ox) / cal.sx, gy = (y - cal.oy) / cal.sy;
-  for (let c = 0; c < MAP_CELLS; c++) {
+  // diamonds overlap in height: the point's nearest row and its two neighbours (`centre` backwards), the column nearest in each
+  const near = Math.round(gy * 4 - 1);
+  for (let row = Math.max(0, near - 1); row <= Math.min(ROWS - 1, near + 1); row++) {
+    const col = Math.round(gx - (row % 2 ? 1 : 0.5));
+    if (col < 0 || col >= ROW) continue;
+    const c = row * ROW + col;
     const [cx, cy] = centre(c, 1);
     if (Math.abs(gx - cx) / 0.5 + Math.abs(gy - cy) / 0.25 <= 1) return c;
   }
