@@ -13,6 +13,7 @@ pub mod map_monsters;
 pub mod names;
 pub mod packets;
 pub mod prices;
+pub mod recorder;
 pub mod shortcuts;
 pub mod store;
 pub mod stuff;
@@ -135,6 +136,7 @@ pub fn all() -> Vec<Box<dyn Module>> {
         Box::new(fight_map::FightMap::new()),
         Box::new(loot::Loot::new()),
         Box::new(map_monsters::MapMonsters::new()),
+        Box::new(recorder::Recorder::new()),
         Box::new(names::NamesTab::new()),
         Box::new(shortcuts::Shortcuts::new()),
         Box::new(update::Update::new()),

@@ -27,6 +27,11 @@ const DEFAULTS = {
     /** Which way the floating window grows with its content: its top edge stays put ("down") or its bottom edge ("up"). */
     overlayGrow: "down" as "down" | "up",
   },
+  /** Developer mode only (lib/stores/recorder.svelte.ts): which categories of packets are stored locally for analysis. */
+  record: {
+    /** Every fight, from its start to its end. */
+    fight: false,
+  },
   /** Global keyboard shortcuts (lib/shortcuts.ts), one per name: work while the game has the focus. */
   shortcuts: {
     /** In-game line of sight over the fight while held (FightMapOverlay.svelte). */

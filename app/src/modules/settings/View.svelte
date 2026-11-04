@@ -6,6 +6,8 @@
   import Banner from "../../lib/components/Banner.svelte";
   import { SHORTCUTS, sameBinding, type ShortcutName } from "../../lib/shortcuts";
   import { taken } from "../../lib/stores/shortcuts.svelte";
+  import { app } from "../../lib/app.svelte";
+  import RecorderSection from "./RecorderSection.svelte";
 
   /** Paramètres: general settings first, then one section per tab. Values live in lib/stores/settings.svelte.ts. */
   const isDefault = (n: ShortcutName) => sameBinding(settings.shortcuts[n], SETTING_DEFAULTS.shortcuts[n]);
@@ -86,6 +88,9 @@
           </div>
         </div>
       </section>
+      {#if app.dev}
+        <RecorderSection />
+      {/if}
     </div>
   </SmoothScroll>
 </div>

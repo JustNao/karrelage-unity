@@ -10,6 +10,7 @@
   import Switch from "./lib/components/Switch.svelte";
   import { startAutomation } from "./lib/automation";
   import { startCombat } from "./lib/stores/combat.svelte";
+  import { startRecorder } from "./lib/stores/recorder.svelte";
   import { onShortcut, startShortcuts } from "./lib/stores/shortcuts.svelte";
   import { prewarmFightMapOverlay, pressFightMapOverlay } from "./lib/fightMapOverlay";
 
@@ -92,6 +93,7 @@
     restored = true;
     void startAutomation(); // automation rules watch every scan, whatever tab is open (needs the data pack)
     void startCombat(); // the current fight is followed whatever tab is open
+    startRecorder(); // developer mode: packets stored for analysis
     onShortcut("los", () => void pressFightMapOverlay("los", true).catch(() => {}));
     onShortcut("classHelp", () => void pressFightMapOverlay("classHelp", true).catch(() => {}));
     onShortcut("portalKey", () => void pressFightMapOverlay("portals", false).catch(() => {})); // the Eliotrope's portal spell key

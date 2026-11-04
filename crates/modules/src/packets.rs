@@ -2,6 +2,7 @@
 use crate::{Ctx, Interest, Message, Module};
 use anyhow::{anyhow, Result};
 use loutil_core::wire;
+use loutil_proto::Proto;
 use parking_lot::Mutex;
 use serde_json::{json, Map, Value};
 use std::collections::{HashMap, VecDeque};
@@ -18,12 +19,20 @@ const BATCH_EVERY: Duration = Duration::from_millis(100);
 
 /// A buffered packet: the record without its decoded tree, plus the message bytes, decoded only when the packet is sent to
 /// the UI (names are applied then, so a rename shows up in already captured packets).
-struct Entry {
+pub(crate) struct Entry {
     rec: Map<String, Value>,
     /// the envelope's message bytes (`Any.value`), when the envelope has a type
     body: Option<Vec<u8>>,
     /// start of the raw payload, rendered as hex only when the packet is opened (`hex` call)
-    raw: Vec<u8>,
+    pub(crate) raw: Vec<u8>,
+}
+
+impl Entry {
+    /// A message as a buffered packet, keeping at most `raw_bytes` of its payload. Cheap: nothing is decoded.
+    pub(crate) fn of(m: &Message, raw_bytes: usize) -> Self {
+        let raw = m.raw.payload[..m.raw.payload.len().min(raw_bytes)].to_vec();
+        Self { rec: Packets::record(m), body: m.env.as_ref().map(|e| e.value.clone()), raw }
+    }
 }
 
 /// Every packet is recorded, even with the inspector tab closed, but only the last `PER_TYPE` of each message type are
@@ -46,7 +55,7 @@ impl Packets {
         Self { ring: Mutex::new(HashMap::new()), active: AtomicBool::new(false), outbox: Default::default() }
     }
 
-    fn record(&self, m: &Message) -> Map<String, Value> {
+    fn record(m: &Message) -> Map<String, Value> {
         let mut r = Map::new();
         r.insert("id".into(), m.id.into());
         r.insert("t".into(), ((m.raw.t * 1000.0).round() / 1000.0).into());
@@ -78,15 +87,15 @@ impl Packets {
 
     /// Record as sent to the UI, decoded now, with names as they are *now*. A body the schema cannot decode gets the
     /// schemaless tree (`body`).
-    fn render(entry: &Entry, ctx: &Ctx) -> Value {
+    pub(crate) fn render(entry: &Entry, proto: &Proto) -> Value {
         let mut r = entry.rec.clone();
         let mut decoded = Value::Null;
         if let Some(t) = r.get("type").and_then(Value::as_str).map(str::to_owned) {
-            let (name, conf) = ctx.proto.message_name(&t);
+            let (name, conf) = proto.message_name(&t);
             r.insert("name".into(), name.into());
             r.insert("conf".into(), conf.map_or(Value::Null, Value::from));
-            if let Some(d) = entry.body.as_deref().and_then(|b| ctx.proto.decode(&t, b)) {
-                decoded = ctx.proto.to_json(&d);
+            if let Some(d) = entry.body.as_deref().and_then(|b| proto.decode(&t, b)) {
+                decoded = proto.to_json(&d);
             }
         }
         if decoded.is_null() && r.contains_key("kind") {
@@ -123,10 +132,8 @@ impl Module for Packets {
     }
 
     fn on_message(&self, m: &Message, ctx: &Ctx) {
-        let raw = m.raw.payload[..m.raw.payload.len().min(HEX_BYTES)].to_vec();
-        let body = m.env.as_ref().map(|e| e.value.clone());
-        let entry = Entry { rec: self.record(m), body, raw };
-        let out = self.active.load(Ordering::Relaxed).then(|| Self::render(&entry, ctx));
+        let entry = Entry::of(m, HEX_BYTES);
+        let out = self.active.load(Ordering::Relaxed).then(|| Self::render(&entry, &ctx.proto));
         {
             let mut ring = self.ring.lock();
             let q = ring.entry(Self::key(&entry.rec)).or_default();
@@ -147,7 +154,7 @@ impl Module for Packets {
                 let ring = self.ring.lock();
                 let mut all: Vec<&Entry> = ring.values().flatten().filter(|e| e.rec["id"].as_u64().unwrap_or(0) > since).collect();
                 all.sort_by_key(|e| e.rec["id"].as_u64().unwrap_or(0));
-                Ok(Value::Array(all.into_iter().map(|e| Self::render(e, ctx)).collect()))
+                Ok(Value::Array(all.into_iter().map(|e| Self::render(e, &ctx.proto)).collect()))
             }
             // the inspector tab opened (on: true) or closed: new packets are streamed only while it is open
             "set_active" => {
@@ -176,7 +183,7 @@ impl Module for Packets {
                 let mut v = {
                     let ring = self.ring.lock();
                     let e = ring.values().flatten().find(|e| e.rec["id"].as_u64() == Some(id)).ok_or_else(|| anyhow!("paquet {id} plus en mémoire"))?;
-                    let mut v = Self::render(e, ctx);
+                    let mut v = Self::render(e, &ctx.proto);
                     v["hex"] = json!(wire::hex(&e.raw));
                     v
                 };

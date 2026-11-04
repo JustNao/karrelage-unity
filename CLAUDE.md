@@ -179,6 +179,17 @@ Set `PYTHONUTF8=1` for scripts handling accents. The "Développeur" header toggl
 
 **Packets** (`packets.rs`): keeps the last 20 raw packets per type, decoded only when the tab lists/streams them.
 
+**Recorder** (`recorder.rs`, `lib/stores/recorder.svelte.ts`, Paramètres « Développeur »): stores every packet of a category for
+data analysis, `<app data>/recorder/<category>/<start, unix ms>.jsonl`. Off by default; records only while `settings.record.<category>`
+and developer mode are both on. New category = an entry in `CATEGORIES`, a default in `settings.record`, a row in `RECORD_CATEGORIES`.
+- Lines = `pipeline/sniff.py` records (`t srv dir len kind uid type name conf decoded hex`, whole payload in `hex`), after a first
+  `{"header": ...}` (game version, `desc` = `builds.py` fingerprint, pack); `{"dropped": n}` marks a gap. Capture thread: names and a bytes copy
+  into a bounded queue (full = dropped and counted); the writer thread decodes and writes, and only lives while a category is on.
+- Fight = one file from `FightStartingEvent` (or a fight message when switched on during one) to `FightEndEvent` / `ContextDestroyEvent` /
+  `MapInformationRequest` (end lost: 3 of the captures' 12 fights; never during the 9 others), with everything between except chat, party
+  and keep-alive: names alone give 53 % of capture_poison. Files are per `srv`: two game clients on one server share a file (no client id in `RawMessage`).
+- Measured on the captures: about 1.1 KB per message, 0.4–0.85 MB per fight, 3.4 MB for a 3 min one with 4,300 messages (gzip: 22 × smaller).
+
 **Brisage** (`brisage.rs`, `lib/brisage.ts`)
 - Formula (kamamaster.fr, verified on a real break): runes = round2(3 × unit × jet × level / 200 + 1) × coef / 100 / rune
   weight; focus = own runes + half the weight of every other effect. Exo runes can't be focused. Expected values kept.
