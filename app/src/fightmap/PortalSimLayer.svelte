@@ -1,7 +1,7 @@
 <script lang="ts">
   import { call } from "../lib/api";
   import { settings } from "../lib/stores/settings.svelte";
-  import { screenCentre, type Calibration, type FightMapState } from "../lib/fightMap";
+  import { occupiedCells, screenCentre, type Calibration, type FightMapState } from "../lib/fightMap";
   import { PORTAL_BONUS, playerPortals, portalAuthor, type PortalSims } from "../lib/classHelp";
 
   /**
@@ -12,7 +12,7 @@
    * damage bonus (PORTAL_BONUS % per cell).
    * The mouse on one of the player's open portals when the view opens (`polled`: its first cursor read): that portal is the
    * `start`, the way shown is from it through each simulated network. The simulations of every cell come at once (asked again
-   * when portals or fighters change): hovering is a lookup.
+   * when what they depend on changes): hovering is a lookup.
    */
   let { cal, live, mine, dpr, pointed, polled }: {
     cal: Calibration;
@@ -34,15 +34,16 @@
     start = portals.some((p) => p.cell === at && p.open) ? at : null;
   });
 
+  /** what the simulations depend on */
+  const inputs = $derived(JSON.stringify([live.map, live.portals, occupiedCells(live), live.fighters.find((f) => f.id === author)?.cell]));
   let all = $state.raw<PortalSims | null>(null);
   let asked = 0;
   $effect(() => {
+    void inputs;
     const [who, from] = [author, start];
-    void live.portals;
-    void live.fighters;
     if (who === null || from === undefined) return void (all = null);
     const n = ++asked;
-    call<PortalSims>("fightmap", "portals", { author: who, all: true, ...(from !== null && { start: from }) }, true)
+    call<PortalSims>("fightmap", "portals", { author: who, ...(from !== null && { start: from }) }, true)
       .then((r) => n === asked && (all = r))
       .catch(() => {});
   });

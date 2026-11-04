@@ -34,6 +34,9 @@ export interface FightMapState {
   /** in the order they were put down */
   portals: MapPortal[];
 }
+/** The cells fighters stand on (and block). */
+export const occupiedCells = (s: FightMapState) => s.fighters.filter((f) => f.alive && !f.carried).map((f) => f.cell);
+
 /** What a fighter on a cell reaches at the chosen range: cells in line of sight, and the ones behind an obstacle. */
 export interface Sight {
   seen: number[];

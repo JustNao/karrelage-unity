@@ -45,7 +45,7 @@ export interface PortalSim {
   distance: number;
 }
 
-/** Fight_map call `portals` with `all`: no spell cast (`base`) and cast on each cell it can be. */
+/** Fight_map call `portals`: no spell cast (`base`) and cast on each cell it can be. */
 export interface PortalSims {
   base: PortalSim;
   sims: Record<string, PortalSim>;

@@ -1,7 +1,8 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { call } from "../lib/api";
   import { settings } from "../lib/stores/settings.svelte";
-  import { screenDiamond, type Calibration, type FightMapState, type MapFighter, type Sight } from "../lib/fightMap";
+  import { occupiedCells, screenDiamond, type Calibration, type FightMapState, type MapFighter, type Sight } from "../lib/fightMap";
   import { PORTAL_BONUS, playerPortals, TURRET_RANGE, TURRETS, turretOf } from "../lib/classHelp";
   import PortalLayer from "./PortalLayer.svelte";
 
@@ -32,12 +33,14 @@
     return all.filter((f) => mine.has(f.summoner) || (!f.summoner && teams.has(f.team)));
   });
 
+  /** what the zones depend on */
+  const inputs = $derived(JSON.stringify([live.map, turrets.map((t) => [t.id, t.cell]), occupiedCells(live), [...mine]]));
   let areas = $state.raw<{ turret: MapFighter; seen: number[] }[]>([]);
   let asked = 0;
   $effect(() => {
-    const list = turrets;
+    void inputs;
+    const [list, ignore] = untrack(() => [turrets, [...mine]] as const);
     const n = ++asked;
-    const ignore = [...mine];
     Promise.all(list.map((t) => call<Sight | null>("fightmap", "sight", { from: t.cell, min: 1, max: TURRET_RANGE, ignore }, true)))
       .then((s) => n === asked && (areas = list.map((turret, i) => ({ turret, seen: s[i]?.seen ?? [] }))))
       .catch(() => {});
