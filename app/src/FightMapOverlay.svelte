@@ -20,8 +20,9 @@
    *   game's portal spell key, closed by a click too: the spell is cast, or cancelled).
    * - Closed when the held shortcut is let go (unless a cell is pinned, or during the calibration), by its shortcut pressed
    *   again, Escape, the end of the player's turn or of the fight. Another view's shortcut switches to that view.
-   * - Kept for the whole fight: put on screen once loaded, empty (`warmUp`); closing empties it and lets the mouse through
-   *   (`idle`; never hidden: WebView2 flashes white when a hidden window is shown again); only the fight's end closes it.
+   * - Kept for the whole fight: put on screen once loaded, empty (`warmUp`); closing just empties it (never hidden: WebView2
+   *   flashes white when a hidden window is shown again); only the fight's end closes it.
+   * - The mouse and the keyboard stay the game's unless the view needs them (`takesInput`).
    */
   const win = getCurrentWindow();
   const dpr = window.devicePixelRatio || 1;
@@ -76,8 +77,29 @@
   });
   const nameOf = (f: MapFighter) => names.get(f.id) ?? (mine.has(f.id) ? "votre personnage" : f.kind === "player" ? "ce personnage" : "ce monstre");
 
-  /** Shows `v` over the game: the window placed on the Dofus window (it may have moved), its calibration checked. The
-   *  portal simulation does not take the focus (the game keeps its spell selected). */
+  /** The window takes the mouse and the focus only for what needs a click on it: the calibration, the line of sight until a
+   *  cell is pinned. Everything else lets all through to the game (it keeps the Portail spell selected, its shortcuts...). */
+  const takesInput = $derived(shown && (mode === "calibrate" || (view === "los" && !sticky)));
+
+  // Applied only when it changes, in order: each call changes a window style, which is what can flash (click-through is the
+  // WS_EX_LAYERED style, its first removal in the window's life flashes white: `warmUp`).
+  let applied = false;
+  let applying = Promise.resolve();
+  $effect(() => {
+    const on = takesInput;
+    if (on === applied) return;
+    applied = on;
+    applying = applying
+      .then(async () => {
+        await win.setFocusable(on);
+        await win.setIgnoreCursorEvents(!on);
+        if (on) await win.setFocus();
+        else await call("fightmap", "refocus", {}, true);
+      })
+      .catch(() => {});
+  });
+
+  /** Shows `v` over the game: the window placed on the Dofus window (it may have moved), its calibration checked. */
   async function open(v: OverlayView, h: boolean) {
     [view, hold, sticky, clicks, failed, pointer] = [v, h, false, [], false, null];
     [opening, closeAsked] = [true, null];
@@ -85,19 +107,12 @@
     void call("fightmap", "watch_escape", { on: true }).catch(() => {});
     try {
       const rect = await place();
-      if (!rect || !live.fight || !cells) return void (await call("fightmap", "release", {}, true).catch(() => {}));
+      if (!rect || !live.fight || !cells) return void (await release());
       size = { width: rect.width, height: rect.height };
       const saved = readJSON<Calibration | null>(CALIBRATION_KEY, null);
       cal = saved && saved.width === rect.width && saved.height === rect.height ? saved : null;
       mode = cal ? "show" : "calibrate";
-      const focus = view !== "portals" || mode === "calibrate";
-      await win.setFocusable(focus).catch(() => {});
-      // the mouse taken only when the view needs it (calibration, line of sight): click-through is the WS_EX_LAYERED style,
-      // and its first removal in the window's life flashed white (the class help and the portals keep letting the mouse through)
-      if (mode === "calibrate" || view === "los") await win.setIgnoreCursorEvents(false);
       shown = true;
-      if (focus) await win.setFocus().catch(() => {});
-      else void call("fightmap", "refocus", {}, true).catch(() => {});
     } finally {
       opening = false;
     }
@@ -126,7 +141,8 @@
    *  the mouse is taken back (the click-through style removed: F3, calibration) flashes white, so that is done there, before
    *  the window is ever over the game. */
   async function warmUp() {
-    await idle();
+    await win.setIgnoreCursorEvents(true);
+    await win.setFocusable(false).catch(() => {});
     const rect = await place();
     await win.setPosition(new PhysicalPosition(-32000, -32000));
     await win.show();
@@ -138,19 +154,14 @@
     void call("fightmap", "refocus", {}, true).catch(() => {});
   }
 
-  /** Nothing drawn, the mouse and the keyboard left to the game. */
-  async function idle() {
-    await win.setIgnoreCursorEvents(true);
-    await win.setFocusable(false).catch(() => {});
-  }
+  /** Escape and clicks no longer watched, the game focused again (its own shortcuts work at once). */
+  const release = () => call("fightmap", "release", {}, true).catch(() => {});
 
-  /** Escape no longer watched and the game focused again first (its own shortcuts work at once), then the view empties (the
-   *  window stays on screen, ready for the next shortcut). */
+  /** The view empties (the window stays on screen, ready for the next shortcut). */
   async function hide() {
     if (!shown) return;
     shown = false;
-    await call("fightmap", "release", {}, true).catch(() => {});
-    await idle();
+    await release();
   }
 
   /** The fight is over: the window goes (the main window makes a new one at the next fight). */
@@ -158,7 +169,7 @@
   async function close() {
     if (closing) return;
     closing = true;
-    if (shown) await call("fightmap", "release", {}, true).catch(() => {});
+    if (shown) await release();
     await win.close();
   }
 
@@ -184,12 +195,9 @@
         if (!shown) return void open(p.view, p.hold).catch(() => void hide());
         if (p.view === view) return void hide();
         [view, hold, sticky] = [p.view, p.hold, false];
-        void win.setFocusable(view !== "portals" || mode === "calibrate").catch(() => {});
       },
       "shortcuts:released": ({ name }: { name: string }) => name === view && letGo(),
     });
-    const key = (e: KeyboardEvent) => e.key === "Escape" && void hide();
-    window.addEventListener("keydown", key);
     (async () => {
       await off.ready;
       live = await call<FightMapState>("fightmap", "state");
@@ -199,7 +207,6 @@
     })().catch(() => void close());
     return () => {
       off();
-      window.removeEventListener("keydown", key);
       void following.then((f) => f());
       void call("fightmap", "watch_escape", { on: false }, true).catch(() => {});
     };
@@ -232,7 +239,6 @@
     cal = c;
     mode = "show";
     calibratedAt = Date.now();
-    if (view === "portals") void win.setFocusable(false).then(() => call("fightmap", "refocus", {}, true)).catch(() => {});
     // the shortcut was let go during the calibration: the view stays until it is pressed again (or Escape...)
     if (hold && !(await call<boolean>("shortcuts", "held", { name: view }).catch(() => true))) hold = false;
   }
@@ -269,7 +275,7 @@
     {/if}
   {:else if mode === "show" && cal && cells}
     {#if view === "los"}
-      <LosLayer {cal} {cells} {live} {mine} {dpr} {win} {hold} bind:sticky />
+      <LosLayer {cal} {cells} {live} {mine} {dpr} {hold} bind:sticky />
     {:else}
       <ClassLayer {cal} {live} {mine} {dpr} {win} {hold} simulate={view === "portals"} />
     {/if}

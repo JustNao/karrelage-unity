@@ -36,7 +36,6 @@
   let polled = $state(false);
 
   onMount(() => {
-    void win.setIgnoreCursorEvents(true);
     let origin: { x: number; y: number } | null = null;
     void win.innerPosition().then((p) => (origin = p));
     // the cursor asked again as soon as it answers (about a frame apart, never two asks at once)
@@ -49,7 +48,6 @@
       if (on) poll = setTimeout(tick, 16);
     };
     void tick();
-    // (the shell takes the mouse back when it needs it: its view emptied, the window keeps letting it through)
     return () => {
       on = false;
       clearTimeout(poll);

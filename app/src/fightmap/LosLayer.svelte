@@ -1,6 +1,4 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import type { Window } from "@tauri-apps/api/window";
   import { call } from "../lib/api";
   import { settings } from "../lib/stores/settings.svelte";
   import { ALL_RANGE, cellAt, MOV, screenDiamond, type Calibration, type FightMapState, type Sight } from "../lib/fightMap";
@@ -8,15 +6,14 @@
   /**
    * Line of sight in the in-game view (FightMapOverlay.svelte): the window takes the mouse, the cells in line of sight of the
    * hovered cell are drawn (the player's character counted as standing there). A click pins the cell (`sticky`: the view stays
-   * once the shortcut is let go): the window lets the mouse through, the player plays, the view follows the fighters' moves.
+   * once the shortcut is let go, and the shell lets the mouse through): the player plays, the view follows the fighters' moves.
    */
-  let { cal, cells, live, mine, dpr, win, hold, sticky = $bindable(false) }: {
+  let { cal, cells, live, mine, dpr, hold, sticky = $bindable(false) }: {
     cal: Calibration;
     cells: number[];
     live: FightMapState;
     mine: Set<number>;
     dpr: number;
-    win: Window;
     hold: boolean;
     sticky?: boolean;
   } = $props();
@@ -25,13 +22,10 @@
   let pinned = $state<number | null>(null);
   let sight = $state.raw<Sight | null>(null);
 
-  onMount(() => void win.setIgnoreCursorEvents(false));
-
   function click() {
     if (pinned !== null || hovered === null) return;
     pinned = hovered;
     sticky = true;
-    void win.setIgnoreCursorEvents(true);
   }
 
   function move(e: MouseEvent) {
