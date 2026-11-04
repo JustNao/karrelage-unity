@@ -675,13 +675,13 @@ impl Combat {
             .collect();
         // the player's confusion; a character not known as theirs (no login seen, no name typed): the only character of the
         // fight that has one (solo fights)
-        let others: Vec<&i64> = f.confusion.iter().filter(|(id, _)| **id > 0).map(|(_, v)| v).collect();
-        let confusion = mine.iter().rev().find_map(|id| f.confusion.get(id)).or(match others[..] {
-            [v] => Some(v),
+        let others: Vec<(&i64, &i64)> = f.confusion.iter().filter(|(id, _)| **id > 0).collect();
+        let confused = mine.iter().rev().find_map(|id| f.confusion.get_key_value(id)).or(match others[..] {
+            [x] => Some(x),
             _ => None,
         });
         json!({"seen": f.seen, "active": f.seen && f.ended.is_none(), "started": f.started, "ended": f.ended, "fighters": list,
-               "poisons": poisons, "confusion": confusion, "round": f.round, "me": mine.last(), "mine": mine,
+               "poisons": poisons, "confusion": confused.map(|x| x.1), "confused": confused.map(|x| x.0), "round": f.round, "me": mine.last(), "mine": mine,
                "characters": characters, "pending": pending})
     }
 }
@@ -1110,6 +1110,7 @@ mod tests {
                     if end.is_none() && !v["ended"].is_null() {
                         *end = Some(v.clone());
                     }
+                    assert_eq!(v["confused"].is_null(), v["confusion"].is_null(), "whose confusion it is");
                     let mut s = sink.lock();
                     if s.last() != Some(&v["confusion"]) {
                         s.push(v["confusion"].clone());

@@ -54,6 +54,8 @@ export interface Fight {
   /** the player's confusion: their spells land this many quarter turns clockwise around them (negative = counter clockwise);
    *  null until a characteristics refresh carried it (lib/bosses.ts) */
   confusion?: number | null;
+  /** the character that confusion is about */
+  confused?: number | null;
   /** current round of the fight (0 = placement, or no new round seen yet) */
   round?: number;
   /** the player's character id (null until a login was seen or a typed name found: no poison is shown) */

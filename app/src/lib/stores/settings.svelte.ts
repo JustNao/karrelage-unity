@@ -26,6 +26,8 @@ const DEFAULTS = {
     overlay: false,
     /** Which way the floating window grows with its content: its top edge stays put ("down") or its bottom edge ("up"). */
     overlayGrow: "down" as "down" | "up",
+    /** Comte Harebourg: the cell a spell lands on in the in-game view (fightmap/SpellCellLayer.svelte). */
+    harebourgCell: true,
   },
   /** Developer mode only (lib/stores/recorder.svelte.ts): which categories of packets are stored locally for analysis. */
   record: {
@@ -38,6 +40,8 @@ const DEFAULTS = {
     los: { mods: 0, vk: 0x72, label: "F3" } as Binding,
     /** Class help over the fight while held (fightmap/ClassLayer.svelte: the Steamer's turrets, the Eliotrope's portals). */
     classHelp: { mods: 0, vk: 0x73, label: "F4" } as Binding,
+    /** Comte Harebourg's spell cell alone while held (none: it comes with the class help). */
+    spellCell: { mods: 0, vk: 0, label: "" } as Binding,
   },
   /** Class help (Combat tab « Aide de classe »), per class. */
   classHelp: {

@@ -9,6 +9,7 @@
   import Banner from "../../lib/components/Banner.svelte";
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
   import Minimap from "./Minimap.svelte";
+  import GeneralOptions from "./GeneralOptions.svelte";
   import ClassHelp from "./ClassHelp.svelte";
 
   let live = $state.raw<FightMapState>({ map: null, fight: false, fighters: [], portals: [] });
@@ -105,6 +106,7 @@
           <span><i class="sq hidden"></i>Hors vue</span>
         </div>
       {/if}
+      <GeneralOptions />
       <ClassHelp />
     </div>
   </SmoothScroll>

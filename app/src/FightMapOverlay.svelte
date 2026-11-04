@@ -11,6 +11,7 @@
   import LosLayer from "./fightmap/LosLayer.svelte";
   import ClassLayer from "./fightmap/ClassLayer.svelte";
   import PortalSimLayer from "./fightmap/PortalSimLayer.svelte";
+  import SpellCellLayer from "./fightmap/SpellCellLayer.svelte";
 
   /**
    * In-game view (fightmap.html): a transparent window over the Dofus window's picture during a fight, made hidden by the main
@@ -254,6 +255,8 @@
       <PortalSimLayer {cal} {live} {mine} {dpr} {pointed} {polled} />
     {:else if view === "exil"}
       <PortalSimLayer {cal} {live} {mine} {dpr} {pointed} {polled} exil />
+    {:else if view === "spellCell"}
+      <SpellCellLayer {cal} {live} {dpr} {pointed} />
     {:else}
       <ClassLayer {cal} {live} {mine} {dpr} {hold} {pointed} />
     {/if}

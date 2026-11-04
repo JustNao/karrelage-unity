@@ -277,8 +277,11 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   clear names, `confusion` in the state) = quarter turns their spells are turned clockwise around them. Comtoise sets it at each
   turn start from life % (>90 +1, 75–90 −1, 60–75 +2, 45–60 −2, 30–45 +3, <30 −3: spell levels' effects 770–775 criteria), each
   melee hit adds 1 (Pendultimatum, 771). A character not known as the player's: the only character of the fight with a
-  confusion is taken (solo). Seen 1 then 2 (twice) on work/capture_harebourg.jsonl; sign / quarter-turn unit not yet
-  confirmed against what the game shows.
+  confusion is taken (solo). Direction checked on work/capture_harebourg.jsonl: cast request's cell (unnamed message: spell + cell) →
+  server's landing cell = `confusion` clockwise quarter turns on 10 casts at 1 and 2 (`maps::turned`; negative values not seen landing).
+  Blue cell in the in-game view (`fightmap/SpellCellLayer.svelte`, call `turned`, `settings.combat.harebourgCell`, Combat tab « Général »):
+  where a spell aimed at the cell under the mouse lands; with the class help, or alone (view / held shortcut `spellCell`, none by default,
+  which then takes it out of the class help).
 - Rounds for the helpers: `round` from FightNewRoundEvent (named by override, `round_number`), per fighter `since` (round first
   seen, placement = 1: rounds count from a boss's appearance, waves included), `played` (last round its FightTurnEvent came)
   and `hit` (element of its last non-neutral damage since its turn started: GameActionFightEvent life_points_lost; the element int is learnt from

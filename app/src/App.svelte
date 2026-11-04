@@ -96,6 +96,7 @@
     startRecorder(); // developer mode: packets stored for analysis
     onShortcut("los", () => void pressFightMapOverlay("los", true).catch(() => {}));
     onShortcut("classHelp", () => void pressFightMapOverlay("classHelp", true).catch(() => {}));
+    onShortcut("spellCell", () => void pressFightMapOverlay("spellCell", true).catch(() => {}));
     onShortcut("portalKey", () => void pressFightMapOverlay("portals", false).catch(() => {})); // the Eliotrope's portal spell key
     onShortcut("exilKey", () => void pressFightMapOverlay("exil", false).catch(() => {})); // ... and Exil spell key
     void on("fightmap:toggle", () => void pressFightMapOverlay("los", false).catch(() => {})); // the fight popup's « LdV » button

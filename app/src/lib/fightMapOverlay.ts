@@ -10,9 +10,9 @@ import type { FightMapState } from "./fightMap";
  * fight's end.
  */
 
-/** What the in-game view shows: the line of sight, the class help (named like their shortcut), or a portal simulated under
- *  the mouse (the Eliotrope's passive keys: the Portail spell, the Exil spell). */
-export type OverlayView = "los" | "classHelp" | "portals" | "exil";
+/** What the in-game view shows: the line of sight, the class help, the Comte Harebourg's spell cell alone (named like their
+ *  shortcut), or a portal simulated under the mouse (the Eliotrope's passive keys: the Portail spell, the Exil spell). */
+export type OverlayView = "los" | "classHelp" | "spellCell" | "portals" | "exil";
 
 /** A view's shortcut was pressed (`hold`: shown while it is held). */
 export interface OverlayPress {

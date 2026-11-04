@@ -20,7 +20,7 @@ use crate::combat::children;
 use crate::kit::{arg_i64, unknown, Role};
 use crate::{Ctx, Interest, Message, Module};
 use anyhow::Result;
-use loutil_data::maps::{sight, MAP_CELLS, MOV};
+use loutil_data::maps::{sight, turned, MAP_CELLS, MOV};
 use loutil_proto::util::{as_i64, int, scalar_ints};
 use loutil_proto::{DynamicMessage, Kind, PbValue, ReflectMessage};
 use parking_lot::Mutex;
@@ -444,6 +444,15 @@ impl Module for FightMap {
                 Ok(Value::Null)
             }
             "cells" => Ok(self.cells(ctx, arg_i64(&args, "map")?).map_or(Value::Null, |c| json!(c))),
+            // where a spell aimed at each cell lands, turned around its caster (Comte Harebourg's confusion): hovering is a lookup
+            "turned" => {
+                let around = arg_i64(&args, "around")?;
+                let quarters = arg_i64(&args, "quarters")? as i32;
+                if !(0..MAP_CELLS as i64).contains(&around) {
+                    return Ok(Value::Null);
+                }
+                Ok(json!((0..MAP_CELLS).map(|c| turned(c, around as usize, quarters)).collect::<Vec<_>>()))
+            }
             "portals" => {
                 let author = arg_i64(&args, "author")?;
                 let start = args["start"].as_i64();

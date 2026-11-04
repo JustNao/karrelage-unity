@@ -66,6 +66,20 @@ pub fn cell_at(x: i32, y: i32) -> Option<usize> {
     ((0..ROWS).contains(&a) && (0..ROW).contains(&b)).then_some((a * 2 * ROW + odd * ROW + b) as usize)
 }
 
+/// `cell` turned around `around` by quarter turns clockwise on screen (negative: counter clockwise), None off the map. A
+/// clockwise quarter turn is (dx, dy) -> (dy, -dx): +x is down-right on screen, +y up-right.
+pub fn turned(cell: usize, around: usize, quarters: i32) -> Option<usize> {
+    let ((x, y), (cx, cy)) = (coords(cell), coords(around));
+    let (dx, dy) = (x - cx, y - cy);
+    let (tx, ty) = match quarters.rem_euclid(4) {
+        0 => (dx, dy),
+        1 => (dy, -dx),
+        2 => (-dx, -dy),
+        _ => (-dy, dx),
+    };
+    cell_at(cx + tx, cy + ty)
+}
+
 pub fn distance(a: usize, b: usize) -> i32 {
     let ((xa, ya), (xb, yb)) = (coords(a), coords(b));
     (xa - xb).abs() + (ya - yb).abs()
@@ -207,6 +221,21 @@ mod tests {
         let (o, a, b) = (cell_at(5, 1).unwrap(), cell_at(7, 1).unwrap(), cell_at(3, 1).unwrap());
         assert_eq!(portal_path(&[o, a, b], o).len(), 3);
         assert_eq!(portal_path(&[o, a, b], o), portal_path(&[o, b, a], o));
+    }
+
+    /// Spells cast under confusion on work/capture_harebourg.jsonl (cast request's cell -> where the server said it landed).
+    #[test]
+    fn spells_turn_as_in_the_game() {
+        for (caster, clicked, confusion, landed) in
+            [(225, 238, 1, 210), (225, 211, 1, 239), (225, 211, 2, 238), (225, 210, 2, 239), (159, 217, 1, 213), (267, 224, 1, 227), (240, 226, 1, 227)]
+        {
+            assert_eq!(turned(clicked, caster, confusion), Some(landed), "{clicked} around {caster} by {confusion}");
+        }
+        assert_eq!(turned(211, 225, -2), Some(238), "counter clockwise: the same half turn");
+        assert_eq!(turned(238, 225, -3), Some(210), "three back = one forward");
+        assert_eq!(turned(225, 225, 1), Some(225), "cast on oneself");
+        assert_eq!(turned(211, 225, 0), Some(211));
+        assert_eq!(turned(13, 0, 2), None, "off the map");
     }
 
     #[test]

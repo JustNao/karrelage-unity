@@ -46,8 +46,9 @@ export const ELEMENTS = ["Neutre", "Terre", "Feu", "Eau", "Air"];
 
 /** Comte Harebourg: the player's spells are turned around them by their confusion (set at each turn start from their life,
  *  +1 quarter turn per melee hit): aiming at the target turned back by as much makes the spell land on it. */
+const HAREBOURG_GIDS = [3416, 8184, 8185];
 const harebourg: Boss = {
-  gids: [3416, 8184, 8185],
+  gids: HAREBOURG_GIDS,
   hints(f) {
     if (f.confusion == null)
       return [
@@ -59,6 +60,14 @@ const harebourg: Boss = {
     return [{ text: AIM_TEXT[aim], aim }];
   },
 };
+
+/** How the player's spells are turned in a Comte Harebourg fight (fightmap/SpellCellLayer.svelte); null when they aren't, or
+ *  while their confusion isn't known. */
+export function spellTurn(f: Fight): { caster: number; quarters: number } | null {
+  if (!f.active || f.confusion == null || f.confused == null) return null;
+  if (!f.fighters.some((x) => HAREBOURG_GIDS.includes(x.gid) && !x.dead)) return null;
+  return { caster: f.confused, quarters: f.confusion };
+}
 
 /** Obsidiantre's Pougnette: explodes at the end of its 5th turn (summoned every 3 turns), killing every character further
  *  than 7 range from it. */

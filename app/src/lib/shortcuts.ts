@@ -29,6 +29,13 @@ export const SHORTCUTS: { name: ShortcutName; title: string; desc: string }[] = 
       "par les portails gagne 2 % de dommages par case parcourue entre eux. Même calibration que la ligne de vue. " +
       "Réglages par classe (dont la simulation de portail) : onglet Combat, « Aide de classe ».",
   },
+  {
+    name: "spellCell",
+    title: "Position des sorts (Comte Harebourg)",
+    desc:
+      "Contre le Comte Harebourg, tant que la touche est enfoncée : en bleu, la case où arrive un sort visant la case sous la souris. " +
+      "Sans touche choisie, la case s'affiche avec l'aide de classe. Réglage : onglet Combat, « Général ».",
+  },
 ];
 
 export const NO_BINDING: Binding = { mods: 0, vk: 0, label: "" };
