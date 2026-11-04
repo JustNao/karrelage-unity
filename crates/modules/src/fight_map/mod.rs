@@ -9,27 +9,25 @@
 //! Moves: MapMovementEvent (last cell of `cells`) and GameActionFightEvent slide (its two unnamed cells: the end is the one
 //! that is not the target's cell), teleport_on_same_map, exchange_positions (caster and target swap), carry / throw / drop
 //! character, death (its only int).
-//! Eliotrope portals: GameActionFightEvent mark_cells of action 1181 (« Pose un portail »): FightMark {author_id, cells:
-//! [MarkedCell]} whose other ints are unnamed: the cell = the MarkedCell's int that the mark repeats (its impact cell), the
-//! mark id = the int field that unmark_cells / activate_glyph_trap `mark_id` point at (learnt: a mark id found in a single
-//! field of a single mark votes for it, every mark is followed for that). Active = any of its bools true (one is unnamed).
-//! Four per caster, the oldest goes on a fifth. A portal is closed while a fighter stands on it or once deactivated in the
-//! current turn. Verified on work/capture_poison.jsonl (mark ids 1 to 4, the casts' `portals_id` order).
+//! Marks on the ground and the Eliotrope's portals: `portals`.
 //!
 //! In-game overlay (FightMapOverlay.svelte, opened by a shortcut): `window` = the Dofus window's client area to cover,
 //! `fightmap:turn` {id} at each turn start, `fightmap:escape` / `fightmap:click` when Escape / a mouse button is pressed while
 //! `watch_escape` is on.
+mod portals;
+
 use crate::combat::children;
 use crate::kit::{arg_i64, unknown, Role};
 use crate::{Ctx, Interest, Message, Module};
 use anyhow::Result;
-use loutil_data::maps::{cell_at, coords, distance, portal_path, sight, MAP_CELLS, MOV};
-use loutil_proto::util::{as_i64, int, messages, scalar_ints};
+use loutil_data::maps::{sight, MAP_CELLS, MOV};
+use loutil_proto::util::{as_i64, int, scalar_ints};
 use loutil_proto::{DynamicMessage, Kind, PbValue, ReflectMessage};
 use parking_lot::Mutex;
+use portals::{simulate, Marks, Portal, Sim};
 use serde::Serialize;
 use serde_json::{json, Value};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -49,10 +47,6 @@ const FIGHTER: &str = "FightFighterInformation";
 const SPAWN: &str = "SpawnInformation";
 /// GameActionFightEvent summons by context (script-named).
 const SUMMON: &str = "SummonContextInformation";
-/// GameActionFightEvent action (= effect id) of a mark that is an Eliotrope portal: « Pose un portail ».
-const PORTAL_ACTION: i64 = 1181;
-/// Portals an Eliotrope can have: the oldest goes when a fifth is put down.
-const MAX_PORTALS: usize = 4;
 
 #[derive(Clone, Serialize)]
 struct Fighter {
@@ -72,37 +66,15 @@ struct Fighter {
     summoner: i64,
 }
 
-/// A mark on the ground (glyph, trap, portal...): every one is followed to learn which int is the mark id.
-struct Mark {
-    /// FightMark's unnamed ints (field, value): the mark id among them.
-    ints: Vec<(String, i64)>,
-    cell: i64,
-    author: i64,
-    portal: bool,
-    active: bool,
-    /// Deactivated during this turn (`State::turn`): closed until the next turn.
-    off_turn: Option<u32>,
-}
-
-#[derive(Serialize)]
-struct Portal {
-    cell: i64,
-    author: i64,
-    open: bool,
-}
-
 #[derive(Default)]
 struct State {
     map: Option<i64>,
     fight_map: Option<i64>,
     fight: bool,
     fighters: BTreeMap<i64, Fighter>,
-    /// Marks in the order they were put down.
-    marks: Vec<Mark>,
+    marks: Marks,
     /// Turns started in this fight.
     turn: u32,
-    /// Votes for the FightMark field holding the mark id (kept for the session).
-    id_votes: HashMap<String, u32>,
 }
 
 impl State {
@@ -110,44 +82,18 @@ impl State {
         self.fight_map.filter(|_| self.fight).or(self.map)
     }
 
-    /// Portals in the order they were put down.
+    /// The cells fighters stand on.
+    fn taken(&self) -> HashSet<i64> {
+        self.fighters.values().filter(|f| f.alive && !f.carried).map(|f| f.cell).collect()
+    }
+
     fn portals(&self) -> Vec<Portal> {
-        let taken: HashSet<i64> = self.fighters.values().filter(|f| f.alive && !f.carried).map(|f| f.cell).collect();
-        let open = |m: &Mark| !taken.contains(&m.cell) && m.off_turn != Some(self.turn);
-        self.marks.iter().filter(|m| m.portal).map(|m| Portal { cell: m.cell, author: m.author, open: open(m) }).collect()
+        self.marks.portals(&self.taken(), self.turn)
     }
 
     fn json(&self) -> Value {
         json!({"map": self.map(), "fight": self.fight, "fighters": self.fighters.values().collect::<Vec<_>>(), "portals": self.portals()})
     }
-
-    /// The mark an unmark / activation points at: by the learnt id field, else the only mark holding that int.
-    fn mark(&mut self, id: i64) -> Option<usize> {
-        let holds = |m: &Mark, f: &str| m.ints.iter().any(|(g, v)| g == f && *v == id);
-        // a value in a single field of a single mark: that field holds the ids
-        let fields: HashSet<&String> = self.marks.iter().flat_map(|m| m.ints.iter().filter(|(_, v)| *v == id).map(|(f, _)| f)).collect();
-        let unique: Vec<&String> = fields.into_iter().filter(|f| self.marks.iter().filter(|m| holds(m, f)).count() == 1).collect();
-        if let [f] = unique[..] {
-            *self.id_votes.entry(f.clone()).or_default() += 1;
-        }
-        match self.id_votes.iter().max_by(|a, b| a.1.cmp(b.1).then(b.0.cmp(a.0))) {
-            Some((f, _)) => self.marks.iter().position(|m| holds(m, f)),
-            None => {
-                let holding: Vec<usize> = (0..self.marks.len()).filter(|&i| self.marks[i].ints.iter().any(|(_, v)| *v == id)).collect();
-                (holding.len() == 1).then(|| holding[0])
-            }
-        }
-    }
-}
-
-/// The ints of `m` that are set (unset ones read 0).
-fn set_ints(m: &DynamicMessage) -> Vec<(String, i64)> {
-    scalar_ints(m).into_iter().filter(|(f, _)| m.has_field_by_name(f)).collect()
-}
-
-/// Whether any bool field of `m` is true.
-fn any_true(m: &DynamicMessage) -> bool {
-    m.descriptor().fields().any(|f| matches!(f.kind(), Kind::Bool) && !f.is_list() && matches!(m.get_field(&f).as_ref(), PbValue::Bool(true)))
 }
 
 #[derive(Default)]
@@ -283,63 +229,6 @@ fn fighters(ctx: &Ctx, m: &DynamicMessage, outer: Option<&Outer>, out: &mut Vec<
     }
 }
 
-/// Where a spell cast from `caster` into the portal `entrance` lands: it goes through the network (`open` portals) and comes
-/// out of the exit with the offset it went in with: exit + (entrance - caster). Verified on work/capture_poison.jsonl (five
-/// casts of different offsets, a Portail among them). None when the network leads nowhere or the cell is off the map.
-fn redirect(open: &[usize], entrance: usize, caster: usize) -> Option<(Vec<usize>, usize)> {
-    let path = portal_path(open, entrance);
-    let exit = *path.last().filter(|_| path.len() > 1)?;
-    let ((ex, ey), (nx, ny), (cx, cy)) = (coords(exit), coords(entrance), coords(caster));
-    Some((path, cell_at(ex + nx - cx, ey + ny - cy)?))
-}
-
-/// The Portail spell simulated on a cell.
-#[derive(Serialize)]
-struct Sim {
-    /// The new portal.
-    added: Option<i64>,
-    /// The oldest portal, gone because of the new one (there were four).
-    dropped: Option<i64>,
-    /// Cast into one of the portals: the new portal comes out past the network's exit, if that cell is free.
-    via: bool,
-    /// The new network's way from the new portal (what a spell cast into it would take), or from the chosen start.
-    path: Vec<usize>,
-    /// Cells between the path's portals.
-    distance: i32,
-}
-
-/// The Portail spell cast on `add` in a caster's network (`net`: (cell, open) from the oldest): on a `free` cell, a new portal
-/// there; on one of the open portals, the spell goes through the network and the new portal lands past the exit (`redirect`,
-/// needs the `caster`'s cell). `start`: the portal the way shown starts from instead of the new one (none when that one is gone
-/// or closed; with no new portal, the way from it as the network is).
-fn simulate(net: &[(i64, bool)], add: Option<i64>, free: &dyn Fn(i64) -> bool, caster: Option<i64>, start: Option<i64>) -> Sim {
-    let open_cells = |net: &[(i64, bool)]| net.iter().filter(|(_, o)| *o).map(|(c, _)| *c as usize).collect::<Vec<_>>();
-    let mut net = net.to_vec();
-    let open = open_cells(&net);
-    let into = add.filter(|c| open.contains(&(*c as usize)));
-    let landing = match (into, caster) {
-        (Some(e), Some(from)) => redirect(&open, e as usize, from as usize).map(|(_, at)| at as i64),
-        (Some(_), None) => None,
-        _ => add,
-    };
-    let via = into.is_some() && landing.is_some();
-    let (mut added, mut dropped) = (None, None);
-    if let Some(c) = landing.filter(|c| free(*c) && !net.iter().any(|(p, _)| p == c)) {
-        if net.len() >= MAX_PORTALS {
-            dropped = Some(net.remove(0).0);
-        }
-        net.push((c, true));
-        added = Some(c);
-    }
-    let entrance = match start {
-        Some(s) => net.iter().any(|(p, o)| *p == s && *o).then_some(s),
-        None => added,
-    };
-    let path = entrance.map(|e| portal_path(&open_cells(&net), e as usize)).unwrap_or_default();
-    let distance = path.windows(2).map(|w| distance(w[0], w[1])).sum();
-    Sim { added, dropped, via, path, distance }
-}
-
 impl FightMap {
     pub fn new() -> Self {
         Self::default()
@@ -347,43 +236,8 @@ impl FightMap {
 
     /// Applies a GameActionFightEvent that moves, kills or summons fighters; true when something changed.
     fn action(ctx: &Ctx, d: &DynamicMessage, s: &mut State) -> bool {
-        if let Some(x) = named_child(ctx, d, "mark_cells") {
-            let Some(mark) = named_child(ctx, x, "mark") else { return false };
-            let author = named_int(ctx, mark, "author_id").unwrap_or(0);
-            let author_field = field(ctx, mark, "author_id");
-            let ints: Vec<(String, i64)> = set_ints(mark).into_iter().filter(|(f, _)| Some(f) != author_field.as_ref()).collect();
-            // its cell: the MarkedCell's int (a cell) that the mark repeats as its impact cell
-            let first = field(ctx, mark, "cells").and_then(|f| messages(mark, &f).into_iter().next());
-            let cells: Vec<i64> =
-                first.map(|c| set_ints(&c).into_iter().map(|(_, v)| v).filter(|v| (0..MAP_CELLS as i64).contains(v)).collect()).unwrap_or_default();
-            let Some(cell) = cells.iter().copied().find(|c| ints.iter().any(|(_, v)| v == c)).or(cells.first().copied()) else { return false };
-            let portal = named_int(ctx, d, "action_id") == Some(PORTAL_ACTION);
-            if portal {
-                let theirs: Vec<usize> = (0..s.marks.len()).filter(|&i| s.marks[i].portal && s.marks[i].author == author).collect();
-                if theirs.len() >= MAX_PORTALS {
-                    s.marks.remove(theirs[0]);
-                }
-            }
-            s.marks.push(Mark { ints, cell, author, portal, active: any_true(mark), off_turn: None });
-            return portal;
-        }
-        if let Some(x) = named_child(ctx, d, "unmark_cells") {
-            let Some(i) = named_int(ctx, x, "mark_id").and_then(|id| s.mark(id)) else { return false };
-            return s.marks.remove(i).portal;
-        }
-        if let Some(x) = named_child(ctx, d, "activate_glyph_trap") {
-            let Some(i) = named_int(ctx, x, "mark_id").and_then(|id| s.mark(id)) else { return false };
-            let (active, turn) = (any_true(x), s.turn);
-            let m = &mut s.marks[i];
-            m.off_turn = if m.active && !active {
-                Some(turn)
-            } else if active {
-                None
-            } else {
-                m.off_turn
-            };
-            m.active = active;
-            return m.portal;
+        if let Some(changed) = s.marks.action(ctx, d, s.turn) {
+            return changed;
         }
         let cell_of = |s: &State, id: i64| s.fighters.get(&id).map(|f| f.cell);
         let set = |s: &mut State, id: i64, f: &dyn Fn(&mut Fighter)| s.fighters.get_mut(&id).map(f).is_some();
@@ -467,7 +321,7 @@ impl Module for FightMap {
             let mut s = self.state.lock();
             s.turn += 1;
             let turn = s.turn;
-            if s.marks.iter().any(|m| m.portal && m.off_turn == Some(turn - 1)) {
+            if s.marks.off_in(turn - 1) {
                 ctx.emit("fightmap", "state", s.json());
             }
             return;
@@ -585,7 +439,7 @@ impl Module for FightMap {
                 let (map, net, taken, caster) = {
                     let s = self.state.lock();
                     let net: Vec<(i64, bool)> = s.portals().into_iter().filter(|p| p.author == author).map(|p| (p.cell, p.open)).collect();
-                    let taken: HashSet<i64> = s.fighters.values().filter(|f| f.alive && !f.carried).map(|f| f.cell).collect();
+                    let taken = s.taken();
                     let caster = s.fighters.get(&author).map(|f| f.cell).filter(|c| (0..MAP_CELLS as i64).contains(c));
                     (s.map(), net, taken, caster)
                 };
@@ -623,7 +477,7 @@ mod tests {
     use super::*;
     use crate::kit::testkit;
     use loutil_core::RawMessage;
-    use loutil_data::maps::MOV;
+    use loutil_data::maps::portal_path;
 
     /// Recorded fights (pipeline/sniff.py captures, local only: they hold the players' ids) replayed through the hub: the
     /// fight map is found in the pack and every living fighter, after every message, stands on a walkable cell of it; summons
@@ -695,30 +549,6 @@ mod tests {
             assert!(checked > 0 && moves > 0, "{name}: fighters followed");
             assert!(turret || name != "capture_harebourg", "{name}: the player's Harponneuse, with its gid and summoner");
         }
-    }
-
-    /// The casts of work/capture_poison.jsonl: out of the exit with the offset they went in with.
-    #[test]
-    fn spells_come_out_past_the_exit() {
-        assert_eq!(redirect(&[188, 332, 265], 332, 264), Some((vec![332, 265, 188], 257)), "the Portail cast");
-        assert_eq!(redirect(&[188, 332, 265], 332, 333).map(|r| r.1), Some(187));
-        assert_eq!(redirect(&[188, 332, 265], 332, 292).map(|r| r.1), Some(229));
-        assert_eq!(redirect(&[188, 332, 265, 257], 332, 264), Some((vec![332, 265, 188, 257], 325)), "the game's way from portal 2");
-        assert_eq!(redirect(&[188], 188, 264), None, "a lone portal leads nowhere");
-        // the oldest goes when the redirected portal is a fifth, and the way shown is the new network's
-        let free = |c: i64| c != 325;
-        let n = simulate(&[(188, true), (332, true), (265, true), (257, true)], Some(188), &free, Some(160), None);
-        let (_, at) = redirect(&[188, 332, 265, 257], 188, 160).expect("a landing cell");
-        assert_eq!(n.added, Some(at as i64));
-        assert_eq!(n.path, portal_path(&[332, 265, 257, at], at), "the new network's way from the new portal");
-        assert!(n.via && n.dropped == Some(188));
-        // from a chosen portal: the new network's way from it, none once it is the one that goes
-        let net = [(188, true), (332, true), (265, true)];
-        let n = simulate(&net, Some(257), &free, None, Some(332));
-        assert_eq!(n.path, [332, 265, 188, 257], "the capture's way from portal 2 once the 4th is down");
-        assert_eq!(simulate(&net, None, &free, None, Some(332)).path, [332, 265, 188], "no new portal: the way as it is");
-        let four = [(188, true), (332, true), (265, true), (257, true)];
-        assert!(simulate(&four, Some(100), &free, None, Some(188)).path.is_empty(), "the start goes with the fifth");
     }
 
     /// work/capture_poison.jsonl: an Eliotrope puts down portals on 188, 332, 265 then 257 (mark ids 1 to 4, the first one
