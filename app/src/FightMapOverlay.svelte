@@ -3,18 +3,18 @@
   import { cursorPosition, getCurrentWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
   import { emitTo } from "@tauri-apps/api/event";
   import { call, listenAll } from "./lib/api";
-  import { readJSON, writeJSON } from "./lib/persist.svelte";
+  import { readJSON } from "./lib/persist.svelte";
   import { fight, followFight } from "./lib/stores/combat.svelte";
-  import { CALIBRATION_KEY, calibrate, cellAt, centre, type Calibration, type FightMapState, type MapFighter } from "./lib/fightMap";
+  import { CALIBRATION_KEY, cellAt, type Calibration, type FightMapState } from "./lib/fightMap";
   import type { OverlayPress, OverlayView } from "./lib/fightMapOverlay";
+  import CalibrationView from "./fightmap/Calibration.svelte";
   import LosLayer from "./fightmap/LosLayer.svelte";
   import ClassLayer from "./fightmap/ClassLayer.svelte";
 
   /**
    * In-game view (fightmap.html): a transparent window over the Dofus window's picture during a fight, made hidden by the main
    * window when the fight starts (lib/fightMapOverlay.ts), a view drawn in it by a shortcut (`fightmap:press` → `open`).
-   * - No calibration for this window size: the player clicks the centres of the two fighters named (lib/fightMap.ts
-   *   `calibrate`), and it goes on.
+   * - No calibration for this window size: fightmap/Calibration.svelte first, and it goes on.
    * - Then the view's layer: line of sight from the hovered cell (fightmap/LosLayer.svelte), or the class help
    *   (fightmap/ClassLayer.svelte; view `portals`: an Eliotrope portal simulated on the cell under the mouse, opened by the
    *   game's portal spell key, closed by a click too: the spell is cast, or cancelled).
@@ -24,6 +24,7 @@
    *   flashes white when a hidden window is shown again); only the fight's end closes it.
    * - The mouse and the keyboard stay the game's unless the view needs them (`takesInput`).
    */
+
   /** The cursor is asked for again this long after each answer (about a frame, never two asks at once). */
   const CURSOR_POLL_MS = 16;
 
@@ -39,50 +40,21 @@
   let sticky = $state(false);
   let live = $state.raw<FightMapState>({ map: null, fight: true, fighters: [] });
   let cells = $state.raw<number[] | null>(null);
+  /** for this size of the game's window; none: the calibration comes first */
   let cal = $state.raw<Calibration | null>(null);
-  let size = { width: 0, height: 0 };
-  let mode = $state<"loading" | "calibrate" | "show">("loading");
   /** the Dofus window's client area the view covers (physical px), as last applied to this window */
-  let placed: { x: number; y: number; width: number; height: number } | null = null;
-  /** calibration clicks so far (physical px of the client area) */
-  let clicks = $state.raw<[number, number][]>([]);
-  let failed = $state(false);
+  let placed = $state.raw<{ x: number; y: number; width: number; height: number } | null>(null);
   /** when the calibration ended */
   let calibratedAt = 0;
   /** `open` is under way (the window placed, the focus set...): a close asked meanwhile waits for it (`closeAsked`: "any" =
    *  Escape, the shortcut again, the end of the turn; "click" = a click, which only closes the portal simulation) */
   let opening = false;
   let closeAsked: "any" | "click" | null = null;
-  /** the mouse during the calibration (CSS px): a cross about a cell wide is drawn there */
-  let pointer = $state<[number, number] | null>(null);
 
   const mine = $derived(new Set(fight.mine ?? []));
-  const names = $derived.by(() => {
-    const m = new Map<number, string>();
-    for (const f of fight.fighters) m.set(f.actor, f.name);
-    for (const c of fight.characters ?? []) if (c.name) m.set(c.id, c.name);
-    return m;
-  });
-  const alive = $derived(live.fighters.filter((f) => f.alive && !f.carried && f.cell >= 0));
-
-  /** The two fighters to click: the two farthest apart on both axes (the calibration is more precise the farther apart they
-   *  are), the player's character first when it is one of them. */
-  const targets = $derived.by((): [MapFighter, MapFighter] | null => {
-    const at = alive.map((f) => [f, ...centre(f.cell, 1)] as const);
-    let best: [MapFighter, MapFighter] | null = null, most = -1;
-    for (let i = 0; i < at.length; i++)
-      for (let j = i + 1; j < at.length; j++) {
-        const [a, ax, ay] = at[i], [b, bx, by] = at[j];
-        const spread = Math.min(Math.abs(bx - ax), 2 * Math.abs(by - ay));
-        if (spread > most) [best, most] = [mine.has(b.id) && !mine.has(a.id) ? [b, a] : [a, b], spread];
-      }
-    return best;
-  });
-  const nameOf = (f: MapFighter) => names.get(f.id) ?? (mine.has(f.id) ? "votre personnage" : f.kind === "player" ? "ce personnage" : "ce monstre");
-
   /** The window takes the mouse and the focus only for what needs a click on it: the calibration, the line of sight until a
    *  cell is pinned. Everything else lets all through to the game (it keeps the Portail spell selected, its shortcuts...). */
-  const takesInput = $derived(shown && (mode === "calibrate" || (view === "los" && !sticky)));
+  const takesInput = $derived(shown && (!cal || (view === "los" && !sticky)));
 
   // Applied only when it changes, in order: each call changes a window style, which is what can flash (click-through is the
   // WS_EX_LAYERED style, its first removal in the window's life flashes white: `warmUp`).
@@ -107,7 +79,7 @@
   /** the cursor was read once: `pointed` is where it was when the view opened */
   let polled = $state(false);
   $effect(() => {
-    if (!shown || mode !== "show" || view === "los" || !cal || !placed) return;
+    if (!shown || !cal || view === "los" || !placed) return;
     const [grid, origin] = [cal, placed];
     let on = true;
     let timer = 0;
@@ -117,7 +89,6 @@
       [pointed, polled] = [p && cellAt(grid, p.x - origin.x, p.y - origin.y), true];
       timer = setTimeout(tick, CURSOR_POLL_MS);
     };
-    polled = false;
     void tick();
     return () => {
       on = false;
@@ -125,19 +96,20 @@
     };
   });
 
-  /** Shows `v` over the game: the window placed on the Dofus window (it may have moved), its calibration checked. */
-  async function open(v: OverlayView, h: boolean) {
-    [view, hold, sticky, clicks, failed, pointer] = [v, h, false, [], false, null];
+  /** The view to draw; the mouse's cell is read again for it. */
+  const setView = (p: OverlayPress) => void ([view, hold, sticky, polled] = [p.view, p.hold, false, false]);
+
+  /** Shows a view over the game: the window placed on the Dofus window (it may have moved), its calibration checked. */
+  async function open(p: OverlayPress) {
+    setView(p);
     [opening, closeAsked] = [true, null];
     // Escape and clicks watched from now on: one while the view is still opening closes it once it is open
     void call("fightmap", "watch_escape", { on: true }).catch(() => {});
     try {
       const rect = await place();
       if (!rect || !live.fight || !cells) return void (await release());
-      size = { width: rect.width, height: rect.height };
       const saved = readJSON<Calibration | null>(CALIBRATION_KEY, null);
       cal = saved && saved.width === rect.width && saved.height === rect.height ? saved : null;
-      mode = cal ? "show" : "calibrate";
       shown = true;
     } finally {
       opening = false;
@@ -148,7 +120,7 @@
   }
 
   /** A click (cast or cancelled spell) closes the portal simulation opened by its key, not during its calibration. */
-  const closesOnClick = () => view === "portals" && !hold && mode === "show";
+  const closesOnClick = () => view === "portals" && !hold && cal !== null;
   /** Closes the view, or once it is open when it is still opening. */
   const closeSoon = (by: "any" | "click") => (opening ? void (closeAsked = closeAsked === "any" ? "any" : by) : void hide());
 
@@ -200,7 +172,7 @@
   }
 
   /** Shown while held: hides once the shortcut is up, unless something keeps it (calibration, pinned cell). */
-  const letGo = () => hold && !sticky && mode === "show" && void hide();
+  const letGo = () => hold && !sticky && cal && void hide();
 
   onMount(() => {
     const following = followFight();
@@ -213,14 +185,17 @@
       "fightmap:click": () => (opening || (shown && closesOnClick() && Date.now() - calibratedAt > 500)) && closeSoon("click"),
       "fightmap:turn": ({ id }: { id: number }) => {
         if (mine.has(id)) mineTurn = true;
-        else if (mineTurn) closeSoon("any");
+        else if (mineTurn) {
+          mineTurn = false;
+          closeSoon("any");
+        }
       },
       "fightmap:press": (p: OverlayPress) => {
         // pressed again while opening: closed once open (another view's shortcut meanwhile is left out)
         if (opening) return void (p.view === view && closeSoon("any"));
-        if (!shown) return void open(p.view, p.hold).catch(() => void hide());
+        if (!shown) return void open(p).catch(() => void hide());
         if (p.view === view) return void hide();
-        [view, hold, sticky] = [p.view, p.hold, false];
+        setView(p);
       },
       "shortcuts:released": ({ name }: { name: string }) => name === view && letGo(),
     });
@@ -253,53 +228,20 @@
     call<number[] | null>("fightmap", "cells", { map }, true).then((c) => map === loadedMap && (cells = c)).catch(() => {});
   });
 
-  async function click(e: MouseEvent) {
-    if (mode !== "calibrate" || !targets) return;
-    const next = [...clicks, [e.clientX * dpr, e.clientY * dpr] as [number, number]];
-    if (next.length < 2) return void (clicks = next);
-    const c = calibrate(targets[0].cell, next[0], targets[1].cell, next[1], size.width, size.height);
-    clicks = [];
-    failed = !c;
-    if (!c) return;
-    writeJSON(CALIBRATION_KEY, c);
+  async function calibrated(c: Calibration) {
     cal = c;
-    mode = "show";
     calibratedAt = Date.now();
     // the shortcut was let go during the calibration: the view stays until it is pressed again (or Escape...)
     if (hold && !(await call<boolean>("shortcuts", "held", { name: view }).catch(() => true))) hold = false;
   }
-
-  /** a cell's width (CSS px) guessed before the calibration: the map is 14.5 cells wide and about 10 high, the game's bars
-   *  take some of the height */
-  const crossW = Math.min(window.innerWidth / 15, window.innerHeight / 12);
 </script>
 
-<!-- hidden: nothing drawn, the layers (their mouse polling) stopped -->
+<!-- no view: nothing drawn, the layers stopped -->
 {#if shown}
-<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-<div class="overlay" class:calibrating={mode === "calibrate"} onclick={click} onmousemove={(e) => mode === "calibrate" && (pointer = [e.clientX, e.clientY])}>
-  {#if mode === "calibrate"}
-    <div class="popup">
-      <b>Calibration de la vue en jeu</b>
-      {#if !targets}
-        <p>Il faut au moins deux combattants placés. Échap pour fermer.</p>
-      {:else}
-        <p>
-          {#if clicks.length === 0}1/2 : cliquez au centre de la case de <b>{nameOf(targets[0])}</b>.
-          {:else}2/2 : cliquez au centre de la case de <b>{nameOf(targets[1])}</b>.{/if}
-        </p>
-        {#if failed}<p class="bad">Ces deux clics ne collent pas à la grille : recommencez.</p>{/if}
-        <p class="mut">Une seule fois par taille de fenêtre du jeu. Échap pour annuler.</p>
-      {/if}
-    </div>
-    {#if pointer}
-      {@const [x, y] = pointer}
-      <svg width="100%" height="100%" class="cross">
-        <path d="M{x - crossW / 2} {y}H{x + crossW / 2}M{x} {y - crossW / 4}V{y + crossW / 4}" class="under" />
-        <path d="M{x - crossW / 2} {y}H{x + crossW / 2}M{x} {y - crossW / 4}V{y + crossW / 4}" />
-      </svg>
-    {/if}
-  {:else if mode === "show" && cal && cells}
+<div class="overlay">
+  {#if !cal}
+    {#if placed}<CalibrationView {live} {mine} {dpr} width={placed.width} height={placed.height} oncalibrated={calibrated} />{/if}
+  {:else if cells}
     {#if view === "los"}
       <LosLayer {cal} {cells} {live} {mine} {dpr} {hold} bind:sticky />
     {:else}
@@ -313,13 +255,6 @@
   :global(html), :global(body) { background: transparent !important; }
   /* nearly transparent rather than transparent: the window must still get the mouse while it is not let through */
   .overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.01); font-family: var(--font); font-size: 13px; cursor: crosshair; }
-  .overlay.calibrating { background: rgba(0, 0, 0, 0.18); cursor: none; }
   .overlay :global(svg) { position: absolute; inset: 0; pointer-events: none; }
-  .cross path { stroke: #fff; stroke-width: 1; }
-  .cross path.under { stroke: rgba(0, 0, 0, 0.8); stroke-width: 3; }
-  .popup, .overlay :global(.pill) { position: absolute; left: 50%; transform: translateX(-50%); background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4); pointer-events: none; }
-  .popup { top: 18%; padding: 12px 16px; max-width: 420px; text-align: center; }
-  .popup p { margin: 8px 0 0; }
-  .overlay :global(.pill) { top: 10px; padding: 4px 12px; font-size: 12px; opacity: 0.9; white-space: nowrap; }
-  .bad { color: var(--bad); }
+  .overlay :global(.pill) { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); padding: 4px 12px; font-size: 12px; opacity: 0.9; white-space: nowrap; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4); pointer-events: none; }
 </style>
