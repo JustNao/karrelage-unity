@@ -29,7 +29,7 @@
     <div>Touche dédiée</div>
     <div class="mut">
       {#if key.vk}La case s'affiche tant que <b>{key.label}</b> est enfoncée, et plus avec l'aide de classe.
-      {:else}Aucune : la case s'affiche avec l'aide de classe{#if help.vk} (<b>{help.label}</b>){/if}.{/if}
+      {:else}Aucune : la case s'affiche avec l'aide de classe{#if help.vk}{" "}(<b>{help.label}</b>){/if}.{/if}
     </div>
     {#if clash}<Banner tone="warn" inset>Même touche que « {clash.title} » : un seul des deux raccourcis fonctionnera.</Banner>{/if}
   </div>
