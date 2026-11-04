@@ -102,8 +102,9 @@ pub struct FightMap {
     /// The cells of the last map asked for (hovering asks for the line of sight again and again).
     cells: Mutex<Option<(i64, Option<Vec<u8>>)>>,
     turn: Role<TurnBindings>,
-    /// Escape watched (the overlay is open): its polling thread runs while this is true.
-    escape: Arc<AtomicBool>,
+    /// Escape and clicks watched (a view is open): the switch of the polling thread, its own (one restarted at once leaves no
+    /// second thread running).
+    watching: Mutex<Option<Arc<AtomicBool>>>,
     /// The Dofus window the in-game view covers: it gets the focus back when the view closes.
     covered: Mutex<Option<isize>>,
 }
@@ -283,6 +284,12 @@ impl FightMap {
         false
     }
 
+    fn stop_watching(&self) {
+        if let Some(on) = self.watching.lock().take() {
+            on.store(false, Ordering::Relaxed);
+        }
+    }
+
     /// The Dofus window the view covers gets the focus back if it lost it.
     fn refocus(&self) -> bool {
         !crate::sys::game_focused() && crate::sys::focus_game(*self.covered.lock())
@@ -415,20 +422,24 @@ impl Module for FightMap {
                 Ok(json!({"x": w.x, "y": w.y, "width": w.width, "height": w.height}))
             }
             "release" => {
-                self.escape.store(false, Ordering::Relaxed);
+                self.stop_watching();
                 Ok(json!(self.refocus()))
             }
             "refocus" => Ok(json!(self.refocus())),
             "watch_escape" => {
-                let on = args["on"].as_bool().unwrap_or(false);
-                if on && !self.escape.swap(true, Ordering::Relaxed) {
+                if !args["on"].as_bool().unwrap_or(false) {
+                    self.stop_watching();
+                    return Ok(Value::Null);
+                }
+                let mut watching = self.watching.lock();
+                if watching.is_none() {
+                    let on = Arc::new(AtomicBool::new(true));
+                    *watching = Some(on.clone());
                     let emit = ctx.emitter();
                     let vks = vec![crate::sys::VK_ESCAPE, crate::sys::VK_LBUTTON, crate::sys::VK_RBUTTON];
-                    crate::sys::watch_presses(self.escape.clone(), vks, move |vk| {
+                    crate::sys::watch_presses(on, vks, move |vk| {
                         emit(if vk == crate::sys::VK_ESCAPE { "fightmap:escape" } else { "fightmap:click" }, Value::Null)
                     });
-                } else if !on {
-                    self.escape.store(false, Ordering::Relaxed);
                 }
                 Ok(Value::Null)
             }
@@ -599,7 +610,7 @@ mod tests {
                 assert!(all["base"]["path"].as_array().unwrap().is_empty() && all["base"]["added"].is_null());
                 // a fifth portal: the oldest (188) goes
                 let sims = all["sims"].as_object().unwrap();
-                let (_, n) = sims.iter().find(|(c, n)| n["added"].to_string() == **c && n["via"] == false).expect("a free cell for a fifth portal");
+                let (_, n) = sims.iter().find(|(c, n)| c.parse().ok() == n["added"].as_i64() && n["via"] == false).expect("a free cell for a fifth portal");
                 assert_eq!(n["dropped"], json!(188));
                 assert_eq!(n["path"].as_array().unwrap().len(), 4, "through every open portal");
                 return;

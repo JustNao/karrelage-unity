@@ -28,6 +28,12 @@
 
   /** The cursor is asked for again this long after each answer (about a frame, never two asks at once). */
   const CURSOR_POLL_MS = 16;
+  /** The calibration's last click comes back from the click watcher too: clicks this soon after it don't close the view. */
+  const CALIBRATION_CLICK_GRACE_MS = 500;
+  /** Long enough for the warming window to have painted without the click-through style. */
+  const WARMUP_PAINT_MS = 150;
+  /** Screen coordinate surely off every monitor (where Windows parks minimized windows). */
+  const OFF_SCREEN = -32000;
 
   const win = getCurrentWindow();
   const dpr = window.devicePixelRatio || 1;
@@ -143,10 +149,10 @@
     await win.setIgnoreCursorEvents(true);
     await win.setFocusable(false).catch(() => {});
     const rect = await place();
-    await win.setPosition(new PhysicalPosition(-32000, -32000));
+    await win.setPosition(new PhysicalPosition(OFF_SCREEN, OFF_SCREEN));
     await win.show();
     await win.setIgnoreCursorEvents(false);
-    await new Promise((r) => setTimeout(r, 150)); // painted at least once without the style
+    await new Promise((r) => setTimeout(r, WARMUP_PAINT_MS));
     await win.setIgnoreCursorEvents(true);
     // (no Dofus window found: left off the screen, `open` places it)
     if (rect) await win.setPosition(new PhysicalPosition(rect.x, rect.y));
@@ -182,8 +188,7 @@
     const off = listenAll({
       "fightmap:state": (s: FightMapState) => (live = s),
       "fightmap:escape": () => closeSoon("any"),
-      // (the calibration's last click comes back from the click watcher too: not that one)
-      "fightmap:click": () => (opening || (shown && closesOnClick() && Date.now() - calibratedAt > 500)) && closeSoon("click"),
+      "fightmap:click": () => (opening || (shown && closesOnClick() && Date.now() - calibratedAt > CALIBRATION_CLICK_GRACE_MS)) && closeSoon("click"),
       "fightmap:turn": ({ id }: { id: number }) => {
         if (mine.has(id)) mineTurn = true;
         else if (mineTurn) {

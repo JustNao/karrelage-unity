@@ -275,7 +275,7 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   end of its 5th turn), Nileza (odd rounds ≥ 3), Klime (glyph from round 2), Kimbo (last element → glyph parity), Dantinéa
   (Grokillages at 6, 11, 16…), Phossile (Abîme at 5, 9, 13…), from dofuspourlesnoobs; only rounds / elements checked on a capture.
 
-**Fight map / line of sight** (`fight_map.rs`, `crates/data/src/maps.rs`, `modules/combat`, `lib/fightMap.ts`)
+**Fight map / line of sight** (`fight_map/`, `crates/data/src/maps.rs`, `modules/combat`, `lib/fightMap.ts`)
 - Map cells from `Map/Data/mapdata_assets_world_*.bundle` (MonoBehaviour per map: `id`, `cellsData` of 560 {mov, los, red,
   blue, altitude...}) → `maps.bin` (extract_gamedata.py `maps`: id-sorted records, a nibble per cell; ~16k maps, 4.6 MB,
   0.9 MB zipped), read per map with a binary search (`Data::map_cells`, `call` only).
@@ -290,46 +290,45 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   not checked); blocked by `los` 0 cells and living fighters (target excepted, the player's own fighter ignored: it stands on
   the hovered cell). Targets = walkable cells, no range limit. The tab shows the map during a fight only (state cleared at
   FightEndEvent); the map id only in developer mode.
-- In-game view (`FightMapOverlay.svelte` = shell: window, calibration, closing; layers `fightmap/LosLayer.svelte` and
-  `fightmap/ClassLayer.svelte`; fightmap.html `?view=los|classHelp&hold=1`): shortcuts `los` (F3) / `classHelp` (F4) shown while
-  held, or the fight popup's « LdV » button (no hold) → `fightmap:toggle` to the main window, the only one allowed to create
-  windows (`pressFightMapOverlay`; an open view gets `fightmap:press`: same view = close, else switch). A window over the
-  Dofus client area (`fightmap.window`, physical px). Calibration (`lib/fightMap.ts` `calibrate`, localStorage
-  `karrelage.combat.calibration`, valid for one client size, « Effacer la calibration » in the Combat tab): clicks on the centres of the two fighters farthest apart on
-  both axes (the player's first if one of them; a cell-sized cross replaces the cursor) give ox/oy/sx/sy (sx ≈ sy checked); hover = window takes the mouse, click pins and lets it through
-  (`setIgnoreCursorEvents`; a pinned cell keeps the view once the key is let go). Closed by letting go of the held key (not during
-  the calibration), the shortcut again, Escape (`watch_escape`: GetAsyncKeyState polled, not taken from the game),
-  the end of the player's turn (`fightmap:turn`: another fighter's turn after one of `me`) or of the fight. Not yet tried on the
-  real game (calibration assumes the grid scales linearly with no camera zoom).
-- The in-game view window is prewarmed: the main window creates it hidden (`?prewarm=1`) when a fight starts
-  (`prewarmFightMapOverlay`; it answers `fightmap:ready`, a press before that waits); once loaded it goes on screen empty,
-  click-through and not focusable (`idle`), shortcuts draw a view in it (`open`: placed on the Dofus window again,
-  calibration checked), closing empties it again; only the fight's end closes it. Never hidden / shown again: WebView2
-  flashes white on show (the first show still did): this window alone gets a transparent `backgroundColor`
-  (`clearBackground`), which on every floating window came with a second, unmovable copy of the fight popup. Click-through
-  (`setIgnoreCursorEvents`) is tao's WS_EX_LAYERED style and its first removal in the window's life flashes white: the
-  class help / portal views never take the mouse back, and the prewarmed window does that first removal once off screen
-  (-32000, -32000) before going over the game (F3 / calibration take the mouse).
+- In-game view (`FightMapOverlay.svelte` = shell: window, mouse and focus, cursor polling, closing; `fightmap/Calibration.svelte`;
+  layers `fightmap/LosLayer.svelte`, `ClassLayer.svelte`, `PortalSimLayer.svelte`, which never touch the window): shortcuts `los`
+  (F3) / `classHelp` (F4) shown while held, the fight popup's « LdV » button (no hold) → `fightmap:toggle` to the main window, the
+  only one allowed to create windows (`lib/fightMapOverlay.ts` `pressFightMapOverlay`; `fightmap:press`: same view = close, else
+  switch). A window over the Dofus client area (`fightmap.window`, physical px). Calibration (`lib/fightMap.ts` `calibrate`,
+  localStorage `karrelage.combat.calibration`, valid for one client size, « Effacer la calibration » in the Combat tab): clicks on
+  the centres of the two fighters farthest apart on both axes (the player's first if one of them; a cell-sized cross replaces the
+  cursor) give ox/oy/sx/sy (sx ≈ sy checked; assumes the grid scales linearly with no camera zoom). Line of sight: hover, a click
+  pins (a pinned cell keeps the view once the key is let go). Closed by letting go of the held key (not during the calibration),
+  the shortcut again, Escape (`watch_escape`: GetAsyncKeyState polled, not taken from the game), the end of the player's turn
+  (`fightmap:turn`: another fighter's turn after one of `me`) or of the fight; a close asked while `open` is under way waits for it.
+- Window life: made hidden by the main window when a fight starts (`prewarmFightMapOverlay`), it answers `fightmap:ready` (a press
+  before that waits); once loaded it goes on screen empty (`warmUp`), shortcuts draw a view in it (`open`: placed on the Dofus window
+  again, calibration checked), closing empties it; the fight's end closes it. Mouse and focus: `takesInput` (calibration, line of
+  sight until a cell is pinned), applied only when it changes; else everything goes through to the game.
+- No-flash rules (WebView2 / Windows paint a white frame): never hide then show the window again; click-through
+  (`setIgnoreCursorEvents`) is tao's WS_EX_LAYERED style and its first removal in a window's life flashes, so `warmUp` does it off
+  screen (-32000, -32000) and views that don't need the mouse never take it. This window alone gets a transparent `backgroundColor`
+  (`clearBackground`): on every floating window it came with a second, unmovable copy of the fight popup.
 - Class help (`lib/classHelp.ts`): Steamer turrets (gids 5831 Bathyscaphe, 5832 Chalutier, 5833 Foreuse, 5835 Gardienne, 5836
   Harponneuse, 5837 Tactirelle) of the player (summoner in `me`, else same team): the cells ≤ 7 from each and in its line of sight
   (bonus zone), the mouse let through (the cursor is polled: over a turret's cell, its zone forward). Fighters carry `monsters` (their monster info's ints that are pack monsters: the gid,
   maybe a grade / level; summons: SummonContextInformation's spawn information) and `summoner` (stats, else the summon
   action's source); verified on capture_harebourg (the player's Harponneuse).
-- Eliotrope portals (`fight_map.rs`, `maps::portal_path`, `fightmap/PortalLayer.svelte`): GameActionFightEvent mark_cells
-  of action 1181; FightMark's ints are unnamed: cell = the MarkedCell int the mark repeats (set fields only: unset ints read
-  0), mark id = the field unmark / activate `mark_id` points at (voted in memory; every mark followed for it), active = any
-  bool true. Four per caster (oldest dropped on a fifth); closed while a fighter stands on it or deactivated this turn. Way
-  through the network = Eliotopy-v2's rule (nearest unvisited, ties by angle), matches the casts' `portals_id` on
-  capture_poison. Shown in the class help (F4: numbers, #1 / #2 coloured with four portals) and view `portals` (a portal
-  simulated under the mouse, the oldest struck out with four; cast into one of the portals the spell goes through the
-  network and lands at exit + (entrance − caster), `redirect`, verified on 5 casts of capture_poison, a Portail among them,
-  only the struck-out portal, the way (from the new portal, or from the portal under the mouse when the key was pressed:
-  `start`, kept until the view closes) and its length are drawn; the way to the exit + distance and damage bonus: +2 % per cell,
-  `PORTAL_BONUS`). That view opens on the game's own Portail spell key (`settings.classHelp.eliotrope.portalKey`, Combat tab
-  « Aide de classe », which also turns each class's help on / off): a *passive* shortcut (`shortcuts` `passive`,
-  `sys::watch_bindings`: GetAsyncKeyState polled while the game has the focus, never taken from it), the window shown
-  without the focus (`setFocusable(false)`, `refocus`); closed by the key again, a left / right click (`fightmap:click`, polled with Escape) or Escape. FightJoinRunningEvent
-  `marks` (rejoining a fight) not read.
+- Eliotrope portals (`fight_map/portals.rs`, `maps::portal_path`): GameActionFightEvent mark_cells of action 1181; FightMark's ints
+  are unnamed: cell = the MarkedCell int the mark repeats (set fields only: unset ints read 0), mark id = the field unmark / activate
+  `mark_id` points at (voted in memory; every mark followed for it), active = any bool true. Four per caster (oldest dropped on a
+  fifth); closed while a fighter stands on it or deactivated this turn. Way through the network = Eliotopy-v2's rule (nearest
+  unvisited, ties by angle), matches the casts' `portals_id` on capture_poison. Class help (F4, `fightmap/PortalLayer.svelte`, from the
+  fight state): numbers, #1 / #2 coloured with four portals.
+- Portal simulation (view `portals`, `fightmap/PortalSimLayer.svelte`; call `portals`: every free cell at once, asked again when what
+  it depends on changes, hovering is a lookup): the Portail spell on the cell under the mouse. The oldest gets an X with four; cast
+  into one of the portals the spell goes through the network and lands at exit + (entrance − caster) (`redirect`, verified on 5 casts
+  of capture_poison, a Portail among them). Drawn: the X, the new network's way (from the new portal, or from the portal under the
+  mouse when the key was pressed: `start`, until the view closes) and its damage bonus (+2 % per cell, `PORTAL_BONUS`). Opens on the
+  game's own Portail spell key (`settings.classHelp.eliotrope.portalKey`, Combat tab « Aide de classe », which also turns each class's
+  help on / off): a *passive* shortcut (`shortcuts` `passive`, `sys::watch_bindings`: GetAsyncKeyState polled while the game has the
+  focus, never taken from it). Closed by the key again, a left / right click (`fightmap:click`, polled with Escape) or Escape.
+  FightJoinRunningEvent `marks` (rejoining a fight) not read.
 
 **Loot** (`loot.rs`): FightEndEvent → results → fighter id + `Loot` messages; item = the largest int that is a known gid
 (verified 3.7.12.12). Automation « Songes »: sound when a « Légende » (type 219) is looted, by price threshold.
