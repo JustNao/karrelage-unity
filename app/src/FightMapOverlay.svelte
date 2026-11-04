@@ -10,14 +10,15 @@
   import CalibrationView from "./fightmap/Calibration.svelte";
   import LosLayer from "./fightmap/LosLayer.svelte";
   import ClassLayer from "./fightmap/ClassLayer.svelte";
+  import PortalSimLayer from "./fightmap/PortalSimLayer.svelte";
 
   /**
    * In-game view (fightmap.html): a transparent window over the Dofus window's picture during a fight, made hidden by the main
    * window when the fight starts (lib/fightMapOverlay.ts), a view drawn in it by a shortcut (`fightmap:press` → `open`).
    * - No calibration for this window size: fightmap/Calibration.svelte first, and it goes on.
-   * - Then the view's layer: line of sight from the hovered cell (fightmap/LosLayer.svelte), or the class help
-   *   (fightmap/ClassLayer.svelte; view `portals`: an Eliotrope portal simulated on the cell under the mouse, opened by the
-   *   game's portal spell key, closed by a click too: the spell is cast, or cancelled).
+   * - Then the view's layer: line of sight from the hovered cell (fightmap/LosLayer.svelte), the class help
+   *   (fightmap/ClassLayer.svelte), or an Eliotrope portal simulated on the cell under the mouse (fightmap/PortalSimLayer.svelte:
+   *   opened by the game's Portail key, closed by a click too: the spell is cast, or cancelled).
    * - Closed when the held shortcut is let go (unless a cell is pinned, or during the calibration), by its shortcut pressed
    *   again, Escape, the end of the player's turn or of the fight. Another view's shortcut switches to that view.
    * - Kept for the whole fight: put on screen once loaded, empty (`warmUp`); closing just empties it (never hidden: WebView2
@@ -38,7 +39,7 @@
   let shown = $state(false);
   /** a pinned cell (line of sight): the view stays once the shortcut is let go */
   let sticky = $state(false);
-  let live = $state.raw<FightMapState>({ map: null, fight: true, fighters: [] });
+  let live = $state.raw<FightMapState>({ map: null, fight: true, fighters: [], portals: [] });
   let cells = $state.raw<number[] | null>(null);
   /** for this size of the game's window; none: the calibration comes first */
   let cal = $state.raw<Calibration | null>(null);
@@ -119,8 +120,8 @@
     if (hold && !(await call<boolean>("shortcuts", "held", { name: view }).catch(() => true))) letGo();
   }
 
-  /** A click (cast or cancelled spell) closes the portal simulation opened by its key, not during its calibration. */
-  const closesOnClick = () => view === "portals" && !hold && cal !== null;
+  /** A click (cast or cancelled spell) closes the portal simulation, not during its calibration. */
+  const closesOnClick = () => view === "portals" && cal !== null;
   /** Closes the view, or once it is open when it is still opening. */
   const closeSoon = (by: "any" | "click") => (opening ? void (closeAsked = closeAsked === "any" ? "any" : by) : void hide());
 
@@ -244,8 +245,10 @@
   {:else if cells}
     {#if view === "los"}
       <LosLayer {cal} {cells} {live} {mine} {dpr} {hold} bind:sticky />
+    {:else if view === "portals"}
+      <PortalSimLayer {cal} {live} {mine} {dpr} {pointed} {polled} />
     {:else}
-      <ClassLayer {cal} {live} {mine} {dpr} {hold} {pointed} {polled} simulate={view === "portals"} />
+      <ClassLayer {cal} {live} {mine} {dpr} {hold} {pointed} />
     {/if}
   {/if}
 </div>
@@ -257,4 +260,5 @@
   .overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.01); font-family: var(--font); font-size: 13px; cursor: crosshair; }
   .overlay :global(svg) { position: absolute; inset: 0; pointer-events: none; }
   .overlay :global(.pill) { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); padding: 4px 12px; font-size: 12px; opacity: 0.9; white-space: nowrap; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4); pointer-events: none; }
+  .overlay :global(.chip) { margin-left: 8px; font-weight: 600; }
 </style>

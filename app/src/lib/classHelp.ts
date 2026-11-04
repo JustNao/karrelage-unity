@@ -21,23 +21,34 @@ export const TURRETS: Record<number, { name: string; colour: string }> = {
 export const turretOf = (monsters: number[]) => monsters.find((g) => g in TURRETS);
 
 /**
- * Eliotrope (fightmap/PortalLayer.svelte): four portals at most, the oldest goes when a fifth is put down; a spell going into
- * a portal comes out of the network's exit (crates/data/src/maps.rs `portal_path`).
+ * Eliotrope (fightmap/PortalLayer.svelte, fightmap/PortalSimLayer.svelte): four portals at most, the oldest goes when a fifth
+ * is put down; a spell going into a portal comes out of the network's exit (crates/data/src/maps.rs `portal_path`).
  */
-export interface PortalNet {
+export interface PlayerPortal {
+  cell: number;
   /** 1 = the oldest */
-  portals: { cell: number; number: number; open: boolean }[];
-  /** the simulated portal (also in `portals`) */
+  number: number;
+  open: boolean;
+}
+
+/** The Portail spell simulated on a cell (fight_map.rs `simulate`). */
+export interface PortalSim {
+  /** the new portal */
   added: number | null;
-  /** the oldest portal, gone because of the simulated one */
+  /** the oldest portal, gone because of the new one */
   dropped: number | null;
-  /** cast into one of the portals: `cast` = the spell's way through the network, then the cell `added` lands on */
+  /** cast into one of the portals: the new portal came out past the network's exit */
   via: boolean;
-  cast: number[];
-  /** the new network's way from the new portal to its exit */
+  /** the new network's way from the new portal (or the chosen start) to its exit */
   path: number[];
   /** cells between the path's portals */
   distance: number;
+}
+
+/** Fight_map call `portals` with `all`: no spell cast (`base`) and cast on each cell it can be. */
+export interface PortalSims {
+  base: PortalSim;
+  sims: Record<string, PortalSim>;
 }
 
 /** Damage bonus of a spell through the portals: % per cell between them along the way. */
@@ -49,7 +60,12 @@ export const portalColour = (number: number, full: boolean) => (full && number =
 /** Whose portals to show: the player's (the caster of one of their characters' latest portal, else their character in the
  *  fight: a first portal simulated), else the latest portal's caster; null when nothing tells. */
 export function portalAuthor(live: FightMapState, mine: Set<number>): number | null {
-  const portals = live.portals ?? [];
-  const own = [...portals].reverse().find((p) => mine.has(p.author))?.author ?? live.fighters.find((f) => mine.has(f.id))?.id;
-  return own ?? portals.at(-1)?.author ?? null;
+  const own = [...live.portals].reverse().find((p) => mine.has(p.author))?.author ?? live.fighters.find((f) => mine.has(f.id))?.id;
+  return own ?? live.portals.at(-1)?.author ?? null;
+}
+
+/** The portals of that caster, from the oldest. */
+export function playerPortals(live: FightMapState, mine: Set<number>): PlayerPortal[] {
+  const author = portalAuthor(live, mine);
+  return live.portals.filter((p) => p.author === author).map((p, i) => ({ cell: p.cell, number: i + 1, open: p.open }));
 }

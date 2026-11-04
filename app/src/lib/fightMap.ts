@@ -32,7 +32,7 @@ export interface FightMapState {
   fight: boolean;
   fighters: MapFighter[];
   /** in the order they were put down */
-  portals?: MapPortal[];
+  portals: MapPortal[];
 }
 /** What a fighter on a cell reaches at the chosen range: cells in line of sight, and the ones behind an obstacle. */
 export interface Sight {

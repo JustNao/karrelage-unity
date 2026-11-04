@@ -2,18 +2,17 @@
   import { call } from "../lib/api";
   import { settings } from "../lib/stores/settings.svelte";
   import { screenDiamond, type Calibration, type FightMapState, type MapFighter, type Sight } from "../lib/fightMap";
-  import { PORTAL_BONUS, TURRET_RANGE, TURRETS, turretOf, type PortalNet } from "../lib/classHelp";
+  import { PORTAL_BONUS, playerPortals, TURRET_RANGE, TURRETS, turretOf } from "../lib/classHelp";
   import PortalLayer from "./PortalLayer.svelte";
 
   /**
    * Class help in the in-game view (FightMapOverlay.svelte), the mouse let through (only to look at). Steamer: for each of the
    * player's turrets, the cells where the Steamer gets its bonus (at most TURRET_RANGE cells away and in its line of sight:
    * the player's own fighters don't block it, they are the ones moving). The mouse over a turret's cell (`pointed`) brings its
-   * zone forward. Eliotrope: the portals (fightmap/PortalLayer.svelte), with a
-   * portal simulated under the mouse when `simulate` (view `portals`, the turrets left out). Each class can be turned off in
-   * the Combat tab (`settings.classHelp`).
+   * zone forward. Eliotrope: the portals (fightmap/PortalLayer.svelte). Each class can be turned off in the Combat tab
+   * (`settings.classHelp`).
    */
-  let { cal, live, mine, dpr, hold, pointed, polled, simulate }: {
+  let { cal, live, mine, dpr, hold, pointed }: {
     cal: Calibration;
     live: FightMapState;
     mine: Set<number>;
@@ -21,20 +20,12 @@
     hold: boolean;
     /** the cell under the mouse */
     pointed: number | null;
-    /** the cursor was read once: `pointed` is where it was when the view opened */
-    polled: boolean;
-    simulate: boolean;
   } = $props();
-
-  let net = $state.raw<PortalNet | null>(null);
-  /** the portal the simulation's way starts from (PortalLayer.svelte) */
-  let start = $state<number | null | undefined>(undefined);
-  const startNumber = $derived(start == null ? null : net?.portals.find((p) => p.cell === start)?.number ?? null);
 
   /** The player's turrets: summoned by one of their characters, else of their team when the summoner is unknown; every turret
    *  when the player is not known. */
   const turrets = $derived.by(() => {
-    if (simulate || !settings.classHelp.steamer.enabled) return [];
+    if (!settings.classHelp.steamer.enabled) return [];
     const all = live.fighters.filter((f) => f.alive && f.cell >= 0 && turretOf(f.monsters) !== undefined);
     if (!mine.size) return all;
     const teams = new Set(live.fighters.filter((f) => mine.has(f.id)).map((f) => f.team));
@@ -55,9 +46,9 @@
   const look = (t: MapFighter) => TURRETS[turretOf(t.monsters)!];
   /** the turret under the mouse: its zone forward, the others faded */
   const focused = $derived(turrets.find((t) => t.cell === pointed)?.id ?? null);
-  const key = $derived(simulate ? settings.classHelp.eliotrope.portalKey : settings.shortcuts.classHelp);
+  const key = $derived(settings.shortcuts.classHelp);
   const keyLabel = $derived(key.vk ? key.label : "le raccourci");
-  const portals = $derived(net?.portals.length ?? 0);
+  const portals = $derived(settings.classHelp.eliotrope.enabled ? playerPortals(live, mine) : []);
 </script>
 
 <svg width="100%" height="100%">
@@ -69,7 +60,7 @@
     <polygon points={screenDiamond(cal, a.turret.cell, dpr)} style:stroke={look(a.turret).colour} class="turret" />
   {/each}
 </svg>
-{#if settings.classHelp.eliotrope.enabled}<PortalLayer {cal} {live} {mine} {dpr} {pointed} {polled} {simulate} bind:net bind:start />{/if}
+<PortalLayer {cal} {dpr} {portals} />
 {#snippet zone(a: { turret: MapFighter; seen: number[] })}
   {#each a.seen as c (c)}
     <polygon points={screenDiamond(cal, c, dpr)} style:fill={look(a.turret).colour} style:stroke={look(a.turret).colour}
@@ -78,23 +69,16 @@
 {/snippet}
 
 <div class="pill">
-  {#if simulate}
-    Portail simulé sous la souris
-    {#if start != null}· départ : {startNumber === null ? "votre portail disparaît" : `portail n° ${startNumber}`}{/if}
-    {#if net && net.path.length > 1}· sortie à {net.distance} cases : <b>+{net.distance * PORTAL_BONUS} % de dommages</b>{/if}
-    {#if net?.via}· lancé dans un portail : {net.added === null ? "la case de sortie est prise ou hors de la carte" : "le nouveau portail sort après le dernier de la redirection"}{/if}
-    {#if net?.dropped != null}· <span class="chip" style:color="#ff4d4d">✕ le n° 1 disparaît</span>
-    {:else if !net?.added}· survolez une case libre{/if}
-  {:else if areas.length}
+  {#if areas.length}
     Tourelles ({TURRET_RANGE} PO, en ligne de vue) :
     {#each areas as a (a.turret.id)}<span class="chip" style:color={look(a.turret).colour}>■ {look(a.turret).name}</span>{/each}
-  {:else if portals}
-    Portails : {portals} (+{PORTAL_BONUS} % de dommages par case parcourue)
-    {#if portals >= 4}<span class="chip" style:color="#ff4d4d">■ 1 part au prochain</span><span class="chip" style:color="#ffa53c">■ 2 ensuite</span>{/if}
+    {#if focused === null}· survolez une tourelle pour sa zone{/if}
+  {:else if portals.length}
+    Portails : {portals.length} (+{PORTAL_BONUS} % de dommages par case parcourue)
+    {#if portals.length >= 4}<span class="chip" style:color="#ff4d4d">■ 1 part au prochain</span><span class="chip" style:color="#ffa53c">■ 2 ensuite</span>{/if}
     {#if settings.classHelp.eliotrope.portalKey.vk}· {settings.classHelp.eliotrope.portalKey.label} pour simuler un portail{/if}
   {:else}Aucune aide pour ce combat (Steamer : aucune tourelle posée, Éliotrope : aucun portail){/if}
-  {#if areas.length && focused === null}· survolez une tourelle pour sa zone{/if}
-  · {hold ? `lâchez ${keyLabel}` : simulate ? `${keyLabel}, un clic ou Échap` : `${keyLabel} ou Échap`} pour fermer
+  · {hold ? `lâchez ${keyLabel}` : `${keyLabel} ou Échap`} pour fermer
 </div>
 
 <style>
@@ -102,5 +86,4 @@
   .turret { fill: none; stroke-width: 3; }
   .area.focused { fill-opacity: 0.45; stroke-opacity: 1; stroke-width: 1.5; }
   .area.faded { fill-opacity: 0.06; stroke-opacity: 0.2; }
-  .chip { margin-left: 8px; font-weight: 600; }
 </style>

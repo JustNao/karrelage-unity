@@ -11,7 +11,7 @@
   import Minimap from "./Minimap.svelte";
   import ClassHelp from "./ClassHelp.svelte";
 
-  let live = $state.raw<FightMapState>({ map: null, fight: false, fighters: [] });
+  let live = $state.raw<FightMapState>({ map: null, fight: false, fighters: [], portals: [] });
   /** cells of `live.map` (undefined = loading, null = not in the pack) */
   let cells = $state.raw<number[] | null | undefined>(undefined);
   let loaded: number | null = null;
