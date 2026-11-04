@@ -11,7 +11,7 @@
   import { startAutomation } from "./lib/automation";
   import { startCombat } from "./lib/stores/combat.svelte";
   import { onShortcut, startShortcuts } from "./lib/stores/shortcuts.svelte";
-  import { prewarmFightMapOverlay, pressFightMapOverlay } from "./lib/fightMap";
+  import { prewarmFightMapOverlay, pressFightMapOverlay } from "./lib/fightMapOverlay";
 
   const tabs = $derived(modules.filter((m) => app.dev || !m.devOnly));
   const active = $derived(tabs.find((m) => m.id === app.tab) ?? tabs[0]);

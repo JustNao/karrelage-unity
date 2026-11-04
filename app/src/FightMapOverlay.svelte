@@ -5,13 +5,14 @@
   import { call, listenAll } from "./lib/api";
   import { readJSON, writeJSON } from "./lib/persist.svelte";
   import { fight, followFight } from "./lib/stores/combat.svelte";
-  import { CALIBRATION_KEY, calibrate, centre, type Calibration, type FightMapState, type MapFighter, type OverlayView } from "./lib/fightMap";
+  import { CALIBRATION_KEY, calibrate, centre, type Calibration, type FightMapState, type MapFighter } from "./lib/fightMap";
+  import type { OverlayPress, OverlayView } from "./lib/fightMapOverlay";
   import LosLayer from "./fightmap/LosLayer.svelte";
   import ClassLayer from "./fightmap/ClassLayer.svelte";
 
   /**
-   * In-game view (fightmap.html): a transparent window over the Dofus window's picture during a fight, opened by a shortcut
-   * (lib/fightMap.ts `pressFightMapOverlay`; `?view=` los / classHelp, `&hold=1` = shown while the shortcut is held).
+   * In-game view (fightmap.html): a transparent window over the Dofus window's picture during a fight, made hidden by the main
+   * window when the fight starts (lib/fightMapOverlay.ts), a view drawn in it by a shortcut (`fightmap:press` → `open`).
    * - No calibration for this window size: the player clicks the centres of the two fighters named (lib/fightMap.ts
    *   `calibrate`), and it goes on.
    * - Then the view's layer: line of sight from the hovered cell (fightmap/LosLayer.svelte), or the class help
@@ -19,20 +20,16 @@
    *   game's portal spell key, closed by a click too: the spell is cast, or cancelled).
    * - Closed when the held shortcut is let go (unless a cell is pinned, or during the calibration), by its shortcut pressed
    *   again, Escape, the end of the player's turn or of the fight. Another view's shortcut switches to that view.
-   * - Kept for the whole fight (`?prewarm=1`: created hidden by the main window when the fight starts, then put on screen
-   *   once loaded, empty): closing empties it and lets the mouse through (`idle`; never hidden: WebView2 flashes white when a
-   *   hidden window is shown again), a shortcut draws a view at once (`fightmap:press` → `open`); only the fight's end closes
-   *   the window.
+   * - Kept for the whole fight: put on screen once loaded, empty (`warmUp`); closing empties it and lets the mouse through
+   *   (`idle`; never hidden: WebView2 flashes white when a hidden window is shown again); only the fight's end closes it.
    */
   const win = getCurrentWindow();
   const dpr = window.devicePixelRatio || 1;
-  const params = new URLSearchParams(location.search);
 
-  const asked = params.get("view");
-  let view = $state<OverlayView>(asked === "classHelp" || asked === "portals" ? asked : "los");
+  let view = $state<OverlayView>("los");
   /** shown while the view's shortcut is held: closed when it is let go */
-  let hold = $state(params.get("hold") === "1");
-  /** on screen (a prewarmed window waits hidden for a shortcut) */
+  let hold = $state(false);
+  /** a view is drawn (else the window is on screen, empty, waiting for a shortcut) */
   let shown = $state(false);
   /** a pinned cell (line of sight): the view stays once the shortcut is let go */
   let sticky = $state(false);
@@ -125,6 +122,22 @@
     return rect;
   }
 
+  /** On screen once, empty and letting everything through: showing it later would flash. Off the screen first: the first time
+   *  the mouse is taken back (the click-through style removed: F3, calibration) flashes white, so that is done there, before
+   *  the window is ever over the game. */
+  async function warmUp() {
+    await idle();
+    const rect = await place();
+    await win.setPosition(new PhysicalPosition(-32000, -32000));
+    await win.show();
+    await win.setIgnoreCursorEvents(false);
+    await new Promise((r) => setTimeout(r, 150)); // painted at least once without the style
+    await win.setIgnoreCursorEvents(true);
+    // (no Dofus window found: left off the screen, `open` places it)
+    if (rect) await win.setPosition(new PhysicalPosition(rect.x, rect.y));
+    void call("fightmap", "refocus", {}, true).catch(() => {});
+  }
+
   /** Nothing drawn, the mouse and the keyboard left to the game. */
   async function idle() {
     await win.setIgnoreCursorEvents(true);
@@ -165,7 +178,7 @@
         if (mine.has(id)) mineTurn = true;
         else if (mineTurn) closeSoon("any");
       },
-      "fightmap:press": (p: { view: OverlayView; hold: boolean }) => {
+      "fightmap:press": (p: OverlayPress) => {
         // pressed again while opening: closed once open (another view's shortcut meanwhile is left out)
         if (opening) return void (p.view === view && closeSoon("any"));
         if (!shown) return void open(p.view, p.hold).catch(() => void hide());
@@ -179,27 +192,9 @@
     window.addEventListener("keydown", key);
     (async () => {
       await off.ready;
-      const state = await call<FightMapState>("fightmap", "state");
-      live = state;
-      if (!state.fight || state.map === null) return void close();
-      cells = await call<number[] | null>("fightmap", "cells", { map: state.map });
-      if (!cells) return void close();
-      loadedMap = state.map;
-      if (params.get("prewarm") !== "1") await open(view, hold);
-      else {
-        // on screen once, empty and letting everything through: showing it later would flash. Off the screen first: the
-        // first time the mouse is taken back (the click-through style removed: F3, calibration) flashes white, so that is done
-        // there, before the window is ever over the game
-        await idle();
-        const rect = await place();
-        if (rect) await win.setPosition(new PhysicalPosition(-32000, -32000));
-        await win.show();
-        await win.setIgnoreCursorEvents(false);
-        await new Promise((r) => setTimeout(r, 150)); // painted at least once without the style
-        await win.setIgnoreCursorEvents(true);
-        if (rect) await win.setPosition(new PhysicalPosition(rect.x, rect.y));
-        void call("fightmap", "refocus", {}, true).catch(() => {});
-      }
+      live = await call<FightMapState>("fightmap", "state");
+      if (!live.fight) return void close();
+      await warmUp();
       await emitTo("main", "fightmap:ready");
     })().catch(() => void close());
     return () => {
@@ -215,13 +210,14 @@
     if (!live.fight) void close();
   });
 
-  // a new map mid-fight (next room of a dungeon): its cells
+  // the map's cells, asked again when it changes (the roleplay map, then the fight's own; the next room of a dungeon): a map
+  // missing from the pack leaves the view unavailable until the next one
   let loadedMap: number | null = null;
   $effect(() => {
     const map = live.map;
-    if (loadedMap === null || map === null || map === loadedMap) return;
+    if (map === null || map === loadedMap) return;
     loadedMap = map;
-    call<number[] | null>("fightmap", "cells", { map }).then((c) => (cells = c));
+    call<number[] | null>("fightmap", "cells", { map }, true).then((c) => map === loadedMap && (cells = c)).catch(() => {});
   });
 
   async function click(e: MouseEvent) {
