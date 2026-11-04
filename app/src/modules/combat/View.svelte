@@ -91,6 +91,8 @@
       </p>
       {#if !live.fight}
         <p class="mut">La carte du combat s'affiche dès qu'un combat commence, application ouverte.</p>
+      {:else if live.map === null}
+        <p class="mut">Karrelage a été lancé pendant le combat : la carte sera connue dès que votre personnage se déplacera.</p>
       {:else if live.map !== null && cells === null}
         <Banner tone="warn" inset>Carte du combat absente du pack de données : mettez-le à jour.</Banner>
       {:else if cells}

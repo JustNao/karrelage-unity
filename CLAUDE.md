@@ -291,6 +291,10 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   (Grokillages at 6, 11, 16…), Phossile (Abîme at 5, 9, 13…), from dofuspourlesnoobs; only rounds / elements checked on a capture.
 
 **Fight map / line of sight** (`fight_map/`, `crates/data/src/maps.rs`, `modules/combat`, `lib/fightMap.ts`)
+- App started during a fight (`late`): the start's messages are gone, and FightSynchronizeEvent only comes at the start. Fight = any
+  turn / sync / show / refresh / action message (none between two fights on the captures); map = the player's first MapMovementRequest
+  `map_id` (the fight's own map on all 3 captures); fighters = from their MapMovementEvent or a later list, portals from then on. Until
+  the map is known the in-game view only says to move.
 - Map cells from `Map/Data/mapdata_assets_world_*.bundle` (MonoBehaviour per map: `id`, `cellsData` of 560 {mov, los, red,
   blue, altitude...}) → `maps.bin` (extract_gamedata.py `maps`: id-sorted records, a nibble per cell; ~16k maps, 4.6 MB,
   0.9 MB zipped), read per map with a binary search (`Data::map_cells`, `call` only).

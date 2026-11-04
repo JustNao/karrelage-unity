@@ -62,7 +62,7 @@
   const mine = $derived(new Set(fight.mine ?? []));
   /** The window takes the mouse and the focus only for what needs a click on it: the calibration, the line of sight until a
    *  cell is pinned. Everything else lets all through to the game (it keeps the Portail spell selected, its shortcuts...). */
-  const takesInput = $derived(shown && (!cal || (view === "los" && !sticky)));
+  const takesInput = $derived(shown && cells !== null && (!cal || (view === "los" && !sticky)));
 
   // Applied only when it changes, in order: each call changes a window style, which is what can flash (click-through is the
   // WS_EX_LAYERED style, its first removal in the window's life flashes white: `warmUp`).
@@ -115,7 +115,7 @@
     void call("fightmap", "watch_escape", { on: true }).catch(() => {});
     try {
       const rect = await place();
-      if (!rect || !live.fight || !cells) return void (await release());
+      if (!rect || !live.fight) return void (await release());
       const saved = readJSON<Calibration | null>(CALIBRATION_KEY, null);
       cal = saved && saved.width === rect.width && saved.height === rect.height ? saved : null;
       shown = true;
@@ -180,7 +180,7 @@
   }
 
   /** Shown while held: hides once the shortcut is up, unless something keeps it (calibration, pinned cell). */
-  const letGo = () => hold && !sticky && cal && void hide();
+  const letGo = () => hold && !sticky && (cal || !cells) && void hide();
 
   onMount(() => {
     const following = followFight();
@@ -246,9 +246,14 @@
 <!-- no view: nothing drawn, the layers stopped -->
 {#if shown}
 <div class="overlay">
-  {#if !cal}
+  {#if !cells}
+    <!-- the app was started during the fight (the map comes with the player's first move), or the pack lacks this map -->
+    <div class="pill">
+      {live.map === null ? "Karrelage a été lancé pendant le combat : déplacez votre personnage pour que la carte soit connue" : "Carte du combat absente du pack de données : mettez-le à jour"}
+    </div>
+  {:else if !cal}
     {#if placed}<CalibrationView {live} {mine} {dpr} width={placed.width} height={placed.height} oncalibrated={calibrated} />{/if}
-  {:else if cells}
+  {:else}
     {#if view === "los"}
       <LosLayer {cal} {cells} {live} {mine} {dpr} {hold} bind:sticky />
     {:else if view === "portals"}

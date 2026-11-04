@@ -2,7 +2,9 @@
 //! sight from a hovered cell.
 //!
 //! Map: FightMapInformationEvent's `map_id` during a fight (fights in dungeons happen on their own map), else the roleplay
-//! map of MapComplementaryInformationEvent; its cells come from the pack (`Data::map_cells`, read in `call` only).
+//! map of MapComplementaryInformationEvent; its cells come from the pack (`Data::map_cells`, read in `call` only). App started
+//! during a fight: found from a message only fights send, map from the player's first MapMovementRequest (`map_id`), fighters
+//! from their moves or a later list.
 //! Fighters: every ActorPositionInformation {actor_id, disposition: EntityDisposition {cell_id}} of FightFighterShowEvent /
 //! FightSynchronizeEvent (the whole list: anyone missing is gone) and of the summons of GameActionFightEvent, with their
 //! FightFighterInformation's SpawnInformation {alive, team (its only enum)} (a summon's SpawnInformation holds its position).
@@ -39,6 +41,7 @@ const REFRESH: &str = "FightFighterRefreshEvent";
 const SYNC: &str = "FightSynchronizeEvent";
 const ACTION: &str = "GameActionFightEvent";
 const MOVE: &str = "MapMovementEvent";
+const MOVE_REQUEST: &str = "MapMovementRequest";
 const END: &str = "FightEndEvent";
 /// A fighter's turn starts (role `turn`, shared with combat.rs): the overlay clears when the player's turn is over.
 const TURN: &str = "FightTurnEvent";
@@ -71,6 +74,8 @@ struct State {
     map: Option<i64>,
     fight_map: Option<i64>,
     fight: bool,
+    /// The fight's start was missed (the app was started during it): no map nor list of fighters until they show up.
+    late: bool,
     fighters: BTreeMap<i64, Fighter>,
     marks: Marks,
     /// Turns started in this fight.
@@ -315,89 +320,111 @@ impl Module for FightMap {
     }
 
     fn interest(&self) -> Interest {
-        Interest::Types(&[MAP, FIGHT_MAP, JOIN, SHOW, REFRESH, SYNC, ACTION, MOVE, END, TURN])
+        Interest::Types(&[MAP, FIGHT_MAP, JOIN, SHOW, REFRESH, SYNC, ACTION, MOVE, MOVE_REQUEST, END, TURN])
     }
 
     fn on_message(&self, m: &Message, ctx: &Ctx) {
         let Some(d) = m.decoded.as_ref() else { return };
+        let mut s = self.state.lock();
+        // a message only a fight sends, with no fight known: the app was started during it
+        let joined_late = !s.fight && matches!(m.name.as_str(), TURN | SYNC | SHOW | REFRESH | ACTION);
+        if joined_late {
+            (s.fight, s.late, s.fight_map, s.turn) = (true, true, None, 0);
+            s.fighters.clear();
+            s.marks.clear();
+        }
         if m.name == TURN {
             if let Some(b) = self.turn.get(ctx, "turn") {
                 ctx.emit("fightmap", "turn", json!({"id": int(d, &b.fighter)}));
             }
             // portals deactivated in the last turn open again
-            let mut s = self.state.lock();
             s.turn += 1;
             let turn = s.turn;
-            if s.marks.off_in(turn - 1) {
+            if joined_late || s.marks.off_in(turn - 1) {
                 ctx.emit("fightmap", "state", s.json());
             }
             return;
         }
-        let mut s = self.state.lock();
-        let changed = match m.name.as_str() {
-            MAP => {
-                let map = named_int(ctx, d, "map_id");
-                std::mem::replace(&mut s.map, map) != map && !s.fight
-            }
-            FIGHT_MAP => {
-                let map = named_int(ctx, d, "map_id");
-                std::mem::replace(&mut s.fight_map, map) != map
-            }
-            JOIN => {
-                (s.fight, s.fight_map, s.turn) = (true, None, 0);
-                s.fighters.clear();
-                s.marks.clear();
-                true
-            }
-            // the map is only shown during a fight: nothing kept once it is over
-            END => {
-                let was = std::mem::replace(&mut s.fight, false);
-                s.fight_map = None;
-                s.fighters.clear();
-                s.marks.clear();
-                was
-            }
-            // fighters only matter during a fight
-            _ if !s.fight => false,
-            SHOW | REFRESH | SYNC => {
-                let mut found = vec![];
-                fighters(ctx, d, None, &mut found);
-                if m.name == SYNC && !found.is_empty() {
+        let changed = joined_late
+            | match m.name.as_str() {
+                MAP => {
+                    let map = named_int(ctx, d, "map_id");
+                    std::mem::replace(&mut s.map, map) != map && !s.fight
+                }
+                FIGHT_MAP => {
+                    let map = named_int(ctx, d, "map_id");
+                    std::mem::replace(&mut s.fight_map, map) != map
+                }
+                // the only message of a fight joined late that tells its map: the client names it when the player moves
+                MOVE_REQUEST => {
+                    let map = named_int(ctx, d, "map_id").filter(|_| s.late && s.fight_map.is_none());
+                    s.fight_map = s.fight_map.or(map);
+                    map.is_some()
+                }
+                JOIN => {
+                    (s.fight, s.late, s.fight_map, s.turn) = (true, false, None, 0);
                     s.fighters.clear();
+                    s.marks.clear();
+                    true
                 }
-                let changed = !found.is_empty();
-                for f in found {
-                    // a refresh without spawn information keeps what is known
-                    let f = match s.fighters.remove(&f.id) {
-                        Some(old) => Fighter {
-                            kind: if f.kind == "other" { old.kind } else { f.kind },
-                            monsters: if f.monsters.is_empty() { old.monsters } else { f.monsters },
-                            summoner: if f.summoner == 0 { old.summoner } else { f.summoner },
-                            ..f
-                        },
-                        None => f,
-                    };
-                    s.fighters.insert(f.id, f);
+                // the map is only shown during a fight: nothing kept once it is over
+                END => {
+                    let was = std::mem::replace(&mut s.fight, false);
+                    s.late = false;
+                    s.fight_map = None;
+                    s.fighters.clear();
+                    s.marks.clear();
+                    was
                 }
-                changed
-            }
-            MOVE => {
-                let (Some(id), Some(cells)) = (named_int(ctx, d, "character_id"), field(ctx, d, "cells")) else { return };
-                let last = match d.get_field_by_name(&cells).as_deref() {
-                    Some(PbValue::List(l)) => l.last().and_then(as_i64),
-                    _ => None,
-                };
-                match (last, s.fighters.get_mut(&id)) {
-                    (Some(cell), Some(f)) if f.cell != cell => {
-                        f.cell = cell;
-                        true
+                // fighters only matter during a fight
+                _ if !s.fight => false,
+                SHOW | REFRESH | SYNC => {
+                    let mut found = vec![];
+                    fighters(ctx, d, None, &mut found);
+                    if m.name == SYNC && !found.is_empty() {
+                        s.fighters.clear();
                     }
-                    _ => false,
+                    let changed = !found.is_empty();
+                    for f in found {
+                        // a refresh without spawn information keeps what is known
+                        let f = match s.fighters.remove(&f.id) {
+                            Some(old) => Fighter {
+                                kind: if f.kind == "other" { old.kind } else { f.kind },
+                                monsters: if f.monsters.is_empty() { old.monsters } else { f.monsters },
+                                summoner: if f.summoner == 0 { old.summoner } else { f.summoner },
+                                ..f
+                            },
+                            None => f,
+                        };
+                        s.fighters.insert(f.id, f);
+                    }
+                    changed
                 }
-            }
-            ACTION => Self::action(ctx, d, &mut s),
-            _ => false,
-        };
+                MOVE => {
+                    let (Some(id), Some(cells)) = (named_int(ctx, d, "character_id"), field(ctx, d, "cells")) else { return };
+                    let last = match d.get_field_by_name(&cells).as_deref() {
+                        Some(PbValue::List(l)) => l.last().and_then(as_i64),
+                        _ => None,
+                    };
+                    let late = s.late;
+                    match (last, s.fighters.get_mut(&id)) {
+                        (Some(cell), Some(f)) if f.cell != cell => {
+                            f.cell = cell;
+                            true
+                        }
+                        // joined late, the start's list of fighters was missed: known from their first move
+                        (Some(cell), None) if late => {
+                            let f =
+                                Fighter { id, cell, team: None, kind: "other", alive: true, summoned: false, carried: false, monsters: vec![], summoner: 0 };
+                            s.fighters.insert(id, f);
+                            true
+                        }
+                        _ => false,
+                    }
+                }
+                ACTION => Self::action(ctx, d, &mut s),
+                _ => false,
+            };
         if changed {
             ctx.emit("fightmap", "state", s.json());
         }
@@ -578,6 +605,68 @@ mod tests {
             eprintln!("{name}: {checked} fight states checked, {moves} position changes");
             assert!(checked > 0 && moves > 0, "{name}: fighters followed");
             assert!(turret || name != "capture_harebourg", "{name}: the player's Harponneuse, with its gid and summoner");
+        }
+    }
+
+    /// The app started during a fight, replayed by leaving out the start of each capture's first fight: the fight is found from
+    /// its messages, the map from the player's first move (the fight's own map, told at its start in the part left out), that
+    /// fighter from its move, and all is cleared at the end. And no fight is ever found between two fights of a whole capture.
+    /// Skipped without the files.
+    #[test]
+    fn app_started_during_a_fight() {
+        let Some(pack) = testkit::pack() else { return };
+        let hex = |s: &str| (0..s.len() / 2).map(|i| u8::from_str_radix(&s[2 * i..2 * i + 2], 16).unwrap()).collect::<Vec<u8>>();
+        for name in ["capture_harebourg", "capture_bosses", "capture_poison"] {
+            let rec = pack.join(format!("../work/{name}.jsonl"));
+            if !rec.exists() {
+                continue;
+            }
+            let lines: Vec<Value> = std::fs::read_to_string(&rec).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+            let feed = |hub: &crate::Hub, r: &Value| {
+                let (Some(h), Some(len)) = (r["hex"].as_str(), r["len"].as_u64()) else { return };
+                if h.len() / 2 >= len as usize {
+                    let dir = if r["dir"] == "C->S" { "C->S" } else { "S->C" };
+                    hub.handle(RawMessage { t: r["t"].as_f64().unwrap_or(0.0), srv: "x".into(), dir, payload: hex(h) });
+                }
+            };
+            // a whole capture: out of a fight once it ended, until the next one
+            let (hub, _) = testkit::hub("loutil-fightmap-late-whole").unwrap();
+            let mut over = false;
+            for r in &lines {
+                feed(&hub, r);
+                match r["name"].as_str() {
+                    Some(JOIN) => over = false,
+                    Some(END) => over = true,
+                    _ => {}
+                }
+                let fight = hub.call("fightmap", "state", Value::Null).unwrap()["fight"].clone();
+                assert!(!over || fight == false, "{name}: a fight found after its end ({:?} {:?})", r["id"], r["name"]);
+            }
+            // started just after the first fight's map was told
+            let start = lines.iter().position(|r| r["name"] == FIGHT_MAP).unwrap();
+            let told =
+                lines[start]["decoded"].as_object().unwrap().iter().find(|(k, _)| k.contains("map_id")).unwrap().1.as_str().unwrap().parse::<i64>().unwrap();
+            let (hub, _) = testkit::hub("loutil-fightmap-late").unwrap();
+            let (mut fight, mut map, mut moved, mut ended) = (false, None, false, false);
+            for r in &lines[start + 1..] {
+                feed(&hub, r);
+                if r["name"] == END {
+                    ended = true;
+                    break;
+                }
+                let s = hub.call("fightmap", "state", Value::Null).unwrap();
+                fight |= s["fight"] == true;
+                moved |= !s["fighters"].as_array().unwrap().is_empty();
+                if let Some(m) = s["map"].as_i64() {
+                    assert_eq!(m, told, "{name}: the fight's own map");
+                    map = Some(m);
+                }
+            }
+            assert!(fight, "{name}: the fight found from its messages");
+            assert_eq!(map, Some(told), "{name}: the map learnt from a move");
+            assert!(moved, "{name}: fighters known");
+            // (capture_poison stops during its fight)
+            assert!(!ended || hub.call("fightmap", "state", Value::Null).unwrap()["fight"] == false, "{name}: over at its end");
         }
     }
 

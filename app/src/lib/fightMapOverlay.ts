@@ -34,7 +34,8 @@ async function ensure(s: FightMapState) {
     pending = null;
     return;
   }
-  if (made || s.map === null) return;
+  // (no map yet: the app was started during the fight, the window tells what is missing)
+  if (made) return;
   made = true;
   if (await WebviewWindow.getByLabel(OVERLAY)) return;
   await openFloating(OVERLAY, { url: "fightmap.html", title: "Vue en jeu", width: 800, height: 600, focus: false, visible: false, clearBackground: true });
@@ -46,7 +47,7 @@ async function ensure(s: FightMapState) {
 export async function pressFightMapOverlay(view: OverlayView, hold: boolean) {
   if (ready) return emitTo(OVERLAY, "fightmap:press", { view, hold });
   const s = await call<FightMapState>("fightmap", "state", {}, true);
-  if (!s.fight || s.map === null) return;
+  if (!s.fight) return;
   pending = pending?.view === view ? null : { view, hold };
   made = false;
   await ensure(s);
