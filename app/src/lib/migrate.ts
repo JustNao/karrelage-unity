@@ -28,6 +28,11 @@ try {
   }
 } catch {}
 
+/** The grid now comes from the window's size: former clicked calibrations (some far off) are dropped, by hand is opt-in. */
+try {
+  localStorage.removeItem("karrelage.combat.calibration");
+} catch {}
+
 /** 1.10.0's line of sight shortcut Ctrl+Maj+T, never changed by the user, becomes the new default (F3, held). */
 try {
   const saved = JSON.parse(localStorage.getItem("karrelage.settings") ?? "null");

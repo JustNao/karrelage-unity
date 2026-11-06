@@ -313,10 +313,12 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   layers `fightmap/LosLayer.svelte`, `ClassLayer.svelte`, `PortalSimLayer.svelte`, which never touch the window): shortcuts `los`
   (F3) / `classHelp` (F4) shown while held, the fight popup's « LdV » button (no hold) → `fightmap:toggle` to the main window, the
   only one allowed to create windows (`lib/fightMapOverlay.ts` `pressFightMapOverlay`; `fightmap:press`: same view = close, else
-  switch). A window over the Dofus client area (`fightmap.window`, physical px). Calibration (`lib/fightMap.ts` `calibrate`,
-  localStorage `karrelage.combat.calibration`, valid for one client size, « Effacer la calibration » in the Combat tab): clicks on
-  the centres of the two fighters farthest apart on both axes (the player's first if one of them; a cell-sized cross replaces the
-  cursor) give ox/oy/sx/sy (sx ≈ sy checked; assumes the grid scales linearly with no camera zoom). Line of sight: hover, a click
+  switch). A window over the Dofus client area (`fightmap.window`, physical px). Grid = `gridOfWindow` (`lib/fightMap.ts`, from the
+  client size alone: cell = 0.08583 × height, map centred across the width, centre y = 0.4361 × height; fitted on the floor's edges of a
+  fight captured at 2560 × 1440, matches a careful click calibration on another map; other aspect ratios unmeasured, assumes no camera
+  zoom). By hand when that is off (« Calibrer à la main », Combat tab; `calibrate`, localStorage `karrelage.combat.manualCalibration`,
+  valid for one client size): clicks on the centres of the two fighters farthest apart on both axes (the player's first if one of them;
+  a cell-sized cross replaces the cursor), one least-squares scale. Line of sight: hover, a click
   pins (a pinned cell keeps the view once the key is let go). Closed by letting go of the held key (not during the calibration),
   the shortcut again, Escape (`watch_escape`: GetAsyncKeyState polled, not taken from the game), the end of the player's turn
   (`fightmap:turn`: another fighter's turn after one of `me`) or of the fight; a close asked while `open` is under way waits for it.
@@ -347,6 +349,7 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   game's own Portail spell key (`settings.classHelp.eliotrope.portalKey`, Combat tab « Aide de classe », which also turns each class's
   help on / off): a *passive* shortcut (`shortcuts` `passive`, `sys::watch_bindings`: GetAsyncKeyState polled while the game has the
   focus, never taken from it). Closed by the key again, a left / right click (`fightmap:click`, polled with Escape) or Escape.
+  With no cell the spell can go on under the mouse (off the grid, the game's bars...): the network as it is, from `start` or its oldest open portal.
   A yellow cell = where a spell sent into the way shown ends up (`Sim.target`, `redirect`). Exil (view `exil`, key `exilKey`, call
   `portals` `exil`): the same with the portal under a fighter (self included) instead of on a free cell; its mark is action 1181 too
   (game's spell levels), then 1182 teleports the target. Not checked on an Exil cast of a capture yet (none recorded).

@@ -4,8 +4,8 @@
   import { CALIBRATION_KEY, calibrate, centre, type Calibration, type FightMapState, type MapFighter } from "../lib/fightMap";
 
   /**
-   * Calibration of the in-game view (FightMapOverlay.svelte), once per size of the game's window: the player clicks the centres
-   * of the two fighters named (lib/fightMap.ts `calibrate`); saved, then `oncalibrated`. The window takes the mouse meanwhile.
+   * Calibration by hand of the in-game view (FightMapOverlay.svelte), asked in the Combat tab when the grid computed from the
+   * window's size is off: the player clicks the centres of the two fighters named (lib/fightMap.ts `calibrate`); saved, then `oncalibrated`. The window takes the mouse meanwhile.
    */
   let { live, mine, dpr, width, height, oncalibrated }: {
     live: FightMapState;
@@ -75,7 +75,7 @@
         {:else}2/2 : cliquez au centre de la case de <b>{nameOf(targets[1])}</b>.{/if}
       </p>
       {#if failed}<p class="bad">Ces deux clics ne collent pas à la grille : recommencez.</p>{/if}
-      <p class="mut">Une seule fois par taille de fenêtre du jeu. Échap pour annuler.</p>
+      <p class="mut">Gardée pour cette taille de fenêtre du jeu. Échap pour annuler.</p>
     {/if}
   </div>
   {#if pointer}

@@ -3,9 +3,9 @@
   import { cursorPosition, getCurrentWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
   import { emitTo } from "@tauri-apps/api/event";
   import { call, listenAll } from "./lib/api";
-  import { readJSON } from "./lib/persist.svelte";
+  import { readJSON, removeKey } from "./lib/persist.svelte";
   import { fight, followFight } from "./lib/stores/combat.svelte";
-  import { CALIBRATION_KEY, cellAt, type Calibration, type FightMapState } from "./lib/fightMap";
+  import { CALIBRATE_ASKED_KEY, CALIBRATION_KEY, cellAt, gridOfWindow, type Calibration, type FightMapState } from "./lib/fightMap";
   import type { OverlayPress, OverlayView } from "./lib/fightMapOverlay";
   import CalibrationView from "./fightmap/Calibration.svelte";
   import LosLayer from "./fightmap/LosLayer.svelte";
@@ -16,7 +16,8 @@
   /**
    * In-game view (fightmap.html): a transparent window over the Dofus window's picture during a fight, made hidden by the main
    * window when the fight starts (lib/fightMapOverlay.ts), a view drawn in it by a shortcut (`fightmap:press` → `open`).
-   * - No calibration for this window size: fightmap/Calibration.svelte first, and it goes on.
+   * - The grid comes from the window's size (`gridOfWindow`), or a calibration by hand for this size. By hand asked in the Combat
+   *   tab: fightmap/Calibration.svelte first, and it goes on.
    * - Then the view's layer: line of sight from the hovered cell (fightmap/LosLayer.svelte), the class help
    *   (fightmap/ClassLayer.svelte), or an Eliotrope portal simulated on the cell under the mouse (fightmap/PortalSimLayer.svelte:
    *   opened by the game's Portail or Exil key, closed by a click too: the spell is cast, or cancelled).
@@ -48,7 +49,7 @@
   let sticky = $state(false);
   let live = $state.raw<FightMapState>({ map: null, fight: true, fighters: [], portals: [] });
   let cells = $state.raw<number[] | null>(null);
-  /** for this size of the game's window; none: the calibration comes first */
+  /** for this size of the game's window; none: a calibration by hand was asked, it comes first */
   let cal = $state.raw<Calibration | null>(null);
   /** the Dofus window's client area the view covers (physical px), as last applied to this window */
   let placed = $state.raw<{ x: number; y: number; width: number; height: number } | null>(null);
@@ -117,7 +118,8 @@
       const rect = await place();
       if (!rect || !live.fight) return void (await release());
       const saved = readJSON<Calibration | null>(CALIBRATION_KEY, null);
-      cal = saved && saved.width === rect.width && saved.height === rect.height ? saved : null;
+      const manual = saved && saved.width === rect.width && saved.height === rect.height ? saved : null;
+      cal = readJSON(CALIBRATE_ASKED_KEY, false) ? null : (manual ?? gridOfWindow(rect.width, rect.height));
       shown = true;
     } finally {
       opening = false;
@@ -167,6 +169,7 @@
   async function hide() {
     if (!shown) return;
     shown = false;
+    if (!cal) removeKey(CALIBRATE_ASKED_KEY); // the calibration by hand given up: the computed grid again
     await release();
   }
 
@@ -238,6 +241,7 @@
   async function calibrated(c: Calibration) {
     cal = c;
     calibratedAt = Date.now();
+    removeKey(CALIBRATE_ASKED_KEY);
     // the shortcut was let go during the calibration: the view stays until it is pressed again (or Escape...)
     if (hold && !(await call<boolean>("shortcuts", "held", { name: view }).catch(() => true))) hold = false;
   }

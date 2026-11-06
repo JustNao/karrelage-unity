@@ -64,8 +64,8 @@ export const ALL_RANGE = { min: 1, max: 99 };
 
 /**
  * Where the game draws the grid in its window (in-game overlay, FightMapOverlay.svelte): a cell's centre `centre(c, 1)` in
- * grid units lands at (ox + sx × gx, oy + sy × gy) physical pixels of the Dofus window's client area. Taken from two clicks on
- * fighters whose cells are known; only valid for the client size it was taken at.
+ * grid units lands at (ox + sx × gx, oy + sy × gy) physical pixels of the Dofus window's client area. Computed from the window's
+ * size (`gridOfWindow`) unless the player took one by hand (two clicks, valid for the client size it was taken at).
  */
 export interface Calibration {
   width: number;
@@ -75,20 +75,39 @@ export interface Calibration {
   sx: number;
   sy: number;
 }
-export const CALIBRATION_KEY = "karrelage.combat.calibration";
+/** The calibration taken by hand; none: `gridOfWindow`. */
+export const CALIBRATION_KEY = "karrelage.combat.manualCalibration";
+/** The next view asks for a calibration by hand (Combat tab). */
+export const CALIBRATE_ASKED_KEY = "karrelage.combat.calibrateAsked";
+
+/** A cell's width and the map's centre in the picture, as parts of the client height: fitted on the floor's edges of a capture
+ *  of a fight at 2560 × 1440 (s = 123.6, centre 1281.5, 628; a careful calibration by hand on another map gave the same). */
+const CELL_OF_HEIGHT = 0.08583;
+const CENTRE_Y_OF_HEIGHT = 0.4361;
+const CENTRE_X_SHIFT_OF_HEIGHT = 0.001;
+
+/** The grid from the client area's size alone: the picture scales with the height, the map centred across the width. Only
+ *  16:9 measured; assumes the camera isn't zoomed. */
+export function gridOfWindow(width: number, height: number): Calibration {
+  const s = CELL_OF_HEIGHT * height;
+  const [mx, my] = [ROW / 2 + 0.25, ROWS / 8 + 0.125]; // the map's middle in grid units (`mapSize(1)` / 2)
+  return { width, height, ox: width / 2 + CENTRE_X_SHIFT_OF_HEIGHT * height - s * mx, oy: CENTRE_Y_OF_HEIGHT * height - s * my, sx: s, sy: s };
+}
 
 /** The calibration from two clicks (physical px) on the centres of cells `a` and `b`; null when they don't make sense
- *  (cells too close, or a picture squeezed in one direction: a click went wrong). */
+ *  (cells too close, or a picture squeezed in one direction: a click went wrong). One scale for both directions (the game's
+ *  diamonds are twice as wide as high, like centre()), so that a click a little off doesn't stretch the grid. */
 export function calibrate(a: number, pa: [number, number], b: number, pb: [number, number], width: number, height: number): Calibration | null {
   const [ga, gb] = [centre(a, 1), centre(b, 1)];
   const [dgx, dgy] = [gb[0] - ga[0], gb[1] - ga[1]];
-  let sx = Math.abs(dgx) >= 1 ? (pb[0] - pa[0]) / dgx : NaN;
-  let sy = Math.abs(dgy) >= 0.5 ? (pb[1] - pa[1]) / dgy : NaN;
-  if (Number.isNaN(sx)) sx = sy;
-  if (Number.isNaN(sy)) sy = sx;
-  // the game draws diamonds twice as wide as high, like centre(): both scales are about the same
-  if (!(sx > 10 && sy > 10 && sx / sy > 0.75 && sx / sy < 1.33)) return null;
-  return { width, height, ox: pa[0] - sx * ga[0], oy: pa[1] - sy * ga[1], sx, sy };
+  const [dx, dy] = [pb[0] - pa[0], pb[1] - pa[1]];
+  const sx = Math.abs(dgx) >= 1 ? dx / dgx : NaN;
+  const sy = Math.abs(dgy) >= 0.5 ? dy / dgy : NaN;
+  if (Number.isNaN(sx) && Number.isNaN(sy)) return null;
+  if (!Number.isNaN(sx) && !Number.isNaN(sy) && !(sx / sy > 0.75 && sx / sy < 1.33)) return null;
+  const s = (dgx * dx + dgy * dy) / (dgx * dgx + dgy * dgy); // least squares
+  if (!(s > 10)) return null;
+  return { width, height, ox: (pa[0] + pb[0]) / 2 - (s * (ga[0] + gb[0])) / 2, oy: (pa[1] + pb[1]) / 2 - (s * (ga[1] + gb[1])) / 2, sx: s, sy: s };
 }
 
 /** The cell whose diamond holds the point (physical px of the client area), null outside the grid. */

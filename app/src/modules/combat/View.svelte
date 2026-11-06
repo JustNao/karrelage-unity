@@ -4,8 +4,8 @@
   import { app } from "../../lib/app.svelte";
   import { fight } from "../../lib/stores/combat.svelte";
   import { settings } from "../../lib/stores/settings.svelte";
-  import { onStored, readJSON, removeKey } from "../../lib/persist.svelte";
-  import { ALL_RANGE as RANGE, CALIBRATION_KEY, type Calibration, type FightMapState, type Sight } from "../../lib/fightMap";
+  import { onStored, readJSON, removeKey, writeJSON } from "../../lib/persist.svelte";
+  import { ALL_RANGE as RANGE, CALIBRATE_ASKED_KEY, CALIBRATION_KEY, type Calibration, type FightMapState, type Sight } from "../../lib/fightMap";
   import Banner from "../../lib/components/Banner.svelte";
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
   import Minimap from "./Minimap.svelte";
@@ -20,18 +20,27 @@
   let pinned = $state<number | null>(null);
   let sight = $state.raw<Sight | null>(null);
 
-  /** The in-game view's calibration (saved by its window: followed through the storage events) */
+  /** The in-game view's calibration by hand and whether one is asked (changed by its window too: followed through the storage
+   *  events). The grid is otherwise computed from the game window's size. */
   let calibrated = $state(readJSON<Calibration | null>(CALIBRATION_KEY, null) !== null);
-  function forget() {
-    removeKey(CALIBRATION_KEY);
-    calibrated = false;
+  let asked = $state(readJSON(CALIBRATE_ASKED_KEY, false));
+  function calibration() {
+    if (calibrated) {
+      removeKey(CALIBRATION_KEY);
+      calibrated = false;
+    } else {
+      asked = !asked;
+      if (asked) writeJSON(CALIBRATE_ASKED_KEY, true);
+      else removeKey(CALIBRATE_ASKED_KEY);
+    }
   }
 
   onMount(() => {
     const off = listenAll({ "fightmap:state": (s: FightMapState) => (live = s) });
     off.ready.then(() => call<FightMapState>("fightmap", "state")).then((s) => (live = s));
     const stored = onStored<Calibration>(CALIBRATION_KEY, (c) => (calibrated = c !== null));
-    return () => (off(), stored());
+    const storedAsk = onStored<boolean>(CALIBRATE_ASKED_KEY, (a) => (asked = a === true));
+    return () => (off(), stored(), storedAsk());
   });
 
   // the map's cells, asked again when the map changes (shown during a fight only)
@@ -57,13 +66,13 @@
   const from = $derived(pinned ?? hovered);
 
   // line of sight from the hovered / pinned cell: the player's own fighter stands there instead of where it is now
-  let asked = 0;
+  let sightAsked = 0;
   $effect(() => {
     const f = from;
     void live.fighters; // fighters moved: asked again
     if (f === null || !cells) return void (sight = null);
-    const n = ++asked;
-    call<Sight | null>("fightmap", "sight", { from: f, ...RANGE, ignore: [...mine] }, true).then((s) => n === asked && (sight = s));
+    const n = ++sightAsked;
+    call<Sight | null>("fightmap", "sight", { from: f, ...RANGE, ignore: [...mine] }, true).then((s) => n === sightAsked && (sight = s));
   });
 
   const pick = (c: number) => (pinned = pinned === c ? null : c);
@@ -79,10 +88,11 @@
         </span>
         <button
           class="mini"
-          disabled={!calibrated}
-          onclick={forget}
-          title={calibrated ? "Oublier la calibration de la vue en jeu : il sera redemandé au prochain usage du raccourci" : "Aucune calibration enregistrée"}
-        >Effacer la calibration</button>
+          onclick={calibration}
+          title={calibrated
+            ? "Oublier la calibration à la main : la grille de la vue en jeu est de nouveau calculée d'après la taille de la fenêtre du jeu"
+            : "La grille de la vue en jeu est calculée d'après la taille de la fenêtre du jeu. Si elle est décalée : deux clics sur des combattants au prochain usage du raccourci"}
+        >{calibrated ? "Effacer la calibration" : asked ? "Annuler la calibration" : "Calibrer à la main"}</button>
       </div>
       <p class="mut help">
         Survolez une case : les cases en ligne de vue s'éclairent, celles derrière un obstacle restent pâles. Un clic fige la
