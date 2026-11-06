@@ -438,7 +438,7 @@ impl Module for FightMap {
     /// `refocus`: the Dofus window it covers gets the focus back if it lost it. `release`: the view closes: `watch_escape`
     /// off + `refocus`.
     /// State `portals`: [{cell, author, open}] in the order they were put down. Call `portals` {author, start?: a portal}: the
-    /// Portail spell of that caster simulated (`simulate`), {base: not cast, sims: {cell: cast there}} for every free walkable
+    /// Portail spell of that caster simulated (`simulate`), {base: not cast (way from `start`, else the oldest open portal), sims: {cell: cast there}} for every free walkable
     /// cell, each {added, dropped, via, path: [cells], distance}.
     fn call(&self, method: &str, args: Value, ctx: &Ctx) -> Result<Value> {
         match method {
@@ -504,7 +504,10 @@ impl Module for FightMap {
                 // every cell at once: hovering is then a lookup, with no call per cell
                 let sims: BTreeMap<i64, Sim> =
                     (0..MAP_CELLS as i64).filter(|&c| aimed(c)).map(|c| (c, simulate(&net, Some(c), &fits, caster, start))).collect();
-                Ok(json!({"base": simulate(&net, None, &fits, caster, start), "sims": sims}))
+                // no spell placed (the mouse off the grid, on the game's bars...): the way as it is, from the chosen portal or the oldest open one
+                let open_portal = |c: i64| net.iter().any(|&(p, open)| open && p == c);
+                let from = start.filter(|&c| open_portal(c)).or(net.iter().find(|(_, open)| *open).map(|(c, _)| *c));
+                Ok(json!({"base": simulate(&net, None, &fits, caster, from), "sims": sims}))
             }
             "sight" => {
                 let from = arg_i64(&args, "from")?;
@@ -715,7 +718,9 @@ mod tests {
                 let net = &all["sims"]["332"];
                 assert!(net["via"] == true && net["added"].is_null() && net["dropped"].is_null() && net["path"] == json!([]));
                 assert!(predicted, "the 4th portal predicted from the Portail cast");
-                assert!(all["base"]["path"].as_array().unwrap().is_empty() && all["base"]["added"].is_null());
+                // nothing placed: the network as it is, from its oldest portal
+                assert_eq!(all["base"]["path"], json!(portal_path(&[188, 332, 265, 257], 188)));
+                assert!(all["base"]["added"].is_null());
                 // a fifth portal: the oldest (188) goes
                 let sims = all["sims"].as_object().unwrap();
                 let (_, n) = sims.iter().find(|(c, n)| c.parse().ok() == n["added"].as_i64() && n["via"] == false).expect("a free cell for a fifth portal");

@@ -49,8 +49,10 @@
       .catch(() => {});
   });
 
-  // the cell under the mouse: its simulation (none where the spell puts no portal: the network as it is)
-  const sim = $derived(all && ((pointed !== null && all.sims[pointed]) || all.base));
+  // the cell under the mouse: its simulation; anywhere the spell puts no portal (off the grid, a wall, the game's bars): the
+  // network as it is, so the key shows something wherever the mouse is
+  const aimed = $derived(all && pointed !== null ? all.sims[pointed] : null);
+  const sim = $derived(aimed?.added != null ? aimed : all?.base);
   const exit = $derived(sim && sim.path.length > 1 ? sim.path[sim.path.length - 1] : null);
   const points = $derived((sim?.path ?? []).map((c) => screenCentre(cal, c, dpr).join(",")).join(" "));
   /** size of a cell on screen (CSS px) */
