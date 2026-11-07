@@ -3,17 +3,18 @@
   import { cursorPosition, getCurrentWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
   import { call, listenAll } from "./lib/api";
   import { onStored, readFlag, readJSON, writeFlag, writeJSON } from "./lib/persist.svelte";
-  import { ADVANCED_KEY, buttonRect, calibrate, CALIBRATION_KEY, pctText, REF, runeCentre, type FmCalibration, type FmItem } from "./lib/forgemagie";
+  import Segmented from "./lib/components/Segmented.svelte";
+  import { ADVANCED_KEY, buttonRect, calibrate, CALIBRATION_KEY, oddsTone, pctText, REF, runeCentre, SHOWN_KEY, SHOWN_OPTIONS, type FmCalibration, type FmItem, type FmShown } from "./lib/forgemagie";
 
   /**
    * Forgemagie overlay (forgemagie.html): a transparent window over the Dofus window's picture while an equipment piece is in a
    * forgemagie workshop, made hidden by the main window (lib/stores/forgemagie.svelte.ts).
-   * - A button at the right end of the « Fusionner » row: shows / hides each rune's chance of critical success under its icon
-   *   (remembered). Right click: calibrate again (the game's window was dragged). Before any calibration it sits at the top of
+   * - A button at the right end of the « Fusionner » row: shows / hides each rune's chance under its icon (remembered); over
+   *   it, while shown, a selector of the chance shown: critical success, neutral success or critical failure (remembered). Right click: calibrate again (the game's window was dragged). Before any calibration it sits at the top of
    *   the picture and starts one.
    * - Calibration: two clicks on the forgemagie window's top-left and bottom-right corners (lib/forgemagie.ts `calibrate`),
    *   kept for this size of the game's window.
-   * - The mouse goes through to the game except over the button (the cursor is polled) and during the calibration.
+   * - The mouse goes through to the game except over the button / selector (the cursor is polled) and during the calibration.
    * - Nothing drawn while the game isn't the foreground window (another app over it), except during the calibration (the
    *   overlay has the focus then). The window itself stays: hiding and showing it again would flash.
    * - Closes itself when the item leaves the workshop (or the feature is switched off).
@@ -42,6 +43,11 @@
   let clicks = $state.raw<[number, number][]>([]);
   let failed = $state(false);
   let overButton = $state(false);
+  let shown = $state<FmShown>(readJSON<FmShown>(SHOWN_KEY, "sc"));
+  $effect(() => writeJSON(SHOWN_KEY, shown));
+  /** the button and the selector: the mouse is taken over them */
+  let buttonEl = $state<HTMLElement | null>(null);
+  let pickerEl = $state<HTMLElement | null>(null);
   let ready = $state(false);
   /** the game is the foreground window */
   let focused = $state(true);
@@ -137,8 +143,13 @@
       if (++ticks % PLACE_EVERY === 0) await place().catch(() => null);
       if (ticks % FOCUS_EVERY === 0) focused = await call<boolean>("forgemagie", "focused", {}, true).catch(() => true);
       const p = await cursorPosition().catch(() => null);
-      const b = button;
-      overButton = !!(p && placed && b && p.x - placed.x >= b.x && p.x - placed.x <= b.x + b.w && p.y - placed.y >= b.y && p.y - placed.y <= b.y + b.h);
+      // the cursor in CSS px of the window, against the elements as laid out (the selector is zoomed)
+      const [cx, cy] = p && placed ? [(p.x - placed.x) / dpr, (p.y - placed.y) / dpr] : [NaN, NaN];
+      const inside = (el: HTMLElement | null) => {
+        const r = el?.getBoundingClientRect();
+        return !!r && cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom;
+      };
+      overButton = inside(buttonEl) || inside(pickerEl);
       timer = setTimeout(tick, CURSOR_POLL_MS);
     };
     (async () => {
@@ -160,7 +171,6 @@
     };
   });
 
-  const color = (sc: number) => (sc >= 50 ? "good" : sc >= 15 ? "mid" : "low");
   /** physical px -> CSS px */
   const css = (v: number) => v / dpr;
 </script>
@@ -185,14 +195,23 @@
       {#each item.lines.slice(0, REF.rows) as line, row (line.stat)}
         {#each line.runes as rune, col (rune.gid)}
           {@const [x, y] = runeCentre(cal, row, col)}
-          <div class="odds {rune.odds ? color(rune.odds.sc) : 'refused'}" style:left="{css(x)}px" style:top="{css(y + (REF.rune.size / 2 - 3) * cal.sy)}px" style:font-size="{css(fs)}px">
-            {rune.odds ? pctText(rune.odds.sc) : "✕"}
+          <div class="odds {rune.odds ? oddsTone(shown, rune.odds[shown]) : 'refused'}" style:left="{css(x)}px" style:top="{css(y + (REF.rune.size / 2 - 3) * cal.sy)}px" style:font-size="{css(fs)}px">
+            {rune.odds ? pctText(rune.odds[shown]) : "✕"}
           </div>
         {/each}
       {/each}
     {/if}
+    {#if button && cal && advanced && !calibrating}
+      <!-- right-aligned with the button, just over it; zoomed like the game's interface -->
+      <div class="picker" bind:this={pickerEl} style:right="{css(placed.width - button.x - button.w)}px" style:bottom="{css(placed.height - button.y + 4 * cal.sy)}px">
+        <div class="zoom" style:zoom={(0.8 * cal.sy) / dpr}>
+          <Segmented bind:value={shown} options={SHOWN_OPTIONS} label="Chance affichée sous les runes" />
+        </div>
+      </div>
+    {/if}
     {#if button && !calibrating}
       <button
+        bind:this={buttonEl}
         class="fm"
         class:on={advanced && cal}
         style:left="{css(button.x)}px"
@@ -221,7 +240,10 @@
   .odds.good { color: #6fe07a; }
   .odds.mid { color: #f2c94c; }
   .odds.low { color: #ff8a7a; }
+  .odds.neutral { color: #cfd6ff; }
   .odds.refused { color: #9aa; }
+  .picker { position: absolute; pointer-events: auto; }
+  .zoom { background: rgba(28, 30, 44, 0.92); border-radius: 6px; }
   .fm { position: absolute; pointer-events: auto; display: flex; align-items: center; justify-content: center; padding: 0 6px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap; color: #d9dbe8; background: #4a4c5e; border: 1px solid #6a6c80; border-radius: 3px; cursor: pointer; }
   .fm:hover { background: #5a5c70; }
   .fm.on { color: #fff; background: #3d6b4a; border-color: #5f9a6e; }

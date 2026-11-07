@@ -45,6 +45,17 @@ export interface FmCalibration {
 export const CALIBRATION_KEY = "karrelage.forgemagie.calibration";
 /** The chances shown under the runes (the overlay's button), remembered. */
 export const ADVANCED_KEY = "karrelage.forgemagie.advanced";
+/** Which chance is shown under the runes (the selector over the button), remembered. */
+export const SHOWN_KEY = "karrelage.forgemagie.shown";
+export type FmShown = keyof FmOdds;
+export const SHOWN_OPTIONS: { id: FmShown; label: string; title: string }[] = [
+  { id: "sc", label: "SC", title: "Succès critique : la rune passe sans rien faire baisser" },
+  { id: "sn", label: "SN", title: "Succès neutre : la rune passe, d'autres lignes baissent (ou le reliquat)" },
+  { id: "ec", label: "EC", title: "Échec critique : la rune ne passe pas, des lignes baissent" },
+];
+/** Colour class of a chance: high is good for a success, bad for a failure; the neutral success has none. */
+export const oddsTone = (kind: FmShown, v: number) =>
+  kind === "sn" ? "neutral" : (kind === "sc" ? v >= 50 : v <= 20) ? "good" : (kind === "sc" ? v >= 15 : v <= 50) ? "mid" : "low";
 
 /** The forgemagie window as measured on a capture (px from its top-left corner, at scale 1). */
 export const REF = {
