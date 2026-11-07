@@ -17,6 +17,12 @@ export const RECORD_CATEGORIES: { id: RecordCategory; title: string; desc: strin
     desc: "Tous les paquets de chaque combat, du début à la fin, pour de l'analyse de données (ni les discussions, ni le groupe). Un fichier par combat, de 0,5 à 3,5 Mo.",
     unit: "combat(s)",
   },
+  {
+    id: "forgemagie",
+    title: "Enregistrer les sessions de forgemagie",
+    desc: "Tous les paquets d'un atelier, de son utilisation à sa fermeture (ni les discussions, ni le groupe) : forgemagie et crafts. Les utilisations sans résultat de craft (récolte, zaap…) ne sont pas gardées. Un fichier par session.",
+    unit: "session(s)",
+  },
 ];
 
 export interface RecorderStatus {

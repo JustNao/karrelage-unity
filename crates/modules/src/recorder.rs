@@ -49,6 +49,9 @@ pub struct Category {
     within: bool,
     /// ... except the messages starting with one of these.
     skip: &'static [&'static str],
+    /// When not empty: a file closed without one of these is deleted (a recording opened by a message that many other
+    /// things send too).
+    keep: &'static [&'static str],
 }
 
 /// A fight = from its start to its end, whatever comes between: names alone (`Fight*`, `GameActionFight*`) find only 53 % of
@@ -75,9 +78,23 @@ const FIGHT: Category = Category {
     within: true,
     // the player's conversations and party stay out of a data set; the rest is connection keep-alive
     skip: &["Chat", "Channel", "Party", "Ping", "Pong", "BasicLatency"],
+    keep: &[],
 };
 
-pub const CATEGORIES: &[Category] = &[FIGHT];
+/// A workshop session (forgemagie, crafts): neither the craft window's opening nor the item put in are named in 3.7, so a file
+/// opens at every use of an interactive (the workshop) and holds everything until the exchange is left or the map changes; one
+/// without a craft result (harvest, zaap, door, the window left unused) is deleted when it closes.
+const FORGEMAGIE: Category = Category {
+    id: "forgemagie",
+    starts: &["InteractiveUseRequest"],
+    names: &["ExchangeCraftResultEvent"],
+    ends: &["ExchangeLeaveEvent", "DialogLeaveEvent", "MapInformationRequest"],
+    within: true,
+    skip: &["Chat", "Channel", "Party", "Ping", "Pong", "BasicLatency"],
+    keep: &["ExchangeCraftResultEvent"],
+};
+
+pub const CATEGORIES: &[Category] = &[FIGHT, FORGEMAGIE];
 
 /// What a message does to its category's file.
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -118,6 +135,8 @@ struct Job {
     step: Step,
     t: f64,
     entry: Entry,
+    /// A message that keeps its file (`Category::keep`).
+    keep: bool,
 }
 
 /// Counters of the session, per category.
@@ -181,7 +200,8 @@ impl Recorder {
                 }
                 Step::Begin | Step::Write => {}
             }
-            let job = Job { cat, srv: m.raw.srv.clone(), step, t: m.raw.t, entry: Entry::of(m, usize::MAX) };
+            let keep = c.keep.is_empty() || c.keep.contains(&m.name.as_str());
+            let job = Job { cat, srv: m.raw.srv.clone(), step, t: m.raw.t, entry: Entry::of(m, usize::MAX), keep };
             if run.tx.try_send(job).is_err() {
                 self.stats.dropped[cat].fetch_add(1, Ordering::Relaxed);
             }
@@ -260,6 +280,26 @@ fn header(cat: &str, data: &Data) -> Value {
     }})
 }
 
+/// A file being written.
+struct Recording {
+    out: BufWriter<File>,
+    path: PathBuf,
+    /// Holds a record its category keeps files for (always, for a category without `keep`).
+    kept: bool,
+}
+
+impl Recording {
+    /// Flushed, or deleted when nothing kept it.
+    fn close(mut self) -> std::io::Result<()> {
+        self.out.flush()?;
+        if !self.kept {
+            drop(self.out);
+            std::fs::remove_file(&self.path)?;
+        }
+        Ok(())
+    }
+}
+
 /// The background half: decodes the records and appends them to their files.
 struct Writer {
     dir: PathBuf,
@@ -268,7 +308,7 @@ struct Writer {
     stats: Arc<Stats>,
     emit: Arc<dyn Fn(&str, Value) + Send + Sync>,
     log: Arc<dyn Fn(String) + Send + Sync>,
-    files: HashMap<(usize, String), BufWriter<File>>,
+    files: HashMap<(usize, String), Recording>,
     /// Drops already marked in a file, per category.
     marked: Vec<u64>,
 }
@@ -286,7 +326,7 @@ impl Writer {
             while let Ok(job) = rx.try_recv() {
                 self.handle(job);
             }
-            let flushed: Result<Vec<()>, _> = self.files.values_mut().map(Write::flush).collect();
+            let flushed: Result<Vec<()>, _> = self.files.values_mut().map(|f| f.out.flush()).collect();
             if let Err(e) = flushed {
                 self.failed(e);
             }
@@ -315,7 +355,9 @@ impl Writer {
     fn write(&mut self, job: Job) -> std::io::Result<()> {
         let key = (job.cat, job.srv);
         if job.step == Step::Begin {
-            self.files.remove(&key);
+            if let Some(f) = self.files.remove(&key) {
+                f.close()?;
+            }
         }
         if !self.files.contains_key(&key) {
             let file = self.create(job.cat, job.t)?;
@@ -329,29 +371,42 @@ impl Writer {
         if let Some(r) = rec.as_object_mut() {
             r.remove("fmt"); // what another module showed in the inspector
         }
-        let Some(out) = self.files.get_mut(&key) else { return Ok(()) };
+        let Some(file) = self.files.get_mut(&key) else { return Ok(()) };
+        file.kept |= job.keep;
         if lost > 0 {
-            write_line(out, &json!({"dropped": lost}))?;
+            write_line(&mut file.out, &json!({"dropped": lost}))?;
         }
-        write_line(out, &rec)?;
+        write_line(&mut file.out, &rec)?;
         self.stats.written[job.cat].fetch_add(1, Ordering::Relaxed);
         if job.step == Step::End {
-            if let Some(mut f) = self.files.remove(&key) {
-                f.flush()?;
+            if let Some(f) = self.files.remove(&key) {
+                f.close()?;
             }
         }
         Ok(())
     }
 
     /// A new file, its name being the first record's time (append-only, even if two recordings meet on the same millisecond).
-    fn create(&self, cat: usize, t: f64) -> std::io::Result<BufWriter<File>> {
+    fn create(&self, cat: usize, t: f64) -> std::io::Result<Recording> {
         let id = CATEGORIES[cat].id;
         let dir = self.dir.join(id);
         std::fs::create_dir_all(&dir)?;
-        let file = std::fs::OpenOptions::new().create(true).append(true).open(dir.join(format!("{}.jsonl", (t * 1000.0) as u64)))?;
+        let path = dir.join(format!("{}.jsonl", (t * 1000.0) as u64));
+        let file = std::fs::OpenOptions::new().create(true).append(true).open(&path)?;
         let mut out = BufWriter::new(file);
         write_line(&mut out, &header(id, &self.data))?;
-        Ok(out)
+        Ok(Recording { out, path, kept: CATEGORIES[cat].keep.is_empty() })
+    }
+}
+
+/// The recordings still open end with the writer (category switched off, app closed): flushed, or deleted when nothing kept them.
+impl Drop for Writer {
+    fn drop(&mut self) {
+        for (_, f) in std::mem::take(&mut self.files) {
+            if let Err(e) = f.close() {
+                self.failed(e);
+            }
+        }
     }
 }
 
@@ -452,11 +507,37 @@ mod tests {
         assert_eq!(step(false, "MapInformationRequest"), Step::Ignore);
     }
 
+    /// Workshop sessions: every interactive used opens a file, only those with a craft result stay.
+    #[test]
+    fn workshop_sessions_kept_with_a_craft_result() {
+        let Some((hub, proto)) = testkit::hub("loutil-recorder-forgemagie") else { return };
+        let obf = |name: &str| proto.obf_for_clear(name).unwrap_or_else(|| panic!("{name} in the pack"));
+        let send = |ty: &str, t: f64, dir| hub.handle(RawMessage { t, srv: "x:5555".into(), dir, payload: frame(ty) });
+        hub.call(ID, "set_category", json!({"id": "forgemagie", "on": true})).unwrap();
+        send(&obf("InteractiveUseRequest"), 1.0, "C->S"); // a harvest
+        send("zzz", 2.0, "S->C");
+        send(&obf("InteractiveUseRequest"), 10.0, "C->S"); // the workshop
+        send("zzz", 11.0, "S->C"); // window opened, item put in: unnamed
+        send(&obf("ChatChannelMessageEvent"), 12.0, "S->C");
+        send(&obf("ExchangeCraftResultEvent"), 13.0, "S->C");
+        send(&obf("ExchangeLeaveEvent"), 14.0, "S->C");
+        send("zzz", 15.0, "S->C"); // after the window
+        send(&obf("InteractiveUseRequest"), 20.0, "C->S"); // a zaap
+        send(&obf("MapInformationRequest"), 21.0, "C->S");
+        send(&obf("InteractiveUseRequest"), 30.0, "C->S"); // left open when switched off
+        hub.call(ID, "set_category", json!({"id": "forgemagie", "on": false})).unwrap();
+
+        let files = recordings(&hub, "forgemagie");
+        assert_eq!(files.iter().map(|f| f.file_stem().unwrap().to_str().unwrap()).collect::<Vec<_>>(), ["10000"]);
+        let names: Vec<String> = lines(&files[0])[1..].iter().map(|r| r["name"].as_str().unwrap().to_string()).collect();
+        assert_eq!(names, ["InteractiveUseRequest", "zzz", "ExchangeCraftResultEvent", "ExchangeLeaveEvent"]);
+    }
+
     /// The kind of category to come (`hdv`, `movement`): given messages, whenever they come, in one file.
     #[test]
     fn names_only_category() {
         const HDV: Category =
-            Category { id: "hdv", starts: &[], names: &["ExchangeTypesItemsExchangerDescriptionForUserEvent"], ends: &[], within: false, skip: &[] };
+            Category { id: "hdv", starts: &[], names: &["ExchangeTypesItemsExchangerDescriptionForUserEvent"], ends: &[], within: false, skip: &[], keep: &[] };
         let listed = HDV.names[0];
         assert_eq!(HDV.step(false, listed), Step::Begin);
         assert_eq!(HDV.step(true, listed), Step::Write);
@@ -468,7 +549,7 @@ mod tests {
     fn full_queue_drops_without_blocking() {
         let rec = Recorder::new();
         let (tx, _rx) = sync_channel(1);
-        *rec.run.lock() = Some(Run { on: vec![true], open: vec![HashSet::new()], tx, writer: None });
+        *rec.run.lock() = Some(Run { on: vec![true, false], open: vec![HashSet::new(); CATEGORIES.len()], tx, writer: None });
         for _ in 0..4 {
             rec.route(&testkit::msg("GameActionFightEvent", None, 1.0));
         }
@@ -550,7 +631,7 @@ mod tests {
         let raw = RawMessage { t: 5.0, srv: "x".into(), dir: "S->C", payload: frame(&proto.obf_for_clear("FightEndEvent").unwrap()) };
         let mut m = testkit::msg("FightEndEvent", None, 5.0);
         m.raw = raw;
-        w.handle(Job { cat: 0, srv: "x".into(), step: Step::Write, t: 5.0, entry: Entry::of(&m, usize::MAX) });
+        w.handle(Job { cat: 0, srv: "x".into(), step: Step::Write, t: 5.0, entry: Entry::of(&m, usize::MAX), keep: true });
         drop(w);
         let file = lines(&recordings(&hub, "fight")[0]);
         assert_eq!(file[1]["dropped"], 3);

@@ -188,6 +188,9 @@ and developer mode are both on. New category = an entry in `CATEGORIES`, a defau
 - Fight = one file from `FightStartingEvent` (or a fight message when switched on during one) to `FightEndEvent` / `ContextDestroyEvent` /
   `MapInformationRequest` (end lost: 3 of the captures' 12 fights; never during the 9 others), with everything between except chat, party
   and keep-alive: names alone give 53 % of capture_poison. Files are per `srv`: two game clients on one server share a file (no client id in `RawMessage`).
+- Forgemagie = a workshop session: the craft window's opening and the item put in are unnamed in 3.7, so a file opens at every
+  `InteractiveUseRequest` and holds everything until `ExchangeLeaveEvent` / `DialogLeaveEvent` / `MapInformationRequest`; one
+  without an `ExchangeCraftResultEvent` (category `keep`) is deleted when it closes (harvests, zaaps…). Crafts are recorded too.
 - Measured on the captures: about 1.1 KB per message, 0.4–0.85 MB per fight, 3.4 MB for a 3 min one with 4,300 messages (gzip: 22 × smaller).
 
 **Brisage** (`brisage.rs`, `lib/brisage.ts`)

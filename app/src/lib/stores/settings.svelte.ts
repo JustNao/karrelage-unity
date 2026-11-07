@@ -33,6 +33,8 @@ const DEFAULTS = {
   record: {
     /** Every fight, from its start to its end. */
     fight: false,
+    /** Every workshop session with a craft result (forgemagie included), from the workshop's use to leaving it. */
+    forgemagie: false,
   },
   /** Global keyboard shortcuts (lib/shortcuts.ts), one per name: work while the game has the focus. */
   shortcuts: {
