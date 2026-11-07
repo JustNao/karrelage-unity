@@ -118,11 +118,11 @@ impl Data {
         !(e.density < 0.0 || label.starts_with('-')) && (e.group != "other" || a == HUNTING_WEAPON_EFFECT)
     }
 
-    /// {id, label, group, order, density, filterable} for one effect (None when it has no label).
+    /// {id, label, group, order, priority, density, filterable} for one effect (None when it has no label).
     pub fn effect_entry(&self, a: i64) -> Option<Value> {
         let (e, label) = (self.effects.get(&a)?, self.effect_label(a)?);
         Some(
-            json!({"id": a, "label": label, "group": e.group, "order": e.order, "density": e.density, "stat": self.stat_of(a), "filterable": self.is_filterable(a)}),
+            json!({"id": a, "label": label, "group": e.group, "order": e.order, "priority": e.priority, "density": e.density, "stat": self.stat_of(a), "filterable": self.is_filterable(a)}),
         )
     }
 

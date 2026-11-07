@@ -144,6 +144,8 @@ Set `PYTHONUTF8=1` for scripts handling accents. The "Développeur" header toggl
 - AH row ints are unordered (uid / gid / type): `Data::resolve_gid_type`.
 - Effect ids on the wire = `effects` table ids (= `possibleEffects[].actionId`), not `baseEffectId`.
 - Default range = `diceNum..diceSide` (`diceSide == 0` → fixed).
+- Item effects are listed in the game's order everywhere (`lib/effects.ts` `effectOrder`, `defaults_for`, stuff `effects_json`,
+  brisage): weapon effects first, then `priority` (= `effectPriority`; the game's tooltips and forgemagie window), else group / order.
 - Effects carry `group` (stats/main/secondary/damage/resist/weapon/other), `order` (in-game panel rank), `density`
   (effectPowerRate: AP 100, MP 90, vitality 0.2) and `stat` (+X and -X share it), computed in `export_pack.py`.
 - Item **density** = Σ value × effect density (negatives at half their twin's rate; prospection excluded).
@@ -365,12 +367,14 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   ObjectItemInventory), right before ExchangeCraftResultEvent) / `ExchangeObjectsModifiedEvent` / `ExchangeCraftResultEvent`
   (`object` → two ObjectItem fields); gone on its uid removed or `ExchangeLeaveEvent`. Fields read by type. Not checked on a capture.
 - Odds = dofocus.fr's players' model (its `Pz`, ported in `odds`; the tests hold values its own code gave). Lines keyed by
-  characteristic, "-X" twins signed (negative density); a fixed default value ranges from 0 (as the site has it); lines in the
-  item's effect order then lost defaults at 0 (row order unverified); runes per line by points = the Rune / Pa / Ra columns.
+  characteristic, "-X" twins signed (negative density); a fixed default value ranges from 0 (as the site has it). Rows = exos
+  first, then by effect priority (checked on two windows; lost defaults at 0 unverified); runes per line by points = the Rune /
+  Pa / Ra columns, shown owned or not.
 - Overlay over the client area while an item is in: click-through except over its button (cursor polled) and the
   calibration. Calibration = clicks on the window's top-left / bottom-right corners (`REF` measured on one screenshot: 826 × 704,
   first rune (698, 176.5), pitch 40.4 / 40.5), per client size, localStorage `karrelage.forgemagie.calibration`; reset in
-  Automation « Forgemagie » (feature switch `settings.forgemagie.enabled`), right click on the button recalibrates.
+  Automation « Forgemagie » (feature switch `settings.forgemagie.enabled`), right click on the button recalibrates. Nothing
+  drawn while Dofus isn't the foreground window (`focused`, polled), except during the calibration.
 
 **Loot** (`loot.rs`): FightEndEvent → results → fighter id + `Loot` messages; item = the largest int that is a known gid
 (verified 3.7.12.12). Automation « Songes »: sound when a « Légende » (type 219) is looted, by price threshold.

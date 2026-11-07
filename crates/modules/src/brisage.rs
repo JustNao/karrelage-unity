@@ -179,7 +179,9 @@ impl Brisage {
             if !breakable(i.type_id) {
                 continue;
             }
-            let effects: Vec<(i64, i64, i64)> = i.effects.iter().filter(|e| e.max > 0 && runes.contains_key(&e.a)).map(|e| (e.a, e.min, e.max)).collect();
+            let mut effects: Vec<(i64, i64, i64)> = i.effects.iter().filter(|e| e.max > 0 && runes.contains_key(&e.a)).map(|e| (e.a, e.min, e.max)).collect();
+            // the game's order (effect priority)
+            effects.sort_by_key(|e| ctx.data.effects.get(&e.0).map_or(i64::MAX, |r| r.priority));
             if effects.is_empty() {
                 continue;
             }

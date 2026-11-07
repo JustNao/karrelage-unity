@@ -8,8 +8,9 @@
 //! code on the cases of the tests. Lines are keyed by characteristic like there: "+Force" and "-Force" are one signed line.
 //!
 //! Event `forgemagie:item` {uid, gid, name, level, lines: [{stat, value, min?, max?, runes: [{gid, name, points, odds:
-//! {sc, sn, ec} (%) | null = refused}]}]} or null. The lines come in the item's own effect order, then its default effects it
-//! no longer has (value 0); runes per line from the smallest (the game's Rune / Pa / Ra columns). Not checked on a capture yet.
+//! {sc, sn, ec} (%) | null = refused}]}]} or null. The lines come in the window's order: exos first, then by effect priority
+//! (`effectPriority`), the default effects the item no longer has at 0; runes per line from the smallest (the game's Rune / Pa /
+//! Ra columns, shown whether owned or not). Not checked on a capture yet.
 use crate::auction::{parse_effect, stat_effects, ObjectEffect};
 use crate::inventory::{entry_item, object_ints, Bindings};
 use crate::kit::{unknown, Role};
@@ -228,29 +229,33 @@ fn lines_of(data: &Data, runes: &BTreeMap<i64, (f64, Vec<Rune>)>, gid: i64, effe
         let row = data.effects.get(&a)?;
         runes.contains_key(&row.characteristic).then_some((row.characteristic, if row.density < 0.0 { -1.0 } else { 1.0 }))
     };
+    let priority = |a: i64| data.effects.get(&a).map_or(i64::MAX, |r| r.priority);
     let mut ranges: BTreeMap<i64, (f64, f64)> = BTreeMap::new();
-    let mut order: Vec<i64> = vec![];
+    let mut order: Vec<(i64, i64)> = vec![];
     for d in data.items.get(&gid).map(|i| i.effects.as_slice()).unwrap_or_default() {
         let Some((c, sign)) = stat(d.a) else { continue };
         let (lo, hi) = (d.min as f64 * sign, d.max as f64 * sign);
         // a fixed value: from 0 (as the simulator gets it: diceSide 0)
         ranges.insert(c, if lo == hi { (lo.min(0.0), hi.max(0.0)) } else { (lo.min(hi), lo.max(hi)) });
-        order.push(c);
+        order.push((c, d.a));
     }
-    let mut lines: Vec<Line> = vec![];
+    // each line with the priority of the effect it comes from (its first one on the item)
+    let mut lines: Vec<(Line, i64)> = vec![];
     for &(a, v) in effects {
         let Some((c, sign)) = stat(a) else { continue };
-        match lines.iter_mut().find(|l| l.stat == c) {
-            Some(l) => l.value += v as f64 * sign,
-            None => lines.push(Line { stat: c, value: v as f64 * sign, range: ranges.get(&c).copied(), weight: runes[&c].0 }),
+        match lines.iter_mut().find(|(l, _)| l.stat == c) {
+            Some((l, _)) => l.value += v as f64 * sign,
+            None => lines.push((Line { stat: c, value: v as f64 * sign, range: ranges.get(&c).copied(), weight: runes[&c].0 }, priority(a))),
         }
     }
-    for c in order {
-        if !lines.iter().any(|l| l.stat == c) {
-            lines.push(Line { stat: c, value: 0.0, range: ranges.get(&c).copied(), weight: runes[&c].0 });
+    for (c, a) in order {
+        if !lines.iter().any(|(l, _)| l.stat == c) {
+            lines.push((Line { stat: c, value: 0.0, range: ranges.get(&c).copied(), weight: runes[&c].0 }, priority(a)));
         }
     }
-    lines
+    // the game's order: exos first, then by effect priority (checked on two forgemagie windows)
+    lines.sort_by_key(|(l, p)| (l.range.is_some(), *p));
+    lines.into_iter().map(|(l, _)| l).collect()
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -412,6 +417,8 @@ impl Module for Forgemagie {
             }
             "window" => Ok(crate::sys::game_window().map_or(Value::Null, |w| json!({"x": w.x, "y": w.y, "width": w.width, "height": w.height}))),
             "refocus" => Ok(json!(crate::sys::focus_game(None))),
+            // the overlay shows only while the game is in the foreground
+            "focused" => Ok(json!(crate::sys::game_focused())),
             _ => Err(unknown(ID, method)),
         }
     }
@@ -533,6 +540,24 @@ mod tests {
         assert_eq!(fm.call("state", Value::Null, &hub.ctx).unwrap()["gid"].as_i64(), Some(19985));
         send(LEAVE, DynamicMessage::new(md(LEAVE)));
         assert!(fm.call("state", Value::Null, &hub.ctx).unwrap().is_null());
+    }
+
+    /// The window's order on two captures: exos first, then the effect priority (not the item's own order).
+    #[test]
+    fn lines_in_the_window_order() {
+        let Some((hub, _)) = crate::kit::testkit::hub("loutil-forgemagie-order") else { return };
+        let data = &hub.ctx.data;
+        if data.effects.get(&125).is_none_or(|r| r.priority == 0) {
+            return; // older pack, without effectPriority
+        }
+        let runes = rune_table(data);
+        let stats = |gid, effects: &[(i64, i64)]| lines_of(data, &runes, gid, effects).iter().map(|l| l.stat).collect::<Vec<_>>();
+        // item 14094 (shuffled here): Vitalité, Sagesse, Puissance, Critique, PA, Rés. Terre, Rés. Air, Tacle, Esquive PA, Do Cri, -Rés. Cri
+        let fx = [(421, 17), (160, 4), (125, 394), (115, 8), (753, 11), (124, 34), (418, 25), (111, 1), (138, 69), (212, 8), (210, 8)];
+        assert_eq!(stats(14094, &fx), [11, 12, 25, 18, 1, 33, 36, 79, 27, 86, 87]);
+        // item 19985 with a Do Cri exo: it comes first; then Vitalité, Chance, Critique, Do Eau, Rés. Eau
+        let fx = [(125, 242), (123, 99), (426, 20), (211, 8), (115, 5), (418, 8)];
+        assert_eq!(stats(19985, &fx), [86, 11, 13, 18, 90, 35]);
     }
 
     /// The pack's runes and an item's lines: signed per characteristic, fixed values from 0, lost default effects at 0.

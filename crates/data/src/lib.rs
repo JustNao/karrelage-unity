@@ -131,6 +131,9 @@ pub struct EffectRow {
     /// effectPowerRate: rune weight per unit (AP 100, MP 90, vitality 0.2, ...). Kept for later features.
     #[serde(default)]
     pub density: f64,
+    /// effectPriority: the game lists an item's effects by it (forgemagie window, tooltips); 0 in older packs.
+    #[serde(default)]
+    pub priority: i64,
 }
 
 fn other_group() -> String {

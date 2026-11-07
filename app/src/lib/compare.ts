@@ -1,4 +1,4 @@
-import { HIDDEN_EFFECTS, groupRank, isNegative } from "./effects";
+import { HIDDEN_EFFECTS, effectOrder, isNegative } from "./effects";
 import { fmtNum } from "./fmt";
 
 /** One stat of the comparison: the lot's effect (left), the pinned lot's effect (right) and the difference between them. */
@@ -10,6 +10,7 @@ export interface Pair {
   delta: number;
   group: string;
   order: number;
+  priority?: number;
   /** 0 = added (on either lot), 1 = normal, 2 = default effect missing on the lot. */
   phase: number;
 }
@@ -47,10 +48,11 @@ export function pairRows(pin: any, row: any): Pair[] {
         delta: sum(L.get(key)) - sum(R.get(key)),
         group: ref.group,
         order: ref.order ?? 0,
+        priority: ref.priority,
         phase: left?.status === "added" || right?.status === "added" ? 0 : left?.status === "removed" ? 2 : 1,
       };
     })
-    .sort((a, b) => a.phase - b.phase || groupRank(a.group) - groupRank(b.group) || a.order - b.order);
+    .sort((a, b) => a.phase - b.phase || effectOrder(a, b));
 }
 
 /** "+12" / "−20" (typographic minus), "=" when equal. */

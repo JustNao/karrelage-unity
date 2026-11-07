@@ -277,6 +277,7 @@ pub(crate) fn parse_effect(data: &Data, b: &ObjectEffect, e: &DynamicMessage) ->
         params,
         group: String::new(),
         order: 0,
+        priority: 0,
         density: 0.0,
         stat: 0,
         status: None,
@@ -416,6 +417,7 @@ impl Module for Auction {
                         if let Some(row) = e["action"].as_i64().and_then(|a| ctx.data.effects.get(&a)) {
                             e["group"] = json!(row.group);
                             e["order"] = json!(row.order);
+                            e["priority"] = json!(row.priority);
                             e["density"] = json!(row.density);
                             e["stat"] = json!(ctx.data.stat_of(e["action"].as_i64().unwrap_or(0)));
                         }
@@ -691,7 +693,7 @@ mod tests {
         assert_eq!(pkt["name"], expected["name"]);
         assert!(pkt["decoded"]["__t"].is_string(), "the inspector decodes the stored bytes when listing");
         let mut got = pkt["fmt"].clone();
-        strip_keys(&mut got, &["group", "order", "density", "stat"]); // added after the python reference was written
+        strip_keys(&mut got, &["group", "order", "priority", "density", "stat"]); // added after the python reference was written
         let mut want = expected["fmt"].take();
         strip_nulls(&mut got);
         strip_nulls(&mut want);

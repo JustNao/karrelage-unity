@@ -55,7 +55,9 @@ effects, ranked = {}, {}
 for k, v in gd.effects.items():
     group, rank = classify(v)
     effects[k] = {"descriptionId": v["descriptionId"], "characteristic": v["characteristic"], "useDice": v["useDice"],
-                  "group": group, "density": v["effectPowerRate"]}
+                  "group": group, "density": v["effectPowerRate"],
+                  # the game lists an item's effects by this (forgemagie window, tooltips)
+                  "priority": v.get("effectPriority") or 0}
     ranked.setdefault(group, []).append(((rank, v["effectPowerRate"] < 0, k), k))   # positives before their negative twins
     ids.add(v["descriptionId"])
 for items_ in ranked.values():

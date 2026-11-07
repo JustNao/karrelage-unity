@@ -34,6 +34,8 @@ pub struct Effect {
     /// Classification from the data pack (see EffectRow); used by the UI to order effects.
     pub group: String,
     pub order: i64,
+    /// effectPriority: the game lists an item's effects by it (the UI sorts by it).
+    pub priority: i64,
     pub density: f64,
     /// Which stat the effect changes (see `Data::stat_of`): "+Force" and "-Force" share it.
     pub stat: i64,
@@ -94,8 +96,8 @@ impl Data {
 
     fn tag(&self, e: &mut Effect) {
         match self.effects.get(&e.action) {
-            Some(r) => (e.group, e.order, e.density) = (r.group.clone(), r.order, r.density),
-            None => (e.group, e.order, e.density) = ("other".into(), i64::MAX, 0.0),
+            Some(r) => (e.group, e.order, e.priority, e.density) = (r.group.clone(), r.order, r.priority, r.density),
+            None => (e.group, e.order, e.priority, e.density) = ("other".into(), i64::MAX, i64::MAX, 0.0),
         }
         e.stat = self.stat_of(e.action);
     }
@@ -143,6 +145,7 @@ impl Data {
                 range: Some([lo, hi]),
                 group: String::new(),
                 order: 0,
+                priority: 0,
                 density: 0.0,
                 stat: 0,
             };
@@ -177,7 +180,7 @@ impl Data {
         let mut out = vec![];
         let ranges = self.default_ranges(gid);
         let mut seen = std::collections::HashSet::new();
-        // order of first appearance in the item
+        // the game's order (effect priority), else first appearance in the item
         for d in gid.and_then(|g| self.items.get(&g)).map(|i| i.effects.as_slice()).unwrap_or_default() {
             if !seen.insert(d.a) {
                 continue;
@@ -191,6 +194,8 @@ impl Data {
                 out.push(json!({"a": d.a, "min": min, "max": max, "label": label}));
             }
         }
+        // stable: effects without a priority (older pack: 0 for all) keep the item's order
+        out.sort_by_key(|v| v["a"].as_i64().and_then(|a| self.effects.get(&a)).map_or(i64::MAX, |r| r.priority));
         out
     }
 }
@@ -210,6 +215,7 @@ mod tests {
             str: None,
             group: String::new(),
             order: 0,
+            priority: 0,
             density: 0.0,
             stat: 0,
             status: None,

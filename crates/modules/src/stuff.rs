@@ -381,6 +381,13 @@ fn icon(ctx: &Ctx, kind: &str, key: &str) -> Result<String> {
     Ok(format!("data:image/{};base64,{}", if ext == "webp" { "webp" } else { "png" }, base64(&bytes)))
 }
 
+/// An item's (or set bonus's) effects as JSON, in the game's order (effect priority).
+fn effects_json(ctx: &Ctx, list: &[loutil_data::DefaultEffect]) -> Vec<Value> {
+    let mut list: Vec<&loutil_data::DefaultEffect> = list.iter().collect();
+    list.sort_by_key(|e| ctx.data.effects.get(&e.a).map_or(i64::MAX, |r| r.priority));
+    list.into_iter().map(|e| effect_json(ctx, e)).collect()
+}
+
 fn effect_json(ctx: &Ctx, e: &loutil_data::DefaultEffect) -> Value {
     json!({"a": e.a, "min": e.min, "max": e.max, "stat": ctx.data.stat_of(e.a), "label": ctx.data.effect_label(e.a),
            "group": ctx.data.effects.get(&e.a).map(|r| r.group.as_str()), "density": ctx.data.effects.get(&e.a).map(|r| r.density)})
@@ -535,12 +542,12 @@ impl Module for Stuff {
                     items.insert(
                         g.to_string(),
                         json!({"name": ctx.data.item_name(g), "level": it.level, "type_id": it.type_id, "type": ctx.data.type_name(Some(it.type_id)),
-                               "set_id": it.set_id, "icon_id": it.icon_id, "effects": it.effects.iter().map(|e| effect_json(ctx, e)).collect::<Vec<_>>()}),
+                               "set_id": it.set_id, "icon_id": it.icon_id, "effects": effects_json(ctx, &it.effects)}),
                     );
                     if let Some((sid, set)) = it.set_id.and_then(|s| ctx.data.itemsets.get(&s).map(|x| (s, x))) {
                         sets.entry(sid.to_string()).or_insert_with(|| {
                             json!({"name": set.name_id.and_then(|n| ctx.data.text(n)), "items": set.items,
-                                   "effects": set.effects.iter().map(|l| l.iter().map(|e| effect_json(ctx, e)).collect::<Vec<_>>()).collect::<Vec<_>>()})
+                                   "effects": set.effects.iter().map(|l| effects_json(ctx, l)).collect::<Vec<_>>()})
                         });
                     }
                 }

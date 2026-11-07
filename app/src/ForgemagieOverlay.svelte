@@ -14,6 +14,8 @@
    * - Calibration: two clicks on the forgemagie window's top-left and bottom-right corners (lib/forgemagie.ts `calibrate`),
    *   kept for this size of the game's window.
    * - The mouse goes through to the game except over the button (the cursor is polled) and during the calibration.
+   * - Nothing drawn while the game isn't the foreground window (another app over it), except during the calibration (the
+   *   overlay has the focus then). The window itself stays: hiding and showing it again would flash.
    * - Closes itself when the item leaves the workshop (or the feature is switched off).
    * Never hidden then shown again, the click-through style first removed off screen (`warmUp`): see FightMapOverlay.svelte.
    */
@@ -21,6 +23,8 @@
   const CURSOR_POLL_MS = 50;
   /** The Dofus window is looked up again every this many cursor polls (it may have moved). */
   const PLACE_EVERY = 20;
+  /** Whether the game is in the foreground is asked every this many cursor polls. */
+  const FOCUS_EVERY = 4;
   const WARMUP_PAINT_MS = 150;
   const OFF_SCREEN = -32000;
 
@@ -39,9 +43,12 @@
   let failed = $state(false);
   let overButton = $state(false);
   let ready = $state(false);
+  /** the game is the foreground window */
+  let focused = $state(true);
+  const visible = $derived(focused || calibrating);
 
   const button = $derived(placed ? buttonRect(cal, placed.width, dpr) : null);
-  const takesInput = $derived(ready && (calibrating || overButton));
+  const takesInput = $derived(ready && (calibrating || (visible && overButton)));
 
   // applied only when it changes (each call changes a window style)
   let applied = false;
@@ -128,6 +135,7 @@
     const tick = async () => {
       if (!on) return;
       if (++ticks % PLACE_EVERY === 0) await place().catch(() => null);
+      if (ticks % FOCUS_EVERY === 0) focused = await call<boolean>("forgemagie", "focused", {}, true).catch(() => true);
       const p = await cursorPosition().catch(() => null);
       const b = button;
       overButton = !!(p && placed && b && p.x - placed.x >= b.x && p.x - placed.x <= b.x + b.w && p.y - placed.y >= b.y && p.y - placed.y <= b.y + b.h);
@@ -157,7 +165,7 @@
   const css = (v: number) => v / dpr;
 </script>
 
-{#if ready && placed}
+{#if ready && placed && visible}
   <div class="overlay">
     {#if calibrating}
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->

@@ -97,7 +97,7 @@ def main():
             lo, hi = (n, sd) if sd else (n, n)
             eff.append({"a": e["actionId"], "min": min(lo, hi), "max": max(lo, hi), "v": e.get("value", 0)})
         items[r["id"]]["effects"] = eff
-    effects = {r["id"]: {k: r.get(k) for k in ("id", "descriptionId", "characteristic", "category", "useDice", "isInPercent", "effectPowerRate", "showInTooltip", "elementId", "boost", "oppositeId")} for r in rows("effects")}
+    effects = {r["id"]: {k: r.get(k) for k in ("id", "descriptionId", "characteristic", "category", "useDice", "isInPercent", "effectPowerRate", "showInTooltip", "elementId", "boost", "oppositeId", "effectPriority")} for r in rows("effects")}
     chars = {r["id"]: {k: r.get(k) for k in ("id", "keyword", "nameId", "order", "categoryId")} for r in rows("characteristics")}
     types = {r["id"]: {k: r.get(k) for k in ("id", "nameId", "superTypeId", "categoryId")} for r in rows("itemtypes")}
     # legendary item passives (effect 1175 carries the spell id): only their names are needed

@@ -10,6 +10,7 @@
  * Fractions are kept (an expected value): the coefficient scales everything, so value(coef) = coef / 100 x value(100 %).
  */
 import { afterTax } from "./price";
+import { effectOrder } from "./effects";
 
 export interface BrisRune {
   gid: number;
@@ -108,6 +109,9 @@ export const breakEven = (cost: number, value100: number) => (value100 > 0 ? (co
 /** Mean roll of each default effect (what a craft gives on average). */
 export const meanRoll = (i: BrisItem): BrisEffect[] => i.effects.map((e) => ({ a: e.a, value: (e.min + e.max) / 2 }));
 
-/** Effects of a scanned lot (its current values; missing default effects give nothing). */
+/** Effects of a scanned lot (its current values; missing default effects give nothing), in the game's order. */
 export const lotEffects = (lot: any): BrisEffect[] =>
-  (lot.effects ?? []).filter((e: any) => e.status !== "removed" && typeof e.hi === "number").map((e: any) => ({ a: e.action, value: e.hi, exo: e.status === "added" }));
+  (lot.effects ?? [])
+    .filter((e: any) => e.status !== "removed" && typeof e.hi === "number")
+    .sort(effectOrder)
+    .map((e: any) => ({ a: e.action, value: e.hi, exo: e.status === "added" }));
