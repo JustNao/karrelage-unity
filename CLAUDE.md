@@ -338,6 +338,10 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   (`setIgnoreCursorEvents`) is tao's WS_EX_LAYERED style and its first removal in a window's life flashes, so `warmUp` does it off
   screen (-32000, -32000) and views that don't need the mouse never take it. This window alone gets a transparent `backgroundColor`
   (`clearBackground`): on every floating window it came with a second, unmovable copy of the fight popup.
+- Weakest element (`fightmap/ResistLayer.svelte`, drawn with the line of sight view, `settings.combat.weakElement`): on each enemy
+  (not the team of `me`, else monsters), the element of its lowest % resistance (characteristics 37 / 33 / 34 / 35 / 36 = neutral,
+  earth, fire, water, air) in that element's colour, the value under it. Fighter `resists` from FightFighterInformation stats, then
+  FightRefreshCharacterStatsEvent (only changed ones: debuffs followed; verified on the 3 captures: every living monster has them).
 - Class help (`lib/classHelp.ts`): Steamer turrets (gids 5831 Bathyscaphe, 5832 Chalutier, 5833 Foreuse, 5835 Gardienne, 5836
   Harponneuse, 5837 Tactirelle) of the player (summoner in `me`, else same team): the cells ≤ 7 from each and in its line of sight
   (bonus zone), the mouse let through (the cursor is polled: over a turret's cell, its zone forward). Fighters carry `monsters` (their monster info's ints that are pack monsters: the gid,

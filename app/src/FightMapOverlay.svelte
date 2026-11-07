@@ -12,13 +12,16 @@
   import ClassLayer from "./fightmap/ClassLayer.svelte";
   import PortalSimLayer from "./fightmap/PortalSimLayer.svelte";
   import SpellCellLayer from "./fightmap/SpellCellLayer.svelte";
+  import ResistLayer from "./fightmap/ResistLayer.svelte";
+  import { settings } from "./lib/stores/settings.svelte";
 
   /**
    * In-game view (fightmap.html): a transparent window over the Dofus window's picture during a fight, made hidden by the main
    * window when the fight starts (lib/fightMapOverlay.ts), a view drawn in it by a shortcut (`fightmap:press` → `open`).
    * - The grid comes from the window's size (`gridOfWindow`), or a calibration by hand for this size. By hand asked in the Combat
    *   tab: fightmap/Calibration.svelte first, and it goes on.
-   * - Then the view's layer: line of sight from the hovered cell (fightmap/LosLayer.svelte), the class help
+   * - Then the view's layer: line of sight from the hovered cell (fightmap/LosLayer.svelte) with each enemy's weakest element
+   *   (fightmap/ResistLayer.svelte), the class help
    *   (fightmap/ClassLayer.svelte), or an Eliotrope portal simulated on the cell under the mouse (fightmap/PortalSimLayer.svelte:
    *   opened by the game's Portail or Exil key, closed by a click too: the spell is cast, or cancelled).
    * - Closed when the held shortcut is let go (unless a cell is pinned, or during the calibration), by its shortcut pressed
@@ -260,6 +263,7 @@
   {:else}
     {#if view === "los"}
       <LosLayer {cal} {cells} {live} {mine} {dpr} {hold} bind:sticky />
+      {#if settings.combat.weakElement}<ResistLayer {cal} {live} {mine} {dpr} />{/if}
     {:else if view === "portals"}
       <PortalSimLayer {cal} {live} {mine} {dpr} {pointed} {polled} />
     {:else if view === "exil"}

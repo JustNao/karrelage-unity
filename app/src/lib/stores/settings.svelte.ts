@@ -28,6 +28,8 @@ const DEFAULTS = {
     overlayGrow: "down" as "down" | "up",
     /** Comte Harebourg: the cell a spell lands on in the in-game view (fightmap/SpellCellLayer.svelte). */
     harebourgCell: true,
+    /** The line of sight view (F3) writes each enemy's weakest element on it (fightmap/ResistLayer.svelte). */
+    weakElement: true,
   },
   /** Automation « Forgemagie »: the overlay over the game's forgemagie window (ForgemagieOverlay.svelte). */
   forgemagie: {

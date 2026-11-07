@@ -20,6 +20,8 @@ export interface MapFighter {
   monsters: number[];
   /** who summoned it (0: nobody / not told) */
   summoner: number;
+  /** % resistances: neutral, earth, fire, water, air (null: not told) */
+  resists: [number, number, number, number, number] | null;
 }
 /** An Eliotrope portal on the ground (closed: a fighter on it, or deactivated this turn). */
 export interface MapPortal {

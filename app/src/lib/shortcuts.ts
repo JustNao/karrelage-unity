@@ -17,7 +17,8 @@ export const SHORTCUTS: { name: ShortcutName; title: string; desc: string }[] = 
     desc:
       "Pendant un combat, tant que la touche est enfoncée : survolez une case du jeu pour voir les cases en ligne de vue. " +
       "Un clic fige la case : la vue reste après avoir lâché la touche (vous pouvez alors jouer), jusqu'au raccourci, Échap ou la fin de votre tour. " +
-      "Au premier usage (ou si la fenêtre du jeu change de taille), cliquez sur les deux combattants indiqués pour calibrer la grille.",
+      "Au premier usage (ou si la fenêtre du jeu change de taille), cliquez sur les deux combattants indiqués pour calibrer la grille. " +
+      "Sur chaque ennemi : son élément le plus faible (sa plus basse résistance en %, la valeur en dessous).",
   },
   {
     name: "classHelp",

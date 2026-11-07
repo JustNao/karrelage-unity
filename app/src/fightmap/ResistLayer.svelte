@@ -1,0 +1,54 @@
+<script lang="ts">
+  import { ELEMENTS } from "../lib/bosses";
+  import { screenCentre, type Calibration, type FightMapState, type MapFighter } from "../lib/fightMap";
+
+  /**
+   * Weakest element of each enemy in the in-game view (line of sight, F3): written on the fighter, in its element's colour,
+   * with its % resistance under it. Resistances are the fight's live ones (crates/modules/src/fight_map: the fighter's stats,
+   * then each stats refresh: buffs and debuffs count). Ties: every tied element (all five: « Tous »).
+   * Enemies: not on the team of the player's characters (`mine`), else every monster when the player is not known.
+   */
+  let { cal, live, mine, dpr }: {
+    cal: Calibration;
+    live: FightMapState;
+    mine: Set<number>;
+    dpr: number;
+  } = $props();
+
+  /** neutral, earth, fire, water, air (ELEMENTS' order) */
+  const COLOURS = ["#c8c8c8", "#c9a15a", "#ff6a3d", "#4fb3ff", "#6fdc6f"];
+
+  const enemies = $derived.by(() => {
+    const teams = new Set(live.fighters.filter((f) => mine.has(f.id)).map((f) => f.team));
+    const enemy = (f: MapFighter) => (teams.size ? f.team !== null && !teams.has(f.team) : f.kind === "monster");
+    return live.fighters.filter((f) => f.alive && !f.carried && f.cell >= 0 && f.resists && enemy(f));
+  });
+
+  function weakest(r: number[]) {
+    const low = Math.min(...r);
+    return { low, elements: r.flatMap((v, i) => (v === low ? [i] : [])) };
+  }
+
+  /** text size from the cell's size on screen */
+  const size = $derived(Math.max(12, (cal.sx / dpr) * 0.17));
+</script>
+
+<svg width="100%" height="100%">
+  {#each enemies as f (f.id)}
+    {@const [x, y] = screenCentre(cal, f.cell, dpr)}
+    {@const w = weakest(f.resists!)}
+    <!-- over the fighter's body: about a cell above the cell it stands on -->
+    <text {x} y={y - (cal.sy * 0.55) / dpr} font-size={size} class="weak">
+      {#if w.elements.length === 5}<tspan fill="#fff">Tous</tspan>
+      {:else}
+        {#each w.elements as e, i (e)}{#if i}<tspan fill="#fff"> / </tspan>{/if}<tspan fill={COLOURS[e]}>{ELEMENTS[e]}</tspan>{/each}
+      {/if}
+      <tspan {x} dy="1.15em" fill="#fff" class="value">{w.low} %</tspan>
+    </text>
+  {/each}
+</svg>
+
+<style>
+  .weak { font-family: var(--font); font-weight: 700; text-anchor: middle; paint-order: stroke; stroke: rgba(0, 0, 0, 0.85); stroke-width: 3px; stroke-linejoin: round; }
+  .value { font-weight: 600; font-size: 0.85em; }
+</style>

@@ -17,6 +17,16 @@
 
 <div class="row">
   <div class="lb">
+    <div>Élément le plus faible des ennemis</div>
+    <div class="mut">
+      Avec la ligne de vue en jeu{#if settings.shortcuts.los.vk}{" "}(<b>{settings.shortcuts.los.label}</b>){/if} : sur chaque ennemi, l'élément
+      où sa résistance en % est la plus basse (dans sa couleur), la valeur en dessous. Suit les buffs et débuffs du combat.
+    </div>
+  </div>
+  <div class="ctl"><Switch bind:checked={settings.combat.weakElement} label="Élément le plus faible des ennemis" /></div>
+</div>
+<div class="row">
+  <div class="lb">
     <div>Position des sorts contre le Comte Harebourg</div>
     <div class="mut">
       Ses sorts font tourner les vôtres autour de vous : en bleu, sur le jeu, la case où arrive un sort visant la case sous la souris.

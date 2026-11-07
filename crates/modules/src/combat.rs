@@ -117,14 +117,28 @@ fn timeline_dead(id: &str, dead: &str, m: &DynamicMessage, out: &mut BTreeSet<i6
 fn characteristic(ctx: &Ctx, m: &DynamicMessage, id: i64) -> Option<(i64, i64)> {
     let field = |m: &DynamicMessage, clear: &str| ctx.proto.field_named(m.descriptor().full_name(), clear);
     let stats = m.get_field_by_name(&field(m, "stats")?)?.as_message()?.clone();
-    let c = messages(&stats, &field(&stats, "characteristics")?).into_iter().find(|c| field(c, "characteristic_id").is_some_and(|f| int(c, &f) == id))?;
-    let sub = |clear: &str| field(&c, clear).filter(|f| c.has_field_by_name(f)).and_then(|f| c.get_field_by_name(&f)?.as_message().cloned());
-    let value = match (sub("detailed"), sub("value")) {
-        (Some(d), _) => scalar_ints(&d).iter().map(|(_, v)| v).sum(),
-        (None, Some(v)) => field(&v, "total").map_or(0, |f| int(&v, &f)),
-        _ => 0,
-    };
+    let value = characteristics(ctx, &stats).into_iter().find(|(c, _)| *c == id)?.1;
     Some((int(m, &field(m, "fighter_id")?), value))
+}
+
+/// Every characteristic of a fighter's stats (FightCharacteristics: `characteristics` -> {characteristic_id, detailed |
+/// value}) as (id, total), in the message's order. A refresh only lists the ones that changed.
+pub(crate) fn characteristics(ctx: &Ctx, stats: &DynamicMessage) -> Vec<(i64, i64)> {
+    let field = |m: &DynamicMessage, clear: &str| ctx.proto.field_named(m.descriptor().full_name(), clear);
+    let Some(list) = field(stats, "characteristics") else { return vec![] };
+    messages(stats, &list)
+        .into_iter()
+        .filter_map(|c| {
+            let id = int(&c, &field(&c, "characteristic_id").filter(|f| c.has_field_by_name(f))?);
+            let sub = |clear: &str| field(&c, clear).filter(|f| c.has_field_by_name(f)).and_then(|f| c.get_field_by_name(&f)?.as_message().cloned());
+            let value = match (sub("detailed"), sub("value")) {
+                (Some(d), _) => scalar_ints(&d).iter().map(|(_, v)| v).sum(),
+                (None, Some(v)) => field(&v, "total").map_or(0, |f| int(&v, &f)),
+                _ => 0,
+            };
+            Some((id, value))
+        })
+        .collect()
 }
 
 /// A PA / PM poison running on a fighter: target and effect id (see `POISONS`).
