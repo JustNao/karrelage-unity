@@ -37,8 +37,9 @@
   {#each enemies as f (f.id)}
     {@const [x, y] = screenCentre(cal, f.cell, dpr)}
     {@const w = weakest(f.resists!)}
-    <!-- at the fighter's feet: the name on the cell it stands on, the value just under it -->
-    <text {x} y={y + size * 0.35} font-size={size} class="weak">
+    <!-- at the fighter's feet: both lines centred on the cell it stands on (name cap height ~0.7 em above its baseline,
+         value baseline ~1 em under it) -->
+    <text {x} y={y - size * 0.2} font-size={size} class="weak">
       {#if w.elements.length === 5}<tspan fill="#fff">Tous</tspan>
       {:else}
         {#each w.elements as e, i (e)}{#if i}<tspan fill="#fff"> / </tspan>{/if}<tspan fill={COLOURS[e]}>{ELEMENTS[e]}</tspan>{/each}
