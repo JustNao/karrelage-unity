@@ -480,7 +480,7 @@ impl Module for FightMap {
     /// 560 cells (bits 1 walkable, 2 sight goes through, 4 / 8 red / blue placement) or null; `sight` {from, min, max,
     /// ignore?: [fighter ids]}: {seen, hidden} cells of the current map at distance min..=max from `from`, the living
     /// fighters blocking the sight (but the ones of `ignore` and whoever stands on `from`). `window`: the Dofus window's client
-    /// area {x, y, width, height} (screen pixels) or null; `watch_escape` {on}: `fightmap:escape` at each Escape press while on, `fightmap:click` at each left / right click;
+    /// area {x, y, width, height} (screen pixels) or null; `watch_escape` {on}: `fightmap:escape` at each Escape press while on, `fightmap:click` {left} at each left / right click;
     /// `focused`: the game or this app is in the foreground. `refocus`: the Dofus window it covers gets the focus back if it lost it. `release`: the view closes: `watch_escape`
     /// off + `refocus`.
     /// State `portals`: [{cell, author, open}] in the order they were put down. Call `portals` {author, start?: a portal}: the
@@ -512,8 +512,9 @@ impl Module for FightMap {
                     *watching = Some(on.clone());
                     let emit = ctx.emitter();
                     let vks = vec![crate::sys::VK_ESCAPE, crate::sys::VK_LBUTTON, crate::sys::VK_RBUTTON];
-                    crate::sys::watch_presses(on, vks, move |vk| {
-                        emit(if vk == crate::sys::VK_ESCAPE { "fightmap:escape" } else { "fightmap:click" }, Value::Null)
+                    crate::sys::watch_presses(on, vks, move |vk| match vk {
+                        crate::sys::VK_ESCAPE => emit("fightmap:escape", Value::Null),
+                        _ => emit("fightmap:click", json!({"left": vk == crate::sys::VK_LBUTTON})),
                     });
                 }
                 Ok(Value::Null)

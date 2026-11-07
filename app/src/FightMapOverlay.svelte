@@ -90,12 +90,15 @@
       .catch(() => {});
   });
 
-  /** The cell under the mouse, for the views that let it through (no mouse event then: polled). */
+  /** The cell under the mouse, polled for every view: those letting the mouse through get no mouse event, and neither does
+   *  the line of sight while the shortcut is a mouse button held down (the game, where it was pressed, captures the mouse). */
   let pointed = $state<number | null>(null);
+  /** left clicks seen by the click watcher during the line of sight (it pins the cell under the mouse) */
+  let losClicks = $state(0);
   /** the cursor was read once: `pointed` is where it was when the view opened */
   let polled = $state(false);
   $effect(() => {
-    if (!shown || !cal || view === "los" || !placed) return;
+    if (!shown || !cal || !placed) return;
     const [grid, origin] = [cal, placed];
     let on = true;
     let timer = 0;
@@ -203,7 +206,11 @@
     const off = listenAll({
       "fightmap:state": (s: FightMapState) => (live = s),
       "fightmap:escape": () => closeSoon("any"),
-      "fightmap:click": () => (opening || (shown && closesOnClick() && Date.now() - calibratedAt > CALIBRATION_CLICK_GRACE_MS)) && closeSoon("click"),
+      "fightmap:click": ({ left }: { left: boolean }) => {
+        // the line of sight pinned by a left click (polled: no click event while a mouse button shortcut is held)
+        if (shown && cal && view === "los" && left && Date.now() - calibratedAt > CALIBRATION_CLICK_GRACE_MS) losClicks++;
+        if (opening || (shown && closesOnClick() && Date.now() - calibratedAt > CALIBRATION_CLICK_GRACE_MS)) closeSoon("click");
+      },
       "fightmap:turn": ({ id }: { id: number }) => {
         if (mine.has(id)) mineTurn = true;
         else if (mineTurn) {
@@ -304,7 +311,7 @@
     {#if placed}<CalibrationView {live} {mine} {dpr} width={placed.width} height={placed.height} oncalibrated={calibrated} />{/if}
   {:else}
     {#if view === "los"}
-      <LosLayer {cal} {cells} {live} {mine} {dpr} {hold} bind:sticky />
+      <LosLayer {cal} {cells} {live} {mine} {dpr} {hold} {pointed} clicks={losClicks} bind:sticky />
       {#if settings.combat.weakElement}<ResistLayer {cal} {live} {mine} {dpr} />{/if}
     {:else if view === "portals"}
       <PortalSimLayer {cal} {live} {mine} {dpr} {pointed} {polled} />
