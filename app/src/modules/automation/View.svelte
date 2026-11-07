@@ -11,6 +11,8 @@
   import Banner from "../../lib/components/Banner.svelte";
   import SearchBar, { matcher } from "../../lib/components/SearchBar.svelte";
   import MonsterSearch from "./MonsterSearch.svelte";
+  import { onStored, readJSON, removeKey } from "../../lib/persist.svelte";
+  import { CALIBRATION_KEY, type FmCalibration } from "../../lib/forgemagie";
 
   /** Automation: rules checked on every scan, fight end, turn or map change (and the fight following, Combat section) (lib/automation.ts), one section per tab, like Paramètres. A triggered rule
    *  plays its sound and shows up in the header « Notifications ». */
@@ -37,15 +39,17 @@
     songes: "À la fin d'un combat, si quelqu'un du groupe a obtenu une « Légende … » (Ressource des Songes) : un son selon le prix enregistré de la meilleure, au-dessus ou en dessous du seuil (prix inconnu = en dessous), et une notification par Légende.",
     goblins: "En entrant dans une salle, si un gobelin des Songes s'y trouve (King Gob, Gobséric, Gobledore ou Bog) : un son par gobelin, l'un après l'autre, et une notification par gobelin.",
     monsters: "À chaque changement de carte (et quand un groupe apparaît sur la carte), si un des monstres recherchés est dans un groupe : un seul son, même si plusieurs correspondent, et une notification par monstre.",
+    forgemagie: "Quand un équipement est posé dans un atelier de forgemagie : un bouton « Avancé » au bout de la ligne « Fusionner tout / Fusionner » affiche sous chaque rune ses chances de succès critique (modèle établi par les joueurs de dofocus.fr, pas la formule officielle). Le premier clic lance une calibration : deux clics sur les coins de la fenêtre de forgemagie (clic droit sur le bouton pour la refaire si vous la déplacez).",
     exoDo: "À chaque objet scanné à l'hôtel de vente : un lot avec un exo « % dommages » (sorts, armes, distance, mêlée) moins cher que la rune de transcendance de cette stat (prix enregistré), et dont le brisage rembourse le prix à partir d'un coefficient au plus égal au seuil (« Coef. rentable » de l'onglet Brisage), sans dépasser le prix max s'il est fixé. Un même lot ne sonne qu'une fois par session.",
   };
   const FOLLOW = "Suivre les monstres des combats";
+  const FORGE = "Chances des runes en forgemagie";
   /** Searched text (session only): a rule shows when its section, title or description matches. */
   let q = $state("");
-  const SECTION = { turn: "Combat", follow: "Combat", songes: "Songes", goblins: "Songes", monsters: "Monstres", exoDo: "HDV" } as const;
+  const SECTION = { turn: "Combat", follow: "Combat", songes: "Songes", goblins: "Songes", monsters: "Monstres", exoDo: "HDV", forgemagie: "Forgemagie" } as const;
   const shown = $derived.by(() => {
     const m = matcher(q);
-    const title = (k: keyof typeof DESC) => (k === "follow" ? FOLLOW : RULE_TITLES[k]);
+    const title = (k: keyof typeof DESC) => (k === "follow" ? FOLLOW : k === "forgemagie" ? FORGE : RULE_TITLES[k]);
     return Object.fromEntries((Object.keys(DESC) as (keyof typeof DESC)[]).map((k) => [k, m(SECTION[k], title(k), DESC[k])])) as Record<keyof typeof DESC, boolean>;
   });
   /** No character of the player known yet: neither the turn sound nor the poisons can tell it apart. */
@@ -55,6 +59,13 @@
   function addName() {
     const n = newName.trim();
     if (n) void addCharacterName(n).then(() => (newName = ""));
+  }
+  /** The forgemagie overlay's calibration (taken in its window): reset here. */
+  let fmCalibration = $state(readJSON<FmCalibration | null>(CALIBRATION_KEY, null));
+  $effect(() => onStored<FmCalibration>(CALIBRATION_KEY, (c) => (fmCalibration = c)));
+  function resetCalibration() {
+    removeKey(CALIBRATION_KEY);
+    fmCalibration = null;
   }
   const clampCoef = (v: number) => (Number.isFinite(v) ? Math.max(0, Math.round(v)) : RULE_DEFAULTS.exoDo.maxEven);
 </script>
@@ -238,6 +249,24 @@
           </div>
         </div>
         {/if}
+        </section>
+      {/if}
+      {#if shown.forgemagie}
+        <section>
+          <h2>Forgemagie</h2>
+          <div class="rule" class:off={!settings.forgemagie.enabled}>
+            <div class="rh">
+              <Switch bind:checked={settings.forgemagie.enabled} label={FORGE} />
+              <div class="lb">
+                <div><b>{FORGE}</b></div>
+                <div class="mut">{DESC.forgemagie}</div>
+              </div>
+            </div>
+            <div class="params">
+              <button class="mini" disabled={!fmCalibration} onclick={resetCalibration} title="La prochaine fois, le bouton se place en haut de l'écran du jeu et relance la calibration">Réinitialiser la calibration</button>
+              <span class="mut">{fmCalibration ? `Calibrée pour une fenêtre de jeu de ${fmCalibration.width} × ${fmCalibration.height}` : "Pas encore calibrée"}</span>
+            </div>
+          </div>
         </section>
       {/if}
       {#if !Object.values(shown).some(Boolean)}<p class="mut">Aucune règle ne correspond à « {q} ».</p>{/if}

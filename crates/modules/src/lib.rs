@@ -6,6 +6,7 @@ pub mod auction;
 pub mod brisage;
 pub mod combat;
 pub mod fight_map;
+pub mod forgemagie;
 pub mod inventory;
 pub mod kit;
 pub mod loot;
@@ -134,6 +135,7 @@ pub fn all() -> Vec<Box<dyn Module>> {
         Box::new(inventory),
         Box::new(combat::Combat::new()),
         Box::new(fight_map::FightMap::new()),
+        Box::new(forgemagie::Forgemagie::new()),
         Box::new(loot::Loot::new()),
         Box::new(map_monsters::MapMonsters::new()),
         Box::new(recorder::Recorder::new()),

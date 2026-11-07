@@ -292,6 +292,9 @@ ANCHORS = [
     {"name": "ObjectMovementEvent", "file": "Inventory", "after": "ObjectDeletedEvent", "ints": (2, 3)},
     # player card tab asked for: character id + view (social / ladder / equipment); see crates/modules/src/stuff.rs
     {"name": "CardViewRequest", "file": "Card", "after": "ChangeHighlightedJobsRequest", "ints": (1, 1), "enums": 1},
+    # equipment put in a workshop (forgemagie item): {remote, fm_power?, objects: ObjectItemInventory}; see crates/modules/src/forgemagie.rs
+    {"name": "ExchangeObjectsAddedEvent", "file": "Exchange", "after": "ExchangeTaxCollectorEquipmentStartedEvent",
+     "shape": {"bool": 1, "float": 1, "message": 1}},
 ]
 BETA_CONFS = {"high", "med", "low"}
 INT_TYPES = {F.TYPE_INT32, F.TYPE_INT64, F.TYPE_UINT32, F.TYPE_UINT64, F.TYPE_SINT32, F.TYPE_SINT64}
@@ -317,6 +320,12 @@ def anchored_names(cur_msgs):
             if not cn:
                 continue
             fields = cur_msgs[cn].field
+            if "shape" in a:
+                # field types counted ("int" for any integer type), repeated or not
+                kinds = collections.Counter("int" if f.type in INT_TYPES else SCALAR[f.type].removeprefix("TYPE_").lower() for f in fields)
+                if kinds == collections.Counter(a["shape"]):
+                    out[cn] = a["name"]
+                continue
             n_int = sum(f.type in INT_TYPES for f in fields)
             n_enum = sum(f.type == F.TYPE_ENUM for f in fields)
             if n_int + n_enum == len(fields) and a["ints"][0] <= n_int <= a["ints"][1] and n_enum == a.get("enums", 0):

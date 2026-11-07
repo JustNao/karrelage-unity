@@ -118,7 +118,7 @@ pub(crate) fn object_ints(data: &loutil_data::Data, b: &Bindings, it: &DynamicMe
 
 /// The ObjectItem of an ObjectItemInventory: the one of its two ObjectItem fields that is set (the other one is, so far,
 /// never seen set: when both are, the one holding an item of the pack).
-fn entry_item(data: &loutil_data::Data, b: &Bindings, inv: &DynamicMessage, layout: &Layout) -> Option<DynamicMessage> {
+pub(crate) fn entry_item(data: &loutil_data::Data, b: &Bindings, inv: &DynamicMessage, layout: &Layout) -> Option<DynamicMessage> {
     let set: Vec<DynamicMessage> = b.item.iter().filter(|f| inv.has_field_by_name(f)).filter_map(|f| inv.get_field_by_name(f)?.as_message().cloned()).collect();
     let known = |it: &DynamicMessage| data.items.contains_key(&object_ints(data, b, it, layout).0);
     set.iter().find(|it| known(it)).or(set.first()).cloned()

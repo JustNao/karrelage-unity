@@ -29,6 +29,11 @@ const DEFAULTS = {
     /** Comte Harebourg: the cell a spell lands on in the in-game view (fightmap/SpellCellLayer.svelte). */
     harebourgCell: true,
   },
+  /** Automation « Forgemagie »: the overlay over the game's forgemagie window (ForgemagieOverlay.svelte). */
+  forgemagie: {
+    /** Follow the workshop and show the overlay's button when an item is put in (off: its messages are not even decoded). */
+    enabled: true,
+  },
   /** Developer mode only (lib/stores/recorder.svelte.ts): which categories of packets are stored locally for analysis. */
   record: {
     /** Every fight, from its start to its end. */

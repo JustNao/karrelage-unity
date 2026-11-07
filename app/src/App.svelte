@@ -13,6 +13,7 @@
   import { startRecorder } from "./lib/stores/recorder.svelte";
   import { onShortcut, startShortcuts } from "./lib/stores/shortcuts.svelte";
   import { prewarmFightMapOverlay, pressFightMapOverlay } from "./lib/fightMapOverlay";
+  import { startForgemagie } from "./lib/stores/forgemagie.svelte";
 
   const tabs = $derived(modules.filter((m) => app.dev || !m.devOnly));
   const active = $derived(tabs.find((m) => m.id === app.tab) ?? tabs[0]);
@@ -93,6 +94,7 @@
     restored = true;
     void startAutomation(); // automation rules watch every scan, whatever tab is open (needs the data pack)
     void startCombat(); // the current fight is followed whatever tab is open
+    void startForgemagie(); // the forgemagie overlay, made when an item is put in a workshop
     startRecorder(); // developer mode: packets stored for analysis
     onShortcut("los", () => void pressFightMapOverlay("los", true).catch(() => {}));
     onShortcut("classHelp", () => void pressFightMapOverlay("classHelp", true).catch(() => {}));
