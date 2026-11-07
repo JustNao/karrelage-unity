@@ -36,7 +36,7 @@ pub const BOOST_REMOVE: &str = "FightBoostRemoveEvent";
 /// Client requests at login: the character's id = the player's fighter id.
 pub const SELECT: &str = "CharacterSelectionRequest";
 pub const FIRST_SELECT: &str = "CharacterFirstSelectionRequest";
-/// A fighter's turn starts (the player's: `combat:turn`, Automation « À votre tour »).
+/// A fighter's turn starts (the player's: `combat:turn`, Combat tab « À votre tour »).
 pub const TURN: &str = "FightTurnEvent";
 /// Turn order, every fighter flagged dead or not (refreshed after each death): no turn sound for a dead player.
 pub const TIMELINE: &str = "TimelineRefreshEvent";
@@ -54,7 +54,7 @@ pub const ROUND: &str = "FightNewRoundEvent";
 /// élément", spell-specific damage...).
 const ELEMENT_OF: [(i64, i64); 10] = [(91, 3), (92, 1), (93, 4), (94, 2), (95, 0), (96, 3), (97, 1), (98, 4), (99, 2), (100, 0)];
 /// Script-named messages carrying a character's name (fight placement / map actors), under its ActorPositionInformation:
-/// the fallback when no login was seen (names typed in the Automation tab, `add_name`), and the known characters' names.
+/// the fallback when no login was seen (names typed in the Combat tab, `add_name`), and the known characters' names.
 const NAMED: [&str; 2] = ["NamedFighterInformation", "NamedActor"];
 
 /// PA / PM poisons: effects table ids ("#2 dommages <element> pour #1 PA / PM utilisé") -> (PA | PM, element).
@@ -314,7 +314,7 @@ struct Me {
     ids: Vec<i64>,
     /// their names, read from a fight they are in
     names: BTreeMap<i64, String>,
-    /// names typed by the user (Automation tab) not found in a fight yet: the fighter named so joins `ids`
+    /// names typed by the user (Combat tab) not found in a fight yet: the fighter named so joins `ids`
     pending: Vec<String>,
 }
 
@@ -951,7 +951,7 @@ impl Module for Combat {
     fn call(&self, method: &str, args: Value, ctx: &Ctx) -> Result<Value> {
         match method {
             "state" => Ok(self.state(&ctx.data)),
-            // the feature switch (Automation tab): off = the fight messages are not even decoded
+            // the feature switch (Combat tab): off = the fight messages are not even decoded
             "set_enabled" => {
                 let on = args["on"].as_bool().unwrap_or(true);
                 self.enabled.store(on, Ordering::Relaxed);
@@ -960,13 +960,13 @@ impl Module for Combat {
                 }
                 Ok(json!({"enabled": on}))
             }
-            // Automation « À votre tour »: announce the player's turns
+            // Combat tab « À votre tour »: announce the player's turns
             "set_turn" => {
                 let on = args["on"].as_bool().unwrap_or(false);
                 self.turn.store(on, Ordering::Relaxed);
                 Ok(json!({"turn": on}))
             }
-            // Automation « Vos personnages »: a name looked for among the fighters (no login seen); known already = nothing
+            // Combat tab « Vos personnages »: a name looked for among the fighters (no login seen); known already = nothing
             "add_name" => {
                 self.want_name(arg_str(&args, "name")?);
                 self.changed_me(ctx)
@@ -1300,7 +1300,7 @@ mod tests {
         assert_eq!(s["fighters"][1]["gid"], json!(79));
     }
 
-    /// No login seen: the character named in the Automation tab is found among the fighters shown at placement.
+    /// No login seen: the character named in the Combat tab is found among the fighters shown at placement.
     #[test]
     fn finds_the_player_by_name() {
         let Some((hub, proto)) = testkit::hub("loutil-combat-name") else { return };

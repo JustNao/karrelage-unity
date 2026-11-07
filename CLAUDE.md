@@ -261,7 +261,7 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   FightBoostRemoveEvent (its only int32 = buff uid). Which of FightRemovableEffect's eight int32 is the uid is learnt: a
   removed uid found in a single int of the recent buffs votes (`layout.json` boost_votes; learnt right on the real capture).
   Player = every character id seen in CharacterSelectionRequest (fixed per character; all kept
-  in `<app data>/combat/me.json`, so a login needs to be seen once per character). Fallback: names added in Automation
+  in `<app data>/combat/me.json`, so a login needs to be seen once per character). Fallback: names added in the Combat tab
   (`add_name`, one per entry, kept as `pending` in me.json), and at each fight join the characters of the Dofus.exe window
   titles (`sys::game_window_titles`, "Everstone - Steamer - 3.7.12.12 - Release" → Everstone), matched by value against any string of a script-named
   NamedFighterInformation / NamedActor under a fighter's ActorPositionInformation; a match adds its actor id to `me`. Known
@@ -270,7 +270,8 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   (DofusDB API returns empty tags since mid-2026 → fallback Loutil_old dump); `danger` column → cross-monster warnings.
   Only `SHOWN` tags displayed (`lib/monsterTags.ts`). Floating window `CombatOverlay.svelte`: living monsters
   only, and only those with a red (flag) tag or a note shown, unless its "tous" button is on.
-- Its settings are the Automation tab's « Combat » section, the monsters show in the floating window only (the Combat tab is
+- Its settings (and the « À votre tour » rule, the player's characters) are the Combat tab's « Automatisation » section
+  (`modules/combat/Automation.svelte`), the monsters show in the floating window only (the Combat tab is
   the fight map, below).
 - Turns: FightTurnEvent (`jvj` named by override; its only int64 = whose turn, role `turn`) for one of `me` → `combat:turn`
   {id, focused} (`sys::game_focused`: foreground window = Dofus.exe), sent only while the « À votre tour » rule is on

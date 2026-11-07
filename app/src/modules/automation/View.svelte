@@ -4,18 +4,15 @@
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
   import Switch from "../../lib/components/Switch.svelte";
   import { kamasFull } from "../../lib/fmt";
-  import { settings, type CombatShow } from "../../lib/stores/settings.svelte";
-  import Segmented from "../../lib/components/Segmented.svelte";
-  import { addCharacterName, fight, openCombatOverlay, removeCharacter, removeCharacterName } from "../../lib/stores/combat.svelte";
-  import ConfirmButton from "../../lib/components/ConfirmButton.svelte";
-  import Banner from "../../lib/components/Banner.svelte";
+  import { settings } from "../../lib/stores/settings.svelte";
   import SearchBar, { matcher } from "../../lib/components/SearchBar.svelte";
   import MonsterSearch from "./MonsterSearch.svelte";
   import { onStored, readJSON, removeKey } from "../../lib/persist.svelte";
   import { CALIBRATION_KEY, type FmCalibration } from "../../lib/forgemagie";
 
-  /** Automation: rules checked on every scan, fight end, turn or map change (and the fight following, Combat section) (lib/automation.ts), one section per tab, like Paramètres. A triggered rule
-   *  plays its sound and shows up in the header « Notifications ». */
+  /** Automation: rules checked on every scan, fight end or map change (lib/automation.ts), one section per tab, like Paramètres
+   *  (the fight ones are in the Combat tab: combat/Automation.svelte). A triggered rule plays its sound and shows up in the
+   *  header « Notifications ». */
 
   /** "2,500,000", "2.5M", "500k" -> kamas; empty or unreadable -> null (no limit). */
   function parsePrice(s: string): number | null {
@@ -25,41 +22,23 @@
     return v > 0 ? Math.round(v) : null;
   }
   const priceText = (v: number | null) => (v != null ? kamasFull(v).replace(/\s*K$/, "") : "");
-  /** Notes shown for each monster of the fight (floating window). */
-  const SHOW: { id: CombatShow; label: string; title?: string }[] = [
-    { id: "none", label: "Rien", title: "Aucune remarque : seulement les tags des monstres" },
-    { id: "warning", label: "Avertissements" },
-    { id: "invulnerable", label: "+ Invulnérabilités" },
-    { id: "all", label: "+ Conseils" },
-  ];
   /** Each rule's description, also searched. */
   const DESC = {
-    turn: "Un son au début de chacun de vos tours de jeu, sauf si votre personnage est mort (votre personnage est reconnu à la connexion, application ouverte, ou par son nom ci-dessus).",
-    follow: "Détecte les monstres du combat en cours (paquets du placement et des tours) et affiche leurs remarques et les poisons PA / PM dans la fenêtre flottante.",
     songes: "À la fin d'un combat, si quelqu'un du groupe a obtenu une « Légende … » (Ressource des Songes) : un son selon le prix enregistré de la meilleure, au-dessus ou en dessous du seuil (prix inconnu = en dessous), et une notification par Légende.",
     goblins: "En entrant dans une salle, si un gobelin des Songes s'y trouve (King Gob, Gobséric, Gobledore ou Bog) : un son par gobelin, l'un après l'autre, et une notification par gobelin.",
     monsters: "À chaque changement de carte (et quand un groupe apparaît sur la carte), si un des monstres recherchés est dans un groupe : un seul son, même si plusieurs correspondent, et une notification par monstre.",
-    forgemagie: "Quand un équipement est posé dans un atelier de forgemagie : un bouton « Avancé » au bout de la ligne « Fusionner tout / Fusionner » affiche sous chaque rune ses chances de succès critique (modèle établi par les joueurs de dofocus.fr, pas la formule officielle). Le premier clic lance une calibration : deux clics sur les coins de la fenêtre de forgemagie (clic droit sur le bouton pour la refaire si vous la déplacez).",
+    forgemagie: "Quand un équipement est posé dans un atelier de forgemagie : un bouton « Avancé » au bout de la ligne « Fusionner tout / Fusionner » affiche sous chaque rune ses chances, au choix au-dessus du bouton : succès critique, neutre ou échec critique (modèle établi par les joueurs de dofocus.fr, pas la formule officielle). Le premier clic lance une calibration : deux clics sur les coins de la fenêtre de forgemagie (clic droit sur le bouton pour la refaire si vous la déplacez).",
     exoDo: "À chaque objet scanné à l'hôtel de vente : un lot avec un exo « % dommages » (sorts, armes, distance, mêlée) moins cher que la rune de transcendance de cette stat (prix enregistré), et dont le brisage rembourse le prix à partir d'un coefficient au plus égal au seuil (« Coef. rentable » de l'onglet Brisage), sans dépasser le prix max s'il est fixé. Un même lot ne sonne qu'une fois par session.",
   };
-  const FOLLOW = "Suivre les monstres des combats";
   const FORGE = "Chances des runes en forgemagie";
   /** Searched text (session only): a rule shows when its section, title or description matches. */
   let q = $state("");
-  const SECTION = { turn: "Combat", follow: "Combat", songes: "Songes", goblins: "Songes", monsters: "Monstres", exoDo: "HDV", forgemagie: "Forgemagie" } as const;
+  const SECTION = { songes: "Songes", goblins: "Songes", monsters: "Monstres", exoDo: "HDV", forgemagie: "Forgemagie" } as const;
   const shown = $derived.by(() => {
     const m = matcher(q);
-    const title = (k: keyof typeof DESC) => (k === "follow" ? FOLLOW : k === "forgemagie" ? FORGE : RULE_TITLES[k]);
+    const title = (k: keyof typeof DESC) => (k === "forgemagie" ? FORGE : RULE_TITLES[k]);
     return Object.fromEntries((Object.keys(DESC) as (keyof typeof DESC)[]).map((k) => [k, m(SECTION[k], title(k), DESC[k])])) as Record<keyof typeof DESC, boolean>;
   });
-  /** No character of the player known yet: neither the turn sound nor the poisons can tell it apart. */
-  const unknownMe = $derived(!fight.mine?.length && (rules.turn.enabled || settings.combat.enabled));
-  /** The character name being typed (Vos personnages). */
-  let newName = $state("");
-  function addName() {
-    const n = newName.trim();
-    if (n) void addCharacterName(n).then(() => (newName = ""));
-  }
   /** The forgemagie overlay's calibration (taken in its window): reset here. */
   let fmCalibration = $state(readJSON<FmCalibration | null>(CALIBRATION_KEY, null));
   $effect(() => onStored<FmCalibration>(CALIBRATION_KEY, (c) => (fmCalibration = c)));
@@ -93,69 +72,6 @@
   <SmoothScroll>
     <div class="auto">
       <div class="search"><SearchBar bind:value={q} placeholder="Rechercher une règle…" grow /></div>
-      {#if shown.turn || shown.follow}
-        <section>
-          <h2>Combat</h2>
-          {#if unknownMe}
-            <Banner tone="warn" inset>
-              Personnage non reconnu : le son « {RULE_TITLES.turn} » ne se déclenchera pas et aucun poison ne sera affiché.
-              {#if fight.pending?.length}Il sera reconnu au placement du prochain combat.{:else}Reconnectez-vous avec l'application ouverte, ou ajoutez son nom ci-dessous.{/if}
-            </Banner>
-          {/if}
-          <div class="me">
-            <span title="Reconnus à la connexion (application ouverte) ou par leur nom au placement d'un combat">Vos personnages</span>
-            {#each fight.characters ?? [] as c (c.id)}
-              <span class="chip">
-                <ConfirmButton label="{c.name ?? 'nom au prochain combat'} ✕" confirmLabel="Oublier {c.name ?? 'ce personnage'} ?" mini title="Personnage reconnu (id {c.id}) : cliquer pour l'oublier (une connexion avec lui le rajoute)" onconfirm={() => removeCharacter(c.id)} />
-              </span>
-            {/each}
-            {#each fight.pending ?? [] as n (n)}
-              <span class="chip wait">
-                <button class="mini" title="Pas encore vu (reconnu au placement d'un combat) : cliquer pour ne plus chercher ce nom" onclick={() => removeCharacterName(n)}>{n} <span class="mut">(en attente)</span> ✕</button>
-              </span>
-            {/each}
-            <form class="add" onsubmit={(e) => (e.preventDefault(), addName())}>
-              <input type="text" placeholder="Nom du personnage" bind:value={newName} />
-              <button class="mini" type="submit" disabled={!newName.trim()}>Ajouter</button>
-            </form>
-          </div>
-        {#if shown.turn}
-        <div class="rule" class:off={!rules.turn.enabled}>
-          <div class="rh">
-            <Switch bind:checked={rules.turn.enabled} label="Activer la règle" />
-            <div class="lb">
-              <div><b>{RULE_TITLES.turn}</b></div>
-              <div class="mut">{DESC.turn}</div>
-            </div>
-          </div>
-          <div class="params">
-            <label class="chk" title="Ne pas sonner quand la fenêtre de Dofus est au premier plan">
-              <input type="checkbox" bind:checked={rules.turn.unfocusedOnly} /> Seulement si le jeu n'est pas au premier plan
-            </label>
-            {@render sound(rules.turn)}
-          </div>
-        </div>
-        {/if}
-        {#if shown.follow}
-        <div class="rule" class:off={!settings.combat.enabled}>
-          <div class="rh">
-            <Switch bind:checked={settings.combat.enabled} label="Suivre les combats" />
-            <div class="lb">
-              <div><b>{FOLLOW}</b></div>
-              <div class="mut">{DESC.follow}</div>
-            </div>
-          </div>
-          <div class="params">
-            <Segmented bind:value={settings.combat.show} options={SHOW} label="Informations affichées" />
-            <label class="chk" title="Petite fenêtre toujours au premier plan (sauf jeu en plein écran exclusif) : elle s'ouvre au début d'un combat, là où vous l'avez laissée, et se ferme à la fin">
-              <input type="checkbox" bind:checked={settings.combat.overlay} /> Fenêtre flottante pendant les combats
-            </label>
-            <button class="mini" onclick={() => openCombatOverlay()} title="Afficher la fenêtre flottante maintenant (pour la placer sur le jeu : elle rouvrira au même endroit)">⧉ Afficher</button>
-          </div>
-        </div>
-        {/if}
-        </section>
-      {/if}
       {#if shown.songes || shown.goblins}
         <section>
           <h2>Songes</h2>
@@ -288,16 +204,8 @@
   .params { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; padding-left: 56px; }
   .params label { display: inline-flex; align-items: center; gap: 6px; }
   .params input[type="number"] { width: 70px; }
-  .params .chk { cursor: pointer; }
-  .params .chk input { margin: 0; }
   .params input.price { width: 110px; text-align: right; }
   .snd { display: inline-flex; align-items: center; gap: 6px; }
   .snd input[type="range"] { width: 110px; }
   .vol { min-width: 38px; }
-  .me { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 4px 0; }
-  .chip { display: inline-flex; }
-  .chip :global(button) { border-radius: 999px; padding: 2px 10px; }
-  .chip.wait :global(button) { border-style: dashed; }
-  .add { display: inline-flex; gap: 6px; }
-  .add input { width: 170px; }
 </style>
