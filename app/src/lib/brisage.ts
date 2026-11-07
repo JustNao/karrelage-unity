@@ -99,6 +99,9 @@ export function outcome(effects: BrisEffect[], level: number, runes: Record<stri
   return { lines, plain, focus, best, unpriced: lines.some((l) => l.price == null) };
 }
 
+/** Kamas at 100 % focusing effect `a` (0 when the item lacks it or it is an exo), or the best result for `a` null. */
+export const valueOf = (o: Outcome, a: number | null) => (a == null ? o.best.value : (o.focus[o.lines.findIndex((l) => l.a === a)] ?? 0));
+
 /** Coefficient (%) at which breaking pays back `cost` (null when the runes are worth nothing). */
 export const breakEven = (cost: number, value100: number) => (value100 > 0 ? (cost / value100) * 100 : null);
 

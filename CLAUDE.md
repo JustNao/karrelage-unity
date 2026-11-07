@@ -198,6 +198,8 @@ and developer mode are both on. New category = an entry in `CATEGORIES`, a defau
   through `inventory::UidMap`, else guessed from runes). Every break appended to
   `breaks.json` (data to later model coefficient evolution).
 - `drop` = `dropMonsterIds` non-empty (Temporis ignored). Breakable types in `BREAKABLE_TYPES`.
+- « Focus » filter (`ui.focus`, an effect id): only items with that default effect; sources, break-even, profit and the
+  detail summary use that focus's value (`valueOf`) instead of the best result.
 
 **Crafting > Montures** (`lib/mounts.ts`): extraction gives N resources, N = generation (highest base-colour generation,
 +1 for two colours; gen 1 left out). Effect 3836 = senile → 1 resource.

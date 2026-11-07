@@ -3,7 +3,7 @@
   import { onMount, untrack } from "svelte";
   import { cached, call, listenAll } from "../../lib/api";
   import { persisted, readJSON, removeKey } from "../../lib/persist.svelte";
-  import { breakEven, lotEffects, meanRoll, outcome, type BrisItem, type BrisPack, type Outcome } from "../../lib/brisage";
+  import { breakEven, lotEffects, meanRoll, outcome, valueOf, type BrisItem, type BrisPack, type Outcome } from "../../lib/brisage";
   import { craftCost, type Recipes } from "../../lib/craft";
   import { Columns } from "../../lib/columns.svelte";
   import { afterTax, lotKeys, unitPriceOrNull } from "../../lib/price";
@@ -28,8 +28,8 @@
   /** Weapon types (the rest of the breakable types are worn equipment). */
   const WEAPONS = new Set([2, 3, 4, 5, 6, 7, 8, 19, 20, 21, 22, 114, 271]);
 
-  interface UiState { q: string; types: number[]; lvMin: number | null; lvMax: number | null; priced: boolean; noDrop: boolean; absent: boolean; sel: number | null }
-  const ui = persisted<UiState>(UI_KEY, { q: "", types: [], lvMin: null, lvMax: null, priced: true, noDrop: false, absent: false, sel: null });
+  interface UiState { q: string; types: number[]; lvMin: number | null; lvMax: number | null; priced: boolean; noDrop: boolean; absent: boolean; sel: number | null; /** Effect focused (its rune): items without it hidden, break-even for that focus. */ focus: number | null }
+  const ui = persisted<UiState>(UI_KEY, { q: "", types: [], lvMin: null, lvMax: null, priced: true, noDrop: false, absent: false, sel: null, focus: null });
 
   const cols = new Columns(`karrelage.cols.brisage`, { detail: 640 });
   let pack = $state.raw<BrisPack>({ items: [], runes: {} });
@@ -45,6 +45,7 @@
   type Pending = Break;
   let pending = $state.raw<Pending[]>([]);
   const runeNames = $derived(new Map(Object.values(pack.runes).map((r) => [r.gid, runeShort(r.name)])));
+  const runeName = (a: number | null) => (a == null ? "" : (runeShort(pack.runes[a]?.name) ?? "#" + a));
   const runesText = (p: Pending) => p.runes.map(([g, q]) => `${q} ${runeNames.get(g) ?? "#" + g}`).join(", ");
   const assign = (p: Pending, gid: number | null) => call("brisage", "assign", { uid: p.uid, t: p.t, gid }).catch((e) => (err = String(e)));
   /** Source chosen per item in the detail panel ("craft" or a lot key); default = the best one. */
@@ -104,23 +105,29 @@
 
   /** A source with an exo: its runes count without focus (an item worth buying when it is cheap enough). */
   const hasExo = (s: Source | null) => !!s?.out.lines.some((l) => l.exo);
-  const profitAt = (s: Source, coef: number) => (s.cost != null ? (s.out.best.value * coef) / 100 - s.cost : null);
+  /** Break-even coefficient for the focus filter (`s.even` without one). */
+  const evenAt = (s: Source, f: number | null) => (f == null ? s.even : s.cost != null ? breakEven(s.cost, valueOf(s.out, f)) : null);
+  const profitAt = (s: Source, coef: number, f: number | null) => (s.cost != null ? (valueOf(s.out, f) * coef) / 100 - s.cost : null);
+  /** Sources by break-even coefficient for the focus filter (already sorted without one). */
+  const byEven = (sources: Source[], f: number | null) =>
+    f == null ? sources : sources.map((s) => [s, evenAt(s, f) ?? Infinity] as const).sort((a, b) => a[1] - b[1]).map(([s]) => s);
 
   type SortKey = "name" | "level" | "sale" | "cost" | "even" | "profit";
   interface Row { item: BrisItem; gid: number; name: string; level: number; best: Source | null; cost: number | null; even: number | null; profit: number | null; coef: number | null; sale: boolean | null; good: number; goodExo: number }
 
   const rows = $derived.by<Row[]>(() => {
     void dataVersion; // listings / prices: through `changed`, never one dependency per item read
-    const items = pack.items;
+    const f = ui.focus;
+    const items = f == null ? pack.items : pack.items.filter((i) => i.effects.some((e) => e.a === f));
     void recipes;
-    const all = untrack(() => items.map((item) => [item, cachedSources(item)] as const));
+    const all = untrack(() => items.map((item) => [item, byEven(cachedSources(item), f)] as const));
     return all.map(([item, sources]) => {
       const best = sources[0] ?? null;
       const coef = coefOf(item.gid);
-      const profit = best && coef != null ? profitAt(best, coef) : null;
+      const profit = best && coef != null ? profitAt(best, coef, f) : null;
       // scanned lots that pay at the known coefficient (an exo makes a lot worth more without focus)
-      const good = coef == null ? [] : sources.filter((s) => s.kind === "lot" && (profitAt(s, coef) ?? 0) > 0);
-      return { item, gid: item.gid, name: item.name, level: item.level, best, cost: best?.cost ?? null, even: best?.even ?? null, profit, coef, sale: saleOf(item), good: good.length, goodExo: good.filter(hasExo).length };
+      const good = coef == null ? [] : sources.filter((s) => s.kind === "lot" && (profitAt(s, coef, f) ?? 0) > 0);
+      return { item, gid: item.gid, name: item.name, level: item.level, best, cost: best?.cost ?? null, even: best ? evenAt(best, f) : null, profit, coef, sale: saleOf(item), good: good.length, goodExo: good.filter(hasExo).length };
     });
   });
 
@@ -147,9 +154,14 @@
     return names.length <= 2 ? names.join(", ") : `${names.length} types`;
   });
   let typesOpen = $state(false);
+  /** Effects that can be focused (a default effect of some breakable item), by rune name. */
+  const focusOptions = $derived.by(() => {
+    const as = new Set(pack.items.flatMap((i) => i.effects.map((e) => e.a)));
+    return [...as].filter((a) => pack.runes[a]).map((a) => ({ a, name: runeShort(pack.runes[a].name)! })).sort((x, y) => x.name.localeCompare(y.name, "fr"));
+  });
   const num = (v: string) => (v.trim() === "" || !Number.isFinite(+v) ? null : +v);
-  const filtered = $derived(!!(ui.q || ui.types.length || ui.lvMin != null || ui.lvMax != null || ui.noDrop || ui.absent));
-  const resetFilters = () => Object.assign(ui, { q: "", types: [], lvMin: null, lvMax: null, noDrop: false, absent: false });
+  const filtered = $derived(!!(ui.q || ui.types.length || ui.lvMin != null || ui.lvMax != null || ui.noDrop || ui.absent || ui.focus != null));
+  const resetFilters = () => Object.assign(ui, { q: "", types: [], lvMin: null, lvMax: null, noDrop: false, absent: false, focus: null });
 
   const sort = useSort<SortKey>("even", false, (k) => k === "level" || k === "profit" || k === "sale");
   const view = $derived.by(() => {
@@ -168,18 +180,20 @@
     );
   });
 
-  const COLUMNS: { key: SortKey; label: string; num?: boolean; title?: string }[] = [
+  const COLUMNS: { key: SortKey; label: string; num?: boolean; title?: string }[] = $derived([
     { key: "name", label: "Objet" },
     { key: "level", label: "Niv.", num: true },
     { key: "sale", label: "HDV", title: "En vente à l'hôtel de vente quand sa catégorie a été ouverte pour la dernière fois (? = catégorie jamais ouverte)" },
     { key: "cost", label: "Prix", num: true, title: "Craft (prix enregistrés des ingrédients) ou lot le plus intéressant à l'HDV" },
-    { key: "even", label: "Coef. rentable", num: true, title: "Coefficient à partir duquel le brisage (meilleur résultat, avec ou sans focus) rembourse l'objet" },
-    { key: "profit", label: "Bénéfice", num: true, title: "Au coefficient connu de cet objet (relevé au brisage ou saisi)" },
-  ];
+    ui.focus == null
+      ? { key: "even", label: "Coef. rentable", num: true, title: "Coefficient à partir duquel le brisage (meilleur résultat, avec ou sans focus) rembourse l'objet" }
+      : { key: "even", label: `Coef. rentable (focus ${runeName(ui.focus)})`, num: true, title: `Coefficient à partir duquel le brisage en focus ${runeName(ui.focus)} rembourse l'objet` },
+    { key: "profit", label: "Bénéfice", num: true, title: "Au coefficient connu de cet objet (relevé au brisage ou saisi)" + (ui.focus == null ? "" : `, en focus ${runeName(ui.focus)}`) },
+  ]);
 
   /** Kamas rounded to the unit (rune values are fractional). */
   const k0 = (n: number) => kamas(Math.round(n));
-  const focusName = (o: Outcome) => (o.best.focus == null ? "sans focus" : `focus ${runeShort(o.lines.find((l) => l.a === o.best.focus)?.rune.name)}`);
+  const focusName = (o: Outcome) => (ui.focus != null ? `focus ${runeName(ui.focus)}` : o.best.focus == null ? "sans focus" : `focus ${runeShort(o.lines.find((l) => l.a === o.best.focus)?.rune.name)}`);
   const saleTitle = (r: Row) => {
     const o = onSale[r.item.type_id];
     return o ? `Catégorie « ${r.item.type} » ouverte le ${fmtDateTime(o.t)} (${ago(o.t)}) : ${o.gids.length} objets en vente` : `Ouvrez la catégorie « ${r.item.type} » à l'HDV`;
@@ -203,12 +217,11 @@
     call<Break[]>("brisage", "breaks", { gid }).then((l) => ui.sel === gid && (breaks = l.reverse())).catch(() => {});
   };
   $effect(() => loadBreaks(ui.sel));
-  const runeName = (a: number | null) => (a == null ? "" : (runeShort(pack.runes[a]?.name) ?? "#" + a));
   const runeTotal = (b: Break) => b.runes.reduce((s, [, q]) => s + q, 0);
 
   // ---- detail ----
   const sel = $derived(rows.find((r) => r.gid === ui.sel) ?? null);
-  const sources = $derived(sel ? sourcesOf(sel.item) : []);
+  const sources = $derived(sel ? byEven(sourcesOf(sel.item), ui.focus) : []);
   const src = $derived(sources.find((s) => s.key === chosen[ui.sel ?? ""]) ?? sources[0] ?? null);
   /** Without any source (no recipe price, nothing scanned): the mean roll, priced at nothing. */
   const out = $derived(src?.out ?? (sel ? outcome(meanRoll(sel.item), sel.level, pack.runes, price) : null));
@@ -222,7 +235,11 @@
     else delete coefs[gid];
     call("brisage", "set_coef", { gid, coef: c }).catch((e) => (err = String(e)));
   };
-  const srcLabel = (s: Source) => (s.kind === "craft" ? `Craft (jet moyen) · ${s.cost != null ? kamas(s.cost) : "prix inconnu"}` : `Lot HDV · ${kamas(s.cost!)}`) + ` · rentable à ${coefText(s.even)}`;
+  const srcLabel = (s: Source) => (s.kind === "craft" ? `Craft (jet moyen) · ${s.cost != null ? kamas(s.cost) : "prix inconnu"}` : `Lot HDV · ${kamas(s.cost!)}`) + ` · rentable à ${coefText(evenAt(s, ui.focus))}`;
+  /** Kamas at 100 % shown in the summary: the focus filter's, else the best result. */
+  const shown = $derived(out ? valueOf(out, ui.focus) : 0);
+  /** Row highlighted in the rune table (null = total without focus). */
+  const hotFocus = $derived(ui.focus ?? out?.best.focus ?? null);
 
   onMount(() => {
     cached<BrisPack>("brisage", "items").then((p) => (pack = p)).catch((e) => (err = String(e)));
@@ -285,6 +302,10 @@
             </div>
           {/if}
         </div>
+        <select class="focus" class:on={ui.focus != null} value={ui.focus ?? ""} onchange={(e) => (ui.focus = e.currentTarget.value === "" ? null : +e.currentTarget.value)} title="Objets ayant cet effet, coefficient rentable en focus sur sa rune">
+          <option value="">Tous les focus</option>
+          {#each focusOptions as o (o.a)}<option value={o.a}>Focus {o.name}</option>{/each}
+        </select>
         <span class="lv">Niv. <input type="number" min="1" max="200" placeholder="min" value={ui.lvMin ?? ""} oninput={(e) => (ui.lvMin = num(e.currentTarget.value))} /> – <input type="number" min="1" max="200" placeholder="max" value={ui.lvMax ?? ""} oninput={(e) => (ui.lvMax = num(e.currentTarget.value))} /></span>
       {/snippet}
       {#snippet after()}
@@ -349,7 +370,7 @@
         </thead>
         <tbody>
           {#each out.lines as l, i (l.a)}
-            <tr class:hot={out.best.focus === l.a}>
+            <tr class:hot={hotFocus === l.a}>
               <td title={l.rune.label ?? ""}>{runeShort(l.rune.name)}{#if l.exo} <span class="exo" title="Exo : donne ses runes mais ne peut pas être focus">exo</span>{/if}</td>
               <td class="n">{fmtNum(l.value, 1)}</td>
               <td class="n">{#if l.price != null}{kamas(l.price)}{:else}<span class="warn" title="Ouvrez la rune à l'HDV">?</span>{/if}</td>
@@ -360,7 +381,7 @@
               <td class="n"><b>{k0(out.focus[i] * k)}</b></td>{/if}
             </tr>
           {/each}
-          <tr class:hot={out.best.focus == null} class="tot">
+          <tr class:hot={hotFocus == null} class="tot">
             <td colspan="4">Total sans focus</td>
             <td class="n"><b>{k0(out.plain * k)}</b></td>
             <td colspan="2"></td>
@@ -369,11 +390,11 @@
       </table>
 
       <div class="sum">
-        <div>Meilleur résultat : <b>{k0(out.best.value * k)}</b> <span class="mut">({focusName(out)}, taxe de 2 % déduite)</span></div>
+        <div>{ui.focus == null ? "Meilleur résultat" : "Résultat"} : <b>{k0(shown * k)}</b> <span class="mut">({focusName(out)}, taxe de 2 % déduite)</span></div>
         {#if src?.cost != null}
-          {@const profit = out.best.value * k - src.cost}
+          {@const profit = shown * k - src.cost}
           <div>Prix de l'objet : <b>{kamas(src.cost)}</b> · bénéfice à {coefText(coef)} : <b class:good={profit > 0} class:bad={profit < 0}>{signedKamas(Math.round(profit))}</b></div>
-          <div>Rentable à partir d'un coefficient de <b>{coefText(src.even)}</b></div>
+          <div>Rentable à partir d'un coefficient de <b>{coefText(evenAt(src, ui.focus))}</b></div>
         {/if}
         {#if out.unpriced}<div class="warn small">Certaines runes n'ont pas de prix (comptées 0) : ouvrez-les à l'hôtel de vente.</div>{/if}
       </div>
@@ -420,6 +441,8 @@
   .tpop label { display: flex; align-items: center; gap: 6px; white-space: nowrap; cursor: pointer; }
   .tgroup { font-weight: 600; margin-top: 4px; }
   .tlist { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; padding-left: 18px; }
+  .focus { padding: 3px 6px; }
+  .focus.on { border-color: var(--acc); }
   .lv { display: inline-flex; align-items: center; gap: 4px; }
   .lv input { width: 56px; padding: 3px 6px; }
   .detail { overflow: auto; background: var(--panel); border-left: 1px solid var(--line); padding: 0 10px 10px; font-size: 12px; }
