@@ -4,13 +4,15 @@
 //! still is). `shortcuts:status` {name, ok}: false = another program already holds that combination.
 //! Passive shortcuts (`passive`: the class help's Eliotrope portal and Exil keys, the game's own spell keys): watched by polling, the
 //! game still gets them; `shortcuts:pressed` {name, passive: true} when pressed while the game has the focus.
+//! Mouse buttons (middle, « Souris 4 / 5 »: `sys::MOUSE_BUTTONS`) can't be registered: such shortcuts are polled too, pressed
+//! while the game or this app has the focus (the click still reaches them), and act like the others (pressed / released / held).
 use crate::kit::unknown;
-use crate::sys::Hotkeys;
+use crate::sys::{Hotkeys, MOUSE_BUTTONS};
 use crate::{Ctx, Interest, Module};
 use anyhow::Result;
 use parking_lot::Mutex;
 use serde_json::{json, Value};
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 
@@ -27,11 +29,38 @@ pub struct Shortcuts {
     passive: Arc<Mutex<Vec<(u32, u32)>>>,
     /// The passive shortcuts' polling thread runs.
     watching: Arc<AtomicBool>,
+    /// Shortcuts on a mouse button: name -> (mods, vk); the polled list and its names, in the same order; its thread runs.
+    mouse_binds: Mutex<BTreeMap<String, (u32, u32)>>,
+    mouse_names: Arc<Mutex<Vec<String>>>,
+    mouse: Arc<Mutex<Vec<(u32, u32)>>>,
+    mouse_watching: Arc<AtomicBool>,
 }
 
 impl Shortcuts {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// The mouse button shortcuts polled (thread started when there are some, it ends by itself once there are none).
+    fn watch_mouse(&self, ctx: &Ctx) {
+        let binds = self.mouse_binds.lock().clone();
+        // names first: the thread reads the bindings, then their names
+        *self.mouse_names.lock() = binds.keys().cloned().collect();
+        *self.mouse.lock() = binds.values().copied().collect();
+        if binds.is_empty() || self.mouse_watching.swap(true, Ordering::Relaxed) {
+            return;
+        }
+        let (emit, names, held) = (ctx.emitter(), self.mouse_names.clone(), self.held.clone());
+        crate::sys::watch_bindings(self.mouse.clone(), self.mouse_watching.clone(), crate::sys::game_or_own_focused, move |i, down| {
+            let Some(name) = names.lock().get(i).cloned() else { return };
+            if down {
+                held.lock().insert(name.clone());
+                emit("shortcuts:pressed", json!({"name": name}));
+            } else {
+                held.lock().remove(&name);
+                emit("shortcuts:released", json!({"name": name}));
+            }
+        });
     }
 }
 
@@ -84,8 +113,17 @@ impl Module for Shortcuts {
                             names.len() - 1
                         })
                     };
-                    keys.set(n as i32, b["mods"].as_u64().unwrap_or(0) as u32, b["vk"].as_u64().unwrap_or(0) as u32);
+                    let (mods, vk) = (b["mods"].as_u64().unwrap_or(0) as u32, b["vk"].as_u64().unwrap_or(0) as u32);
+                    let mut mouse = self.mouse_binds.lock();
+                    if MOUSE_BUTTONS.contains(&vk) {
+                        mouse.insert(name.clone(), (mods, vk));
+                        keys.set(n as i32, 0, 0); // (frees a key it held, tells it is fine)
+                    } else {
+                        mouse.remove(name);
+                        keys.set(n as i32, mods, vk);
+                    }
                 }
+                self.watch_mouse(ctx);
                 Ok(Value::Null)
             }
             "passive" => {
@@ -101,8 +139,8 @@ impl Module for Shortcuts {
                 *self.passive.lock() = binds.iter().map(|(_, m, vk)| (*m, *vk)).collect();
                 if !binds.is_empty() && !self.watching.swap(true, Ordering::Relaxed) {
                     let (emit, names) = (ctx.emitter(), self.passive_names.clone());
-                    crate::sys::watch_bindings(self.passive.clone(), self.watching.clone(), move |i| {
-                        if let Some(name) = names.lock().get(i).cloned() {
+                    crate::sys::watch_bindings(self.passive.clone(), self.watching.clone(), crate::sys::game_focused, move |i, down| {
+                        if let Some(name) = names.lock().get(i).cloned().filter(|_| down) {
                             emit("shortcuts:pressed", json!({"name": name, "passive": true}));
                         }
                     });

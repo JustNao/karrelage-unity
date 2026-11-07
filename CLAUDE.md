@@ -99,7 +99,9 @@ Set `PYTHONUTF8=1` for scripts handling accents. The "Développeur" header toggl
   « Raccourcis »: rebind / reset each / reset all) + `onShortcut(name, fn)` (App.svelte). `shortcuts.rs` registers them with
   RegisterHotKey on its own thread (`sys::Hotkeys`; the game doesn't get the keys), released while a binding is typed. `vk` =
   `KeyboardEvent.keyCode` (layout-aware, what RegisterHotKey wants), not `code`. Windows only tells the press: the key is then
-  polled until up → `shortcuts:released` {name} (held shortcuts; `held` {name}).
+  polled until up → `shortcuts:released` {name} (held shortcuts; `held` {name}). Mouse buttons (middle, side: vk 4 / 5 / 6,
+  `sys::MOUSE_BUTTONS`, `bindingOfMouse`) can't be registered: polled (`sys::watch_bindings`) while the game or the app is in
+  the foreground, the click still reaches the game.
 - Settings: `stores/settings.svelte.ts` (`DEFAULTS` + a row in the Paramètres tab, « Général » first, then one section per
   tab). `general.closeToTray`: closing hides the main window, tray icon (`main.rs` `build_tray`) opens / quits.
 - Window capabilities: `default.json` (main), `overlay.json` (floating), `splash.json`. `setSize` & co. need explicit grants.
@@ -338,7 +340,8 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   (`setIgnoreCursorEvents`) is tao's WS_EX_LAYERED style and its first removal in a window's life flashes, so `warmUp` does it off
   screen (-32000, -32000) and views that don't need the mouse never take it. This window alone gets a transparent `backgroundColor`
   (`clearBackground`): on every floating window it came with a second, unmovable copy of the fight popup.
-- Weakest element (`fightmap/ResistLayer.svelte`, drawn with the line of sight view, `settings.combat.weakElement`): on each enemy
+- Weakest element (`fightmap/ResistLayer.svelte`, drawn with the line of sight view, `settings.combat.weakElement`; with
+  `weakElementAlways` for the whole fight with no view, while `focused`: the overlay polls the Dofus window's place): at each enemy's feet
   (not the team of `me`, else monsters), the element of its lowest % resistance (characteristics 37 / 33 / 34 / 35 / 36 = neutral,
   earth, fire, water, air) in that element's colour, the value under it. Fighter `resists` from FightFighterInformation stats, then
   FightRefreshCharacterStatsEvent (only changed ones: debuffs followed; verified on the 3 captures: every living monster has them).

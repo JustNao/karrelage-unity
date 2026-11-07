@@ -30,6 +30,8 @@ const DEFAULTS = {
     harebourgCell: true,
     /** The line of sight view (F3) writes each enemy's weakest element on it (fightmap/ResistLayer.svelte). */
     weakElement: true,
+    /** ... during the whole fight, without the shortcut (only while the game is in the foreground). */
+    weakElementAlways: false,
   },
   /** Automation « Forgemagie »: the overlay over the game's forgemagie window (ForgemagieOverlay.svelte). */
   forgemagie: {

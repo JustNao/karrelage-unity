@@ -25,6 +25,13 @@
   </div>
   <div class="ctl"><Switch bind:checked={settings.combat.weakElement} label="Élément le plus faible des ennemis" /></div>
 </div>
+<div class="row sub" class:off={!settings.combat.weakElement}>
+  <div class="lb">
+    <div>Toujours affiché</div>
+    <div class="mut">Pendant tout le combat, sans appuyer sur la touche (tant que le jeu est au premier plan).</div>
+  </div>
+  <div class="ctl"><Switch bind:checked={settings.combat.weakElementAlways} label="Élément le plus faible toujours affiché" /></div>
+</div>
 <div class="row">
   <div class="lb">
     <div>Position des sorts contre le Comte Harebourg</div>

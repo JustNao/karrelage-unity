@@ -55,6 +55,24 @@ pub fn game_focused() -> bool {
     false
 }
 
+/// Whether the foreground window belongs to Dofus.exe or to this app (its in-game views take the focus at times).
+pub fn game_or_own_focused() -> bool {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
+        let mut pid = 0u32;
+        // SAFETY: reads the foreground window's process id
+        unsafe { GetWindowThreadProcessId(GetForegroundWindow(), &mut pid) };
+        pid == std::process::id() || is_dofus(pid)
+    }
+    #[cfg(not(windows))]
+    false
+}
+
+/// Mouse buttons a shortcut can use (virtual key codes): middle, X1 (« Souris 4 », back), X2 (« Souris 5 », forward).
+/// RegisterHotKey takes none of them: they are polled (`watch_bindings`), and the program under the mouse still gets the click.
+pub const MOUSE_BUTTONS: [u32; 3] = [0x04, 0x05, 0x06];
+
 /// The visible Dofus.exe windows with a title: (window handle, title).
 #[cfg(windows)]
 fn dofus_windows() -> Vec<(windows_sys::Win32::Foundation::HWND, String)> {
@@ -255,13 +273,15 @@ pub fn watch_presses(on: std::sync::Arc<std::sync::atomic::AtomicBool>, vks: Vec
     let _ = (on, vks, on_press);
 }
 
-/// Watches key combinations without taking them from the game (unlike `Hotkeys`): `binds` = (mods, vk) as for
-/// `Hotkeys::set`, polled while the list is not empty (the thread then ends and clears `running`; start it again after
-/// filling the list). `on_press(i)` when combination `i` is pressed while the game has the focus.
+/// Watches key combinations (mouse buttons too) without taking them from the game (unlike `Hotkeys`): `binds` = (mods, vk) as
+/// for `Hotkeys::set`, polled while the list is not empty (the thread then ends and clears `running`; start it again after
+/// filling the list). `on_change(i, true)` when combination `i` is pressed while `focused()` (e.g. `game_focused`),
+/// `on_change(i, false)` when the key of a press told is let go.
 pub fn watch_bindings(
     binds: std::sync::Arc<parking_lot::Mutex<Vec<(u32, u32)>>>,
     running: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    on_press: impl Fn(usize) + Send + 'static,
+    focused: fn() -> bool,
+    on_change: impl Fn(usize, bool) + Send + 'static,
 ) {
     #[cfg(windows)]
     {
@@ -270,18 +290,35 @@ pub fn watch_bindings(
         const MODS: [(u32, &[i32]); 4] = [(1, &[0x12]), (2, &[0x11]), (4, &[0x10]), (8, &[0x5B, 0x5C])];
         let _ = std::thread::Builder::new().name("passive-keys".into()).spawn(move || {
             let mut down: Vec<bool> = vec![];
+            // presses told, waiting for their key to be let go (by binding)
+            let mut told: Vec<Option<u32>> = vec![];
+            let mut last: Vec<(u32, u32)> = vec![];
             loop {
                 let now = binds.lock().clone();
                 if now.is_empty() {
                     running.store(false, Ordering::Relaxed);
                     return;
                 }
-                down.resize(now.len(), true);
+                if now != last {
+                    // bindings changed: a press under way ends with the old list
+                    for (i, t) in told.iter().enumerate() {
+                        if t.is_some() {
+                            on_change(i, false);
+                        }
+                    }
+                    (down, told, last) = (vec![true; now.len()], vec![None; now.len()], now.clone());
+                }
                 let mods = MODS.iter().filter(|(_, vks)| vks.iter().any(|vk| key_down(*vk))).fold(0, |m, (bit, _)| m | bit);
                 for (i, (m, vk)) in now.iter().enumerate() {
-                    let pressed = *vk != 0 && key_down(*vk as i32) && mods == *m;
-                    if pressed && !down[i] && game_focused() {
-                        on_press(i);
+                    let key = *vk != 0 && key_down(*vk as i32);
+                    let pressed = key && mods == *m;
+                    if pressed && !down[i] && focused() {
+                        on_change(i, true);
+                        told[i] = Some(*vk);
+                    }
+                    if told[i].is_some() && !key {
+                        on_change(i, false);
+                        told[i] = None;
                     }
                     down[i] = pressed;
                 }
@@ -292,7 +329,7 @@ pub fn watch_bindings(
     #[cfg(not(windows))]
     {
         running.store(false, std::sync::atomic::Ordering::Relaxed);
-        let _ = (binds, on_press);
+        let _ = (binds, focused, on_change);
     }
 }
 

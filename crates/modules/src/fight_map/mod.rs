@@ -481,7 +481,7 @@ impl Module for FightMap {
     /// ignore?: [fighter ids]}: {seen, hidden} cells of the current map at distance min..=max from `from`, the living
     /// fighters blocking the sight (but the ones of `ignore` and whoever stands on `from`). `window`: the Dofus window's client
     /// area {x, y, width, height} (screen pixels) or null; `watch_escape` {on}: `fightmap:escape` at each Escape press while on, `fightmap:click` at each left / right click;
-    /// `refocus`: the Dofus window it covers gets the focus back if it lost it. `release`: the view closes: `watch_escape`
+    /// `focused`: the game or this app is in the foreground. `refocus`: the Dofus window it covers gets the focus back if it lost it. `release`: the view closes: `watch_escape`
     /// off + `refocus`.
     /// State `portals`: [{cell, author, open}] in the order they were put down. Call `portals` {author, start?: a portal}: the
     /// Portail spell of that caster simulated (`simulate`), {base: not cast (way from `start`, else the oldest open portal), sims: {cell: cast there}} for every free walkable
@@ -489,6 +489,8 @@ impl Module for FightMap {
     fn call(&self, method: &str, args: Value, ctx: &Ctx) -> Result<Value> {
         match method {
             "state" => Ok(self.state.lock().json()),
+            // the weakest elements always shown: only while the game (or the view itself) is in the foreground
+            "focused" => Ok(json!(crate::sys::game_or_own_focused())),
             "window" => {
                 let Some(w) = crate::sys::game_window() else { return Ok(Value::Null) };
                 *self.covered.lock() = Some(w.handle);

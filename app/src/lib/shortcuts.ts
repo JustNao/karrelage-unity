@@ -54,4 +54,17 @@ export function bindingOf(e: KeyboardEvent): Binding | null {
   return { mods, vk: e.keyCode, label: names.join("+") };
 }
 
+/** Mouse buttons a shortcut can use (`MouseEvent.button` -> Windows virtual key code, name): middle, back, forward. Left and
+ *  right are left out (they play the game). Polled by the backend (sys.rs `MOUSE_BUTTONS`): the click still reaches the game. */
+const MOUSE: Record<number, [number, string]> = { 1: [0x04, "Clic molette"], 3: [0x05, "Souris 4"], 4: [0x06, "Souris 5"] };
+
+/** The binding of a mouse button press (null: a button that can't be a shortcut). */
+export function bindingOfMouse(e: MouseEvent): Binding | null {
+  const m = MOUSE[e.button];
+  if (!m) return null;
+  const mods = (e.altKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.shiftKey ? 4 : 0) | (e.metaKey ? 8 : 0);
+  const names = [e.ctrlKey && "Ctrl", e.altKey && "Alt", e.shiftKey && "Maj", e.metaKey && "Win", m[1]].filter(Boolean);
+  return { mods, vk: m[0], label: names.join("+") };
+}
+
 export const sameBinding = (a: Binding, b: Binding) => a.mods === b.mods && a.vk === b.vk;

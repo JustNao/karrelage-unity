@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { bindingOf } from "../shortcuts";
+  import { bindingOf, bindingOfMouse } from "../shortcuts";
   import { shortcuts } from "../stores/shortcuts.svelte";
   import type { Binding } from "../stores/settings.svelte";
 
-  /** A shortcut's binding: click, then press the combination (Échap cancels, Suppr unbinds). */
+  /** A shortcut's binding: click, then press the combination or a mouse button (middle, side buttons) (Échap cancels, Suppr
+   *  unbinds). */
   interface Props {
     value: Binding;
     onchange: (b: Binding) => void;
@@ -29,10 +30,22 @@
     const b = bindingOf(e);
     if (b) (onchange(b), stop());
   }
+  function mouse(e: MouseEvent) {
+    if (!listening) return;
+    const b = bindingOfMouse(e);
+    if (!b) return;
+    e.preventDefault(); // (the side buttons would go back / forward)
+    onchange(b);
+    stop();
+  }
+  /** no back / forward nor middle click scroll while a binding is typed */
+  const swallow = (e: MouseEvent) => listening && bindingOfMouse(e) && e.preventDefault();
 </script>
 
-<button class="key" class:listening aria-label={label} title="Cliquer puis appuyer sur la combinaison (Échap : annuler, Suppr : aucun raccourci)" onclick={() => (listening ? stop() : start())} onkeydown={key} onblur={stop}>
-  {listening ? "Appuyez sur une touche…" : value.vk ? value.label : "Aucun"}
+<svelte:window onmousedown={mouse} onmouseup={swallow} onauxclick={swallow} />
+
+<button class="key" class:listening aria-label={label} title="Cliquer puis appuyer sur la combinaison, ou un bouton de souris (molette, boutons latéraux) (Échap : annuler, Suppr : aucun raccourci)" onclick={() => (listening ? stop() : start())} onkeydown={key} onblur={stop}>
+  {listening ? "Appuyez sur une touche ou un bouton…" : value.vk ? value.label : "Aucun"}
 </button>
 
 <style>

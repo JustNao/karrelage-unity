@@ -3,8 +3,8 @@
   import { screenCentre, type Calibration, type FightMapState, type MapFighter } from "../lib/fightMap";
 
   /**
-   * Weakest element of each enemy in the in-game view (line of sight, F3): written on the fighter, in its element's colour,
-   * with its % resistance under it. Resistances are the fight's live ones (crates/modules/src/fight_map: the fighter's stats,
+   * Weakest element of each enemy in the in-game view (line of sight, F3; or always, `settings.combat.weakElementAlways`):
+   * written at the fighter's feet, in its element's colour, with its % resistance under it. Resistances are the fight's live ones (crates/modules/src/fight_map: the fighter's stats,
    * then each stats refresh: buffs and debuffs count). Ties: every tied element (all five: « Tous »).
    * Enemies: not on the team of the player's characters (`mine`), else every monster when the player is not known.
    */
@@ -37,8 +37,8 @@
   {#each enemies as f (f.id)}
     {@const [x, y] = screenCentre(cal, f.cell, dpr)}
     {@const w = weakest(f.resists!)}
-    <!-- over the fighter's body: about a cell above the cell it stands on -->
-    <text {x} y={y - (cal.sy * 0.55) / dpr} font-size={size} class="weak">
+    <!-- at the fighter's feet: the name on the cell it stands on, the value just under it -->
+    <text {x} y={y + size * 0.35} font-size={size} class="weak">
       {#if w.elements.length === 5}<tspan fill="#fff">Tous</tspan>
       {:else}
         {#each w.elements as e, i (e)}{#if i}<tspan fill="#fff"> / </tspan>{/if}<tspan fill={COLOURS[e]}>{ELEMENTS[e]}</tspan>{/each}

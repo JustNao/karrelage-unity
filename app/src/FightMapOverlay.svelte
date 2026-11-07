@@ -29,6 +29,8 @@
    * - Kept for the whole fight: put on screen once loaded, empty (`warmUp`); closing just empties it (never hidden: WebView2
    *   flashes white when a hidden window is shown again); only the fight's end closes it.
    * - The mouse and the keyboard stay the game's unless the view needs them (`takesInput`).
+   * - With `settings.combat.weakElementAlways`, the enemies' weakest elements (fightmap/ResistLayer.svelte) are drawn with no
+   *   view too, while the game is in the foreground.
    */
 
   /** The cursor is asked for again this long after each answer (about a frame, never two asks at once). */
@@ -37,6 +39,8 @@
   const CALIBRATION_CLICK_GRACE_MS = 500;
   /** Long enough for the warming window to have painted without the click-through style. */
   const WARMUP_PAINT_MS = 150;
+  /** How often the always shown weakest elements check the Dofus window's place and the foreground. */
+  const ALWAYS_POLL_MS = 500;
   /** Screen coordinate surely off every monitor (where Windows parks minimized windows). */
   const OFF_SCREEN = -32000;
 
@@ -120,9 +124,7 @@
     try {
       const rect = await place();
       if (!rect || !live.fight) return void (await release());
-      const saved = readJSON<Calibration | null>(CALIBRATION_KEY, null);
-      const manual = saved && saved.width === rect.width && saved.height === rect.height ? saved : null;
-      cal = readJSON(CALIBRATE_ASKED_KEY, false) ? null : (manual ?? gridOfWindow(rect.width, rect.height));
+      cal = readJSON(CALIBRATE_ASKED_KEY, false) ? null : gridFor(rect);
       shown = true;
     } finally {
       opening = false;
@@ -136,6 +138,12 @@
   const closesOnClick = () => (view === "portals" || view === "exil") && cal !== null;
   /** Closes the view, or once it is open when it is still opening. */
   const closeSoon = (by: "any" | "click") => (opening ? void (closeAsked = closeAsked === "any" ? "any" : by) : void hide());
+
+  /** The grid for a client area of this size: the calibration by hand taken at this size, else the computed one. */
+  function gridFor(rect: { width: number; height: number }): Calibration {
+    const saved = readJSON<Calibration | null>(CALIBRATION_KEY, null);
+    return saved && saved.width === rect.width && saved.height === rect.height ? saved : gridOfWindow(rect.width, rect.height);
+  }
 
   /** The window put on the Dofus window's client area (it may have moved since): that area, null without a Dofus window. */
   async function place() {
@@ -217,6 +225,7 @@
       live = await call<FightMapState>("fightmap", "state");
       if (!live.fight) return void close();
       await warmUp();
+      warm = true;
       await emitTo("main", "fightmap:ready");
     })().catch(() => void close());
     return () => {
@@ -241,6 +250,34 @@
     call<number[] | null>("fightmap", "cells", { map }, true).then((c) => map === loadedMap && (cells = c)).catch(() => {});
   });
 
+  // The weakest elements drawn for the whole fight (`settings.combat.weakElementAlways`), with no view: the window follows the
+  // Dofus window (it may move or change size) and nothing is drawn while another program is in the foreground.
+  let warm = $state(false);
+  let idleCal = $state.raw<Calibration | null>(null);
+  let foreground = $state(true);
+  const always = $derived(settings.combat.weakElement && settings.combat.weakElementAlways);
+  $effect(() => {
+    if (!always || !warm) return;
+    let on = true;
+    let timer = 0;
+    const tick = async () => {
+      if (!shown && !opening) {
+        const rect = await place().catch(() => null);
+        if (!on) return;
+        idleCal = rect && gridFor(rect);
+      }
+      foreground = await call<boolean>("fightmap", "focused", {}, true).catch(() => true);
+      if (on) timer = setTimeout(tick, ALWAYS_POLL_MS);
+    };
+    void tick();
+    return () => {
+      on = false;
+      clearTimeout(timer);
+    };
+  });
+  /** the grid the always shown elements use: the view's (none during its calibration), else the idle one */
+  const alwaysCal = $derived(shown ? cal : idleCal);
+
   async function calibrated(c: Calibration) {
     cal = c;
     calibratedAt = Date.now();
@@ -249,6 +286,11 @@
     if (hold && !(await call<boolean>("shortcuts", "held", { name: view }).catch(() => true))) hold = false;
   }
 </script>
+
+<!-- the weakest elements always shown (the line of sight view draws its own) -->
+{#if always && cells && alwaysCal && foreground && !(shown && view === "los")}
+  <div class="always"><ResistLayer cal={alwaysCal} {live} {mine} {dpr} /></div>
+{/if}
 
 <!-- no view: nothing drawn, the layers stopped -->
 {#if shown}
@@ -281,7 +323,8 @@
   :global(html), :global(body) { background: transparent !important; }
   /* nearly transparent rather than transparent: the window must still get the mouse while it is not let through */
   .overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.01); font-family: var(--font); font-size: 13px; cursor: crosshair; }
-  .overlay :global(svg) { position: absolute; inset: 0; pointer-events: none; }
+  .overlay :global(svg), .always :global(svg) { position: absolute; inset: 0; pointer-events: none; }
+  .always { position: fixed; inset: 0; pointer-events: none; }
   .overlay :global(.pill) { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); padding: 4px 12px; font-size: 12px; opacity: 0.9; white-space: nowrap; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4); pointer-events: none; }
   .overlay :global(.chip) { margin-left: 8px; font-weight: 600; }
 </style>
