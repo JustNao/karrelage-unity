@@ -229,7 +229,8 @@ fn lines_of(data: &Data, runes: &BTreeMap<i64, (f64, Vec<Rune>)>, gid: i64, effe
         let row = data.effects.get(&a)?;
         runes.contains_key(&row.characteristic).then_some((row.characteristic, if row.density < 0.0 { -1.0 } else { 1.0 }))
     };
-    let priority = |a: i64| data.effects.get(&a).map_or(i64::MAX, |r| r.priority);
+    // rank in the window: maluses (negative effectPowerRate) after the others, then the effect priority
+    let priority = |a: i64| data.effects.get(&a).map_or((true, i64::MAX), |r| (r.density < 0.0, r.priority));
     let mut ranges: BTreeMap<i64, (f64, f64)> = BTreeMap::new();
     let mut order: Vec<(i64, i64)> = vec![];
     for d in data.items.get(&gid).map(|i| i.effects.as_slice()).unwrap_or_default() {
@@ -240,7 +241,7 @@ fn lines_of(data: &Data, runes: &BTreeMap<i64, (f64, Vec<Rune>)>, gid: i64, effe
         order.push((c, d.a));
     }
     // each line with the priority of the effect it comes from (its first one on the item)
-    let mut lines: Vec<(Line, i64)> = vec![];
+    let mut lines: Vec<(Line, (bool, i64))> = vec![];
     for &(a, v) in effects {
         let Some((c, sign)) = stat(a) else { continue };
         match lines.iter_mut().find(|(l, _)| l.stat == c) {
@@ -253,7 +254,8 @@ fn lines_of(data: &Data, runes: &BTreeMap<i64, (f64, Vec<Rune>)>, gid: i64, effe
             lines.push((Line { stat: c, value: 0.0, range: ranges.get(&c).copied(), weight: runes[&c].0 }, priority(a)));
         }
     }
-    // the game's order: exos first, then by effect priority (checked on two forgemagie windows)
+    // the game's order: exos first, then by effect priority (checked on two forgemagie windows), maluses last (item 22412's
+    // default -10 % Critique isn't between Puissance and Invocations; 14094's -Rés. Critiques is its last line)
     lines.sort_by_key(|(l, p)| (l.range.is_some(), *p));
     lines.into_iter().map(|(l, _)| l).collect()
 }
@@ -555,6 +557,10 @@ mod tests {
         // item 14094 (shuffled here): Vitalité, Sagesse, Puissance, Critique, PA, Rés. Terre, Rés. Air, Tacle, Esquive PA, Do Cri, -Rés. Cri
         let fx = [(421, 17), (160, 4), (125, 394), (115, 8), (753, 11), (124, 34), (418, 25), (111, 1), (138, 69), (212, 8), (210, 8)];
         assert_eq!(stats(14094, &fx), [11, 12, 25, 18, 1, 33, 36, 79, 27, 86, 87]);
+        // item 22412: its fixed -10 % Critique (171) after every other line
+        let fx = [(125, 374), (124, 37), (138, 61), (182, 2), (430, 17), (422, 19), (171, 10), (753, 18), (2803, 4)];
+        assert_eq!(stats(22412, &fx)[..5], [11, 12, 25, 26, 92]);
+        assert_eq!(stats(22412, &fx).last(), Some(&18));
         // item 19985 with a Do Cri exo: it comes first; then Vitalité, Chance, Critique, Do Eau, Rés. Eau
         let fx = [(125, 242), (123, 99), (426, 20), (211, 8), (115, 5), (418, 8)];
         assert_eq!(stats(19985, &fx), [86, 11, 13, 18, 90, 35]);
@@ -573,7 +579,7 @@ mod tests {
         // Cape au Logis: vitality, -10 strength (its "-Force" effect), MP lost
         let lines = lines_of(data, &runes, 14168, &[(125, 320), (157, 10), (115, 5)]);
         assert_eq!(lines[0], Line { stat: 11, value: 320.0, range: Some((301.0, 350.0)), weight: vi.0 });
-        assert_eq!((lines[1].stat, lines[1].value), (10, -10.0));
+        assert_eq!((lines[9].stat, lines[9].value), (10, -10.0), "the malus last");
         let mp = lines.iter().find(|l| l.stat == 23).unwrap();
         assert_eq!((mp.value, mp.range), (0.0, Some((0.0, 1.0))));
         assert_eq!(lines.len(), 10, "every default effect once");

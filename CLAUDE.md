@@ -376,7 +376,7 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   (`object` → two ObjectItem fields); gone on its uid removed or `ExchangeLeaveEvent`. Fields read by type. Not checked on a capture.
 - Odds = dofocus.fr's players' model (its `Pz`, ported in `odds`; the tests hold values its own code gave). Lines keyed by
   characteristic, "-X" twins signed (negative density); a fixed default value ranges from 0 (as the site has it). Rows = exos
-  first, then by effect priority (checked on two windows; lost defaults at 0 unverified); runes per line by points = the Rune /
+  first, then by effect priority, maluses last (checked on three windows; 22412's -10 % Critique isn't in its place; lost defaults at 0 unverified); runes per line by points = the Rune /
   Pa / Ra columns, shown owned or not.
 - Overlay over the client area while an item is in: click-through except over its button (cursor polled) and the
   calibration. Calibration = clicks on the window's top-left / bottom-right corners (`REF` measured on one screenshot: 826 × 704,
