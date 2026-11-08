@@ -343,7 +343,7 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
 - Weakest element (`fightmap/ResistLayer.svelte`, drawn with the line of sight view, `settings.combat.weakElement`; with
   `weakElementAlways` for the whole fight with no view, while `focused`: the overlay polls the Dofus window's place): at each enemy's feet
   (not the team of `me`, else monsters), the element of its lowest % resistance (characteristics 37 / 33 / 34 / 35 / 36 = neutral,
-  earth, fire, water, air) in that element's colour, the value under it. Fighter `resists` from FightFighterInformation stats, then
+  earth, fire, water, air; neutral never shown: the next lowest instead) in that element's colour, the value under it. Fighter `resists` from FightFighterInformation stats, then
   FightRefreshCharacterStatsEvent (only changed ones: debuffs followed; verified on the 3 captures: every living monster has them).
 - Class help (`lib/classHelp.ts`): Steamer turrets (gids 5831 Bathyscaphe, 5832 Chalutier, 5833 Foreuse, 5835 Gardienne, 5836
   Harponneuse, 5837 Tactirelle) of the player (summoner in `me`, else same team): the cells ≤ 7 from each and in its line of sight
