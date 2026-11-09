@@ -9,9 +9,15 @@ export interface EffectRow { a: number; def: number[] | null }
 export const lotVal = (r: any, a: number) => Math.max(0, ...r.effects.filter((e: any) => e.action === a && e.status !== "removed").map((e: any) => e.hi ?? 0));
 export const effectLabel = (meta: Record<number, EffectMeta>, a: number) => meta[a]?.label ?? `effect ${a}`;
 
+/** « Trans » filter: every lot, only the lots carrying a transcendance rune (locked), or only the others. */
+export type TransFilter = "any" | "with" | "without";
+const NEXT_TRANS: Record<TransFilter, TransFilter> = { any: "with", with: "without", without: "any" };
+
 export class Filters {
   /** gid -> filters */
   byGid = $state<Record<number, Filter[]>>({});
+  /** gid -> « Trans » filter (missing = any) */
+  transByGid = $state<Record<number, TransFilter>>({});
 
   /** `item()`: the open item (the panel's operations act on it). */
   constructor(private item: () => any) {}
@@ -34,10 +40,23 @@ export class Filters {
 
   reset(gid: number) {
     this.byGid[gid] = [];
+    delete this.transByGid[gid];
+  }
+
+  trans(gid: number): TransFilter {
+    return this.transByGid[gid] ?? "any";
+  }
+
+  /** The « Trans » button: only runed lots, then only lots without a rune, then every lot again. */
+  cycleTrans() {
+    const it = this.item();
+    if (it) this.transByGid[it.gid] = NEXT_TRANS[this.trans(it.gid)];
   }
 
   /** The lot passes every filter of its item. */
   matches(gid: number, r: any): boolean {
+    const t = this.trans(gid);
+    if (t !== "any" && !!r.locked !== (t === "with")) return false; // locked = the card's 🛡 Transcendance
     return this.list(gid)
       .filter((x) => x.min !== "" || x.max !== "")
       .every((x) => {

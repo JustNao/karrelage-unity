@@ -6,7 +6,7 @@
   import { LEVEL_EFFECT } from "../../lib/companion";
   import { FLAG_EFFECTS, rangeLabel, sections, type EffectMeta } from "../../lib/effects";
   import { iconOfStat } from "../../lib/stores/statIcons.svelte";
-  import { effectLabel, type EffectRow, type Filters } from "./filters.svelte";
+  import { effectLabel, type EffectRow, type Filters, type TransFilter } from "./filters.svelte";
 
   /** HDV right panel: the pinned lot, then the open item's effect filters (companions: level and legendary status). */
   let {
@@ -57,6 +57,11 @@
     ...sections(effectRows.filter((x) => x.def != null).map((x) => ({ ...x, group: meta[x.a]?.group ?? "other", order: meta[x.a]?.order ?? 9999, label: effLabel(x.a) }))),
   ]);
   const preset = (p: string) => filt.preset(p, effectRows, meta);
+  const TRANS_TITLE: Record<TransFilter, string> = {
+    any: "Cliquer : uniquement les lots avec une rune de transcendance",
+    with: "Uniquement les lots avec une rune de transcendance · cliquer : uniquement les lots sans",
+    without: "Uniquement les lots sans rune de transcendance · cliquer : tous les lots",
+  };
 </script>
 
 <div class="filter" class:cz={cols.collapsed.filter}>
@@ -84,6 +89,7 @@
       <button onclick={() => preset("min")} title="min = valeur la plus basse de la plage de base de chaque effet">Valeurs min</button>
       <button onclick={() => preset("damage")} title="parfait (max de base) pour les effets de dommages">Dommages</button>
       <button onclick={() => preset("resist")} title="parfait (max de base) pour les % de résistance">Résistances</button>
+      <button class="trans {filt.trans(item.gid)}" onclick={() => filt.cycleTrans()} title={TRANS_TITLE[filt.trans(item.gid)]}>Trans</button>
       <button onclick={() => preset("clear")}>Effacer</button>
     </div>
     <div class="btns"><EffectPicker effects={pickable} onpick={(id) => filt.of(item.gid, id)} /></div>
@@ -130,6 +136,8 @@
   .filter .ghead { display: flex; align-items: center; justify-content: flex-start; gap: 10px; }
   .ghead { margin: 12px 0 2px; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--mut); }
   .gbtns { display: flex; gap: 4px; text-transform: none; letter-spacing: 0; }
+  .trans.with { border-color: var(--acc); color: var(--acc); }
+  .trans.without { border-color: var(--bad); color: var(--bad); }
   .btns { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
   .frow.lv { grid-template-columns: 1fr 52px 52px; }
   .leg { display: block; margin: 8px 0; }
