@@ -3,7 +3,7 @@
   import { cubicOut } from "svelte/easing";
   import { kamasFull, runeShort } from "../fmt";
   import { HIDDEN_EFFECTS, isNegative, perfection } from "../effects";
-  import type { Opportunity } from "../transcend";
+  import { isTranscended, type Opportunity } from "../transcend";
   import { unitPrice } from "../price";
   import { useSort } from "../sort.svelte";
   import { iconOfElement, iconOfStat } from "../stores/statIcons.svelte";
@@ -11,12 +11,12 @@
   import SortTable from "./SortTable.svelte";
 
   /**
-   * Equipment lots as a condensed table (the HDV "Tableau" view): good deal, price, perfect damage / resistances /
+   * Equipment lots as a condensed table (the HDV "Tableau" view): trans rune, price, perfect damage / resistances /
    * characteristics, transcendance, over-max and EXO effects; good deals get a gold line, the player's own lots a green one. Clicking a row unfolds the
    * lot's card under it, clicking the card folds it again. Clicking an over / EXO chip highlights the lots with that stat
    * (like "Mettre en avant" on the cards) without unfolding; the pin button sits left of the unfolded card.
    * Also used for lots of different items (Stuff tab) and for transcendance candidates: leading `leads` columns (item,
-   * profit, rune...), no deal / transcendance columns.
+   * profit, rune...), no trans rune / transcendance columns.
    * `changes` (HDV "Modifications"): lots added since the previous scan (green), removed (red, faded), repriced (the new
    * price over the old one, struck through).
    */
@@ -48,7 +48,7 @@
     good?: Set<string>;
     /** Transcendance candidates of the listing (unlocked lots a rune makes profitable), by row. */
     opps?: Map<any, Opportunity>;
-    /** Show the "Bonne affaire" / "Transcendance" columns (only meaningful within one item's listing). */
+    /** Show the "Trans" (lot carrying a transcendance rune) / "Transcendance" columns (only meaningful within one item's listing). */
     deals?: boolean;
     transcend?: boolean;
     /** Columns before the price (label, cell from the lot's `meta`, sort value; `desc` = sorted high to low first). */
@@ -117,7 +117,7 @@
       const o = opps.get(row);
       return {
         row, key, meta, price: unitPrice(row), damage: p.damage, resist: p.resist, main: p.main, extras, missing,
-        locked: !!row.locked, opp: o?.best ?? null, good: good.has(key),
+        locked: !!row.locked, opp: o?.best ?? null, good: good.has(key), rune: isTranscended(row),
         // sort keys
         extra: extras.length, trans: o?.best ? o.best.profit : row.locked ? -1e12 : -2e12,
       };
@@ -130,7 +130,7 @@
   const sort = useSort<SortKey>(null, false, (k) => (leadOf(k) ? !!leadOf(k)!.desc : k !== "price"));
   const allColumns: { key: SortKey; label: string; num?: boolean; title?: string }[] = $derived([
     ...leads.map((l) => ({ key: l.key, label: l.label, num: l.num, title: l.title })),
-    { key: "good", label: "Bonne affaire", title: "Lot bien au-dessus de la tendance prix / densité" },
+    { key: "rune", label: "Trans", title: "Lot portant une rune de transcendance" },
     { key: "price", label: "Prix", num: true },
     { key: "damage", label: "Dommages parfaits", title: "Tous les effets de dommages de base à leur maximum" },
     { key: "resist", label: "Résistances parfaites", title: "Résistances de base à leur maximum (seulement les % de résistance quand l'objet en a)" },
@@ -138,9 +138,9 @@
     { key: "trans", label: "Transcendance", title: "🛡 lot transcendé · +X : candidat rentable avec une rune (Do Cri +8, % Do, % Ré, Tacle)" },
     { key: "extra", label: "Over / EXO", title: "Effets ajoutés (bleu) et ce qui dépasse le max de base (vert)" },
   ]);
-  const columns = $derived(allColumns.filter((c) => (deals || c.key !== "good") && (transcend || c.key !== "trans")));
+  const columns = $derived(allColumns.filter((c) => (deals || c.key !== "rune") && (transcend || c.key !== "trans")));
   const sorted = $derived(
-    sort.apply(rows, (r: any, k) => (leadOf(k) ? (leadOf(k)!.sort?.(r.meta) ?? null) : k === "damage" || k === "resist" || k === "main" || k === "good" ? +r[k] : r[k])),
+    sort.apply(rows, (r: any, k) => (leadOf(k) ? (leadOf(k)!.sort?.(r.meta) ?? null) : k === "damage" || k === "resist" || k === "main" || k === "rune" ? +r[k] : r[k])),
   );
 </script>
 
@@ -154,7 +154,7 @@
   >
     {#snippet row(r)}
       {#each leads as l (l.key)}<td class="lead" class:n={l.num}>{@render l.cell(r.meta)}</td>{/each}
-      {#if deals}<td class="c">{#if r.good}<span class="deal" title="Bien au-dessus de la tendance prix / densité">●</span>{/if}</td>{/if}
+      {#if deals}<td class="c">{#if r.rune}<span class="rune" title="Rune de transcendance">✓</span>{/if}</td>{/if}
       {@const was = changes?.get(r.key)?.was}
       <td class="n pc"><b>{Number.isFinite(r.price) ? kamasFull(r.price) : "—"}</b>{#if was != null}<br /><s class="was" title="Prix au relevé précédent">{Number.isFinite(was) ? kamasFull(was) : "—"}</s>{/if}</td>
       <td class="c">{#if r.damage}<span class="star">★</span>{/if}</td>
@@ -234,7 +234,7 @@
   .unfold { display: grid; grid-template-rows: 1fr; }
   .clip { min-height: 0; overflow: hidden; }
   .pad { position: relative; padding: 14px 6px 16px; } /* padding-left: alignToPrice */
-  /* in the empty space left of the card (under the "Bonne affaire" column) */
+  /* in the empty space left of the card (under the "Trans" column) */
   .pin { position: absolute; left: 6px; top: 12px; padding: 1px 5px; font-size: 12px; line-height: 1.3; opacity: 0.55; filter: grayscale(1); }
   .pin:hover { opacity: 1; }
   .pin.on { opacity: 1; filter: none; border-color: var(--acc); }
@@ -254,5 +254,5 @@
   .chip.on { background: color-mix(in srgb, currentColor 22%, transparent); border-color: currentColor; }
   .chip.miss { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 50%, var(--line)); padding-left: 6px; }
   .good { color: var(--ok); }
-  .deal { color: var(--gold); }
+  .rune { color: var(--acc); }
 </style>
