@@ -24,8 +24,8 @@
   const priceText = (v: number | null) => (v != null ? kamasFull(v).replace(/\s*K$/, "") : "");
   /** Each rule's description, also searched. */
   const DESC = {
-    songes: "À la fin d'un combat, si quelqu'un du groupe a obtenu une « Légende … » (Ressource des Songes) : un son selon le prix enregistré de la meilleure, au-dessus ou en dessous du seuil (prix inconnu = en dessous), et une notification par Légende.",
-    goblins: "En entrant dans une salle, si un gobelin des Songes s'y trouve (King Gob, Gobséric, Gobledore ou Bog) : un son par gobelin, l'un après l'autre, et une notification par gobelin.",
+    songes: "À la fin d'un combat, si quelqu'un du groupe a obtenu une « Légende … » (Ressource des Songes) : un son selon le prix enregistré de la meilleure, au-dessus ou en dessous du seuil (prix inconnu = en dessous).",
+    goblins: "En entrant dans une salle, si un gobelin des Songes s'y trouve (King Gob, Gobséric, Gobledore ou Bog) : un son par gobelin, l'un après l'autre.",
     monsters: "À chaque changement de carte (et quand un groupe apparaît sur la carte), si un des monstres recherchés est dans un groupe : un seul son, même si plusieurs correspondent, et une notification par monstre.",
     forgemagie: "Quand un équipement est posé dans un atelier de forgemagie : un bouton « Avancé » au bout de la ligne « Fusionner tout / Fusionner » affiche sous chaque rune ses chances, au choix au-dessus du bouton : succès critique, neutre ou échec critique (modèle établi par les joueurs de dofocus.fr, pas la formule officielle). Le premier clic lance une calibration : deux clics sur les coins de la fenêtre de forgemagie (clic droit sur le bouton pour la refaire si vous la déplacez).",
     exoDo: "À chaque objet scanné à l'hôtel de vente : un lot avec un exo « % dommages » (sorts, armes, distance, mêlée) moins cher que la rune de transcendance de cette stat (prix enregistré), et dont le brisage rembourse le prix à partir d'un coefficient au plus égal au seuil (« Coef. rentable » de l'onglet Brisage), sans dépasser le prix max s'il est fixé. Un même lot ne sonne qu'une fois par session.",

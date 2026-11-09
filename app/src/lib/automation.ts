@@ -1,8 +1,8 @@
 /**
  * Automation engine: watches every auction listing captured live (whatever tab is open), the loot of every fight, the
  * player's turns and the monster groups and NPCs of every map, and
- * checks the enabled rules of lib/stores/automation.svelte.ts; a match plays the rule's sound (once per scan / fight) and
- * raises one notification per lot / looted item. Started once by App.svelte.
+ * checks the enabled rules of lib/stores/automation.svelte.ts; a match plays the rule's sound (once per scan / fight) and,
+ * for the HDV lots and searched monsters, raises one notification each (looted Légendes and goblins only ring). Started once by App.svelte.
  *
  * exoDo: a lot with an exo (added effect) on a "% dommages" stat (an effect some "Rune Ta Do Per …" transcendance rune
  * adds), cheaper than that rune, whose break-even coefficient (Brisage tab: price / runes value at 100 %, best focus) is
@@ -80,12 +80,7 @@ function checkSonges(items: Looted[]) {
   const r = rules.songes;
   const legends = items.filter(isLegend);
   if (!r.enabled || !legends.length) return;
-  let best = 0;
-  for (const l of legends) {
-    const p = prices.price(l.gid);
-    best = Math.max(best, p ?? 0);
-    notifications.push({ rule: "songes", title: l.name, detail: p != null ? `Prix enregistré ${kamas(p)}` : "Prix inconnu", gid: l.gid, lot: null });
-  }
+  const best = Math.max(0, ...legends.map((l) => prices.price(l.gid) ?? 0));
   playSound(best >= r.threshold ? r.sound : r.soundLow, r.volume);
 }
 
@@ -111,20 +106,17 @@ function checkMonsters(gids: number[], map: boolean) {
 /** The goblin NPCs that can stand in a Songe room (pack NPC ids; King Gob seen on a real capture, the others share its batch:
  *  consecutive ids, names and look). */
 export const SONGE_GOBLINS = [7848, 7849, 7850, 7853];
-interface NpcName { id: number; name: string }
-let npcNames = new Map<number, string>();
 /** Goblins already on the map: one spawning again does not ring twice. */
 let goblinsOnMap = new Set<number>();
 
 /** goblins: a Songe goblin among the NPCs of the map entered (`monsters:map` npcs) or appearing on it (`monsters:spawn`):
- *  one sound per goblin, played one after the other, and one notification per goblin. */
+ *  one sound per goblin, played one after the other (no notification). */
 function checkGoblins(npcs: number[] | undefined, map: boolean) {
   const r = rules.goblins;
   if (map) goblinsOnMap = new Set();
   const hits = [...new Set(npcs ?? [])].filter((n) => SONGE_GOBLINS.includes(n) && !goblinsOnMap.has(n));
   hits.forEach((n) => goblinsOnMap.add(n));
   if (!r.enabled || !hits.length) return;
-  for (const n of hits) notifications.push({ rule: "goblins", title: npcNames.get(n) ?? `PNJ #${n}`, detail: "Dans la salle", gid: n, lot: null });
   playSound(r.sound, r.volume, hits.length);
 }
 
@@ -147,7 +139,6 @@ export async function startAutomation() {
   void on<{ items: Looted[] }>("loot:fight", (e) => checkSonges(e.items));
   void on<{ focused: boolean }>("combat:turn", (e) => checkTurn(e.focused));
   cached<MonsterName[]>("monsters", "list").then((l) => (monsterNames = new Map(l.map((m) => [m.gid, m.name])))).catch(() => {});
-  cached<NpcName[]>("monsters", "npcs").then((l) => (npcNames = new Map(l.map((n) => [n.id, n.name])))).catch(() => {});
   void on<{ gids: number[]; npcs?: number[] }>("monsters:map", (e) => (checkMonsters(e.gids, true), checkGoblins(e.npcs, true)));
   void on<{ gids: number[]; npcs?: number[] }>("monsters:spawn", (e) => (checkMonsters(e.gids, false), checkGoblins(e.npcs, false)));
   auction.subscribe((c) => {
