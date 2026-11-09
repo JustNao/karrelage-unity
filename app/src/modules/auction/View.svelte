@@ -446,7 +446,8 @@
   .dhead { display: flex; gap: 6px; align-items: center; width: 100%; border: 0; background: none; font: 600 13px var(--font); color: var(--ok); margin-bottom: 8px; padding: 0; text-align: left; }
   .dhead .mut { font-weight: 400; }
   .deals :global(.chd.dhead) { font: 600 13px var(--font); color: var(--ok); margin-bottom: 8px; padding: 0; }
-  .deals.gold { border-color: color-mix(in srgb, var(--gold) 45%, var(--line)); background: color-mix(in srgb, var(--gold) 5%, transparent); }
+  /* "Bonnes affaires": no frame, the gold title alone */
+  .deals.gold { border: 0; background: none; padding: 0; }
   .deals.gold :global(.chd.dhead) { color: var(--gold); }
   .deals :global(.chd.dhead .mut) { font-weight: 400; }
   .deal { cursor: pointer; }
