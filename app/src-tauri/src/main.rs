@@ -307,6 +307,15 @@ fn migrate_legacy_dirs() {
 }
 
 fn main() {
+    // automation sounds must play with no click in the page since it loaded (app started to the tray, dev reloads): WebView2's
+    // autoplay rule otherwise rejects `play()`. Set for the whole process, not as a window's `additionalBrowserArgs`: windows made
+    // from the page can't take that option, and webviews with different arguments can't share a data directory. wry's own
+    // defaults are repeated, in case the variable replaces them.
+    #[cfg(windows)]
+    std::env::set_var(
+        "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+        "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required",
+    );
     migrate_legacy_dirs();
     // the state is registered before any window exists: the webview can call `status` before `setup` has run (release builds load
     // the page faster than setup completes), and a command on unmanaged state fails
