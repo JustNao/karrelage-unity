@@ -3,7 +3,6 @@
   import { cubicOut } from "svelte/easing";
   import { kamasFull } from "../fmt";
   import { HIDDEN_EFFECTS, isNegative, perfection } from "../effects";
-  import { isTranscended } from "../transcend";
   import { unitPrice } from "../price";
   import { useSort } from "../sort.svelte";
   import { iconOfElement, iconOfStat } from "../stores/statIcons.svelte";
@@ -111,7 +110,7 @@
       const missing = shown.filter((e: any) => e.status === "removed").length;
       return {
         row, key, meta, price: unitPrice(row), damage: p.damage, resist: p.resist, main: p.main, extras, missing,
-        good: good.has(key), rune: isTranscended(row),
+        good: good.has(key), rune: !!row.locked, // as the card's 🛡 Transcendance: the rune may raise a default stat (over-max, not EXO)
         // sort keys
         extra: extras.length,
       };
