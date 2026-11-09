@@ -113,7 +113,7 @@
     <LotTable
       lots={saved.map((sv) => ({ row: sv.row, key: "s" + sv.key, meta: sv }))}
       deals={false}
-      transcend={false}
+     
       alignPrice={false}
       leads={[
         { key: "rm", label: "", cell: svRemove },
@@ -169,7 +169,7 @@
       <LotTable
         lots={trans.opportunities.map((o) => ({ row: o.row, key: "t" + keyOf(o.row), meta: o }))}
         deals={false}
-        transcend={false}
+       
         alignPrice={false}
         picked={cand ? "t" + cand.id : null}
         leads={[

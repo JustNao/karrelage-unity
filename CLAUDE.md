@@ -90,7 +90,7 @@ Set `PYTHONUTF8=1` for scripts handling accents. The "Développeur" header toggl
 - `floating.ts` `openFloating` / `closeFloating` / `savedPos` + `FloatingShell.svelte` for windows over the game
   (label must be in `capabilities/overlay.json`; extra windows are extra vite inputs, e.g. `scanlist.html`, `combat.html`).
 - Components: `Switch`, `Segmented`, `ItemIcon`, `SubView`, `SideList`, `PanelHead`, `Grip`, `SortTable`+`useSort`,
-  `LotTable` (the only view of equipment lots; options `leads`, `deals`, `transcend`, `alignPrice`, `rowClass`), `ItemCard`,
+  `LotTable` (the only view of equipment lots; options `leads`, `deals` (« Trans » column), `alignPrice`, `rowClass`), `ItemCard`,
   `Collapsible`, `SearchBar`, `ConfirmButton`, `Banner`, `ProgressBar`, `Modal`; action `clickOutside`.
 - `fmt.ts` (kamas use "," thousands: "2,380,000 K"; other numbers French format), `price.ts` (`AH_TAX` 2 %, `afterTax`,
   `effectivePrice`: override > AH unit > weekly avg), icon stores `itemIcons` / `statIcons` (`iconOfElement`).

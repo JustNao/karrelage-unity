@@ -416,7 +416,7 @@
         {/if}
         <CompanionTable lots={tableLots} {neurons} {neuroneUnit} {resource} {picked} faded={lacksFade} onpick={pickLot} {changes} />
       {:else}
-        <LotTable lots={tableLots} {changes} good={goodKeys} transcend={false} {picked} open={(k) => allOpen || openSet.has(k)} faded={lacksFade} ontoggle={toggleRow} stickTop={points.length >= 3 ? graphH : 0} {fade} onfade={toggleFade} pinned={isPin} mine={isMineRow} onpin={togglePin} versus={versusFor} />
+        <LotTable lots={tableLots} {changes} good={goodKeys} {picked} open={(k) => allOpen || openSet.has(k)} faded={lacksFade} ontoggle={toggleRow} stickTop={points.length >= 3 ? graphH : 0} {fade} onfade={toggleFade} pinned={isPin} mine={isMineRow} onpin={togglePin} versus={versusFor} />
       {/if}
       {/if}
     {/if}

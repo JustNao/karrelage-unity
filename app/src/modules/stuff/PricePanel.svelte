@@ -101,7 +101,7 @@
       <LotTable
         lots={rows.map((o) => ({ row: o.lot, key: o.slot, meta: o }))}
         deals={false}
-        transcend={false}
+       
         leads={[{ key: "item", label: "Objet", cell: itemCell, sort: (o) => o.name }]}
         open={(k) => !!openLots[k]}
         ontoggle={(k) => (openLots[k] = !openLots[k])}
