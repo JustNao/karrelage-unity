@@ -53,6 +53,15 @@
   ];
   const int = (e: Event) => Number((e.currentTarget as HTMLInputElement).value);
 
+  /** Row clicked: copy the resource's name (to paste in the auction house search). */
+  let copied = $state<number | null>(null);
+  function copy(r: Row) {
+    navigator.clipboard?.writeText(r.name).then(() => {
+      copied = r.gid;
+      setTimeout(() => copied === r.gid && (copied = null), 900);
+    }, () => {});
+  }
+
   onMount(() => {
     foodNames().then((m) => (names = m)).catch((e) => (err = String(e)));
     cached<Recipes>("auction", "recipes").then((r) => (recipes = r)).catch((e) => (err = String(e)));
@@ -74,9 +83,9 @@
     </div>
     <SearchBar bind:value={q} bind:priced={onlyPriced} placeholder="Rechercher une ressource…" />
   {/snippet}
-    <SortTable columns={COLUMNS} rows={view} {sort} key={(r) => r.gid}>
+    <SortTable columns={COLUMNS} rows={view} {sort} key={(r) => r.gid} rowProps={(r) => ({ class: "food", title: "Cliquer pour copier le nom", onclick: () => copy(r) })}>
       {#snippet row(r)}
-        <td><b>{r.name}</b></td>
+        <td><b>{r.name}</b>{#if copied === r.gid} <span class="copied">copié</span>{/if}</td>
         <td class="n">{fmtNum(r.xp, 4)}</td>
         <td class="n" class:used={r.how === "achat" && r.craft != null}>{kamasOr(r.buy)}</td>
         <td class="n" class:used={r.how === "craft"} title={r.how === "craft" ? "Moins cher à crafter (ingrédients achetés ou craftés)" : ""}>{kamasOr(r.craft)}</td>
@@ -94,4 +103,7 @@
   .form input { width: 90px; padding: 3px 6px; text-align: right; }
   .res { flex: 1; min-width: 260px; }
   .used { color: var(--ok); font-weight: 600; }
+  :global(tr.food) { cursor: pointer; }
+  :global(tr.food:hover td) { background: var(--panel); }
+  .copied { color: var(--ok); font-size: 10px; }
 </style>

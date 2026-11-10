@@ -58,7 +58,7 @@ h3 { font: 600 12px var(--font); margin: 12px 0 4px; color: var(--mut); text-tra
 
 /* data tables (SortTable.svelte and the lot tables): sticky header, numbers right-aligned */
 .tbl { width: 100%; border-collapse: collapse; font-size: 12px; font-family: var(--font); }
-.tbl th { text-align: left; font-weight: 400; color: var(--mut); padding: 2px 6px; position: sticky; top: 0; background: var(--bg); }
+.tbl th { text-align: left; font-weight: 400; color: var(--mut); padding: 2px 6px; position: sticky; top: calc(-1 * var(--pad, 0px)); background: var(--bg); } /* --pad: the SmoothScroll padding, which Chromium keeps above a sticky header */
 .tbl th button { border: 0; background: none; color: inherit; font: inherit; padding: 0; cursor: pointer; }
 .tbl td { padding: 4px 6px; border-top: 1px solid var(--line); }
 .tbl .n { text-align: right; white-space: nowrap; }
