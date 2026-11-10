@@ -1,52 +1,84 @@
-/** Familiar / mount levelling: the resources that give xp (dofustool.com table + croquette enrichie) and the cheapest way to feed a given xp. */
+/**
+ * Familiar / montilier levelling: the xp each resource gives (community sheet via huzounet.fr, by item id) and the cheapest
+ * way to feed a given xp. Feeding n units of a resource gives floor(n × its xp per unit).
+ */
 import { call } from "./api";
-import { priceOf } from "./price";
-import { xpOfLevel } from "./companion";
-import type { StoredPrice } from "./transcend";
+import { priceOf, type StoredPrice } from "./price";
+import { craftCost, type Recipes } from "./craft";
 import table from "../modules/crafting/subs/familiers/familiar_xp.json";
 
-export interface Food { name: string; xp: number; qty: number }
+export interface Food { gid: number; xp: number }
 
-/** Croquette enrichie: a flat 500 xp (not in the site's table). */
-const CROQUETTE: Food = { name: "Croquette enrichie", xp: 500, qty: 1 };
+/** Every resource with a known xp per unit. */
+export const FOODS: Food[] = (table.foods as [number, number][]).map(([gid, xp]) => ({ gid, xp }));
 
-/** [name, xp per meal, resource quantity per meal]; the site lists some resources twice: keep the best xp per unit. */
-export const FOODS: Food[] = (() => {
-  const by = new Map<string, Food>();
-  for (const f of [CROQUETTE, ...(table.foods as [string, number, number][]).map(([name, xp, qty]) => ({ name, xp, qty }))]) {
-    const old = by.get(f.name);
-    if (!old || f.xp / f.qty > old.xp / old.qty) by.set(f.name, f);
+/** Total xp of each level (the game's table: level L = LEVELS[L - 1], level 100 the last). */
+const LEVELS: number[] = table.levels;
+export const MAX_LEVEL = LEVELS.length;
+
+/** Total xp of a level (clamped to 1..100). */
+export const levelBase = (l: number) => LEVELS[Math.min(Math.max(Math.round(l), 1), MAX_LEVEL) - 1];
+
+/** Units of a food needed for `need` xp (the batch's xp is rounded down). */
+export function unitsFor(need: number, xp: number) {
+  if (need <= 0) return 0;
+  let n = Math.max(1, Math.ceil(need / xp - 1e-9));
+  while (Math.floor(n * xp + 1e-9) < need) n++;
+  return n;
+}
+/** Xp of a batch of `n` units. */
+export const batchXp = (n: number, xp: number) => Math.floor(n * xp + 1e-9);
+
+let namesPromise: Promise<Record<string, string>> | null = null;
+/** Food gid -> item name (cached; from the data pack). */
+export const foodNames = () =>
+  (namesPromise ??= call<Record<string, string>>("prices", "item_names", { gids: FOODS.map((f) => f.gid) }).catch((e) => ((namesPromise = null), Promise.reject(e))));
+
+export interface FoodCost {
+  /** Cheaper of the two (null = neither known). */
+  unit: number | null;
+  how: "achat" | "craft" | null;
+  buy: number | null;
+  /** Craft cost from the stored prices (ingredients bought or crafted, whichever is cheaper); null = no recipe or a price missing. */
+  craft: number | null;
+}
+
+/** Unit cost of every food: bought, or crafted when that is cheaper. */
+export function foodCosts(recipes: Recipes, prices: Map<number, StoredPrice>) {
+  const out = new Map<number, FoodCost>();
+  for (const f of FOODS) {
+    const buy = priceOf(prices, f.gid);
+    const craft = recipes.recipes[f.gid] ? (craftCost(f.gid, recipes, prices)?.cost ?? null) : null;
+    const how = craft != null && (buy == null || craft < buy) ? "craft" : buy != null ? "achat" : null;
+    out.set(f.gid, { unit: how === "craft" ? craft : buy, how, buy, craft });
   }
-  return [...by.values()];
-})();
+  return out;
+}
 
-/** Total xp of a level; level 1 starts at 0. */
-export const levelBase = (l: number) => (l <= 1 ? 0 : xpOfLevel(Math.min(l, 100)));
-
-let gidsPromise: Promise<Record<string, number>> | null = null;
-/** Food name -> item gid (cached; the backend resolves the names against the game data). */
-export const foodGids = () => (gidsPromise ??= call<Record<string, number>>("prices", "gids_by_name", { names: FOODS.map((f) => f.name) }).catch((e) => ((gidsPromise = null), Promise.reject(e))));
-
-export interface Feed { food: string; meals: number; units: number; cost: number }
+export interface Feed { gid: number; units: number; xp: number; cost: number; how: "achat" | "craft" }
 export interface FeedPlan { cost: number; xp: number; feeds: Feed[] }
 
 /**
- * Cheapest known way to give `need` xp: the best foods (by price per xp) are tried as the bulk, the remainder is covered by
- * the cheapest single food that reaches it. Foods without a stored price are ignored. null = no priced food.
+ * Cheapest known way to give `need` xp: the best foods (by cost per xp) are tried as the bulk, the remainder is covered by
+ * the cheapest single food that reaches it. Foods without a cost are ignored. null = no priced food.
  */
-export function feeder(gids: Record<string, number>, prices: Map<number, StoredPrice>) {
+export function feeder(costs: Map<number, FoodCost>) {
   const foods = FOODS.flatMap((f) => {
-    const g = gids[f.name];
-    const unit = g != null ? priceOf(prices, g) : null;
-    return unit != null ? [{ ...f, meal: unit * f.qty }] : [];
-  }).sort((a, b) => a.meal / a.xp - b.meal / b.xp);
+    const c = costs.get(f.gid);
+    return c?.unit != null && f.xp > 0 ? [{ ...f, unit: c.unit, how: c.how! }] : [];
+  }).sort((a, b) => a.unit / a.xp - b.unit / b.xp);
   const top = foods.slice(0, 40); // the bulk food is always among the best per xp
-  const memo = new Map<number, FeedPlan | null>();
+  type F = (typeof foods)[number];
+  const feed = (f: F, units: number): Feed => ({ gid: f.gid, units, xp: batchXp(units, f.xp), cost: units * f.unit, how: f.how });
   const cover = (rem: number) => {
-    let best: (typeof foods)[number] | null = null;
-    for (const f of foods) if (!best || Math.ceil(rem / f.xp) * f.meal < Math.ceil(rem / best.xp) * best.meal) best = f;
-    return best;
+    let best: Feed | null = null;
+    for (const f of foods) {
+      const x = feed(f, unitsFor(rem, f.xp));
+      if (!best || x.cost < best.cost) best = x;
+    }
+    return best!;
   };
+  const memo = new Map<number, FeedPlan | null>();
   const plan = (need: number): FeedPlan | null => {
     if (need <= 0) return { cost: 0, xp: 0, feeds: [] };
     if (!foods.length) return null;
@@ -54,24 +86,16 @@ export function feeder(gids: Record<string, number>, prices: Map<number, StoredP
     let best: FeedPlan | null = null;
     for (const f of top) {
       const n = Math.floor(need / f.xp);
-      const rem = need - n * f.xp;
-      const feeds: Feed[] = n ? [{ food: f.name, meals: n, units: n * f.qty, cost: n * f.meal }] : [];
-      let xp = n * f.xp;
-      let cost = n * f.meal;
-      if (rem > 1e-9) {
-        const c = cover(rem)!;
-        const m = Math.ceil(rem / c.xp);
-        feeds.push({ food: c.name, meals: m, units: m * c.qty, cost: m * c.meal });
-        xp += m * c.xp;
-        cost += m * c.meal;
+      const bulk = n ? feed(f, n) : null;
+      const rem = need - (bulk?.xp ?? 0);
+      const feeds = bulk ? [bulk] : [];
+      if (rem > 0) {
+        const c = cover(rem);
+        if (bulk && c.gid === bulk.gid) feeds[0] = feed(f, unitsFor(need, f.xp)); // one batch of the same food
+        else feeds.push(c);
       }
-      const merged: Feed[] = []; // same food for the bulk and the remainder: one line
-      for (const x of feeds) {
-        const m = merged.find((y) => y.food === x.food);
-        if (m) (m.meals += x.meals), (m.units += x.units), (m.cost += x.cost);
-        else merged.push({ ...x });
-      }
-      if (!best || cost < best.cost) best = { cost, xp, feeds: merged };
+      const cost = feeds.reduce((s, x) => s + x.cost, 0);
+      if (!best || cost < best.cost) best = { cost, xp: feeds.reduce((s, x) => s + x.xp, 0), feeds };
     }
     memo.set(need, best);
     return best;

@@ -12,7 +12,7 @@
   import { settings } from "../../lib/stores/settings.svelte";
   import { isLegendary, levelOf, xpOfLevel } from "../../lib/companion";
   import { analyse, isGoodDeal } from "../../lib/density";
-  import { feeder, foodGids, levelBase } from "../../lib/familiar";
+  import { MAX_LEVEL, feeder, foodCosts, foodNames, levelBase } from "../../lib/familiar";
   import { mountInfo, neuroneGids, neuronsOf, resourcePlural } from "../../lib/mounts";
   import type { EffectMeta } from "../../lib/effects";
   import { benefit, craftCost, type Recipes } from "../../lib/craft";
@@ -88,13 +88,13 @@
   const versusFor = (r: any) => (isPin(r) ? null : versus);
 
   // ---- companions: cheapest way to reach a level, buying a lot and feeding it (resource prices = stored prices)
-  let foodIds = $state.raw<Record<string, number>>({});
+  let foodNameOf = $state.raw<Record<string, string>>({});
   let levelTarget = $state(100);
   interface LevelOpt { row: any; level: number; price: number; feed: number; total: number; plan: ReturnType<ReturnType<typeof feeder>["plan"]> }
   const levelling = $derived.by(() => {
     if (!comp || !item?.feedable) return null; // only familiars / montiliers are fed
-    const f = feeder(foodIds, stored);
-    const target = Math.min(Math.max(Math.round(levelTarget) || 1, 1), 100);
+    const f = feeder(foodCosts(recipes, stored));
+    const target = Math.min(Math.max(Math.round(levelTarget) || 1, 1), MAX_LEVEL);
     const opts: LevelOpt[] = [];
     let direct: { row: any; price: number } | null = null; // cheapest lot already at the target level
     for (const row of item.rows) {
@@ -301,7 +301,7 @@
     cached<EffectMeta[]>("auction", "effect_meta").then(live((l) => (meta = Object.fromEntries(l.map((e) => [e.id, e]))))).catch(() => {});
     cached<Recipes>("auction", "recipes").then(live((r) => (recipes = r))).catch(() => {});
     neuroneGids().then(live((m) => (neurGids = m))).catch(() => {});
-    foodGids().then(live((m) => (foodIds = m))).catch(() => {});
+    foodNames().then(live((m) => (foodNameOf = m))).catch(() => {});
     cached<Rune[]>("prices", "runes").then(live((l) => (runes = l))).catch(() => {});
     void prices.ensure();
     void mine.ensure();
@@ -384,7 +384,7 @@
               <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
               <div class="deal" title={listed ? "Cliquer pour aller au lot dans la liste" : ""} onclick={() => listed && focusLot(keyOf(o.row))}>
                 <div class="lvl"><b>{kamas(Math.round(o.total))}</b> <span class="mut">= niveau {o.level} à {kamas(o.price)} + {kamas(Math.round(o.feed))} de nourriture</span></div>
-                <div class="mut">{o.plan?.feeds.map((x) => `${x.meals} repas ${x.food} (${x.units} unité${x.units > 1 ? "s" : ""})`).join(" + ")}</div>
+                <div class="mut">{o.plan?.feeds.map((x) => `${x.units} × ${foodNameOf[x.gid] ?? "#" + x.gid}${x.how === "craft" ? " (craft)" : ""}`).join(" + ")}</div>
               </div>
             {/each}
           {/if}
