@@ -211,7 +211,7 @@ and developer mode are both on. New category = an entry in `CATEGORIES`, a defau
 **Crafting > Montures** (`lib/mounts.ts`): extraction gives N resources, N = generation (highest base-colour generation,
 +1 for two colours; gen 1 left out). Effect 3836 = senile → 1 resource.
 
-**Crafting > Familiers** (`lib/familiar.ts`, `familiar_xp.json`): xp per unit by gid from a community sheet (via huzounet.fr,
+**Crafting > Familiers** (`lib/familiar.ts`, `familiar_xp.json`): xp per unit by gid from a community sheet (via huzounet.fr, minus the « Essence de » dungeon keeper essences, gone from the game;
 2026-09-19; not in the game files: server-side, grows with level and rarity), n units give floor(n × xp); levels = the game's
 evolutiveitemtypes table. A food costs the cheaper of buying and crafting it (`craftCost`). Same planner in the HDV companion card.
 
