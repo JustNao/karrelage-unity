@@ -134,7 +134,7 @@
   const lotsOf = (l: any[]) => l.map((r) => ({ row: r, key: keyOf(r) }));
 
   /** "Modifications": the open item's lots against its previous scan this session (added / removed / repriced). */
-  let showChanges = $state(false);
+  let showChanges = $state(true);
   const prev = $derived(item ? auction.previous.get(item.gid) : undefined);
   const diff = $derived(item && prev ? lotDiff(prev.rows, item.rows) : null);
   const changeCount = $derived(diff ? diff.added.size + diff.removed.length + diff.was.size : 0);
