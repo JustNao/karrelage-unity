@@ -119,6 +119,34 @@ fn read_history(path: &std::path::Path, gid: Option<i64>, since: f64) -> Vec<Val
         .collect()
 }
 
+/// Apply a listing change (`auction_bought` / `auction_row` / `auction_row_removed`) to the stored listings; the gid of the
+/// listing changed, None when nothing changed. The row is found by uid in any listing, else (a row change carries its gid)
+/// in that gid's listing: a resource listing's single row is replaced / removed, another row is added. A resource row seen
+/// with no listing of its item starts one (it holds the cheapest offer of every stack size); an equipment row doesn't (one
+/// lot says nothing of the cheapest).
+fn change_listing(listings: &mut HashMap<i64, Vec<Value>>, f: &Value, is_equipment: impl Fn(i64) -> bool) -> Option<i64> {
+    let has_uid = |r: &Vec<Value>| !f["uid"].is_null() && r.iter().any(|x| x["uid"] == f["uid"]);
+    if let Some((gid, rows)) = listings.iter_mut().find(|(_, r)| has_uid(r)) {
+        return apply_change(rows, f).map(|_| *gid);
+    }
+    let kind = f["kind"].as_str()?;
+    if kind != "auction_row" && kind != "auction_row_removed" {
+        return None;
+    }
+    let gid = f["gid"].as_i64()?;
+    let equipment = is_equipment(gid);
+    match (listings.get_mut(&gid), kind) {
+        (Some(rows), "auction_row") if rows.len() == 1 && !equipment => rows[0] = f["row"].clone(),
+        (Some(rows), "auction_row") => rows.push(f["row"].clone()),
+        (Some(rows), _) if rows.len() == 1 && !equipment => rows.clear(),
+        (None, "auction_row") if !equipment => {
+            listings.insert(gid, vec![f["row"].clone()]);
+        }
+        _ => return None,
+    }
+    Some(gid)
+}
+
 impl Prices {
     pub fn new() -> Self {
         Self::default()
@@ -207,13 +235,11 @@ impl Module for Prices {
             self.listings.lock().insert(gid, rows.clone());
             (gid, unit_price(rows), offers(rows))
         } else {
-            // a purchase / an updated or removed row of a listing seen earlier
+            // a purchase / an updated or removed row of a listing
             let mut l = self.listings.lock();
-            let Some((gid, rows)) = l.iter_mut().find(|(_, r)| r.iter().any(|x| !x["uid"].is_null() && x["uid"] == f["uid"])) else { return };
-            if apply_change(rows, f).is_none() {
-                return;
-            }
-            (*gid, unit_price(rows), offers(rows))
+            let Some(gid) = change_listing(&mut l, f, |g| ctx.data.is_equipment(g)) else { return };
+            let rows = &l[&gid];
+            (gid, unit_price(rows), offers(rows))
         };
         // recorded even when nobody sells it any more (empty offers)
         append_history(ctx, &json!({"t": m.raw.t, "gid": gid, "kind": "ah", "unit": unit.map(|u| u.round() as i64), "offers": offers}));
@@ -349,6 +375,33 @@ mod tests {
         p.on_message(&msg(2.0), &hub.ctx);
         let list = p.call("list", Value::Null, &hub.ctx).unwrap();
         assert_eq!(get(&list, 1711)["override"], 42);
+    }
+
+    #[test]
+    fn listing_changes_follow_purchases() {
+        let row = |uid: i64, gid: i64, p: &[i64]| json!({"uid": uid, "gid": gid, "prices": p.iter().zip([1, 10, 100, 1000]).map(|(p, q)| json!({"qty": q, "price": p})).collect::<Vec<_>>()});
+        let change = |kind: &str, uid: i64, gid: i64, r: Value| json!({"kind": kind, "uid": uid, "gid": gid, "row": r});
+        let equip = |g: i64| g == 9;
+        let mut l: HashMap<i64, Vec<Value>> = HashMap::new();
+        l.insert(5, vec![row(50, 5, &[100, 900, 8000, 0])]);
+        // same uid: replaced
+        let r = row(50, 5, &[120, 900, 8000, 0]);
+        assert_eq!(change_listing(&mut l, &change("auction_row", 50, 5, r), equip), Some(5));
+        assert_eq!(unit_price(&l[&5]), Some(90.0));
+        // another uid for the resource's single row (uid not the listing's): replaced through the gid
+        let r = row(51, 5, &[150, 1200, 8000, 0]);
+        assert_eq!(change_listing(&mut l, &change("auction_row", 51, 5, r), equip), Some(5));
+        assert_eq!(l[&5].len(), 1);
+        assert_eq!(unit_price(&l[&5]), Some(120.0));
+        // a resource never listed this session: its row starts the listing; an equipment lot doesn't
+        assert_eq!(change_listing(&mut l, &change("auction_row", 70, 7, row(70, 7, &[30, 0, 0, 0])), equip), Some(7));
+        assert_eq!(unit_price(&l[&7]), Some(30.0));
+        assert_eq!(change_listing(&mut l, &change("auction_row", 90, 9, row(90, 9, &[5000, 0, 0, 0])), equip), None);
+        // the resource's last row removed (unknown uid): the listing empties, no price
+        assert_eq!(change_listing(&mut l, &json!({"kind": "auction_row_removed", "uid": 77, "gid": 7}), equip), Some(7));
+        assert_eq!(unit_price(&l[&7]), None);
+        // a purchase answer without a known uid changes nothing
+        assert_eq!(change_listing(&mut l, &json!({"kind": "auction_bought", "uid": 1, "bought": true}), equip), None);
     }
 
     #[test]

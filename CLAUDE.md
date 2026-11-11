@@ -183,6 +183,8 @@ Set `PYTHONUTF8=1` for scripts handling accents. The "Développeur" header toggl
   cheapest lot. Every listing / weekly-average batch is appended to `<app data>/prices/history.jsonl` (call `history`).
 - `ObjectAveragePricesEvent` (role `avg_prices`) gives the 7-day average (entry: gid + two int64, the price is the larger:
   the other was never set on a 9679-entry capture). Priority: override > AH unit > avg.
+- Purchases / row changes (`change_listing`): a row found by uid in any listing of the session, else by its gid: a resource's
+  single row replaced / removed, a resource row with no listing yet starts one (equipment rows never do). Not seen on a capture yet.
 
 **Packets** (`packets.rs`): keeps the last 20 raw packets per type, decoded only when the tab lists/streams them.
 
