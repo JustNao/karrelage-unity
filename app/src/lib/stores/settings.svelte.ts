@@ -44,6 +44,8 @@ const DEFAULTS = {
     fight: false,
     /** Every workshop session with a craft result (forgemagie included), from the workshop's use to leaving it. */
     forgemagie: false,
+    /** Every auction house visit (purchases included), from opening its window to leaving it. */
+    hdv: false,
   },
   /** Global keyboard shortcuts (lib/shortcuts.ts), one per name: work while the game has the focus. */
   shortcuts: {

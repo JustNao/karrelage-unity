@@ -200,6 +200,9 @@ and developer mode are both on. New category = an entry in `CATEGORIES`, a defau
 - Forgemagie = a workshop session: the craft window's opening and the item put in are unnamed in 3.7, so a file opens at every
   `InteractiveUseRequest` and holds everything until `ExchangeLeaveEvent` / `DialogLeaveEvent` / `MapInformationRequest`; one
   without an `ExchangeCraftResultEvent` (category `keep`) is deleted when it closes (harvests, zaaps…). Crafts are recorded too.
+- HDV = an auction house visit: from `ExchangeBidBuyerStartedEvent` / `ExchangeBidSellerStartedEvent` (or a listing / purchase
+  message when switched on there) to `ExchangeLeaveEvent` / `DialogLeaveEvent` / `MapInformationRequest`, everything between: made to see
+  what a purchase sends back (prices `change_listing`).
 - Measured on the captures: about 1.1 KB per message, 0.4–0.85 MB per fight, 3.4 MB for a 3 min one with 4,300 messages (gzip: 22 × smaller).
 
 **Brisage** (`brisage.rs`, `lib/brisage.ts`)

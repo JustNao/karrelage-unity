@@ -23,6 +23,12 @@ export const RECORD_CATEGORIES: { id: RecordCategory; title: string; desc: strin
     desc: "Tous les paquets d'un atelier, de son utilisation à sa fermeture (ni les discussions, ni le groupe) : forgemagie et crafts. Les utilisations sans résultat de craft (récolte, zaap…) ne sont pas gardées. Un fichier par session.",
     unit: "session(s)",
   },
+  {
+    id: "hdv",
+    title: "Enregistrer les visites à l'hôtel de vente",
+    desc: "Tous les paquets d'une visite de l'hôtel de vente, de l'ouverture de sa fenêtre (achat ou vente) à sa fermeture (ni les discussions, ni le groupe) : listes consultées, achats, mises en vente. Un fichier par visite.",
+    unit: "visite(s)",
+  },
 ];
 
 export interface RecorderStatus {

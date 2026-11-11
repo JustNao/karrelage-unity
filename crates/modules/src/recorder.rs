@@ -94,7 +94,30 @@ const FORGEMAGIE: Category = Category {
     keep: &["ExchangeCraftResultEvent"],
 };
 
-pub const CATEGORIES: &[Category] = &[FIGHT, FORGEMAGIE];
+/// An auction house visit, from opening its buy or sell window to leaving it, with everything between (unnamed messages
+/// included): what a purchase sends back (`ExchangeBidHouseBuyResultEvent`, listing rows changed, inventory, kamas) was never
+/// seen on a capture. A listing or purchase message with no file open (recording switched on at the auction house) opens one.
+const HDV: Category = Category {
+    id: "hdv",
+    starts: &["ExchangeBidBuyerStartedEvent", "ExchangeBidSellerStartedEvent"],
+    names: &[
+        "ExchangeTypesExchangerDescriptionForUserEvent",
+        "ExchangeTypesItemsExchangerDescriptionForUserEvent",
+        "ExchangeBidHouseBuyRequest",
+        "ExchangeBidHouseBuyResultEvent",
+        "ExchangeBidHouseInListAddedEvent",
+        "ExchangeBidHouseInListUpdatedEvent",
+        "ExchangeBidHouseInListRemovedEvent",
+        "ExchangeBidHouseGenericItemRemovedEvent",
+        "ExchangeBidHouseItemAddedEvent",
+    ],
+    ends: &["ExchangeLeaveEvent", "DialogLeaveEvent", "MapInformationRequest"],
+    within: true,
+    skip: &["Chat", "Channel", "Party", "Ping", "Pong", "BasicLatency"],
+    keep: &[],
+};
+
+pub const CATEGORIES: &[Category] = &[FIGHT, FORGEMAGIE, HDV];
 
 /// What a message does to its category's file.
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -533,15 +556,43 @@ mod tests {
         assert_eq!(names, ["InteractiveUseRequest", "zzz", "ExchangeCraftResultEvent", "ExchangeLeaveEvent"]);
     }
 
-    /// The kind of category to come (`hdv`, `movement`): given messages, whenever they come, in one file.
+    /// The kind of category to come (`movement`): given messages, whenever they come, in one file.
     #[test]
     fn names_only_category() {
-        const HDV: Category =
-            Category { id: "hdv", starts: &[], names: &["ExchangeTypesItemsExchangerDescriptionForUserEvent"], ends: &[], within: false, skip: &[], keep: &[] };
-        let listed = HDV.names[0];
-        assert_eq!(HDV.step(false, listed), Step::Begin);
-        assert_eq!(HDV.step(true, listed), Step::Write);
-        assert_eq!(HDV.step(true, "GameActionFightEvent"), Step::Ignore);
+        const LISTINGS: Category = Category {
+            id: "listings",
+            starts: &[],
+            names: &["ExchangeTypesItemsExchangerDescriptionForUserEvent"],
+            ends: &[],
+            within: false,
+            skip: &[],
+            keep: &[],
+        };
+        let listed = LISTINGS.names[0];
+        assert_eq!(LISTINGS.step(false, listed), Step::Begin);
+        assert_eq!(LISTINGS.step(true, listed), Step::Write);
+        assert_eq!(LISTINGS.step(true, "GameActionFightEvent"), Step::Ignore);
+    }
+
+    /// An auction house visit: opened by its window (or a listing / purchase when switched on there), everything until it is left.
+    #[test]
+    fn hdv_window() {
+        let step = |open, name| HDV.step(open, name);
+        assert_eq!(step(false, "ExchangeBidBuyerStartedEvent"), Step::Begin);
+        assert_eq!(step(true, "ExchangeBidSellerStartedEvent"), Step::Begin, "buy and sell windows: a file each");
+        assert_eq!(step(false, "ExchangeBidHouseBuyResultEvent"), Step::Begin, "switched on at the auction house");
+        assert_eq!(step(true, "ExchangeBidHouseInListUpdatedEvent"), Step::Write);
+        assert_eq!(step(true, "jsy"), Step::Write, "unnamed messages of the visit (inventory, kamas...)");
+        assert_eq!(step(false, "jsy"), Step::Ignore);
+        assert_eq!(step(true, "ChatChannelMessageEvent"), Step::Ignore);
+        assert_eq!(step(true, "ExchangeLeaveEvent"), Step::End);
+        assert_eq!(step(false, "ExchangeLeaveEvent"), Step::Ignore);
+        assert_eq!(step(true, "MapInformationRequest"), Step::End);
+        // every name exists in the current pack (a wrong one would never open a file)
+        let Some((_, proto)) = testkit::hub("loutil-recorder-hdv") else { return };
+        for n in HDV.starts.iter().chain(HDV.names).chain(HDV.ends) {
+            assert!(proto.obf_for_clear(n).is_some(), "{n} not in the pack");
+        }
     }
 
     /// A writer not keeping up costs records, counted, never a wait on the capture thread.
@@ -549,7 +600,8 @@ mod tests {
     fn full_queue_drops_without_blocking() {
         let rec = Recorder::new();
         let (tx, _rx) = sync_channel(1);
-        *rec.run.lock() = Some(Run { on: vec![true, false], open: vec![HashSet::new(); CATEGORIES.len()], tx, writer: None });
+        *rec.run.lock() =
+            Some(Run { on: CATEGORIES.iter().map(|c| c.id == "fight").collect(), open: vec![HashSet::new(); CATEGORIES.len()], tx, writer: None });
         for _ in 0..4 {
             rec.route(&testkit::msg("GameActionFightEvent", None, 1.0));
         }
