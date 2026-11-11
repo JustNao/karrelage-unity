@@ -11,6 +11,8 @@
   import FloatingShell from "./lib/components/FloatingShell.svelte";
   import BossHint from "./lib/components/BossHint.svelte";
   import { bossHints } from "./lib/bosses";
+  import { call, listenAll } from "./lib/api";
+  import type { FightMapState } from "./lib/fightMap";
 
   /** Floating fight window (combat.html): the current fight's monsters, their notes (display level = the app's setting) and the
    *  tags worth showing, in a small always-on-top window over the game. Its height follows its content (up to 80 % of the
@@ -18,6 +20,8 @@
    *  look (a red tag, or a note shown at the display level) are listed, unless "tous" is on; a dead one slides away. */
   const notesOf = (g: Group) => shown(g.notes, settings.combat.show);
   const ui = persisted("karrelage.combat.overlay", { all: false });
+  /** Where every fighter stands (fight_map), for the bosses' range rules. */
+  let live = $state.raw<FightMapState | null>(null);
   const worth = (g: Group) => tagsOf(g.tags).some((t) => t.group === "flag") || notesOf(g).length > 0 || bossHints(fight, g.gid).length > 0;
   // a finished fight leaves nothing (the window may stay open: opened by hand, or with the automatic opening off)
   const alive = $derived(fight.active ? sortedGroups(fight.fighters, settings.combat.show).filter((g) => g.alive > 0) : []);
@@ -33,6 +37,8 @@
 
   onMount(() => {
     const following = followFight();
+    const off = listenAll({ "fightmap:state": (s: FightMapState) => (live = s) });
+    void off.ready.then(() => call<FightMapState>("fightmap", "state")).then((s) => (live = s), () => {});
     const win = getCurrentWindow();
     // natural height = title bar + the list's content (+ the box's 2px border)
     let last = 0;
@@ -78,6 +84,7 @@
     });
     return () => {
       ro.disconnect();
+      off();
       void moved.then((f) => f());
       void following.then((f) => f());
     };
@@ -133,7 +140,7 @@
       {#if tags.length}
         <div class="tags">{#each tags as t (t.id)}<span class="tg {t.group}">{t.label}</span>{/each}</div>
       {/if}
-      {#each bossHints(fight, g.gid) as h, i (i)}
+      {#each bossHints(fight, g.gid, live) as h, i (i)}
         <BossHint hint={h} />
       {/each}
       {#each notesOf(g) as [kind, lines] (kind)}

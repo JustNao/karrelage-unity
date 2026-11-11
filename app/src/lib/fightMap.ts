@@ -36,6 +36,17 @@ export interface FightMapState {
   /** in the order they were put down */
   portals: MapPortal[];
 }
+/** Diagonal coordinates of a cell (crates/data/src/maps.rs `coords`). */
+function coords(cell: number): [number, number] {
+  const a = Math.floor(cell / (2 * ROW)), r = cell % (2 * ROW);
+  return [a + Math.floor(r / ROW) + (r % ROW), (r % ROW) - a];
+}
+/** Distance between two cells in PO (range), as the game counts it (maps.rs `distance`). */
+export function cellDistance(a: number, b: number): number {
+  const [xa, ya] = coords(a), [xb, yb] = coords(b);
+  return Math.abs(xa - xb) + Math.abs(ya - yb);
+}
+
 /** The cells fighters stand on (and block). */
 export const occupiedCells = (s: FightMapState) => s.fighters.filter((f) => f.alive && !f.carried).map((f) => f.cell);
 

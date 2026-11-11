@@ -1,4 +1,5 @@
 import type { Fight, Fighter } from "./stores/combat.svelte";
+import { cellDistance, type FightMapState } from "./fightMap";
 
 /**
  * Boss helpers: hints computed from the live fight (round, the player's characteristics, damage taken...), shown in the
@@ -12,12 +13,36 @@ export interface Hint {
   detail?: string;
   /** where to aim, in quarter turns clockwise from the target around the player (0 = the target): drawn as a compass */
   aim?: number;
+  /** the player's characters against a range rule: their distance to the boss in PO and whether that is safe */
+  ranges?: { name: string | null; po: number; safe: boolean }[];
 }
 
 interface Boss {
   gids: number[];
-  /** `alive` = the living fighters of these gids */
-  hints(f: Fight, alive: Fighter[]): Hint[];
+  /** `alive` = the living fighters of these gids; `map` = where every fighter stands (null: not known) */
+  hints(f: Fight, alive: Fighter[], map: FightMapState | null): Hint[];
+}
+
+/** The player's living characters on the map (their known ids, else the fight's only character), with their cells. */
+function myCells(f: Fight, map: FightMapState | null): { id: number; cell: number }[] {
+  if (!map?.fight) return [];
+  const live = map.fighters.filter((x) => x.alive && x.kind === "player");
+  const mine = new Set([...(f.mine ?? []), ...(f.me != null ? [f.me] : [])]);
+  const known = live.filter((x) => mine.has(x.id));
+  return (known.length ? known : live.length === 1 ? live : []).map((x) => ({ id: x.id, cell: x.cell }));
+}
+
+/** Each of the player's characters against "stay within `max` PO of `boss`" (none when the cells are not known). */
+function within(f: Fight, map: FightMapState | null, boss: Fighter, max: number): Hint["ranges"] {
+  const at = map?.fighters.find((x) => x.id === boss.actor && x.alive)?.cell;
+  if (at == null) return undefined;
+  const mine = myCells(f, map);
+  if (!mine.length) return undefined;
+  const name = (id: number) => (mine.length > 1 ? (f.characters?.find((c) => c.id === id)?.name ?? null) : null);
+  return mine.map((c) => {
+    const po = cellDistance(c.cell, at);
+    return { name: name(c.id), po, safe: po <= max };
+  });
 }
 
 const mod4 = (n: number) => ((n % 4) + 4) % 4;
@@ -78,35 +103,31 @@ export function spellTurn(f: Fight): { caster: number; quarters: number } | null
 
 /** Obsidiantre's Pougnette: explodes at the end of its 5th turn (summoned every 3 turns), killing every character further
  *  than 7 range from it. */
+const POUGNETTE_PO = 7;
 const pougnette: Boss = {
   gids: [2951],
-  hints(f, alive) {
+  hints(f, alive, map) {
     return alive.map((x) => {
       // its turns started so far (its first: the round it was summoned in, once it played)
       const done = Math.max(0, roundOf(f, x) - (x.played === f.round && f.round ? 0 : 1));
       const left = 5 - done;
-      return {
-        text: left <= 0 ? "Explose à la fin de ce tour !" : left === 1 ? "Explose à la fin de son prochain tour" : `Explose dans ${left} tours`,
-        detail: "Tue les personnages à plus de 7 PO d'elle (Pacifiste l'en empêche)",
-      };
+      const when = left <= 0 ? "à la fin de ce tour" : left === 1 ? "à la fin de son prochain tour" : `dans ${left} tours`;
+      return { text: `À ${POUGNETTE_PO} PO max ${when}`, ranges: within(f, map, x, POUGNETTE_PO) };
     });
   },
 };
 
-/** Nileza: at the start of its turn on odd rounds from 3, characters too far get Pacifiste for 2 turns, and everyone a malus. */
-const NILEZA: [number, string][] = [
-  [11, "−200 fuite"],
-  [9, "−200 tacle"],
-  [7, "Pesanteur"],
-  [5, "Insoignable"],
-];
+/** Nileza: at the start of its turn on odd rounds from 3, characters further than the round's range get Pacifiste for 2 turns
+ *  (range at her 1st, 2nd, 3rd, 4th and later checks); everyone also gets −200 fuite / −200 tacle / Pesanteur / Insoignable for
+ *  2 turns (not shown). */
+const NILEZA_PO = [11, 9, 7, 5];
 const nileza: Boss = {
   gids: [3397],
-  hints(f, alive) {
+  hints(f, alive, map) {
     return alive.slice(0, 1).map((x) => {
       const n = next(f, x, (n) => n >= 3 && n % 2 === 1);
-      const [po, malus] = NILEZA[Math.min((n - 3) / 2, NILEZA.length - 1)];
-      return { text: `Tour ${n} : reste à ${po} PO max de Nileza`, detail: `${inRounds(f, x, n)} · sinon Pacifiste 2 tours · tous : ${malus} 2 tours` };
+      const po = NILEZA_PO[Math.min((n - 3) / 2, NILEZA_PO.length - 1)];
+      return { text: `À ${po} PO max ${inRounds(f, x, n)}`, ranges: within(f, map, x, po) };
     });
   },
 };
@@ -160,9 +181,10 @@ const phossile: Boss = {
 
 export const BOSSES: Boss[] = [harebourg, pougnette, nileza, klime, kimbo, dantinea, phossile];
 
-/** The hints for a monster of the fight (none once the fight is over, or for a monster that is no boss). */
-export function bossHints(f: Fight, gid: number): Hint[] {
+/** The hints for a monster of the fight (none once the fight is over, or for a monster that is no boss); `map` = the fight
+ *  map's state, for the range rules (the player's distance to the boss). */
+export function bossHints(f: Fight, gid: number, map: FightMapState | null = null): Hint[] {
   if (!f.active) return [];
   const b = BOSSES.find((b) => b.gids.includes(gid));
-  return b ? b.hints(f, f.fighters.filter((x) => x.gid === gid && !x.dead)) : [];
+  return b ? b.hints(f, f.fighters.filter((x) => x.gid === gid && !x.dead), map) : [];
 }

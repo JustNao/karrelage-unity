@@ -20,6 +20,9 @@
   <div class="txt">
     <div class="main">{hint.text}</div>
     {#if hint.detail}<div class="detail">{hint.detail}</div>{/if}
+    {#each hint.ranges ?? [] as r, i (i)}
+      <div class="range" class:safe={r.safe}>{r.name ? `${r.name} : ` : "Toi : "}{r.po} PO · {r.safe ? "en sécurité" : "trop loin !"}</div>
+    {/each}
   </div>
 </div>
 
@@ -33,4 +36,6 @@
   .txt { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
   .main { font-weight: 700; font-size: 13.5px; }
   .detail { font-size: 11px; opacity: 0.8; line-height: 1.3; }
+  .range { font-size: 12px; font-weight: 600; color: var(--bad); }
+  .range.safe { color: var(--ok); }
 </style>
