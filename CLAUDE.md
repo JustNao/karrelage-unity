@@ -135,8 +135,11 @@ Set `PYTHONUTF8=1` for scripts handling accents. The "Développeur" header toggl
   `KARRELAGE_PACK_URL`); if newer, download → verify sha256 → unpack to `%APPDATA%/fr.dofus.karrelage/datapack` (newest pack
   wins, `pick_pack`) → restart. `update_names.py` re-packages and commits dist/ (not pushed: push to publish).
 - **App**: latest GitHub release (env `KARRELAGE_RELEASE_URL`) vs `CARGO_PKG_VERSION`; its `*-setup.exe` is checked against
-  size + `digest` (no digest = refused) and run with `/P /UPDATE /R`. Release = bump version in workspace `Cargo.toml`,
-  `tauri.conf.json`, `app/package.json`, build, attach the NSIS installer.
+  size + `digest` (no digest = refused) and run with `/P /UPDATE /R`.
+- **Release format** (patch unless told otherwise): bump `X.Y.Z` in workspace `Cargo.toml`, `app/src-tauri/tauri.conf.json`,
+  `app/package.json` and both entries of `app/package-lock.json` (`Cargo.lock` follows on the next cargo run); run the CI
+  checks (Hard rules); one commit `Release X.Y.Z` with only those 5 files; lightweight tag `vX.Y.Z` on it; push main, then
+  the tag. The tag triggers `.github/workflows/release.yml` (builds and publishes the NSIS installer as the GitHub release).
 - Game version from the launcher's `%APPDATA%/zaap/repositories/production/dofus/dofus3/release.json`
   (`6.0_3.7.12.12` → `3.7.12.12`), stamped in `work/dump_input/version.txt`, `manifest.game`, `pack.json`.
 - Proto tab (`names.rs`): checks bindings / required names / game fingerprint, runs `update_names.py`
