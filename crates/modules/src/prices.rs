@@ -53,6 +53,7 @@ pub struct Prices {
     /// pack-derived answers, constant once the pack is loaded
     runes: OnceLock<Value>,
     craft_runes: OnceLock<Value>,
+    by_name: OnceLock<HashMap<String, i64>>,
     /// gid -> rows of the last listing seen this session, to follow its changes (purchases, updated / removed rows)
     listings: Mutex<HashMap<i64, Vec<Value>>>,
 }
@@ -115,6 +116,28 @@ fn read_history(path: &std::path::Path, gid: Option<i64>, since: f64) -> Vec<Val
                 Some(json!({"t": v["t"], "gid": g, "kind": "avg", "avg": p}))
             }
             Some(g) => (v["gid"] == g).then(|| v.take()),
+        })
+        .collect()
+}
+
+/// Case / nbsp / apostrophe / accent insensitive item name, for `gids_by_name`.
+fn norm_name(s: &str) -> String {
+    s.replace('\u{a0}', " ")
+        .replace('\u{2019}', "'")
+        .trim()
+        .to_lowercase()
+        .chars()
+        .flat_map(|c| -> Vec<char> {
+            match c {
+                'é' | 'è' | 'ê' | 'ë' => vec!['e'],
+                'à' | 'â' | 'ä' => vec!['a'],
+                'î' | 'ï' => vec!['i'],
+                'ô' | 'ö' => vec!['o'],
+                'ù' | 'û' | 'ü' => vec!['u'],
+                'ç' => vec!['c'],
+                'œ' => vec!['o', 'e'],
+                c => vec![c],
+            }
         })
         .collect()
 }
@@ -304,6 +327,24 @@ impl Module for Prices {
                     Value::Array(v)
                 })
                 .clone()),
+            // args: {names: [string]} -> {name: gid} (case / nbsp / apostrophe insensitive; lowest gid wins on duplicates); used by
+            // Crafting > Montures and lib/mounts.ts (mounts and neurones are named in the UI code)
+            "gids_by_name" => {
+                let by = self.by_name.get_or_init(|| {
+                    let mut by: HashMap<String, i64> = HashMap::new();
+                    for g in ctx.data.items.keys() {
+                        by.entry(norm_name(&ctx.data.item_name(*g))).and_modify(|x| *x = (*x).min(*g)).or_insert(*g);
+                    }
+                    by
+                });
+                let mut out = serde_json::Map::new();
+                for n in args["names"].as_array().into_iter().flatten().filter_map(Value::as_str) {
+                    if let Some(g) = by.get(&norm_name(n)) {
+                        out.insert(n.to_string(), json!(g));
+                    }
+                }
+                Ok(Value::Object(out))
+            }
             // args: {gids: [gid]} -> {gid: name} (pack names; unknown gids left out)
             "item_names" => {
                 let gids = args["gids"].as_array().into_iter().flatten().filter_map(Value::as_i64);
@@ -433,6 +474,15 @@ mod tests {
         assert_eq!(seen.len(), 10);
         assert_eq!(seen.first().unwrap(), &Some(json!(137)));
         assert_eq!(seen.last().unwrap(), &Some(json!(138)));
+    }
+
+    #[test]
+    fn gids_by_name_finds_foods() {
+        let Some((hub, _)) = hub("loutil-gids") else { return };
+        let r = Prices::new().call("gids_by_name", json!({"names": ["Croquette enrichie", "Queue d'Ecumouth", "Eau calme"]}), &hub.ctx).unwrap();
+        println!("{r}");
+        assert_eq!(r["Croquette enrichie"], 20125);
+        assert!(r.as_object().unwrap().len() >= 2);
     }
 
     #[test]
