@@ -339,7 +339,8 @@ impl Module for Prices {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kit::testkit::{hub, msg};
+    use crate::kit::testkit::{self, hub, msg};
+    use loutil_core::RawMessage;
 
     #[test]
     fn unit_price_is_the_median_stack() {
@@ -402,6 +403,36 @@ mod tests {
         assert_eq!(unit_price(&l[&7]), None);
         // a purchase answer without a known uid changes nothing
         assert_eq!(change_listing(&mut l, &json!({"kind": "auction_bought", "uid": 1, "bought": true}), equip), None);
+    }
+
+    /// work/capture_hdv_buy.jsonl (recorder « hdv », 3.7.13.17): ten purchases of x1 Rune Tac (20819) at 137 K; each answered by
+    /// ExchangeBidHouseInListUpdatedEvent (the listing's row, same uid 73940) then ExchangeBidHouseBuyResultEvent; the last one
+    /// leaves the x1 at 138 K.
+    #[test]
+    fn replays_a_recorded_purchase() {
+        let Some(pack) = testkit::pack() else { return };
+        let rec = pack.join("../work/capture_hdv_buy.jsonl");
+        let Ok(text) = std::fs::read_to_string(&rec) else { return };
+        let (hub, _) = testkit::hub("loutil-prices-buy").unwrap();
+        let hex = |s: &str| (0..s.len() / 2).map(|i| u8::from_str_radix(&s[2 * i..2 * i + 2], 16).unwrap()).collect::<Vec<u8>>();
+        let unit = || {
+            let l = hub.call("prices", "list", Value::Null).unwrap();
+            l.as_array().unwrap().iter().find(|e| e["gid"] == 20819).map(|e| e["unit"].clone())
+        };
+        let mut seen = vec![];
+        for line in text.lines() {
+            let r: Value = serde_json::from_str(line).unwrap();
+            let Some(h) = r["hex"].as_str() else { continue };
+            let dir = if r["dir"] == "C->S" { "C->S" } else { "S->C" };
+            hub.handle(RawMessage { t: r["t"].as_f64().unwrap(), srv: r["srv"].as_str().unwrap().into(), dir, payload: hex(h) });
+            if r["name"] == "ExchangeBidHouseInListUpdatedEvent" {
+                seen.push(unit());
+            }
+        }
+        // per unit: median of x1 137 / x10 131 / x100 160 = 137, then 138 once the x1 went up
+        assert_eq!(seen.len(), 10);
+        assert_eq!(seen.first().unwrap(), &Some(json!(137)));
+        assert_eq!(seen.last().unwrap(), &Some(json!(138)));
     }
 
     #[test]

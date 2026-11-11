@@ -176,7 +176,8 @@ Set `PYTHONUTF8=1` for scripts handling accents. The "Développeur" header toggl
 - Transcendance (`lib/transcend.ts`): lock 2825 + `added` effect = runed lot; rune = type 211 with that effect/value;
   profit = cheapest transcended × (1 − tax) − lot − rune.
 - On sale per category (role `ah_type`, removed by `ah_gone`) and listing changes (`ah_buy` removes a lot by uid, `ah_row`
-  replaces a row, `ah_row_removed` removes one): never seen in a capture yet, uid matching assumed.
+  replaces a row, `ah_row_removed` removes one): purchase uids checked on a resource capture (row uid = listing uid), `ah_type` /
+  `ah_gone` / `ah_row_removed` and equipment purchases not seen yet.
 
 **Stored prices** (`prices.rs`)
 - Per-unit price = median over stack sizes of each size's cheapest price / qty (lower middle on even counts); equipment =
@@ -184,7 +185,9 @@ Set `PYTHONUTF8=1` for scripts handling accents. The "Développeur" header toggl
 - `ObjectAveragePricesEvent` (role `avg_prices`) gives the 7-day average (entry: gid + two int64, the price is the larger:
   the other was never set on a 9679-entry capture). Priority: override > AH unit > avg.
 - Purchases / row changes (`change_listing`): a row found by uid in any listing of the session, else by its gid: a resource's
-  single row replaced / removed, a resource row with no listing yet starts one (equipment rows never do). Not seen on a capture yet.
+  single row replaced / removed, a resource row with no listing yet starts one (equipment rows never do). Verified on
+  work/capture_hdv_buy.jsonl (10 resource purchases): each BuyRequest is answered by InListUpdatedEvent (the row, same uid as
+  the listing's) then BuyResultEvent (`object_uid` = that uid); leaving the window sends an empty listing (ignored: no price).
 
 **Packets** (`packets.rs`): keeps the last 20 raw packets per type, decoded only when the tab lists/streams them.
 
