@@ -14,6 +14,7 @@
 //! Marks on the ground and the Eliotrope's portals: `portals`.
 //! % resistances (neutral, earth, fire, water, air: characteristics 37, 33, 34, 35, 36) from the FightFighterInformation's stats,
 //! then FightRefreshCharacterStatsEvent (only the changed ones: buffs, debuffs): the in-game view's weakest element.
+//! Invisible: GameActionFightEvent invisibility (state 0; its last known cell is not shown).
 //!
 //! In-game overlay (FightMapOverlay.svelte, opened by a shortcut): `window` = the Dofus window's client area to cover,
 //! `fightmap:turn` {id} at each turn start, `fightmap:escape` / `fightmap:click` when Escape / a mouse button is pressed while
@@ -75,6 +76,8 @@ struct Fighter {
     summoner: i64,
     /// % resistances: neutral, earth, fire, water, air (None: no stats seen).
     resists: Option<[i64; 5]>,
+    /// Invisible (its last GameActionFightEvent invisibility's state is 0; 1 detected, 2 visible): where it stands is unknown.
+    invisible: bool,
 }
 
 #[derive(Default)]
@@ -218,7 +221,7 @@ fn position(ctx: &Ctx, m: &DynamicMessage, outer: Option<&Outer>) -> Option<Figh
     if monsters.is_empty() {
         monsters = outer.map(|o| o.monsters.clone()).unwrap_or_default();
     }
-    Some(Fighter { id, cell, team, kind: kind.unwrap_or("other"), alive, summoned, carried: false, monsters, summoner, resists })
+    Some(Fighter { id, cell, team, kind: kind.unwrap_or("other"), alive, summoned, carried: false, monsters, summoner, resists, invisible: false })
 }
 
 /// The % resistances among these characteristics put in `r` (neutral, earth, fire, water, air); whether one changed.
@@ -301,6 +304,13 @@ impl FightMap {
         if let Some(x) = named_child(ctx, d, "death").or_else(|| named_child(ctx, d, "vanish")).or_else(|| named_child(ctx, d, "kill")) {
             let ids: Vec<i64> = scalar_ints(x).into_iter().map(|(_, v)| v).collect();
             return ids.into_iter().fold(false, |ch, id| set(s, id, &|f| f.alive = false) | ch);
+        }
+        // invisible or not: the member's only enum (unset = 0 = invisible)
+        if let Some(x) = named_child(ctx, d, "invisibility") {
+            let Some(target) = named_int(ctx, x, "target_id") else { return false };
+            let state = x.descriptor().fields().find(|f| matches!(f.kind(), Kind::Enum(_)) && !f.is_list()).and_then(|f| as_i64(&x.get_field(&f)));
+            let Some(invisible) = state.map(|v| v == 0) else { return false };
+            return s.fighters.get_mut(&target).is_some_and(|f| std::mem::replace(&mut f.invisible, invisible) != invisible);
         }
         if let Some(x) = named_child(ctx, d, "summons") {
             let mut found = vec![];
@@ -418,6 +428,7 @@ impl Module for FightMap {
                                 monsters: if f.monsters.is_empty() { old.monsters } else { f.monsters },
                                 summoner: if f.summoner == 0 { old.summoner } else { f.summoner },
                                 resists: f.resists.or(old.resists),
+                                invisible: old.invisible,
                                 ..f
                             },
                             None => f,
@@ -451,6 +462,7 @@ impl Module for FightMap {
                                 monsters: vec![],
                                 summoner: 0,
                                 resists: None,
+                                invisible: false,
                             };
                             s.fighters.insert(id, f);
                             true
@@ -477,7 +489,7 @@ impl Module for FightMap {
         }
     }
 
-    /// `state`: {map, fight, fighters: [{id, cell, team, kind, alive, summoned, carried, monsters, summoner, resists: [neutral, earth, fire, water, air] % | null}]}; `cells` {map}: the flags of its
+    /// `state`: {map, fight, fighters: [{id, cell, team, kind, alive, summoned, carried, monsters, summoner, resists: [neutral, earth, fire, water, air] % | null, invisible}]}; `cells` {map}: the flags of its
     /// 560 cells (bits 1 walkable, 2 sight goes through, 4 / 8 red / blue placement) or null; `sight` {from, min, max,
     /// ignore?: [fighter ids]}: {seen, hidden} cells of the current map at distance min..=max from `from`, the living
     /// fighters blocking the sight (but the ones of `ignore` and whoever stands on `from`). `window`: the Dofus window's client
@@ -591,13 +603,14 @@ mod tests {
 
     /// Recorded fights (pipeline/sniff.py captures, local only: they hold the players' ids) replayed through the hub: the
     /// fight map is found in the pack and every living fighter, after every message, stands on a walkable cell of it; summons
-    /// carry their gid and summoner.
+    /// carry their gid and summoner; a vanished summon (the Troollogram's decoys, when it shows again) is gone. An invisible
+    /// fighter stands on cell -1 (the Troollogram while its decoys are out): off the map, flagged invisible.
     /// Skipped without the files.
     #[test]
     fn fighters_stand_on_walkable_cells() {
         let Some(pack) = testkit::pack() else { return };
         let hex = |s: &str| (0..s.len() / 2).map(|i| u8::from_str_radix(&s[2 * i..2 * i + 2], 16).unwrap()).collect::<Vec<u8>>();
-        for name in ["capture_harebourg", "capture_bosses", "capture_poison"] {
+        for name in ["capture_harebourg", "capture_bosses", "capture_poison", "capture_troollogram"] {
             let rec = pack.join(format!("../work/{name}.jsonl"));
             if !rec.exists() {
                 continue;
@@ -607,6 +620,7 @@ mod tests {
             let mut last = String::new();
             let mut fight_map = false;
             let mut turret = false;
+            let (mut vanished, mut invisible) = (0, 0);
             // living monsters without resistances, resistance changes, last resistances per fighter
             let mut resists = (0, 0, BTreeMap::<i64, String>::new());
             for line in std::fs::read_to_string(&rec).unwrap().lines() {
@@ -624,6 +638,19 @@ mod tests {
                     _ => {}
                 }
                 let s = hub.call("fightmap", "state", Value::Null).unwrap();
+                if let Some(gone) = r["decoded"]["vanish"]["target_id"].as_str() {
+                    let gone: i64 = gone.parse().unwrap();
+                    let f = s["fighters"].as_array().unwrap().iter().find(|f| f["id"] == gone);
+                    assert!(f.is_some_and(|f| f["alive"] == false), "{name}: vanished fighter {gone} gone");
+                    // its decoys vanish once the Troollogram shows again
+                    let summoner = f.and_then(|f| f["summoner"].as_i64()).unwrap();
+                    let summoner = s["fighters"].as_array().unwrap().iter().find(|f| f["id"] == summoner).unwrap();
+                    assert!(summoner["invisible"] == false, "{name}: {gone}'s summoner visible again");
+                    vanished += 1;
+                }
+                if s["fighters"].as_array().unwrap().iter().any(|f| f["invisible"] == true && f["kind"] == "monster") {
+                    invisible += 1;
+                }
                 if r["name"] == END {
                     assert!(s["fight"] == false && s["fighters"].as_array().unwrap().is_empty(), "{name}: cleared at the fight's end");
                 }
@@ -636,14 +663,17 @@ mod tests {
                     .as_array()
                     .unwrap()
                     .iter()
-                    .filter(|f| f["alive"] == true)
+                    .filter(|f| f["alive"] == true && f["cell"].as_i64() >= Some(0))
                     .map(|f| (f["id"].as_i64().unwrap(), f["cell"].as_i64().unwrap()))
                     .collect();
                 for (id, cell) in &at {
                     assert!(cells[*cell as usize] & MOV != 0, "{name}: fighter {id} on cell {cell}, not walkable ({:?})", r["name"]);
                 }
-                let taken: HashSet<i64> = at.iter().map(|(_, c)| *c).collect();
-                assert_eq!(taken.len(), at.len(), "{name}: two fighters on one cell {at:?} ({:?})", r["name"]);
+                // shown again, the Troollogram stands on the cell of the decoy that was itself, which vanishes right after
+                let summoner = |id: i64| s["fighters"].as_array().unwrap().iter().find(|f| f["id"] == id).and_then(|f| f["summoner"].as_i64());
+                let alone: Vec<_> = at.iter().filter(|(id, c)| !at.iter().any(|(o, oc)| oc == c && summoner(*id) == Some(*o))).collect();
+                let taken: HashSet<i64> = alone.iter().map(|(_, c)| *c).collect();
+                assert_eq!(taken.len(), alone.len(), "{name}: two fighters on one cell {at:?} ({:?})", r["name"]);
                 // a Steamer's turret (Harponneuse 5836) summoned by the player's character
                 turret |= s["fighters"]
                     .as_array()
@@ -674,6 +704,8 @@ mod tests {
             assert!(!resists.2.is_empty() && resists.0 == 0, "{name}: every living monster's resistances known");
             assert!(checked > 0 && moves > 0, "{name}: fighters followed");
             assert!(turret || name != "capture_harebourg", "{name}: the player's Harponneuse, with its gid and summoner");
+            assert!(vanished == 11 || name != "capture_troollogram", "{name}: the Troollogram's 11 decoys vanished ({vanished})");
+            assert!(invisible > 0 || name != "capture_troollogram", "{name}: the Troollogram invisible while its decoys are out");
         }
     }
 
@@ -685,7 +717,7 @@ mod tests {
     fn app_started_during_a_fight() {
         let Some(pack) = testkit::pack() else { return };
         let hex = |s: &str| (0..s.len() / 2).map(|i| u8::from_str_radix(&s[2 * i..2 * i + 2], 16).unwrap()).collect::<Vec<u8>>();
-        for name in ["capture_harebourg", "capture_bosses", "capture_poison"] {
+        for name in ["capture_harebourg", "capture_bosses", "capture_poison", "capture_troollogram"] {
             let rec = pack.join(format!("../work/{name}.jsonl"));
             if !rec.exists() {
                 continue;

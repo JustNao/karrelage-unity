@@ -22,6 +22,8 @@ export interface MapFighter {
   summoner: number;
   /** % resistances: neutral, earth, fire, water, air (null: not told) */
   resists: [number, number, number, number, number] | null;
+  /** Invisible: its last known cell is not where it stands. */
+  invisible: boolean;
 }
 /** An Eliotrope portal on the ground (closed: a fighter on it, or deactivated this turn). */
 export interface MapPortal {

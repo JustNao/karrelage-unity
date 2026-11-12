@@ -21,7 +21,7 @@
   const enemies = $derived.by(() => {
     const teams = new Set(live.fighters.filter((f) => mine.has(f.id)).map((f) => f.team));
     const enemy = (f: MapFighter) => (teams.size ? f.team !== null && !teams.has(f.team) : f.kind === "monster");
-    return live.fighters.filter((f) => f.alive && !f.carried && f.cell >= 0 && f.resists && enemy(f));
+    return live.fighters.filter((f) => f.alive && !f.carried && !f.invisible && f.cell >= 0 && f.resists && enemy(f));
   });
 
   /** The lowest resistance among earth, fire, water and air: neutral is never offered (few spells hit neutral), the next
