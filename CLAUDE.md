@@ -332,6 +332,9 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   kind from the FightFighterInformation oneof (named / ai / entity fighter). Moves: MapMovementEvent last cell, slide (end =
   the unnamed cell that is not the target's), teleport / throw / drop `cell`, exchange_positions swaps, carry. Verified on 3
   captures: every living fighter on a walkable cell of the pack map, never two on a cell (`fighters_stand_on_walkable_cells`).
+- Gone without a death: `vanish` (action 1029; the Troollogram's decoys when it shows again) / `kill`. Invisible = GameActionFightEvent
+  `invisibility` state 0 (its only enum; 1 detected, 2 visible): the Troollogram then stands on cell -1; marks hidden. Verified on
+  work/capture_troollogram.jsonl (11 decoys).
 - Line of sight (`maps::sight`): supercover line between centres, a line exactly through a corner goes diagonally (side cells
   not checked); blocked by `los` 0 cells and living fighters (target excepted, the player's own fighter ignored: it stands on
   the hovered cell). Targets = walkable cells, no range limit. The tab shows the map during a fight only (state cleared at
