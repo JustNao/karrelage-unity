@@ -63,6 +63,8 @@ const DEFAULTS = {
     eliotrope: {
       /** The portals in the class help view, and the portal simulation. */
       enabled: true,
+      /** The mouse over one of the player's portals during the fight, with no view: the way and damage bonus from it. */
+      hover: true,
       /** The game's own key of the portal spell: watched without being taken from the game (passive shortcut `portalKey`),
        *  it shows a portal simulated under the mouse until pressed again, a click or Escape. */
       portalKey: { mods: 0, vk: 0, label: "" } as Binding,

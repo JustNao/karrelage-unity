@@ -13,7 +13,7 @@
    * Class help in the in-game view (FightMapOverlay.svelte), the mouse let through (only to look at). Steamer: for each of the
    * player's turrets, the cells where the Steamer gets its bonus (at most TURRET_RANGE cells away and in its line of sight:
    * the player's own fighters don't block it, they are the ones moving). The mouse over a turret's cell (`pointed`) brings its
-   * zone forward. Eliotrope: the portals (fightmap/PortalLayer.svelte). Each class can be turned off in the Combat tab
+   * zone forward. Eliotrope: the portals, the way and damage bonus from the one under the mouse (fightmap/PortalLayer.svelte). Each class can be turned off in the Combat tab
    * (`settings.classHelp`). Comte Harebourg: where a spell lands (fightmap/SpellCellLayer.svelte).
    */
   let { cal, live, mine, dpr, hold, pointed }: {
@@ -68,7 +68,7 @@
     <polygon points={screenDiamond(cal, a.turret.cell, dpr)} style:stroke={look(a.turret).colour} class="turret" />
   {/each}
 </svg>
-<PortalLayer {cal} {dpr} {portals} />
+<PortalLayer {cal} {dpr} {portals} {live} {mine} {pointed} />
 {#snippet zone(a: { turret: MapFighter; seen: number[] })}
   {#each a.seen as c (c)}
     <polygon points={screenDiamond(cal, c, dpr)} style:fill={look(a.turret).colour} style:stroke={look(a.turret).colour}

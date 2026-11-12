@@ -45,6 +45,16 @@
 </div>
 <div class="row sub" class:off={!help.eliotrope.enabled}>
   <div class="lb">
+    <div>Bonus au survol d'un portail</div>
+    <div class="mut">
+      Pendant tout le combat, sans touche : la souris sur un de vos portails ouverts affiche le chemin d'un sort envoyé dedans
+      jusqu'à la sortie, son bonus de dommages et, en jaune, la case où il arrive (quand le jeu est au premier plan).
+    </div>
+  </div>
+  <div class="ctl"><Switch bind:checked={help.eliotrope.hover} label="Bonus au survol d'un portail" /></div>
+</div>
+<div class="row sub" class:off={!help.eliotrope.enabled}>
+  <div class="lb">
     <div>Touche du sort Portail</div>
     <div class="mut">
       Votre raccourci du sort Portail dans le jeu : le jeu la reçoit toujours, et un portail est simulé sur la case sous la

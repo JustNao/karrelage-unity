@@ -375,7 +375,9 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   `mark_id` points at (voted in memory; every mark followed for it), active = any bool true. Four per caster (oldest dropped on a
   fifth); closed while a fighter stands on it or deactivated this turn. Way through the network = Eliotopy-v2's rule (nearest
   unvisited, ties by angle), matches the casts' `portals_id` on capture_poison. Class help (F4, `fightmap/PortalLayer.svelte`, from the
-  fight state): numbers, #1 / #2 coloured with four portals.
+  fight state): numbers, #1 / #2 coloured with four portals. The mouse on an open portal (`fightmap/PortalHover.svelte`, call `portals`
+  `start` + `base_only`): the way from it, its bonus, the landing cell; also with no view for the whole fight (`settings.classHelp.eliotrope.hover`,
+  on by default: the cursor polled only while the player has an open portal and the game is in the foreground).
 - Portal simulation (view `portals`, `fightmap/PortalSimLayer.svelte`; call `portals`: every free cell at once, asked again when what
   it depends on changes, hovering is a lookup): the Portail spell on the cell under the mouse. The oldest gets an X with four; cast
   into one of the portals the spell goes through the network and lands at exit + (entrance − caster) (`redirect`, verified on 5 casts

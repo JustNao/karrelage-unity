@@ -18,12 +18,13 @@ try {
   }
 } catch {}
 
-/** Saved settings merge section by section, so a saved `classHelp.eliotrope` hides the new `exilKey` default. */
+/** Saved settings merge section by section, so a saved `classHelp.eliotrope` hides the new `exilKey` / `hover` defaults. */
 try {
   const saved = JSON.parse(localStorage.getItem("karrelage.settings") ?? "null");
   const eliotrope = saved?.classHelp?.eliotrope;
-  if (eliotrope && !eliotrope.exilKey) {
-    eliotrope.exilKey = { mods: 0, vk: 0, label: "" };
+  if (eliotrope && (!eliotrope.exilKey || eliotrope.hover === undefined)) {
+    eliotrope.exilKey ??= { mods: 0, vk: 0, label: "" };
+    eliotrope.hover ??= true;
     localStorage.setItem("karrelage.settings", JSON.stringify(saved));
   }
 } catch {}

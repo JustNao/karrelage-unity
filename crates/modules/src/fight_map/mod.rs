@@ -496,7 +496,7 @@ impl Module for FightMap {
     /// area {x, y, width, height} (screen pixels) or null; `watch_escape` {on}: `fightmap:escape` at each Escape press while on, `fightmap:click` {left} at each left / right click;
     /// `focused`: the game or this app is in the foreground. `refocus`: the Dofus window it covers gets the focus back if it lost it. `release`: the view closes: `watch_escape`
     /// off + `refocus`.
-    /// State `portals`: [{cell, author, open}] in the order they were put down. Call `portals` {author, start?: a portal}: the
+    /// State `portals`: [{cell, author, open}] in the order they were put down. Call `portals` {author, start?: a portal, base_only?: no `sims`}: the
     /// Portail spell of that caster simulated (`simulate`), {base: not cast (way from `start`, else the oldest open portal), sims: {cell: cast there}} for every free walkable
     /// cell, each {added, dropped, via, path: [cells], distance}.
     fn call(&self, method: &str, args: Value, ctx: &Ctx) -> Result<Value> {
@@ -563,9 +563,10 @@ impl Module for FightMap {
                     }
                 };
                 let aimed = |c: i64| fits(c) || net.iter().any(|&(p, open)| open && p == c);
-                // every cell at once: hovering is then a lookup, with no call per cell
+                // every cell at once: hovering is then a lookup, with no call per cell (`base_only`: the way as it is, from a hovered portal)
+                let base_only = args["base_only"].as_bool().unwrap_or(false);
                 let sims: BTreeMap<i64, Sim> =
-                    (0..MAP_CELLS as i64).filter(|&c| aimed(c)).map(|c| (c, simulate(&net, Some(c), &fits, caster, start))).collect();
+                    (0..MAP_CELLS as i64).filter(|&c| !base_only && aimed(c)).map(|c| (c, simulate(&net, Some(c), &fits, caster, start))).collect();
                 // no spell placed (the mouse off the grid, on the game's bars...): the way as it is, from the chosen portal or the oldest open one
                 let open_portal = |c: i64| net.iter().any(|&(p, open)| open && p == c);
                 let from = start.filter(|&c| open_portal(c)).or(net.iter().find(|(_, open)| *open).map(|(c, _)| *c));
@@ -819,6 +820,10 @@ mod tests {
                 // nothing placed: the network as it is, from its oldest portal
                 assert_eq!(all["base"]["path"], json!(portal_path(&[188, 332, 265, 257], 188)));
                 assert!(all["base"]["added"].is_null());
+                // a portal hovered (portal 2): the way from it, alone
+                let hovered = hub.call("fightmap", "portals", json!({"author": eliotrope, "start": 332, "base_only": true})).unwrap();
+                assert_eq!(hovered["base"]["path"], json!(portal_path(&[188, 332, 265, 257], 332)));
+                assert!(hovered["sims"].as_object().unwrap().is_empty());
                 // a fifth portal: the oldest (188) goes
                 let sims = all["sims"].as_object().unwrap();
                 let (_, n) = sims.iter().find(|(c, n)| c.parse().ok() == n["added"].as_i64() && n["via"] == false).expect("a free cell for a fifth portal");

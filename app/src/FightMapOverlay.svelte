@@ -13,7 +13,9 @@
   import PortalSimLayer from "./fightmap/PortalSimLayer.svelte";
   import SpellCellLayer from "./fightmap/SpellCellLayer.svelte";
   import ResistLayer from "./fightmap/ResistLayer.svelte";
+  import PortalHover from "./fightmap/PortalHover.svelte";
   import { settings } from "./lib/stores/settings.svelte";
+  import { playerPortals } from "./lib/classHelp";
 
   /**
    * In-game view (fightmap.html): a transparent window over the Dofus window's picture during a fight, made hidden by the main
@@ -30,7 +32,8 @@
    *   flashes white when a hidden window is shown again); only the fight's end closes it.
    * - The mouse and the keyboard stay the game's unless the view needs them (`takesInput`).
    * - With `settings.combat.weakElementAlways`, the enemies' weakest elements (fightmap/ResistLayer.svelte) are drawn with no
-   *   view too, while the game is in the foreground.
+   *   view too, while the game is in the foreground. So is, with `settings.classHelp.eliotrope.hover`, the way and damage bonus
+   *   of the player's open portal under the mouse (fightmap/PortalHover.svelte; the cursor then polled while a portal is open).
    */
 
   /** The cursor is asked for again this long after each answer (about a frame, never two asks at once). */
@@ -98,8 +101,10 @@
   /** the cursor was read once: `pointed` is where it was when the view opened */
   let polled = $state(false);
   $effect(() => {
-    if (!shown || !cal || !placed) return;
-    const [grid, origin] = [cal, placed];
+    // a view, else the portal hover with no view (game in the foreground, a portal open)
+    const grid = shown ? cal : portalHover && foreground ? idleCal : null;
+    if (!grid || !placed) return;
+    const origin = placed;
     let on = true;
     let timer = 0;
     const tick = async () => {
@@ -263,8 +268,12 @@
   let idleCal = $state.raw<Calibration | null>(null);
   let foreground = $state(true);
   const always = $derived(settings.combat.weakElement && settings.combat.weakElementAlways);
+  /** the way and bonus of the portal under the mouse, with no view: only while the player has an open portal */
+  const portalHover = $derived(
+    settings.classHelp.eliotrope.enabled && settings.classHelp.eliotrope.hover && playerPortals(live, mine).some((p) => p.open),
+  );
   $effect(() => {
-    if (!always || !warm) return;
+    if (!(always || portalHover) || !warm) return;
     let on = true;
     let timer = 0;
     const tick = async () => {
@@ -297,6 +306,11 @@
 <!-- the weakest elements always shown (the line of sight view draws its own) -->
 {#if always && cells && alwaysCal && foreground && !(shown && view === "los")}
   <div class="always"><ResistLayer cal={alwaysCal} {live} {mine} {dpr} /></div>
+{/if}
+
+<!-- the way through the portal under the mouse, with no view (the class help draws its own, the portal simulation its) -->
+{#if portalHover && !shown && cells && alwaysCal && foreground}
+  <div class="always"><PortalHover cal={alwaysCal} {live} {mine} {dpr} {pointed} /></div>
 {/if}
 
 <!-- no view: nothing drawn, the layers stopped -->

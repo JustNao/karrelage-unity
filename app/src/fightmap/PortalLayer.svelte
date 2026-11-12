@@ -1,13 +1,18 @@
 <script lang="ts">
-  import { screenCentre, screenDiamond, type Calibration } from "../lib/fightMap";
+  import { screenCentre, screenDiamond, type Calibration, type FightMapState } from "../lib/fightMap";
   import { portalColour, type PlayerPortal } from "../lib/classHelp";
+  import PortalHover from "./PortalHover.svelte";
 
   /** The Eliotrope's portals in the class help (inside ClassLayer.svelte): numbered by age, the two that go first in colour once
-   *  there are four. */
-  let { cal, dpr, portals }: {
+   *  there are four; the mouse over an open one: its way and damage bonus (PortalHover.svelte). */
+  let { cal, dpr, portals, live, mine, pointed }: {
     cal: Calibration;
     dpr: number;
     portals: PlayerPortal[];
+    live: FightMapState;
+    mine: Set<number>;
+    /** the cell under the mouse */
+    pointed: number | null;
   } = $props();
 
   const full = $derived(portals.length >= 4);
@@ -26,6 +31,7 @@
     <text x={x} y={y - cellH / 4} font-size={r * 1.3} class="number">{p.number}</text>
   {/each}
 </svg>
+{#if portals.length}<PortalHover {cal} {dpr} {live} {mine} {pointed} />{/if}
 
 <style>
   .portal { fill: var(--c); fill-opacity: 0.25; stroke: var(--c); stroke-width: 2.5; }
