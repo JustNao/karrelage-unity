@@ -10,7 +10,7 @@
 //! FightFighterInformation's SpawnInformation {alive, team (its only enum)} (a summon's SpawnInformation holds its position).
 //! Moves: MapMovementEvent (last cell of `cells`) and GameActionFightEvent slide (its two unnamed cells: the end is the one
 //! that is not the target's cell), teleport_on_same_map, exchange_positions (caster and target swap), carry / throw / drop
-//! character, death (its only int).
+//! character, death / vanish / kill (their ints: a vanished summon, e.g. a Troologram's decoy, sends no death).
 //! Marks on the ground and the Eliotrope's portals: `portals`.
 //! % resistances (neutral, earth, fire, water, air: characteristics 37, 33, 34, 35, 36) from the FightFighterInformation's stats,
 //! then FightRefreshCharacterStatsEvent (only the changed ones: buffs, debuffs): the in-game view's weakest element.
@@ -297,7 +297,8 @@ impl FightMap {
             let (Some(a), Some(b)) = (cell_of(s, caster), cell_of(s, target)) else { return false };
             return set(s, caster, &|f| f.cell = b) | set(s, target, &|f| f.cell = a);
         }
-        if let Some(x) = named_child(ctx, d, "death") {
+        // gone: died, killed, or vanished (a summon taken off the map with no death: the Troologram's decoys when it is hit)
+        if let Some(x) = named_child(ctx, d, "death").or_else(|| named_child(ctx, d, "vanish")).or_else(|| named_child(ctx, d, "kill")) {
             let ids: Vec<i64> = scalar_ints(x).into_iter().map(|(_, v)| v).collect();
             return ids.into_iter().fold(false, |ch, id| set(s, id, &|f| f.alive = false) | ch);
         }
