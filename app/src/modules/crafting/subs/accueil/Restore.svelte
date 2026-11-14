@@ -7,6 +7,7 @@
   import { prices } from "../../../../lib/stores/prices.svelte";
   import { fmtInt, fmtNum, kamas } from "../../../../lib/fmt";
   import { Costs } from "../../../../lib/jobXp";
+  import { fitRows } from "../../../../lib/actions/fitRows";
   import { copyName, homeItems, type Consumable } from "./home";
 
   /**
@@ -15,7 +16,8 @@
    * too little per use).
    */
   let { kind }: { kind: "life" | "energy" } = $props();
-  const SHOWN = 3;
+  /** at most this many per list: the card shows the ones its height holds (fitRows) */
+  const SHOWN = 30;
   const unit = $derived(kind === "life" ? "PV" : "énergie");
   // svelte-ignore state_referenced_locally
   const ui = persisted(`karrelage.crafting.home.${kind}`, { minLevel: 1 });
@@ -53,28 +55,37 @@
 </script>
 
 {#snippet list(title: string, rows: Row[], how: string)}
-  <div class="sec">{title}</div>
-  {#each rows as r (r.gid)}
-    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-    <div class="row" onclick={() => copyName(r.name)} title="Cliquer pour copier le nom">
-      <span class="n"><b>{r.name}</b> <span class="mut">niv. {r.level} · {fmtInt(r.gain)} {unit}</span></span>
-      <span class="p">{kamas(Math.round(r.price))}{#if r.avg} <span class="mut avg">moy.</span>{/if}</span>
-      <span class="per"><b>{fmtNum(r.per, r.per < 10 ? 2 : 1)}</b> <span class="mut">K / {unit}</span></span>
+  <div class="part">
+    <div class="sec">{title}</div>
+    <div class="rows" use:fitRows>
+      {#each rows as r (r.gid)}
+        <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+        <div class="row" onclick={() => copyName(r.name)} title="Cliquer pour copier le nom">
+          <span class="n"><b>{r.name}</b> <span class="mut">niv. {r.level} · {fmtInt(r.gain)} {unit}</span></span>
+          <span class="p">{kamas(Math.round(r.price))}{#if r.avg} <span class="mut avg">moy.</span>{/if}</span>
+          <span class="per"><b>{fmtNum(r.per, r.per < 10 ? 2 : 1)}</b> <span class="mut">K / {unit}</span></span>
+        </div>
+      {:else}
+        <div class="mut">Aucun prix connu : ouvrez {how} à l'hôtel de vente.</div>
+      {/each}
     </div>
-  {:else}
-    <div class="mut">Aucun prix connu : ouvrez {how} à l'hôtel de vente.</div>
-  {/each}
+  </div>
 {/snippet}
 
-{#if err}<div class="bad">{err}</div>{/if}
-<label class="lvl">Niveau minimum de l'objet <input type="number" min="1" max="200" bind:value={ui.minLevel} /></label>
-{@render list("À acheter", bought, "ces consommables")}
-{@render list("À crafter", crafted, "leurs ingrédients")}
+<div class="fill">
+  {#if err}<div class="bad">{err}</div>{/if}
+  <label class="lvl">Niveau minimum de l'objet <input type="number" min="1" max="200" bind:value={ui.minLevel} /></label>
+  {@render list("À acheter", bought, "ces consommables")}
+  {@render list("À crafter", crafted, "leurs ingrédients")}
+</div>
 
 <style>
-  .lvl { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+  .fill { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .part { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .rows { flex: 1; min-height: 0; }
+  .lvl { flex: none; display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
   .lvl input { width: 64px; padding: 2px 6px; text-align: right; }
-  .sec { margin: 8px 0 2px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--mut); }
+  .sec { flex: none; margin: 8px 0 2px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--mut); }
   .row { display: flex; align-items: baseline; gap: 10px; padding: 3px 0; border-top: 1px solid var(--line); cursor: pointer; }
   .row:hover .n b { text-decoration: underline; }
   .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
