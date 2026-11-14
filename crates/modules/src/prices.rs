@@ -499,11 +499,15 @@ mod tests {
             l.as_array().unwrap().iter().find(|e| e["gid"] == 20819).map(|e| e["unit"].clone())
         };
         let mut seen = vec![];
+        // replayed as if it happened now: prices read in the auction house expire after UNIT_MAX_AGE
+        let mut shift = None;
         for line in text.lines() {
             let r: Value = serde_json::from_str(line).unwrap();
             let Some(h) = r["hex"].as_str() else { continue };
             let dir = if r["dir"] == "C->S" { "C->S" } else { "S->C" };
-            hub.handle(RawMessage { t: r["t"].as_f64().unwrap(), srv: r["srv"].as_str().unwrap().into(), dir, payload: hex(h) });
+            let t = r["t"].as_f64().unwrap();
+            let shift = *shift.get_or_insert(now() - t);
+            hub.handle(RawMessage { t: t + shift, srv: r["srv"].as_str().unwrap().into(), dir, payload: hex(h) });
             if r["name"] == "ExchangeBidHouseInListUpdatedEvent" {
                 seen.push(unit());
             }
