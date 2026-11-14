@@ -186,7 +186,7 @@
       <button class="mini right" disabled={!p.rows.length} onclick={exportList} title="Toutes les ressources à acheter, en quantité exacte, dans une fenêtre au-dessus du jeu">Liste des ingrédients</button>
     </div>
   {/snippet}
-  <PlanTable rows={p.rows} {name} cost={result.cost} onexclude={exclude} onqty={wish} />
+  <PlanTable rows={p.rows} {name} cost={result.cost} onexclude={exclude} />
   {#if unpriced}
     <p class="mut small">{unpriced} recette{unpriced > 1 ? "s" : ""} de ce métier sans prix (un ingrédient jamais vu à l'hôtel de vente) : laissée{unpriced > 1 ? "s" : ""} de côté.</p>
   {/if}

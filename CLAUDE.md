@@ -236,7 +236,8 @@ evolutiveitemtypes table. A food costs the cheaper of buying and crafting it (`c
   by the author); recipe level ≤ job level. Ratio = item `craftXpRatio`, else its type's, else 100 (pack `crafts.json` [job, level,
   ratio], `jobs.json` names; job 1 « Base » = no job).
 - Plan (`plan`): wished crafts first as soon as their level allows, else per level the lowest cost / xp recipe, enough to reach the next
-  level; wished leftovers made at the end. Costs: ingredients bought, or crafted (cheaper) by a ticked « Sous-crafts » job at its level.
+  level (each craft counted alone, at the level before it; a batch too); wished leftovers made at the end. Rows in craft order (a recipe
+  crafted again after another gets a new row). Costs: ingredients bought, or crafted (cheaper) by a ticked « Sous-crafts » job at its level.
   Xp of sub-crafts made with the same job is not counted. « Liste des ingrédients » = every resource to buy with its exact quantity.
 
 **Stuff** (`stuff.rs`, `modules/stuff`, `lib/stuff.ts`)

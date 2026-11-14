@@ -119,7 +119,8 @@ export interface PlanInput {
   epic: boolean;
 }
 
-/** Crafts of one recipe in the plan. */
+/** Crafts of one recipe in a row of the plan (the rows follow the order they are made: a recipe crafted again after another
+ *  one gets a new row). */
 export interface PlanRow {
   gid: number;
   level: number;
@@ -144,7 +145,7 @@ export interface Plan {
 }
 
 export function plan(p: PlanInput): Plan {
-  const rows = new Map<number, PlanRow>();
+  const rows: PlanRow[] = [];
   const left = new Map(p.forced);
   const byGid = new Map(p.recipes.map((r) => [r.gid, r]));
   const goal = levelFloor(Math.min(MAX_JOB_LEVEL, p.target));
@@ -153,13 +154,12 @@ export function plan(p: PlanInput): Plan {
 
   const craft = (r: JobRecipe, n: number, level: number, each: number, forced: boolean) => {
     const c = p.cost(r.gid);
-    const row = rows.get(r.gid) ?? { gid: r.gid, level: r.level, qty: 0, xp: 0, cost: 0, from: level, to: level, forced };
+    let row = rows[rows.length - 1];
+    if (row?.gid !== r.gid || row.forced !== forced) rows.push((row = { gid: r.gid, level: r.level, qty: 0, xp: 0, cost: 0, from: level, to: level, forced }));
     row.qty += n;
     row.xp += n * each;
     row.cost = row.cost === null || c === null ? null : row.cost + c * n;
     row.to = level;
-    row.forced ||= forced;
-    rows.set(r.gid, row);
     xp += n * each;
   };
   const wished = (level: number) => [...left].find(([g]) => (byGid.get(g)?.level ?? Infinity) <= level);
@@ -199,7 +199,7 @@ export function plan(p: PlanInput): Plan {
       craft(r, 1, level, craftXp(r.level, r.ratio, level, p.coef, p.epic) ?? 0, true);
     }
   }
-  const list = [...rows.values()].sort((a, b) => a.from - b.from || a.level - b.level);
+  const list = rows;
   return {
     rows: list,
     cost: list.reduce((s, r) => s + (r.cost ?? 0), 0),
