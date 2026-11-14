@@ -25,6 +25,11 @@ fn category_name(id: Option<i64>) -> &'static str {
 /// Clear name of the message carrying the average prices of the last week.
 pub const AVG_PRICES: &str = "ObjectAveragePricesEvent";
 
+/// Effects restoring life / energy (consumables of the Crafting home).
+const LIFE_EFFECT: i64 = 110;
+const ENERGY_EFFECT: i64 = 139;
+/// Item type « Parchemin de caractéristique ».
+const SCROLL_TYPE: i64 = 76;
 /// itemtypes id of "Rune de transcendance".
 const RUNE_TYPE: i64 = 211;
 
@@ -345,6 +350,27 @@ impl Module for Prices {
                 }
                 Ok(Value::Object(out))
             }
+            // Crafting home cards: {consumables: [{gid, name, level, type, life, energy}] (items restoring life, effect 110, or
+            // energy, 139: mean of their roll), scrolls: [{gid, name}] (characteristic scrolls, type 76)}
+            "home_items" => {
+                let mean = |e: &loutil_data::DefaultEffect| if e.max > e.min { (e.min + e.max) as f64 / 2.0 } else { e.min as f64 };
+                let mut consumables = vec![];
+                let mut scrolls = vec![];
+                for (g, i) in &ctx.data.items {
+                    if i.type_id == SCROLL_TYPE {
+                        scrolls.push(json!({"gid": g, "name": ctx.data.item_name(*g)}));
+                    }
+                    let restores = |a: i64| i.effects.iter().filter(|e| e.a == a).map(mean).sum::<f64>();
+                    let (life, energy) = (restores(LIFE_EFFECT), restores(ENERGY_EFFECT));
+                    if life > 0.0 || energy > 0.0 {
+                        let name = ctx.data.item_name(*g);
+                        consumables.push(
+                            json!({"gid": g, "name": name, "level": i.level, "type": ctx.data.type_name(Some(i.type_id)), "life": life, "energy": energy}),
+                        );
+                    }
+                }
+                Ok(json!({"consumables": consumables, "scrolls": scrolls}))
+            }
             // args: {gids: [gid]} -> {gid: name} (pack names; unknown gids left out)
             "item_names" => {
                 let gids = args["gids"].as_array().into_iter().flatten().filter_map(Value::as_i64);
@@ -382,6 +408,18 @@ mod tests {
     use super::*;
     use crate::kit::testkit::{self, hub, msg};
     use loutil_core::RawMessage;
+
+    /// The Crafting home's items: Pain d'Incarnam restores 12 life, Borodinski 390 energy, the characteristic scrolls are listed.
+    #[test]
+    fn home_items_from_the_pack() {
+        let Some((hub, _)) = hub("loutil-prices-home") else { return };
+        let h = hub.call("prices", "home_items", Value::Null).unwrap();
+        let find = |gid: i64| h["consumables"].as_array().unwrap().iter().find(|c| c["gid"] == gid).cloned().unwrap();
+        assert_eq!((find(468)["life"].as_f64(), find(468)["energy"].as_f64()), (Some(12.0), Some(0.0)));
+        assert_eq!(find(520)["energy"].as_f64(), Some(390.0));
+        let scrolls = h["scrolls"].as_array().unwrap();
+        assert!(scrolls.iter().any(|s| s["name"] == "Puissant Parchemin de Force") && scrolls.len() >= 24);
+    }
 
     #[test]
     fn unit_price_is_the_median_stack() {

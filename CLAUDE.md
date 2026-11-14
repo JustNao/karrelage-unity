@@ -226,6 +226,15 @@ and developer mode are both on. New category = an entry in `CATEGORIES`, a defau
 2026-09-19; not in the game files: server-side, grows with level and rarity), n units give floor(n × xp); levels = the game's
 evolutiveitemtypes table. A food costs the cheaper of buying and crafting it (`craftCost`). Same planner in the HDV companion card.
 
+**Crafting > Accueil** (`modules/crafting/subs/accueil`, first sub-tab): cards moved by their title bar (pointer events: the window's
+file drop takes HTML5 drag and drop), narrow / wide, `karrelage.crafting.home`. Items from prices.rs `home_items`.
+- Vie / Énergie: consumables with effect 110 / 139 (mean of the roll), from a minimum item level: best K per point bought and crafted.
+- Parchemins contre avitons: type 76, weight from the name (Petit 20, plain 60, Grand 140, Puissant 340 avitons; told by the author),
+  K per aviton after the AH tax, top 5.
+- Dofus Ocre: `ocre.json` = [step, soul gid] from metamob.fr discovery/1 (2026-11-14: 337 monsters, steps 1–3 bosses, 4–18
+  archimonsters) matched by name to « Âme capturée » items (types 327 / 328); by hand: Gelée Royale Bleuet = « Bleue », shared souls
+  (Blops Royaux, Hanshi & Shihan, Minotot & Minotoror, Sphincter Cell & Rats, Tynrils): 334 items. Sum of their prices.
+
 **Crafting > Crafts rentables** (`modules/crafting/subs/rentables`): every craftable item of a category (jobs.rs `catalog` crafts carry
 the item category / type), all jobs or one: craft cost (`Costs`, ingredients bought or crafted when cheaper), AH price (`effectivePrice`:
 override > cheapest read > weekly avg, « moy. »), profit after tax. « Craftable par moi »: the character's jobs at their level only (the
