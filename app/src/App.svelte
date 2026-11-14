@@ -14,6 +14,8 @@
   import { onShortcut, startShortcuts } from "./lib/stores/shortcuts.svelte";
   import { prewarmFightMapOverlay, pressFightMapOverlay } from "./lib/fightMapOverlay";
   import { startForgemagie } from "./lib/stores/forgemagie.svelte";
+  import { startGameServer } from "./lib/stores/gameServer.svelte";
+  import GameServerModal from "./lib/components/GameServerModal.svelte";
 
   const tabs = $derived(modules.filter((m) => app.dev || !m.devOnly));
   const active = $derived(tabs.find((m) => m.id === app.tab) ?? tabs[0]);
@@ -92,6 +94,7 @@
   $effect(() => {
     if (restored || !s.ready) return;
     restored = true;
+    startGameServer(); // prices are per game server: the backend is told which
     void startAutomation(); // automation rules watch every scan, whatever tab is open (needs the data pack)
     void startCombat(); // the current fight is followed whatever tab is open
     void startForgemagie(); // the forgemagie overlay, made when an item is put in a workshop
@@ -167,6 +170,7 @@
     <Banner tone="warn">La capture nécessite <b>Npcap</b> ({s.npcapError}). Installez-le depuis <b>npcap.com</b>, puis relancez Karrelage.</Banner>
   {/if}
   {#if err}<Banner>{err}</Banner>{/if}
+  {#if s.ready && !settings.general.gameServerAsked}<GameServerModal />{/if}
 
   <main>
     {#if active}

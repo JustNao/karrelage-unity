@@ -7,12 +7,14 @@
    *
    *   {#if adding}<Modal title="Ajouter un stuff" onclose={() => (adding = false)}>...</Modal>{/if}
    */
-  let { title, width = "420px", onclose, children }: { title: string; width?: string; onclose: () => void; children: Snippet } = $props();
+  let { title, width = "420px", closable = true, onclose, children }: { title: string; width?: string; closable?: boolean; onclose: () => void; children: Snippet } = $props();
+  /** `closable={false}`: no ✕ and no closing from outside (a choice the dialog itself must make). */
+  const close = () => closable && onclose();
 </script>
 
 <div class="back">
-  <div class="box" role="dialog" aria-modal="true" aria-label={title} style:width use:clickOutside={onclose}>
-    <div class="hd"><b>{title}</b><button class="x" title="Fermer" onclick={onclose}>✕</button></div>
+  <div class="box" role="dialog" aria-modal="true" aria-label={title} style:width use:clickOutside={close}>
+    <div class="hd"><b>{title}</b>{#if closable}<button class="x" title="Fermer" onclick={onclose}>✕</button>{/if}</div>
     {@render children()}
   </div>
 </div>

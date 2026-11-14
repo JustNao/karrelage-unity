@@ -51,10 +51,72 @@ fn expire(s: &mut BTreeMap<i64, Value>, now: f64) -> bool {
     changed || s.len() != before
 }
 
+/// Draconiros: the game server of the prices saved before prices were stored per server, until the player confirms theirs.
+pub const DEFAULT_SERVER: i64 = 295;
+
+/// The stored prices of every game server (they differ per server), the current one being the player's.
+struct State {
+    /// game server -> gid -> {gid, name, type_id, type, category, unit, updated, avg, avg_updated, override}
+    servers: BTreeMap<i64, BTreeMap<i64, Value>>,
+    current: i64,
+    /// the server the prices of an older (single server) store were put on, until the player confirms theirs
+    unconfirmed: Option<i64>,
+}
+
+impl Default for State {
+    fn default() -> Self {
+        Self { servers: BTreeMap::new(), current: DEFAULT_SERVER, unconfirmed: None }
+    }
+}
+
+impl State {
+    /// The current server's prices.
+    fn cur(&mut self) -> &mut BTreeMap<i64, Value> {
+        self.servers.entry(self.current).or_default()
+    }
+
+    fn to_json(&self) -> Value {
+        let servers = self.servers.iter().map(|(k, m)| (k.to_string(), Value::Object(m.iter().map(|(g, e)| (g.to_string(), e.clone())).collect())));
+        json!({"version": 2, "current": self.current, "unconfirmed": self.unconfirmed, "servers": Value::Object(servers.collect())})
+    }
+
+    /// A saved store; the older format (gid -> entry, before servers) becomes Draconiros' prices, unconfirmed.
+    fn from_json(v: Value) -> State {
+        let gids = |o: &Value| -> BTreeMap<i64, Value> {
+            o.as_object().into_iter().flatten().filter(|(_, e)| e.is_object()).filter_map(|(k, e)| Some((k.parse().ok()?, e.clone()))).collect()
+        };
+        if v["version"] != 2 {
+            let old = gids(&v);
+            let mut st = State::default();
+            if !old.is_empty() {
+                st.servers.insert(DEFAULT_SERVER, old);
+                st.unconfirmed = Some(DEFAULT_SERVER);
+            }
+            return st;
+        }
+        let servers = v["servers"].as_object().into_iter().flatten().filter_map(|(k, m)| Some((k.parse().ok()?, gids(m)))).collect();
+        State { servers, current: v["current"].as_i64().unwrap_or(DEFAULT_SERVER), unconfirmed: v["unconfirmed"].as_i64() }
+    }
+}
+
+/// Merge one entry into another of the same item: per price (AH-read `unit`, weekly `avg`) the newer wins; an override is kept
+/// over the other's.
+fn merge_entry(dst: &mut Value, src: &Value) {
+    for (field, t) in [("unit", "updated"), ("avg", "avg_updated")] {
+        let newer = src[t].as_f64().unwrap_or(0.0) > dst[t].as_f64().unwrap_or(0.0);
+        if !src[field].is_null() && (dst[field].is_null() || newer) {
+            dst[field] = src[field].clone();
+            dst[t] = src[t].clone();
+        }
+    }
+    if dst["override"].is_null() {
+        dst["override"] = src["override"].clone();
+    }
+}
+
 #[derive(Default)]
 pub struct Prices {
-    /// gid -> {gid, name, type_id, type, category, unit, updated, override}
-    store: Store<BTreeMap<i64, Value>>,
+    store: Store<State>,
     /// pack-derived answers, constant once the pack is loaded
     runes: OnceLock<Value>,
     craft_runes: OnceLock<Value>,
@@ -196,7 +258,9 @@ impl Prices {
         let prices: Vec<&str> = b["prices"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
         let mut changed = vec![];
         let mut hist = serde_json::Map::new();
-        let mut s = self.store.lock();
+        let mut st = self.store.lock();
+        let srv = st.current;
+        let s = st.cur();
         for e in messages(msg, field("items")) {
             let (gid, price) = (int(&e, field("gid")), prices.iter().map(|f| int(&e, f)).max().unwrap_or(0));
             if price <= 0 || !ctx.data.items.contains_key(&gid) {
@@ -209,11 +273,11 @@ impl Prices {
             changed.push(ent.clone());
             hist.insert(gid.to_string(), json!(price));
         }
-        drop(s);
+        drop(st);
         if changed.is_empty() {
             return;
         }
-        history(&self.history, ctx).push(json!({"t": m.raw.t, "kind": "avg", "prices": hist}).to_string());
+        history(&self.history, ctx).push(json!({"t": m.raw.t, "srv": srv, "kind": "avg", "prices": hist}).to_string());
         self.store.touch();
         ctx.emit("prices", "bulk", Value::Array(changed));
     }
@@ -229,17 +293,18 @@ impl Module for Prices {
     }
 
     fn init(&self, ctx: &Ctx) {
-        let saved = self.store.open(ctx, "prices", "prices.json", |s| Value::Object(s.iter().map(|(k, v)| (k.to_string(), v.clone())).collect()));
-        if let Some(Value::Object(saved)) = saved {
-            let mut s = self.store.lock();
-            for (k, mut v) in saved {
-                if let Ok(gid) = k.parse::<i64>() {
-                    Self::describe(ctx, gid, &mut v);
-                    s.insert(gid, v);
+        let saved = self.store.open(ctx, "prices", "prices.json", State::to_json);
+        if let Some(saved) = saved {
+            let mut st = State::from_json(saved);
+            let mut changed = st.unconfirmed.is_some(); // an older store: written again in the new format
+            for m in st.servers.values_mut() {
+                for (gid, v) in m.iter_mut() {
+                    Self::describe(ctx, *gid, v);
                 }
+                changed |= expire(m, now());
             }
-            if expire(&mut s, now()) {
-                drop(s);
+            *self.store.lock() = st;
+            if changed {
                 self.store.touch();
             }
         }
@@ -266,16 +331,17 @@ impl Module for Prices {
             (gid, unit_price(rows), offers(rows))
         };
         // recorded even when nobody sells it any more (empty offers)
-        let line = json!({"t": m.raw.t, "gid": gid, "kind": "ah", "unit": unit.map(|u| u.round() as i64), "offers": offers});
+        let srv = self.store.lock().current;
+        let line = json!({"t": m.raw.t, "srv": srv, "gid": gid, "kind": "ah", "unit": unit.map(|u| u.round() as i64), "offers": offers});
         history(&self.history, ctx).push(line.to_string());
         let Some(unit) = unit else { return }; // nobody is selling it any more: keep the previous price
-        let mut s = self.store.lock();
-        let ent = s.entry(gid).or_insert_with(|| json!({"gid": gid, "override": null}));
+        let mut st = self.store.lock();
+        let ent = st.cur().entry(gid).or_insert_with(|| json!({"gid": gid, "override": null}));
         ent["unit"] = json!(unit.round() as i64);
         ent["updated"] = json!(m.raw.t);
         Self::describe(ctx, gid, ent);
         let ent = ent.clone();
-        drop(s);
+        drop(st);
         self.store.touch();
         ctx.emit("prices", "price", ent);
     }
@@ -283,10 +349,11 @@ impl Module for Prices {
     fn call(&self, method: &str, args: Value, ctx: &Ctx) -> Result<Value> {
         match method {
             "list" => {
-                let mut s = self.store.lock();
-                let changed = expire(&mut s, now());
+                let mut st = self.store.lock();
+                let s = st.cur();
+                let changed = expire(s, now());
                 let out = Value::Array(s.values().cloned().collect());
-                drop(s);
+                drop(st);
                 if changed {
                     self.store.touch();
                 }
@@ -383,18 +450,71 @@ impl Module for Prices {
             "set_override" => {
                 let gid = arg_i64(&args, "gid")?;
                 let value = args["value"].as_f64().filter(|v| *v >= 0.0).map(|v| v.round() as i64);
-                let mut s = self.store.lock();
-                let ent = s.get_mut(&gid).ok_or_else(|| anyhow!("prices: unknown item {gid}"))?;
+                let mut st = self.store.lock();
+                let srv = st.current;
+                let ent = st.cur().get_mut(&gid).ok_or_else(|| anyhow!("prices: unknown item {gid}"))?;
                 ent["override"] = json!(value);
                 let ent = ent.clone();
-                drop(s);
-                history(&self.history, ctx).push(json!({"t": now(), "gid": gid, "kind": "override", "value": value}).to_string());
+                drop(st);
+                history(&self.history, ctx).push(json!({"t": now(), "srv": srv, "gid": gid, "kind": "override", "value": value}).to_string());
                 self.store.touch();
                 ctx.emit("prices", "price", ent.clone());
                 Ok(ent)
             }
+            // args: {id, confirm?} -> {server, moved}: the game server whose prices are used (Paramètres « Serveur de jeu »);
+            // `confirm` (first-start modal) also moves the prices of an older store, put on Draconiros, to that server
+            "set_server" => {
+                let id = arg_i64(&args, "id")?;
+                let mut st = self.store.lock();
+                let mut moved = 0;
+                let confirm = args["confirm"].as_bool() == Some(true);
+                if confirm {
+                    if let Some(from) = st.unconfirmed.take().filter(|f| *f != id) {
+                        let old = st.servers.remove(&from).unwrap_or_default();
+                        moved = old.len();
+                        let dst = st.servers.entry(id).or_default();
+                        for (gid, e) in old {
+                            match dst.get_mut(&gid) {
+                                Some(d) => merge_entry(d, &e),
+                                None => {
+                                    dst.insert(gid, e);
+                                }
+                            }
+                        }
+                    }
+                }
+                let switched = st.current != id;
+                st.current = id;
+                let list = Value::Array(st.cur().values().cloned().collect());
+                drop(st);
+                if confirm || switched {
+                    self.store.touch();
+                }
+                if switched || moved > 0 {
+                    self.listings.lock().clear();
+                    ctx.emit("prices", "cleared", json!({}));
+                    ctx.emit("prices", "bulk", list);
+                }
+                Ok(json!({"server": id, "moved": moved}))
+            }
+            // -> {server, unconfirmed}: the current game server, and the one older prices wait on until the player confirms theirs
+            "server" => {
+                let st = self.store.lock();
+                Ok(json!({"server": st.current, "unconfirmed": st.unconfirmed}))
+            }
+            // -> [{id, name, type}] the game servers of the pack (none in an older pack)
+            "servers" => {
+                let mut v: Vec<Value> = ctx
+                    .data
+                    .servers
+                    .iter()
+                    .map(|(id, s)| json!({"id": id, "name": ctx.data.text(s.name_id), "type": s.type_name_id.and_then(|t| ctx.data.text(t))}))
+                    .collect();
+                v.sort_by_key(|s| s["id"].as_i64());
+                Ok(Value::Array(v))
+            }
             "forget" => {
-                self.store.update(|s| s.clear());
+                self.store.update(|s| s.cur().clear());
                 ctx.emit("prices", "cleared", json!({}));
                 Ok(json!({"ok": true}))
             }
@@ -457,6 +577,36 @@ mod tests {
         p.on_message(&msg(2.0), &hub.ctx);
         let list = p.call("list", Value::Null, &hub.ctx).unwrap();
         assert_eq!(get(&list, 1711)["override"], 42);
+    }
+
+    /// An older store (gid -> entry) becomes Draconiros' prices, unconfirmed; confirming another server moves them there, and
+    /// switching servers switches the prices listed.
+    #[test]
+    fn prices_per_game_server() {
+        let old = json!({"1711": {"gid": 1711, "unit": 100, "updated": now(), "override": null}});
+        let st = State::from_json(old);
+        assert_eq!((st.current, st.unconfirmed, st.servers[&DEFAULT_SERVER].len()), (DEFAULT_SERVER, Some(DEFAULT_SERVER), 1));
+        let again = State::from_json(st.to_json());
+        assert_eq!((again.unconfirmed, again.servers[&DEFAULT_SERVER][&1711]["unit"].clone()), (Some(DEFAULT_SERVER), json!(100)));
+        // the fresh store of a new install: nothing to move
+        assert_eq!(State::from_json(json!({})).unconfirmed, None);
+        // merging keeps the newer price of each kind and the override
+        let mut d = json!({"unit": 10, "updated": 1.0, "avg": 50, "avg_updated": 9.0, "override": 7});
+        merge_entry(&mut d, &json!({"unit": 20, "updated": 2.0, "avg": 40, "avg_updated": 3.0, "override": null}));
+        assert_eq!((d["unit"].clone(), d["avg"].clone(), d["override"].clone()), (json!(20), json!(50), json!(7)));
+
+        let Some((hub, _)) = hub("loutil-prices-servers") else { return };
+        let p = Prices::new();
+        *p.store.lock() = again;
+        let gids = |p: &Prices| p.call("list", Value::Null, &hub.ctx).unwrap().as_array().unwrap().iter().map(|e| e["gid"].clone()).collect::<Vec<_>>();
+        let r = p.call("set_server", json!({"id": 291, "confirm": true}), &hub.ctx).unwrap();
+        assert_eq!(r["moved"], 1);
+        assert_eq!(gids(&p), vec![json!(1711)]);
+        assert_eq!(p.call("server", Value::Null, &hub.ctx).unwrap(), json!({"server": 291, "unconfirmed": null}));
+        p.call("set_server", json!({"id": DEFAULT_SERVER}), &hub.ctx).unwrap();
+        assert!(gids(&p).is_empty());
+        let servers = p.call("servers", Value::Null, &hub.ctx).unwrap();
+        assert!(servers.as_array().unwrap().iter().any(|s| s["id"] == DEFAULT_SERVER && s["name"] == "Draconiros"));
     }
 
     #[test]

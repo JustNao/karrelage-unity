@@ -12,6 +12,10 @@ const DEFAULTS = {
   general: {
     /** Closing the window keeps the app running in the notification area (right click on its icon: open / quit). */
     closeToTray: false,
+    /** The player's game server (prices are stored per server, prices.rs); 295 = Draconiros. */
+    gameServer: 295,
+    /** The first-start modal asked it (GameServerModal.svelte). */
+    gameServerAsked: false,
   },
   hdv: {
     /** A lot this many residual standard deviations above the price / density trend is a good deal. */

@@ -8,6 +8,7 @@
   import { taken } from "../../lib/stores/shortcuts.svelte";
   import { app } from "../../lib/app.svelte";
   import RecorderSection from "./RecorderSection.svelte";
+  import GameServerSelect from "../../lib/components/GameServerSelect.svelte";
 
   /** Paramètres: general settings first, then one section per tab. Values live in lib/stores/settings.svelte.ts. */
   const isDefault = (n: ShortcutName) => sameBinding(settings.shortcuts[n], SETTING_DEFAULTS.shortcuts[n]);
@@ -36,6 +37,15 @@
           </div>
           <div class="ctl">
             <Switch bind:checked={settings.general.closeToTray} label="Garder en arrière-plan à la fermeture" />
+          </div>
+        </div>
+        <div class="row">
+          <div class="lb">
+            <div>Serveur de jeu</div>
+            <div class="mut">Les prix relevés sont gardés par serveur : en changer affiche ceux de l'autre serveur (rien n'est déplacé).</div>
+          </div>
+          <div class="ctl">
+            <GameServerSelect value={settings.general.gameServer} onchange={(id) => (settings.general.gameServer = id)} />
           </div>
         </div>
       </section>
