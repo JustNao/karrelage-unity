@@ -227,7 +227,8 @@ and developer mode are both on. New category = an entry in `CATEGORIES`, a defau
 evolutiveitemtypes table. A food costs the cheaper of buying and crafting it (`craftCost`). Same planner in the HDV companion card.
 
 **Crafting > Accueil** (`modules/crafting/subs/accueil`, first sub-tab): cards moved by their title bar (pointer events: the window's
-file drop takes HTML5 drag and drop; followed on the window, as moving a card moves its element and drops a pointer capture), sized
+file drop takes HTML5 drag and drop; followed on the window): a faded clone follows the pointer, a dashed outline shows where it
+  lands (before / after the card under the pointer by its half), order saved on release. Sized
   Grafana-like: right edge = columns of a 12-column grid, bottom edge = rows of 30 px, corner = both (double click = default),
   `karrelage.crafting.home`. Lists show the rows the height holds, no scroll bar (`lib/actions/fitRows.ts`). Items from prices.rs `home_items`.
 - Vie / Énergie: consumables with effect 110 / 139 (mean of the roll), from a minimum item level: best K per point bought and crafted.

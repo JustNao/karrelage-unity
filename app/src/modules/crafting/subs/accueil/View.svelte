@@ -35,7 +35,10 @@
     wide: {} as Record<string, boolean>,
   });
   /** saved order, then the cards added since */
-  const order = $derived([...ui.order.filter((id) => CARDS.some((c) => c.id === id)), ...CARDS.map((c) => c.id).filter((id) => !ui.order.includes(id))]);
+  const saved = $derived([...ui.order.filter((id) => CARDS.some((c) => c.id === id)), ...CARDS.map((c) => c.id).filter((id) => !ui.order.includes(id))]);
+  /** while a card is moved: where the cards would be if it were let go now (saved on release) */
+  let preview = $state<string[] | null>(null);
+  const order = $derived(preview ?? saved);
   const cards = $derived(order.map((id) => CARDS.find((c) => c.id === id)!));
   /** columns a card takes (the narrow / wide of an older save: 4 / 8) */
   const spanOf = (c: Card) => ui.span[c.id] ?? (ui.wide[c.id] === undefined ? (c.span ?? SPAN) : ui.wide[c.id] ? 8 : SPAN);
@@ -94,23 +97,48 @@
     window.addEventListener("blur", end);
   }
 
-  // moving a card: it takes the place of the card under the pointer as soon as it is over it
+  // moving a card: a faded copy follows the pointer, its place in the grid (a dashed outline) goes before or after the card
+  // under the pointer (its left / right half); the order is saved on release
   let moving = $state<string | null>(null);
+  let ghost: HTMLElement | null = null;
+  let held = { x: 0, y: 0 };
   function grab(e: PointerEvent, id: string) {
     if (e.button !== 0 || (e.target as HTMLElement).closest("button")) return;
+    const card = (e.currentTarget as HTMLElement).closest<HTMLElement>("[data-card]");
+    if (!card) return;
     e.preventDefault();
+    const box = card.getBoundingClientRect();
+    held = { x: e.clientX - box.left, y: e.clientY - box.top };
+    ghost = card.cloneNode(true) as HTMLElement;
+    delete ghost.dataset.card;
+    ghost.classList.add("ghost");
+    Object.assign(ghost.style, { position: "fixed", left: `${box.left}px`, top: `${box.top}px`, width: `${box.width}px`, height: `${box.height}px`, margin: "0" });
+    document.body.appendChild(ghost);
+    document.body.style.cursor = "grabbing";
+    preview = [...saved];
     moving = id;
-    follow(move, () => (moving = null));
+    follow(move, drop);
   }
   function move(e: PointerEvent) {
-    if (!moving) return;
-    const over = (document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null)?.closest<HTMLElement>("[data-card]")?.dataset.card;
-    if (!over || over === moving) return;
-    const next = order.filter((id) => id !== moving);
-    const at = next.indexOf(over) + (order.indexOf(over) > order.indexOf(moving) ? 1 : 0);
-    next.splice(at, 0, moving);
-    ui.order = next;
+    if (!moving || !preview) return;
+    if (ghost) Object.assign(ghost.style, { left: `${e.clientX - held.x}px`, top: `${e.clientY - held.y}px` });
+    const el = (document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null)?.closest<HTMLElement>("[data-card]");
+    const over = el?.dataset.card;
+    if (!el || !over || over === moving) return;
+    const box = el.getBoundingClientRect();
+    const next = preview.filter((id) => id !== moving);
+    next.splice(next.indexOf(over) + (e.clientX < box.left + box.width / 2 ? 0 : 1), 0, moving);
+    if (next.join() !== preview.join()) preview = next;
   }
+  function drop() {
+    if (preview) ui.order = preview;
+    preview = null;
+    moving = null;
+    ghost?.remove();
+    ghost = null;
+    document.body.style.cursor = "";
+  }
+  $effect(() => () => ghost?.remove());
 </script>
 
 <div class="home">
@@ -157,7 +185,10 @@
   .card { position: relative; grid-column: span var(--span); display: flex; flex-direction: column; box-sizing: border-box; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; min-width: 0; }
   @media (max-width: 900px) { .card { grid-column: 1 / -1; } }
   .card.resizing { outline: 2px dashed var(--acc); }
-  .card.moving { outline: 2px solid var(--acc); opacity: 0.85; }
+  /* the moved card's place if let go now: a dashed outline (its copy follows the pointer: .ghost, in the body) */
+  .card.moving { background: color-mix(in srgb, var(--acc) 6%, transparent); border: 2px dashed var(--acc); }
+  .card.moving > * { visibility: hidden; }
+  :global(.card.ghost) { opacity: 0.6; pointer-events: none; z-index: 1000; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45); }
   .edge { position: absolute; touch-action: none; z-index: 1; }
   .ex { top: 0; right: -7px; width: 12px; height: 100%; cursor: ew-resize; }
   .ey { left: 0; bottom: -7px; width: 100%; height: 12px; cursor: ns-resize; }
@@ -168,7 +199,6 @@
   .exy::after { right: 6px; bottom: 6px; width: 7px; height: 7px; border-radius: 0 0 3px 0; background: none; border-right: 2px solid var(--line); border-bottom: 2px solid var(--line); }
   .card:hover .edge::after, .card.resizing .edge::after { opacity: 1; }
   .hd { flex: none; display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--line); cursor: grab; user-select: none; touch-action: none; }
-  .card.moving .hd { cursor: grabbing; }
   .hd b { flex: 1; }
   .grip { color: var(--mut); }
   /* the card's component fills it (its lists show the rows that fit: fitRows) */
