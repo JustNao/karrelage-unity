@@ -16,6 +16,7 @@ pub mod names;
 pub mod packets;
 pub mod prices;
 pub mod recorder;
+pub mod remote;
 pub mod shortcuts;
 pub mod store;
 pub mod stuff;
@@ -127,10 +128,12 @@ pub trait Module: Send + Sync {
 pub fn all() -> Vec<Box<dyn Module>> {
     let inventory = inventory::Inventory::new();
     let uids = inventory.uids();
+    let remote = remote::Remote::new();
     vec![
         Box::new(packets::Packets::new()),
         Box::new(auction::Auction::new()),
-        Box::new(prices::Prices::new()),
+        Box::new(prices::Prices::with_remote(&remote)),
+        Box::new(remote),
         Box::new(stuff::Stuff::new()),
         Box::new(brisage::Brisage::new(uids)),
         Box::new(inventory),

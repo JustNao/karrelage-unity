@@ -15,6 +15,7 @@
   import { prewarmFightMapOverlay, pressFightMapOverlay } from "./lib/fightMapOverlay";
   import { startForgemagie } from "./lib/stores/forgemagie.svelte";
   import { startGameServer } from "./lib/stores/gameServer.svelte";
+  import { startRemote } from "./lib/stores/remote.svelte";
   import GameServerModal from "./lib/components/GameServerModal.svelte";
 
   const tabs = $derived(modules.filter((m) => app.dev || !m.devOnly));
@@ -95,6 +96,7 @@
     if (restored || !s.ready) return;
     restored = true;
     startGameServer(); // prices are per game server: the backend is told which
+    startRemote(); // the sync server (Paramètres « Serveur de synchronisation »)
     void startAutomation(); // automation rules watch every scan, whatever tab is open (needs the data pack)
     void startCombat(); // the current fight is followed whatever tab is open
     void startForgemagie(); // the forgemagie overlay, made when an item is put in a workshop

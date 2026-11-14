@@ -12,13 +12,20 @@ parking_lot = "0.12"
 loutil-core = { path = "../core" }
 loutil-data = { path = "../data" }
 loutil-proto = { path = "../proto" }
-ureq = "2"
+ureq = { version = "2", features = ["gzip"] }
+flate2 = "1"
 sha2 = "0.11.1"
 zip = { version = "9.0.5", default-features = false, features = ["deflate"] }
 
 [target.'cfg(windows)'.dependencies]
 # sys.rs: the game's windows (focus, titles, client area), the global shortcuts and the Escape key (already in the tree through tauri)
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_System_Threading", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }
+
+[dev-dependencies]
+# remote.rs: the signature and the end to end sync are checked against the real server
+karrelage-server = { path = "../server" }
+tokio = { version = "1", features = ["rt-multi-thread", "net"] }
+axum = { version = "0.7.9", default-features = false, features = ["http1", "tokio"] }
 
 [lints]
 workspace = true

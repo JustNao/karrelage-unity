@@ -61,9 +61,11 @@ export const AH_TAX = 0.02;
 /** What the seller gets for a sale at `price`. */
 export const afterTax = (price: number) => price * (1 - AH_TAX);
 
-/** A stored price (prices.rs): unit = price read in the auction house, avg = average of the last week (preloaded by the
- *  game), override = manual. */
-export interface StoredPrice { gid: number; unit: number | null; avg?: number | null; override: number | null; updated?: number | null; avg_updated?: number | null }
+/** A stored price (prices.rs): unit = price read in the auction house (here or by another client of the sync server, the
+ *  newer wins), avg = average of the last week (preloaded by the game), override = manual (never shared). */
+export interface StoredPrice { gid: number; unit: number | null; avg?: number | null; override: number | null; updated?: number | null; avg_updated?: number | null;
+  /** where `unit` / `avg` come from: read here, or received from the sync server (Paramètres « Serveur de synchronisation ») */
+  unit_src?: "local" | "remote"; avg_src?: "local" | "remote" }
 export type PriceSource = "manuel" | "relevé" | "moyenne";
 
 /**

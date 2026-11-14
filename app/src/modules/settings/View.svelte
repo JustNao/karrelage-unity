@@ -9,6 +9,7 @@
   import { app } from "../../lib/app.svelte";
   import RecorderSection from "./RecorderSection.svelte";
   import GameServerSelect from "../../lib/components/GameServerSelect.svelte";
+  import RemoteSection from "./RemoteSection.svelte";
 
   /** Paramètres: general settings first, then one section per tab. Values live in lib/stores/settings.svelte.ts. */
   const isDefault = (n: ShortcutName) => sameBinding(settings.shortcuts[n], SETTING_DEFAULTS.shortcuts[n]);
@@ -48,6 +49,7 @@
             <GameServerSelect value={settings.general.gameServer} onchange={(id) => (settings.general.gameServer = id)} />
           </div>
         </div>
+        <RemoteSection />
       </section>
       <section>
         <h2 class="with-action">

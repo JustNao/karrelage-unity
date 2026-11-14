@@ -106,7 +106,7 @@
                     <td class="n"><b>{u ? kamas(u.value) : "—"}</b> {#if u}<small class="src {u.source}">{u.source}</small>{/if}</td>
                     <td class="n" class:dim={p.override != null}>{p.unit != null ? kamas(p.unit) : "—"}</td>
                     <td class="n" class:dim={p.override != null || p.unit != null}>{p.avg != null ? kamas(p.avg) : "—"}</td>
-                    <td class="mut">{p.updated != null ? ago(p.updated) : "—"}</td>
+                    <td class="mut">{p.updated != null ? ago(p.updated) : "—"}{#if p.unit_src === "remote"} <small title="Relevé par un autre joueur, reçu du serveur de synchronisation">· partagé</small>{/if}</td>
                     <td class="n">
                       <input type="number" min="0" placeholder="—" class:set={p.override !== null} value={p.override ?? ""} onchange={(e) => setOverride(p, e.currentTarget.value)} />
                       {#if p.override !== null}<button class="mini" title="Revenir au prix relevé" onclick={() => setOverride(p, "")}>✕</button>{/if}

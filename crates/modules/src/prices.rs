@@ -2,15 +2,17 @@
 //! category / type, with a manual override that wins over the captured price.
 use crate::auction::{apply_change, AH_BUY, AH_LIST, AH_ROW_REMOVED, AH_ROW_UPDATED};
 use crate::kit::{arg_i64, unknown, Store};
+use crate::remote::{Remote, Topic};
 use crate::sys::unix_secs_f64 as now;
 use crate::{Appender, Ctx, Interest, Message, Module};
 use anyhow::{anyhow, Result};
 use loutil_data::items::RUNE_MARKER_EFFECTS;
+use loutil_data::Data;
 use loutil_proto::util::{int, messages};
 use parking_lot::Mutex;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 /// `itemtypes.categoryId` -> label shown in the UI.
 fn category_name(id: Option<i64>) -> &'static str {
@@ -61,11 +63,38 @@ struct State {
     current: i64,
     /// the server the prices of an older (single server) store were put on, until the player confirms theirs
     unconfirmed: Option<i64>,
+    /// prices read here not yet sent to the sync server (remote.rs): game server -> gid -> [unit, avg] as (value, time)
+    pending: BTreeMap<i64, BTreeMap<i64, Pending>>,
 }
+
+/// A price to push: (value, time in unix seconds) of the AH-read `unit` and of the weekly `avg`.
+type Pending = [Option<(i64, i64)>; 2];
 
 impl Default for State {
     fn default() -> Self {
-        Self { servers: BTreeMap::new(), current: DEFAULT_SERVER, unconfirmed: None }
+        Self { servers: BTreeMap::new(), current: DEFAULT_SERVER, unconfirmed: None, pending: BTreeMap::new() }
+    }
+}
+
+/// A pending price on the wire: `[gid, unit, unit_t, avg, avg_t]` (crates/server `PriceRow`).
+fn pending_row(gid: i64, p: &Pending) -> Value {
+    json!([gid, p[0].map(|x| x.0), p[0].map(|x| x.1), p[1].map(|x| x.0), p[1].map(|x| x.1)])
+}
+
+fn parse_row(v: &Value) -> Option<(i64, Pending)> {
+    let at = |i: usize| v.get(i).and_then(Value::as_i64);
+    let pair = |i: usize| Some((at(i).filter(|x| *x > 0)?, at(i + 1)?));
+    Some((at(0).filter(|g| *g > 0)?, [pair(1), pair(3)]))
+}
+
+/// Keep the newer of each price of two pending rows of an item.
+fn merge_pending(dst: &mut Pending, src: &Pending) {
+    for i in 0..2 {
+        if let Some(n) = src[i] {
+            if dst[i].is_none_or(|d| n.1 > d.1) {
+                dst[i] = Some(n);
+            }
+        }
     }
 }
 
@@ -75,9 +104,21 @@ impl State {
         self.servers.entry(self.current).or_default()
     }
 
+    /// Queue a price read here for the sync server (`kind` 0 = AH unit, 1 = weekly average).
+    fn queue(&mut self, gid: i64, kind: usize, value: i64, t: f64) {
+        let p = self.pending.entry(self.current).or_default().entry(gid).or_default();
+        merge_pending(p, &{
+            let mut n: Pending = [None, None];
+            n[kind] = Some((value, t.round() as i64));
+            n
+        });
+    }
+
     fn to_json(&self) -> Value {
         let servers = self.servers.iter().map(|(k, m)| (k.to_string(), Value::Object(m.iter().map(|(g, e)| (g.to_string(), e.clone())).collect())));
-        json!({"version": 2, "current": self.current, "unconfirmed": self.unconfirmed, "servers": Value::Object(servers.collect())})
+        let pending = self.pending.iter().map(|(k, m)| (k.to_string(), Value::Array(m.iter().map(|(g, p)| pending_row(*g, p)).collect())));
+        json!({"version": 2, "current": self.current, "unconfirmed": self.unconfirmed, "servers": Value::Object(servers.collect()),
+               "pending": Value::Object(pending.collect())})
     }
 
     /// A saved store; the older format (gid -> entry, before servers) becomes Draconiros' prices, unconfirmed.
@@ -95,7 +136,13 @@ impl State {
             return st;
         }
         let servers = v["servers"].as_object().into_iter().flatten().filter_map(|(k, m)| Some((k.parse().ok()?, gids(m)))).collect();
-        State { servers, current: v["current"].as_i64().unwrap_or(DEFAULT_SERVER), unconfirmed: v["unconfirmed"].as_i64() }
+        let pending = v["pending"]
+            .as_object()
+            .into_iter()
+            .flatten()
+            .filter_map(|(k, rows)| Some((k.parse().ok()?, rows.as_array()?.iter().filter_map(parse_row).collect())))
+            .collect();
+        State { servers, current: v["current"].as_i64().unwrap_or(DEFAULT_SERVER), unconfirmed: v["unconfirmed"].as_i64(), pending }
     }
 }
 
@@ -114,9 +161,24 @@ fn merge_entry(dst: &mut Value, src: &Value) {
     }
 }
 
+/// The prices module: its state is shared with the sync (`Topic`, called from remote.rs' thread).
 #[derive(Default)]
-pub struct Prices {
+pub struct Prices(Arc<PricesInner>);
+
+impl std::ops::Deref for Prices {
+    type Target = PricesInner;
+    fn deref(&self) -> &PricesInner {
+        &self.0
+    }
+}
+
+#[derive(Default)]
+pub struct PricesInner {
     store: Store<State>,
+    /// the pack and the event emitter, for the rows the sync applies (set in `init`)
+    env: OnceLock<(Arc<Data>, Arc<dyn Fn(&str, Value) + Send + Sync>)>,
+    /// the sync, told when the game server changes (its prices are pulled at once)
+    remote: OnceLock<Remote>,
     /// pack-derived answers, constant once the pack is loaded
     runes: OnceLock<Value>,
     craft_runes: OnceLock<Value>,
@@ -238,17 +300,104 @@ impl Prices {
         Self::default()
     }
 
-    /// Fill the display fields from the data pack (names may change with the pack, so they are never trusted from disk).
-    fn describe(ctx: &Ctx, gid: i64, e: &mut Value) {
-        let type_id = ctx.data.items.get(&gid).map(|i| i.type_id);
-        e["name"] = json!(ctx.data.item_name(gid));
-        e["type_id"] = json!(type_id);
-        e["type"] = json!(ctx.data.type_name(type_id));
-        e["category"] = json!(category_name(type_id.and_then(|t| ctx.data.itemtypes.get(&t)).and_then(|t| t.category_id)));
+    /// Shares the prices through the sync server.
+    pub fn with_remote(remote: &Remote) -> Self {
+        let p = Self::default();
+        remote.add_topic(p.0.clone());
+        let _ = p.remote.set(remote.clone());
+        p
     }
 }
 
-impl Prices {
+impl PricesInner {
+    /// Fill the display fields from the data pack (names may change with the pack, so they are never trusted from disk).
+    fn describe(data: &Data, gid: i64, e: &mut Value) {
+        let type_id = data.items.get(&gid).map(|i| i.type_id);
+        e["name"] = json!(data.item_name(gid));
+        e["type_id"] = json!(type_id);
+        e["type"] = json!(data.type_name(type_id));
+        e["category"] = json!(category_name(type_id.and_then(|t| data.itemtypes.get(&t)).and_then(|t| t.category_id)));
+    }
+}
+
+impl Topic for PricesInner {
+    fn name(&self) -> &'static str {
+        "prices"
+    }
+
+    fn server(&self) -> i64 {
+        self.store.lock().current
+    }
+
+    fn take_pending(&self, server: i64) -> Vec<Value> {
+        let rows = self.store.lock().pending.remove(&server).unwrap_or_default();
+        if !rows.is_empty() {
+            self.store.touch();
+        }
+        rows.iter().map(|(g, p)| pending_row(*g, p)).collect()
+    }
+
+    fn restore(&self, server: i64, rows: Vec<Value>) {
+        let mut st = self.store.lock();
+        let pend = st.pending.entry(server).or_default();
+        for (gid, p) in rows.iter().filter_map(parse_row) {
+            merge_pending(pend.entry(gid).or_default(), &p);
+        }
+        drop(st);
+        self.store.touch();
+    }
+
+    /// The others' prices: each one replaces the stored one when it was observed later (`unit_src` / `avg_src` = "remote").
+    fn apply(&self, server: i64, rows: Vec<Value>) {
+        let Some((data, emit)) = self.env.get() else { return };
+        let mut st = self.store.lock();
+        let shown = st.current == server;
+        let map = st.servers.entry(server).or_default();
+        let mut changed = vec![];
+        let mut hist = vec![];
+        for (gid, p) in rows.iter().filter_map(parse_row) {
+            if !data.items.contains_key(&gid) {
+                continue;
+            }
+            let ent = map.entry(gid).or_insert_with(|| json!({"gid": gid, "override": null, "unit": null}));
+            let mut took = false;
+            for (i, (field, t, src)) in [("unit", "updated", "unit_src"), ("avg", "avg_updated", "avg_src")].into_iter().enumerate() {
+                if let Some((v, vt)) = p[i] {
+                    if ent[field].is_null() || ent[t].as_f64().unwrap_or(0.0) < vt as f64 {
+                        ent[field] = json!(v);
+                        ent[t] = json!(vt);
+                        ent[src] = json!("remote");
+                        took = true;
+                    }
+                }
+            }
+            if took {
+                Self::describe(data, gid, ent);
+                changed.push(ent.clone());
+                hist.push(json!({"t": unix_now(), "srv": server, "gid": gid, "kind": "remote", "unit": p[0].map(|x| x.0), "unit_t": p[0].map(|x| x.1), "avg": p[1].map(|x| x.0), "avg_t": p[1].map(|x| x.1)}));
+            }
+        }
+        drop(st);
+        if changed.is_empty() {
+            return;
+        }
+        self.store.touch();
+        if let Some(h) = self.history.get() {
+            for l in hist {
+                h.push(l.to_string());
+            }
+        }
+        if shown {
+            emit("prices:bulk", Value::Array(changed));
+        }
+    }
+}
+
+fn unix_now() -> f64 {
+    now()
+}
+
+impl PricesInner {
     /// Average per-unit prices of the last week: preloads the store. They only fill `avg`; prices read in the auction
     /// house (`unit`) and manual ones (`override`) always win over it.
     fn on_average_prices(&self, m: &Message, ctx: &Ctx) {
@@ -257,6 +406,7 @@ impl Prices {
         // two int64 per entry that cannot be told apart after an update: the price and one never set (seen on captures)
         let prices: Vec<&str> = b["prices"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
         let mut changed = vec![];
+        let mut queue = vec![];
         let mut hist = serde_json::Map::new();
         let mut st = self.store.lock();
         let srv = st.current;
@@ -267,11 +417,21 @@ impl Prices {
                 continue;
             }
             let ent = s.entry(gid).or_insert_with(|| json!({"gid": gid, "override": null, "unit": null}));
+            // only a new value is shared (every client gets the same averages at login)
+            let new = ent["avg"] != json!(price);
             ent["avg"] = json!(price);
             ent["avg_updated"] = json!(m.raw.t);
-            Self::describe(ctx, gid, ent);
+            ent["avg_src"] = json!("local");
+            Self::describe(&ctx.data, gid, ent);
+            if new {
+                queue.push(gid);
+            }
             changed.push(ent.clone());
             hist.insert(gid.to_string(), json!(price));
+        }
+        for gid in queue {
+            let price = hist[&gid.to_string()].as_i64().unwrap_or(0);
+            st.queue(gid, 1, price, m.raw.t);
         }
         drop(st);
         if changed.is_empty() {
@@ -293,13 +453,15 @@ impl Module for Prices {
     }
 
     fn init(&self, ctx: &Ctx) {
+        let _ = self.env.set((ctx.data.clone(), ctx.emitter()));
+        history(&self.history, ctx); // opened here: the sync's thread appends to it too
         let saved = self.store.open(ctx, "prices", "prices.json", State::to_json);
         if let Some(saved) = saved {
             let mut st = State::from_json(saved);
             let mut changed = st.unconfirmed.is_some(); // an older store: written again in the new format
             for m in st.servers.values_mut() {
                 for (gid, v) in m.iter_mut() {
-                    Self::describe(ctx, *gid, v);
+                    PricesInner::describe(&ctx.data, *gid, v);
                 }
                 changed |= expire(m, now());
             }
@@ -339,8 +501,10 @@ impl Module for Prices {
         let ent = st.cur().entry(gid).or_insert_with(|| json!({"gid": gid, "override": null}));
         ent["unit"] = json!(unit.round() as i64);
         ent["updated"] = json!(m.raw.t);
-        Self::describe(ctx, gid, ent);
+        ent["unit_src"] = json!("local");
+        PricesInner::describe(&ctx.data, gid, ent);
         let ent = ent.clone();
+        st.queue(gid, 0, unit.round() as i64, m.raw.t);
         drop(st);
         self.store.touch();
         ctx.emit("prices", "price", ent);
@@ -491,6 +655,9 @@ impl Module for Prices {
                     self.store.touch();
                 }
                 if switched || moved > 0 {
+                    if let Some(r) = self.remote.get() {
+                        r.kick();
+                    }
                     self.listings.lock().clear();
                     ctx.emit("prices", "cleared", json!({}));
                     ctx.emit("prices", "bulk", list);
@@ -562,6 +729,10 @@ mod tests {
         let msg = |t| msg(AVG_PRICES, decoded.clone(), t);
         let p = Prices::new();
         p.on_message(&msg(1.0), &hub.ctx);
+        // new averages are queued for the sync server; the same values again aren't
+        assert_eq!(p.take_pending(DEFAULT_SERVER).len(), 2);
+        p.on_message(&msg(1.5), &hub.ctx);
+        assert!(p.take_pending(DEFAULT_SERVER).is_empty());
         let list = p.call("list", Value::Null, &hub.ctx).unwrap();
         let get = |l: &Value, gid: i64| l.as_array().unwrap().iter().find(|e| e["gid"] == gid).cloned().unwrap();
         assert_eq!(get(&list, 1711)["avg"], 5000);
@@ -569,11 +740,12 @@ mod tests {
         assert!(get(&list, 1711)["unit"].is_null());
         // the averages are appended to the history, reduced to the asked item
         let h = p.call("history", json!({"gid": 1728}), &hub.ctx).unwrap();
-        assert_eq!(h, json!([{"t": 1.0, "gid": 1728, "kind": "avg", "avg": 300}]));
+        assert_eq!(h, json!([{"t": 1.0, "gid": 1728, "kind": "avg", "avg": 300}, {"t": 1.5, "gid": 1728, "kind": "avg", "avg": 300}]));
         // a manual override survives a later average
         p.call("set_override", json!({"gid": 1711, "value": 42}), &hub.ctx).unwrap();
         let h = p.call("history", json!({"gid": 1711}), &hub.ctx).unwrap();
-        assert_eq!((h[1]["kind"].as_str(), h[1]["value"].as_i64()), (Some("override"), Some(42)));
+        let last = h.as_array().unwrap().last().unwrap();
+        assert_eq!((last["kind"].as_str(), last["value"].as_i64()), (Some("override"), Some(42)));
         p.on_message(&msg(2.0), &hub.ctx);
         let list = p.call("list", Value::Null, &hub.ctx).unwrap();
         assert_eq!(get(&list, 1711)["override"], 42);

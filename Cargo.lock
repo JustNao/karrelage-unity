@@ -2112,6 +2112,9 @@ name = "loutil-modules"
 version = "1.13.0"
 dependencies = [
  "anyhow",
+ "axum",
+ "flate2",
+ "karrelage-server",
  "loutil-core",
  "loutil-data",
  "loutil-proto",
@@ -2119,6 +2122,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.1",
+ "tokio",
  "ureq",
  "windows-sys 0.61.2",
  "zip",

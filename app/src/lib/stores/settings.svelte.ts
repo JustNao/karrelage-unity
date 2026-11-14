@@ -16,6 +16,16 @@ const DEFAULTS = {
     gameServer: 295,
     /** The first-start modal asked it (GameServerModal.svelte). */
     gameServerAsked: false,
+    /** Self-hosted sync server (crates/server, lib/stores/remote.svelte.ts): prices shared with its other clients. */
+    remote: {
+      enabled: false,
+      /** http(s)://host:port of the server */
+      url: "",
+      /** the server's password (requests are signed with it: it never travels) */
+      password: "",
+      /** seconds between two syncs */
+      interval: 60,
+    },
   },
   hdv: {
     /** A lot this many residual standard deviations above the price / density trend is a good deal. */
