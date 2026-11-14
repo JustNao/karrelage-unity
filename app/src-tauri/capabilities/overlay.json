@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "overlay",
-  "description": "Floating windows (scan list, fight popup, in-game line of sight, forgemagie chances): events, read their own window state, move / resize / show / close themselves, let the mouse through, take the focus or not",
-  "windows": ["scanlist", "combat", "fightmap", "forgemagie"],
+  "description": "Floating windows (scan list, shopping list, fight popup, in-game line of sight, forgemagie chances): events, read their own window state, move / resize / show / close themselves, let the mouse through, take the focus or not",
+  "windows": ["scanlist", "combat", "fightmap", "forgemagie", "shoplist"],
   "permissions": [
     "core:event:default",
     "core:window:default",

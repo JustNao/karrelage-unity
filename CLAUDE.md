@@ -226,6 +226,19 @@ and developer mode are both on. New category = an entry in `CATEGORIES`, a defau
 2026-09-19; not in the game files: server-side, grows with level and rarity), n units give floor(n × xp); levels = the game's
 evolutiveitemtypes table. A food costs the cheaper of buying and crafting it (`craftCost`). Same planner in the HDV companion card.
 
+**Crafting > XP métiers** (`jobs.rs`, `lib/jobXp.ts`, `modules/crafting/subs/metiers`, floating `ShopList.svelte` / `lib/shoplist.ts`)
+- Job levels: JobExperiencesUpdateEvent (login: every job; after a craft / harvest: that job) → JobExperience: two int32 job id / level, three
+  int64 xp / floor / next floor, told apart by value (level = the int whose floor L × (L − 1) × 10 is among them; xp = floor ≤ v < next).
+  Verified on work/capture_bosses.jsonl. Per character (CharacterSelectionRequest `character_id`), `<app data>/jobs/levels.json`,
+  event `jobs:levels`. Level / xp can be typed over (localStorage `karrelage.crafting.jobxp`, per job).
+- Xp per craft = DofusDB's model (dofusdb.fr/en/tools/jobs-xp page script, not checked on a capture): 20 × recipe level / ((job level −
+  recipe level)^1.1 / 10 + 1) × ratio % × bonus % (×3 epic server), 0 past 100 levels above the recipe; job level before each craft (told
+  by the author); recipe level ≤ job level. Ratio = item `craftXpRatio`, else its type's, else 100 (pack `crafts.json` [job, level,
+  ratio], `jobs.json` names; job 1 « Base » = no job).
+- Plan (`plan`): wished crafts first as soon as their level allows, else per level the lowest cost / xp recipe, enough to reach the next
+  level; wished leftovers made at the end. Costs: ingredients bought, or crafted (cheaper) by a ticked « Sous-crafts » job at its level.
+  Xp of sub-crafts made with the same job is not counted. « Liste des ingrédients » = every resource to buy with its exact quantity.
+
 **Stuff** (`stuff.rs`, `modules/stuff`, `lib/stuff.ts`)
 - Dofusbook import `https://www.dofusbook.net/api/stuffs/dofus/public/<id>` (link forms + `d-bk.net` 301). Cloudflare
   403s ureq → falls back to system curl with a browser UA. Only slot → gid / picture / scroll / exo are kept; stats and

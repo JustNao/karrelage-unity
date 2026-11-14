@@ -70,6 +70,19 @@ spells = {k: {"nameId": v["nameId"]} for k, v in gd.spells.items()}
 ids.update(v["nameId"] for v in spells.values())
 dump("spells.json", spells)
 dump("recipes.json", {k: v for k, v in gd.recipes.items() if k in items})
+# job xp of crafts (Crafting « XP métiers »): result gid -> [job id, recipe level, xp ratio %]; ratio = the item's craftXpRatio, else its
+# type's, else 100 (-1 = not set; DofusDB's rule). Jobs: names.
+def xp_ratio(gid):
+    i = gd.items.get(gid, {})
+    for r in (i.get("craftXpRatio"), gd.itemtypes.get(i.get("typeId"), {}).get("craftXpRatio")):
+        if r is not None and r > -1:
+            return r
+    return 100
+
+
+dump("crafts.json", {k: [v["job"], v["level"], xp_ratio(k)] for k, v in gd.crafts.items() if k in items and v.get("job")})
+dump("jobs.json", {k: {"nameId": v["nameId"]} for k, v in gd.jobs.items()})
+ids.update(v["nameId"] for v in gd.jobs.values())
 dump("itemsets.json", {k: v for k, v in gd.itemsets.items() if any(i in items for i in v["items"])})
 ids.update(v["nameId"] for v in gd.itemsets.values() if v.get("nameId"))
 dump("items.json", items); dump("effects.json", effects); dump("itemtypes.json", types)

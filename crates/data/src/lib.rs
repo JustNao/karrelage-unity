@@ -100,6 +100,13 @@ pub struct NpcRow {
     pub name_id: i64,
 }
 
+/// A job (Forgeron, Bûcheron...): its name.
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct JobRow {
+    pub name_id: i64,
+}
+
 /// A breed (class): the base skins of its male / female looks.
 #[derive(Debug, Deserialize, Clone)]
 pub struct BreedRow {
@@ -174,6 +181,10 @@ pub struct Data {
     pub npcs: HashMap<i64, NpcRow>,
     /// Breeds: id -> base skins (absent in older packs).
     pub breeds: HashMap<i64, BreedRow>,
+    /// Jobs: id -> name (absent in older packs).
+    pub jobs: HashMap<i64, JobRow>,
+    /// Crafts' job xp: result gid -> (job id, recipe level, xp ratio %) (absent in older packs).
+    pub crafts: HashMap<i64, (i64, i64, i64)>,
     pub strings: HashMap<i64, String>,
     /// Build-specific obfuscated names per role (bindings.json), see pipeline/bindings.json.
     pub bindings: Value,
@@ -212,6 +223,8 @@ impl Data {
             monsters: read_map(dir, "monsters.json").unwrap_or_default(),
             npcs: read_map(dir, "npcs.json").unwrap_or_default(),
             breeds: read_map(dir, "breeds.json").unwrap_or_default(),
+            jobs: read_map(dir, "jobs.json").unwrap_or_default(),
+            crafts: read_map(dir, "crafts.json").unwrap_or_default(),
             equipment_effects,
             bindings: serde_json::from_slice(&std::fs::read(dir.join("bindings.json"))?)?,
             dir: dir.to_path_buf(),

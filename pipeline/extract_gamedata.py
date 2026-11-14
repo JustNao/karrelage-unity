@@ -17,7 +17,7 @@ GAME = pathlib.Path(r"C:\Users\nao3n\AppData\Local\Ankama\Dofus-dofus3\Dofus_Dat
 OUT = root / "work" / "gamedata"
 BUNDLES = OUT / "bundles"
 MAP_BUNDLES = OUT / "maps"
-TABLES = ["items", "effects", "characteristics", "itemtypes", "itemsets", "itemsupertypes", "spells", "recipes", "monsters", "npcs", "breeds"]
+TABLES = ["items", "effects", "characteristics", "itemtypes", "itemsets", "itemsupertypes", "spells", "recipes", "monsters", "npcs", "breeds", "jobs"]
 UnityPy.config.FALLBACK_UNITY_VERSION = "6000.3.16f1"   # bundles ship with a stripped version; matches UnityPlayer.dll
 
 LEGENDARY_SPELL_TYPE = 339   # spells.typeId of the passives of legendary items
@@ -85,7 +85,7 @@ def main():
     for r in allrows:
         if "id" not in r or "nameId" not in r:
             continue
-        items[r["id"]] = {k: r.get(k) for k in ("id", "nameId", "descriptionId", "typeId", "level", "iconId", "itemSetId", "realWeight", "price", "_class")}
+        items[r["id"]] = {k: r.get(k) for k in ("id", "nameId", "descriptionId", "typeId", "level", "iconId", "itemSetId", "realWeight", "price", "craftXpRatio", "_class")}
         items[r["id"]]["drop"] = bool(r.get("dropMonsterIds"))   # dropped by some monster (Temporis-only drops left out)
         # default ("perfect roll range") effects: action id == effects table id; dice num..side is the min..max (side 0 = fixed)
         eff = []
@@ -99,16 +99,20 @@ def main():
         items[r["id"]]["effects"] = eff
     effects = {r["id"]: {k: r.get(k) for k in ("id", "descriptionId", "characteristic", "category", "useDice", "isInPercent", "effectPowerRate", "showInTooltip", "elementId", "boost", "oppositeId", "effectPriority")} for r in rows("effects")}
     chars = {r["id"]: {k: r.get(k) for k in ("id", "keyword", "nameId", "order", "categoryId")} for r in rows("characteristics")}
-    types = {r["id"]: {k: r.get(k) for k in ("id", "nameId", "superTypeId", "categoryId")} for r in rows("itemtypes")}
+    types = {r["id"]: {k: r.get(k) for k in ("id", "nameId", "superTypeId", "categoryId", "craftXpRatio")} for r in rows("itemtypes")}
     # legendary item passives (effect 1175 carries the spell id): only their names are needed
     # ... plus every spell an item's effect 1175 points to (the special effect of a Dofus: "Rouge Vermeil" for the Dofus Vulbis)
     referenced = {e["max"] for i in items.values() for e in i.get("effects", []) if e["a"] == 1175}
     spells = {r["id"]: {"id": r["id"], "nameId": r["nameId"]} for r in rows("spells") if (r.get("typeId") == LEGENDARY_SPELL_TYPE or r.get("id") in referenced) and "nameId" in r}
     # crafting recipes: result item -> list of recipes, each a list of [ingredient gid, quantity]
-    recipes = {}
+    recipes, crafts = {}, {}
     for r in rows("recipes"):
         if "resultId" in r:
             recipes.setdefault(r["resultId"], []).append([[i, q] for i, q in zip(r["ingredientIds"], r["quantities"])])
+            # who crafts it and from which job level (= the recipe's level; job xp per craft depends on it): the first recipe's
+            crafts.setdefault(r["resultId"], {"job": r.get("jobId"), "level": r.get("resultLevel", 0)})
+    # jobs: name only (the Crafting « XP métiers » planner)
+    jobs = {r["id"]: {"id": r["id"], "nameId": r["nameId"]} for r in rows("jobs") if "id" in r and "nameId" in r}
     # item sets: bonuses per piece count (effects[i] = bonus when i+1 pieces are worn), effect = {a: action id, min, max} like item defaults
     sets = {}
     srows, sby = rows("itemsets", with_refs=True)
@@ -134,7 +138,7 @@ def main():
     look_skin = lambda look: int(look.split("|")[1].split(",")[0]) if look and look.count("|") >= 1 and look.split("|")[1] else None
     breeds = {r["id"]: {"id": r["id"], "nameId": r.get("shortNameId"), "skins": [s for s in (look_skin(r.get("maleLook")), look_skin(r.get("femaleLook"))) if s]}
               for r in rows("breeds") if "id" in r}
-    for n, d in (("items", items), ("effects", effects), ("characteristics", chars), ("itemtypes", types), ("spells", spells), ("recipes", recipes), ("itemsets", sets), ("monsters", monsters), ("npcs", npcs), ("breeds", breeds)):
+    for n, d in (("items", items), ("effects", effects), ("characteristics", chars), ("itemtypes", types), ("spells", spells), ("recipes", recipes), ("itemsets", sets), ("monsters", monsters), ("npcs", npcs), ("breeds", breeds), ("crafts", crafts), ("jobs", jobs)):
         (OUT / f"{n}.json").write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
         print(n, len(d))
     print("maps", maps())
