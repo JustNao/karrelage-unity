@@ -139,7 +139,7 @@
     <div class="jobs">
       {#each jobs as j (j.id)}
         <button class="chip" class:on={job === j.id} onclick={() => (ui.job = j.id)}>
-          {j.name}{#if j.id && mine[j.id]} <span class="mut">{mine[j.id].level}</span>{/if}
+          {j.name}{#if j.id && mine[j.id]}<span class="mut lvl">{mine[j.id].level}</span>{/if}
         </button>
       {/each}
     </div>
@@ -166,6 +166,7 @@
   .jobs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
   .chip { padding: 2px 10px; border: 1px solid var(--line); border-radius: 12px; font-size: 12px; background: none; color: var(--mut); }
   .chip.on { border-color: var(--acc); color: var(--fg); background: var(--panel); font-weight: 600; }
+  .lvl { margin-left: 5px; }
   .avg { font-size: 10px; }
   .copied { color: var(--ok); font-size: 10px; }
   :global(tr.craft) { cursor: pointer; }
