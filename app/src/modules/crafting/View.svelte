@@ -14,7 +14,7 @@
     {#each subs as s, i (s.id)}
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
       <div class="irow" class:first={i === 0} class:sel={sel?.id === s.id} onclick={() => (selId = s.id)}>
-        <b>{s.title}</b><br /><span class="mut">{s.description}</span>
+        <b>{s.title}</b>{#if s.description}<br /><span class="mut">{s.description}</span>{/if}
       </div>
     {/each}
   </SideList>

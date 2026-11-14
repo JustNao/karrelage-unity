@@ -45,7 +45,7 @@
 {#if err}<div class="bad">{err}</div>{/if}
 <div class="total">
   <span class="big">{kamas(Math.round(total))}</span>
-  <span class="mut">pour {fmtInt(priced.length)} âme{priced.length > 1 ? "s" : ""} sur {SOULS.length} avec un prix{#if fromAvg} ({fmtInt(fromAvg)} au prix moyen de la semaine){/if}</span>
+  <span class="mut">pour {fmtInt(priced.length)} âme{priced.length > 1 ? "s" : ""} sur {SOULS.length} avec un prix{#if fromAvg}{" "}({fmtInt(fromAvg)} au prix moyen de la semaine){/if}</span>
 </div>
 <div class="split">
   <div><span class="mut">Gardiens de donjon (étapes 1–3)</span><br /><b>{kamas(Math.round(sum(bosses)))}</b> <span class="mut">· {bosses.length} âmes</span></div>

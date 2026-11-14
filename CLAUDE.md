@@ -227,7 +227,8 @@ and developer mode are both on. New category = an entry in `CATEGORIES`, a defau
 evolutiveitemtypes table. A food costs the cheaper of buying and crafting it (`craftCost`). Same planner in the HDV companion card.
 
 **Crafting > Accueil** (`modules/crafting/subs/accueil`, first sub-tab): cards moved by their title bar (pointer events: the window's
-file drop takes HTML5 drag and drop), narrow / wide, `karrelage.crafting.home`. Items from prices.rs `home_items`.
+file drop takes HTML5 drag and drop), widths in columns of a 12-column grid set by dragging their right edge (Grafana-like; double
+  click = default), `karrelage.crafting.home`. Items from prices.rs `home_items`.
 - Vie / Énergie: consumables with effect 110 / 139 (mean of the roll), from a minimum item level: best K per point bought and crafted.
 - Parchemins contre avitons: type 76, weight from the name (Petit 20, plain 60, Grand 140, Puissant 340 avitons; told by the author),
   K per aviton after the AH tax, top 5.
