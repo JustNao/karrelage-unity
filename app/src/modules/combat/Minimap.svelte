@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { centre, diamond, mapSize, LOS, MAP_CELLS, MOV, type MapFighter, type PortalPlan, type Sight } from "../../lib/fightMap";
+  import { centre, diamond, mapSize, BLUE, LOS, MAP_CELLS, MOV, RED, type MapFighter, type PortalPlan, type Sight } from "../../lib/fightMap";
   import { PORTAL_BONUS } from "../../lib/classHelp";
 
   interface Props {
@@ -20,8 +20,12 @@
     portals?: number[];
     plan?: PortalPlan | null;
     onremove?: (cell: number) => void;
+    /** the enemy team (its placement cells are marked: team 0 red cells, team 1 blue ones), null = none marked */
+    enemies?: number | null;
+    /** placement cells drawn whole, hatched in faded red (« Portails » mode), else a small dashed diamond */
+    hatched?: boolean;
   }
-  let { cells, fighters, allies, mine, names, sight, from, pinned, onhover, onpick, portals = [], plan = null, onremove }: Props = $props();
+  let { cells, fighters, allies, mine, names, sight, from, pinned, onhover, onpick, portals = [], plan = null, onremove, enemies = null, hatched = false }: Props = $props();
   const remove = (e: MouseEvent, c: number) => {
     if (!onremove) return;
     e.preventDefault();
@@ -33,6 +37,12 @@
 
   const W = 40;
   const all = Array.from({ length: MAP_CELLS }, (_, i) => i);
+  /** where the enemies can start: their team's placement cells (monsters = team 1 on blue cells on every captured fight) */
+  const spawns = $derived(enemies === null ? [] : all.filter((c) => (cells[c] & (enemies === 0 ? RED : BLUE)) !== 0));
+  const smallDiamond = (c: number) => {
+    const [x, y] = centre(c, W);
+    return `${x},${y - W / 8} ${x + W / 4},${y} ${x},${y + W / 8} ${x - W / 4},${y}`;
+  };
   const kindOf = (f: number) => (f & LOS) === 0 ? "wall" : (f & MOV) === 0 ? "hole" : "floor";
   /** framed on the cells that are not holes (most maps leave a band of them around the fight area) */
   const view = $derived.by(() => {
@@ -63,6 +73,16 @@
       oncontextmenu={(e) => remove(e, c)}
       role="presentation"
     />
+  {/each}
+  {#if hatched}
+    <defs>
+      <pattern id="spawn-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+        <line x1="0" y1="0" x2="0" y2="6" class="hatch" />
+      </pattern>
+    </defs>
+  {/if}
+  {#each spawns as c (c)}
+    <polygon points={hatched ? diamond(c, W) : smallDiamond(c)} class={hatched ? "spawn hatched" : "spawn"} />
   {/each}
   <!-- the pinned cell's border, drawn after every cell (SVG paints in order: the neighbours' borders would cover it) -->
   {#if pinned && from !== null}
@@ -116,6 +136,9 @@
   .fighter.enemy ellipse { fill: var(--bad); }
   .fighter.ally ellipse { fill: var(--ok); }
   .fighter.me ellipse { fill: var(--gold); stroke: var(--fg); }
+  .spawn.hatched { fill: url(#spawn-hatch); stroke: color-mix(in srgb, var(--bad) 35%, transparent); stroke-width: 1; stroke-dasharray: none; }
+  .hatch { stroke: var(--bad); stroke-width: 2; opacity: 0.35; }
+  .spawn { fill: none; stroke: var(--bad); stroke-width: 1.5; stroke-dasharray: 3 2; pointer-events: none; }
   .portal { cursor: context-menu; }
   .portal circle { fill: var(--acc); stroke: var(--bg); stroke-width: 2; }
   .portal.entrance circle { fill: var(--gold); }

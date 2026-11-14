@@ -75,6 +75,10 @@
   const mine = $derived(new Set(fight.mine ?? []));
   /** the player's team: allies are drawn green, the others red */
   const allies = $derived(live.fighters.find((f) => mine.has(f.id))?.team ?? null);
+  /** the enemies' team: not the player's, else the monsters' */
+  const enemies = $derived(
+    allies !== null ? (allies === 0 ? 1 : 0) : (live.fighters.find((f) => f.kind === "monster" && f.team !== null)?.team ?? null),
+  );
   const names = $derived.by(() => {
     const m = new Map<number, string>();
     for (const f of fight.fighters) m.set(f.actor, f.name);
@@ -153,13 +157,14 @@
       {:else if cells}
         <div class="map">
           <Minimap {cells} fighters={live.fighters} {allies} {mine} {names} sight={mode === "los" ? sight : null} {from} pinned={mode === "los" && pinned !== null} onhover={(c) => (hovered = c)} onpick={pick}
-            portals={mode === "portals" ? placed : []} plan={plan} onremove={mode === "portals" ? remove : undefined} />
+            portals={mode === "portals" ? placed : []} plan={plan} onremove={mode === "portals" ? remove : undefined} {enemies} hatched={mode === "portals"} />
         </div>
         <div class="legend mut">
           <span><i class="dot me"></i>Vous</span>
           <span><i class="dot ally"></i>Alliés</span>
           <span><i class="dot enemy"></i>Ennemis</span>
           <span><i class="sq wall"></i>Obstacle</span>
+          {#if enemies !== null}<span><i class="sq spawn" class:hatched={mode === "portals"}></i>Placement ennemi</span>{/if}
           {#if mode === "los"}
             <span><i class="sq seen"></i>En vue</span>
             <span><i class="sq hidden"></i>Hors vue</span>
@@ -194,6 +199,8 @@
   .dot.portal { background: var(--acc); width: 10px; height: 10px; }
   .dot.planned { background: color-mix(in srgb, var(--acc) 35%, var(--panel)); border: 1px dashed var(--acc); width: 10px; height: 10px; }
   .sq { width: 12px; height: 12px; display: inline-block; transform: rotate(45deg) scale(0.75); border: 1px solid var(--line); }
+  .sq.spawn { border: 1.5px dashed var(--bad); }
+  .sq.spawn.hatched { border: 1px solid color-mix(in srgb, var(--bad) 35%, transparent); background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--bad) 35%, transparent) 0 2px, transparent 2px 5px); }
   .sq.wall { background: color-mix(in srgb, var(--mut) 55%, var(--bg)); }
   .sq.seen { background: color-mix(in srgb, var(--acc) 45%, var(--panel)); }
   .sq.hidden { background: color-mix(in srgb, var(--acc) 20%, var(--panel)); }
