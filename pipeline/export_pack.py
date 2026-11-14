@@ -155,7 +155,11 @@ npcs = {k: {"nameId": v["nameId"]} for k, v in gd.npcs.items()}
 ids.update(v["nameId"] for v in npcs.values())
 dump("npcs.json", npcs)
 # game servers: name + game type (Paramètres « Serveur de jeu », first-start modal; prices are stored per server)
-servers = {k: {"nameId": v["nameId"], "typeNameId": v.get("typeNameId")} for k, v in gd.servers.items()}
+# left out (told by the author): the tournament servers (Tournois, Speed Rush 1-10: game type « Tournoi ») and Tynril
+TOURNAMENT_TYPE_NAME = "Tournoi"
+HIDDEN_SERVERS = {502}   # Tynril
+servers = {k: {"nameId": v["nameId"], "typeNameId": v.get("typeNameId")} for k, v in gd.servers.items()
+           if k not in HIDDEN_SERVERS and gd.text(v.get("typeNameId")) != TOURNAMENT_TYPE_NAME}
 ids.update(n for v in servers.values() for n in (v["nameId"], v["typeNameId"]) if n is not None)
 dump("servers.json", servers)
 # breeds: base skins only (player cards: the breed int is the one whose skin the look shows)
