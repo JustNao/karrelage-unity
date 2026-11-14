@@ -1,0 +1,22 @@
+# /etc/systemd/system/karrelage-server.service
+# The password goes in /etc/karrelage-server.env (chmod 600):  KARRELAGE_PASSWORD=<at least 8 characters>
+# Then:  systemctl daemon-reload && systemctl enable --now karrelage-server   (logs: journalctl -u karrelage-server -f)
+[Unit]
+Description=Karrelage sync server (shared prices)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/karrelage-server --bind 0.0.0.0:8787 --db /var/lib/karrelage/karrelage.sqlite
+EnvironmentFile=/etc/karrelage-server.env
+DynamicUser=yes
+StateDirectory=karrelage
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

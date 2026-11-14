@@ -1,0 +1,5 @@
+# Optional HTTPS in front of the server (requests are signed either way, but HTTPS also hides the prices on the way).
+# Run the service with --bind 127.0.0.1:8787 then, and give the clients https://karrelage.example.org
+karrelage.example.org {
+	reverse_proxy 127.0.0.1:8787
+}

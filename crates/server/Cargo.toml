@@ -1,0 +1,27 @@
+[package]
+name = "karrelage-server"
+description = "Self-hosted sync server: shares the prices read by a few Karrelage clients (one database per game server)"
+version.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "karrelage-server"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+serde_json.workspace = true
+axum = { version = "0.7.9", default-features = false, features = ["http1", "json", "tokio"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "sync"] }
+tower-http = { version = "0.6.2", features = ["compression-gzip", "decompression-gzip", "limit"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+flate2 = "1"
