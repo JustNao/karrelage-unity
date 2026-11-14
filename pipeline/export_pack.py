@@ -154,6 +154,10 @@ dump("monsters.json", monsters)
 npcs = {k: {"nameId": v["nameId"]} for k, v in gd.npcs.items()}
 ids.update(v["nameId"] for v in npcs.values())
 dump("npcs.json", npcs)
+# game servers: name + game type (Paramètres « Serveur de jeu », first-start modal; prices are stored per server)
+servers = {k: {"nameId": v["nameId"], "typeNameId": v.get("typeNameId")} for k, v in gd.servers.items()}
+ids.update(n for v in servers.values() for n in (v["nameId"], v["typeNameId"]) if n is not None)
+dump("servers.json", servers)
 # breeds: base skins only (player cards: the breed int is the one whose skin the look shows)
 dump("breeds.json", {k: {"skins": v["skins"]} for k, v in gd.breeds.items()})
 # map cells (walkable / line of sight / placement flags, extract_gamedata.py `maps`): the Combat tab's map

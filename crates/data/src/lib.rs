@@ -100,6 +100,14 @@ pub struct NpcRow {
     pub name_id: i64,
 }
 
+/// A game server (Draconiros, Ombre...): its name and game type's name (Classique, Épique...).
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerRow {
+    pub name_id: i64,
+    pub type_name_id: Option<i64>,
+}
+
 /// A job (Forgeron, Bûcheron...): its name.
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -179,6 +187,8 @@ pub struct Data {
     pub monsters: HashMap<i64, MonsterRow>,
     /// NPCs: id -> name (absent in older packs).
     pub npcs: HashMap<i64, NpcRow>,
+    /// Game servers: id -> name (absent in older packs).
+    pub servers: HashMap<i64, ServerRow>,
     /// Breeds: id -> base skins (absent in older packs).
     pub breeds: HashMap<i64, BreedRow>,
     /// Jobs: id -> name (absent in older packs).
@@ -222,6 +232,7 @@ impl Data {
             itemsets: read_map(dir, "itemsets.json").unwrap_or_default(),
             monsters: read_map(dir, "monsters.json").unwrap_or_default(),
             npcs: read_map(dir, "npcs.json").unwrap_or_default(),
+            servers: read_map(dir, "servers.json").unwrap_or_default(),
             breeds: read_map(dir, "breeds.json").unwrap_or_default(),
             jobs: read_map(dir, "jobs.json").unwrap_or_default(),
             crafts: read_map(dir, "crafts.json").unwrap_or_default(),

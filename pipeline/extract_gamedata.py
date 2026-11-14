@@ -17,7 +17,7 @@ GAME = pathlib.Path(r"C:\Users\nao3n\AppData\Local\Ankama\Dofus-dofus3\Dofus_Dat
 OUT = root / "work" / "gamedata"
 BUNDLES = OUT / "bundles"
 MAP_BUNDLES = OUT / "maps"
-TABLES = ["items", "effects", "characteristics", "itemtypes", "itemsets", "itemsupertypes", "spells", "recipes", "monsters", "npcs", "breeds", "jobs"]
+TABLES = ["items", "effects", "characteristics", "itemtypes", "itemsets", "itemsupertypes", "spells", "recipes", "monsters", "npcs", "breeds", "jobs", "servers", "servergametypes"]
 UnityPy.config.FALLBACK_UNITY_VERSION = "6000.3.16f1"   # bundles ship with a stripped version; matches UnityPlayer.dll
 
 LEGENDARY_SPELL_TYPE = 339   # spells.typeId of the passives of legendary items
@@ -138,7 +138,10 @@ def main():
     look_skin = lambda look: int(look.split("|")[1].split(",")[0]) if look and look.count("|") >= 1 and look.split("|")[1] else None
     breeds = {r["id"]: {"id": r["id"], "nameId": r.get("shortNameId"), "skins": [s for s in (look_skin(r.get("maleLook")), look_skin(r.get("femaleLook"))) if s]}
               for r in rows("breeds") if "id" in r}
-    for n, d in (("items", items), ("effects", effects), ("characteristics", chars), ("itemtypes", types), ("spells", spells), ("recipes", recipes), ("itemsets", sets), ("monsters", monsters), ("npcs", npcs), ("breeds", breeds), ("crafts", crafts), ("jobs", jobs)):
+    # game servers (prices are per server: the player picks theirs): name + game type name (Classique, Épique...)
+    gametypes = {r["id"]: r.get("nameId") for r in rows("servergametypes") if "id" in r}
+    servers = {r["id"]: {"id": r["id"], "nameId": r["nameId"], "typeNameId": gametypes.get(r.get("gameTypeId"))} for r in rows("servers") if "id" in r and "nameId" in r}
+    for n, d in (("servers", servers), ("items", items), ("effects", effects), ("characteristics", chars), ("itemtypes", types), ("spells", spells), ("recipes", recipes), ("itemsets", sets), ("monsters", monsters), ("npcs", npcs), ("breeds", breeds), ("crafts", crafts), ("jobs", jobs)):
         (OUT / f"{n}.json").write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
         print(n, len(d))
     print("maps", maps())

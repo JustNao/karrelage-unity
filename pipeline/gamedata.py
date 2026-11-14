@@ -36,6 +36,7 @@ items, effects, characteristics, itemtypes, spells, recipes, itemsets, monsters 
 npcs = _load("npcs")
 breeds = _load("breeds")
 crafts, jobs = _load("crafts"), _load("jobs")
+servers = _load("servers")
 _i18n = None
 
 
