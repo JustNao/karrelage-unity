@@ -49,6 +49,10 @@ Le mode développeur s'active avec la case _Développeur_ en haut à droite.
 
 ## Bon à savoir
 
+- Les prix dépendent du **serveur de jeu** : Karrelage le demande au premier lancement et les garde séparément pour chacun
+  (Paramètres « Général » pour en changer).
+- **Partage des prix entre amis** (facultatif) : Paramètres « Général » › _Serveur de synchronisation_, avec l'adresse et le mot de
+  passe donnés par celui qui héberge le serveur (voir plus bas). Seuls les changements sont échangés ; vos prix manuels restent sur votre PC.
 - Les données sont stockées dans `%APPDATA%\fr.dofus.karrelage\` (objets scannés, prix, stuffs, inventaire, brisages, packs téléchargés).
   Supprimez le dossier pour tout remettre à zéro.
 
@@ -68,7 +72,8 @@ crates/core      wire.rs (varint, trames, enveloppe), stream.rs (réordonnanceme
 crates/proto     décodage protobuf dynamique depuis datapack/protocol.desc, noms en clair des messages / champs
 crates/data      chargement du pack : objets, effets, types d'objets, panoplies, recettes, monstres, textes, bindings
 crates/modules   trait Module + Hub, kit.rs (rôles des bindings, stockage persistant, arguments, outils de test) ;
-                 un fichier par fonctionnalité : packets, names (Proto), auction (HDV), prices, brisage, stuff, inventory, combat, update
+                 un fichier par fonctionnalité : packets, names (Proto), auction (HDV), prices, remote (synchro), brisage, stuff, inventory, combat, update
+crates/server    serveur de synchronisation auto-hébergé (karrelage-server) : prix partagés par serveur de jeu, SQLite
 app/             coque Tauri (src-tauri) + interface Svelte 5 / Vite : src/modules/<id>/ = onglets enregistrés automatiquement,
                  src/lib = composants et magasins partagés ; fenêtres flottantes : scanlist.html, combat.html
 pipeline/        fichiers du jeu -> pack de données (python)
@@ -133,3 +138,20 @@ npm run tauri build             # installeur NSIS dans target/release/bundle/nsi
 ```
 
 L'installeur nécessite d'avoir généré `datapack/` auparavant (ou de l'avoir décompressé depuis `dist/datapack.zip`).
+
+## Serveur de synchronisation (auto-hébergé, Linux)
+
+Un petit binaire (`crates/server`) qui partage les prix entre quelques clients. Chaque requête est signée avec le mot de passe
+(HMAC, à ±5 min près) : le mot de passe ne transite jamais, même en HTTP simple.
+
+```bash
+cargo build --release -p karrelage-server          # sur la machine Linux (Rust installé)
+sudo cp target/release/karrelage-server /usr/local/bin/
+echo 'KARRELAGE_PASSWORD=un-long-mot-de-passe' | sudo tee /etc/karrelage-server.env && sudo chmod 600 /etc/karrelage-server.env
+sudo cp crates/server/deploy/karrelage-server.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now karrelage-server   # journalctl -u karrelage-server -f
+```
+
+Il écoute sur le port 8787 (`--bind`), base `/var/lib/karrelage/karrelage.sqlite` (`--db`) : ouvrez le port (pare-feu, routeur) et
+donnez `http://<adresse>:8787` et le mot de passe à vos amis. HTTPS en option derrière Caddy (`crates/server/deploy/Caddyfile`).
+En local pour essayer : `cargo run -p karrelage-server -- --password test1234`.

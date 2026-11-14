@@ -37,6 +37,7 @@ crates/core      wire.rs (varint, framing, resync), stream.rs (TCP reorder), pca
 crates/proto     dynamic decode from datapack/protocol.desc (prost-reflect), names.rs, util.rs
 crates/data      pack loader, effects.rs, items.rs (gid/type resolve, compare)
 crates/modules   Module trait + Hub (lib.rs), kit.rs, one file per feature
+crates/server    karrelage-server: self-hosted price sync (axum + SQLite), not part of the app
 app/src-tauri    thin shell: loads pack, capture -> Hub -> events, generic `module_call`
 app/src          Svelte 5 + Vite; modules/<id>/{index.ts,View.svelte} = tabs (auto-registered); lib/ = shared
 pipeline/        python (author only): extract_gamedata, build_protos, script_names, match_protos, export_pack,
@@ -189,6 +190,27 @@ Set `PYTHONUTF8=1` for scripts handling accents. The "Développeur" header toggl
   single row replaced / removed, a resource row with no listing yet starts one (equipment rows never do). Verified on
   work/capture_hdv_buy.jsonl (10 resource purchases): each BuyRequest is answered by InListUpdatedEvent (the row, same uid as
   the listing's) then BuyResultEvent (`object_uid` = that uid); leaving the window sends an empty listing (ignored: no price).
+
+**Game server / price sync** (`prices.rs`, `remote.rs`, `crates/server`, `lib/stores/{gameServer,remote}.svelte.ts`)
+- Prices are stored per game server (`prices.json` v2 `{servers: {id: {gid: entry}}, current, unconfirmed, pending}`); the
+  packets never say which server (captures start after login, the game server IP changes between sessions), so the player
+  picks it: `settings.general.gameServer` (default 295 Draconiros, pack `servers.json` from the servers table), asked once by
+  `GameServerModal` (`gameServerAsked`). An older flat store loads as Draconiros `unconfirmed`; the modal's
+  `set_server {confirm}` moves it to the chosen server. History lines carry `srv`.
+- Sync (`remote.rs`, Paramètres « Serveur de synchronisation »): its own thread, every `interval` s (60 s – 24 h) or at once on a
+  configuration / server change, one `POST /v1/sync` per game server: pending rows `[gid, unit, unit_t, avg, avg_t]` pushed,
+  the others' rows since the cursor (per url + server + topic, `<app data>/remote/state.json`) pulled. A value replaces the stored
+  one only when observed later (`unit_src` / `avg_src` = local / remote); overrides never leave the PC; a weekly average is queued
+  only when it differs from the stored one; a failed sync gives the rows back. Topics (`remote::Topic`) are generic: a feature
+  adds one to share its data. Requests signed: HMAC-SHA256(password, "<time>
+<METHOD><endpoint>
+<hex sha256(body)>"), ±5 min
+  (`crates/server/src/auth.rs`; remote.rs writes HMAC out since the crate's sha2 0.11 has no matching hmac; a test checks both agree).
+  Bodies over 1 KB gzipped.
+- Server (`crates/server`): newest observation per (server, gid, price) wins, global `seq` per accepted change (pull = `seq > cursor`,
+  a cursor past the last seq starts over), times > 5 min ahead clamped, every accepted value kept in `observations` (history).
+  `bus.rs` publishes accepted changes per game server for a later observer mode (`GET /v1/stream` WebSocket, not built).
+  Traffic: ~0.5 KB per empty sync; 25–40 B per changed price before gzip; the first full pull of a server ~80 KB gzipped.
 
 **Packets** (`packets.rs`): keeps the last 20 raw packets per type, decoded only when the tab lists/streams them.
 
