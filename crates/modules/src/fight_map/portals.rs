@@ -201,9 +201,65 @@ pub(super) fn simulate(net: &[(i64, bool)], add: Option<i64>, fits: &dyn Fn(i64)
     Sim { added, dropped, via, path, distance, target }
 }
 
+/// The two portals completing a network of four from `entrance` and `exit` (two portals put down) with the longest way from
+/// `entrance` that ends at `exit` (the most damage bonus there).
+#[derive(Serialize, Debug, PartialEq)]
+pub(super) struct Plan {
+    /// The way through the four: `entrance`, the two new portals in the order gone through, `exit`.
+    pub path: Vec<usize>,
+    /// Cells between the path's portals.
+    pub distance: i32,
+}
+
+/// The best two of `free` (cells a portal can go on, `entrance` / `exit` left out) to add: every pair is tried with the game's
+/// way (`portal_path`), kept when it ends at `exit`; the longest wins (first found on a tie). None when no pair leads to `exit`.
+pub(super) fn plan(free: &[usize], entrance: usize, exit: usize) -> Option<Plan> {
+    let free: Vec<usize> = free.iter().copied().filter(|&c| c != entrance && c != exit).collect();
+    let mut best: Option<Plan> = None;
+    for (i, &c) in free.iter().enumerate() {
+        for &d in &free[i + 1..] {
+            // the way can't be longer than entrance -> c -> d -> exit or entrance -> d -> c -> exit
+            let bound = (distance(entrance, c) + distance(c, d) + distance(d, exit)).max(distance(entrance, d) + distance(d, c) + distance(c, exit));
+            if best.as_ref().is_some_and(|b| bound <= b.distance) {
+                continue;
+            }
+            let path = portal_path(&[entrance, exit, c, d], entrance);
+            if path.last() != Some(&exit) {
+                continue;
+            }
+            let distance = path.windows(2).map(|w| distance(w[0], w[1])).sum();
+            if best.as_ref().is_none_or(|b| distance > b.distance) {
+                best = Some(Plan { path, distance });
+            }
+        }
+    }
+    best
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The best pair leads to the exit and nothing longer does (checked against every pair on a small open area).
+    #[test]
+    fn plan_ends_at_the_exit_with_the_longest_way() {
+        let free: Vec<usize> = (0..MAP_CELLS).filter(|&c| coords(c).0 < 12 && coords(c).1.abs() < 6).collect();
+        let (entrance, exit) = (cell_at(5, 0).unwrap(), cell_at(7, 1).unwrap());
+        let p = plan(&free, entrance, exit).expect("a plan");
+        assert_eq!((p.path.len(), p.path[0], p.path[3]), (4, entrance, exit));
+        assert_eq!(p.path, portal_path(&[entrance, exit, p.path[1], p.path[2]], entrance), "the game's way");
+        assert_eq!(p.distance, p.path.windows(2).map(|w| distance(w[0], w[1])).sum::<i32>());
+        let others: Vec<usize> = free.iter().copied().filter(|&c| c != entrance && c != exit).collect();
+        for (i, &c) in others.iter().enumerate() {
+            for &d in &others[i + 1..] {
+                let way = portal_path(&[entrance, exit, c, d], entrance);
+                if way.last() == Some(&exit) {
+                    assert!(way.windows(2).map(|w| distance(w[0], w[1])).sum::<i32>() <= p.distance, "{c} {d}");
+                }
+            }
+        }
+        assert_eq!(plan(&[], entrance, exit), None, "nowhere to put them");
+    }
 
     /// The casts of work/capture_poison.jsonl: out of the exit with the offset they went in with.
     #[test]

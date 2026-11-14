@@ -29,7 +29,7 @@ use loutil_data::maps::{sight, turned, MAP_CELLS, MOV};
 use loutil_proto::util::{as_i64, int, scalar_ints};
 use loutil_proto::{DynamicMessage, Kind, PbValue, ReflectMessage};
 use parking_lot::Mutex;
-use portals::{simulate, Marks, Portal, Sim};
+use portals::{plan, simulate, Marks, Portal, Sim};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashSet};
@@ -498,7 +498,9 @@ impl Module for FightMap {
     /// off + `refocus`.
     /// State `portals`: [{cell, author, open}] in the order they were put down. Call `portals` {author, start?: a portal, base_only?: no `sims`}: the
     /// Portail spell of that caster simulated (`simulate`), {base: not cast (way from `start`, else the oldest open portal), sims: {cell: cast there}} for every free walkable
-    /// cell, each {added, dropped, via, path: [cells], distance}.
+    /// cell, each {added, dropped, via, path: [cells], distance}. Call `plan` {portals: [a, b]} (the Combat tab's « Portails » mode): for each
+    /// of the two as the entrance, the two portals completing the four whose way ends at the other with the most cells (`plan`), on
+    /// walkable cells no fighter stands on: {a: {path, distance} | null, b: ...} keyed by entrance cell.
     fn call(&self, method: &str, args: Value, ctx: &Ctx) -> Result<Value> {
         match method {
             "state" => Ok(self.state.lock().json()),
@@ -571,6 +573,21 @@ impl Module for FightMap {
                 let open_portal = |c: i64| net.iter().any(|&(p, open)| open && p == c);
                 let from = start.filter(|&c| open_portal(c)).or(net.iter().find(|(_, open)| *open).map(|(c, _)| *c));
                 Ok(json!({"base": simulate(&net, None, &fits, caster, from), "sims": sims}))
+            }
+            "plan" => {
+                let placed: Vec<usize> =
+                    args["portals"].as_array().map(|a| a.iter().filter_map(Value::as_u64).map(|c| c as usize).collect()).unwrap_or_default();
+                let &[a, b] = &placed[..] else { return Ok(Value::Null) };
+                if a == b || a >= MAP_CELLS || b >= MAP_CELLS {
+                    return Ok(Value::Null);
+                }
+                let (map, taken) = {
+                    let s = self.state.lock();
+                    (s.map(), s.taken())
+                };
+                let Some(cells) = map.and_then(|m| self.cells(ctx, m)) else { return Ok(Value::Null) };
+                let free: Vec<usize> = (0..MAP_CELLS).filter(|&c| cells[c] & MOV != 0 && !taken.contains(&(c as i64))).collect();
+                Ok(json!({a.to_string(): plan(&free, a, b), b.to_string(): plan(&free, b, a)}))
             }
             "sight" => {
                 let from = arg_i64(&args, "from")?;

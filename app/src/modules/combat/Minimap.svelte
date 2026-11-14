@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { centre, diamond, mapSize, LOS, MAP_CELLS, MOV, type MapFighter, type Sight } from "../../lib/fightMap";
+  import { centre, diamond, mapSize, LOS, MAP_CELLS, MOV, type MapFighter, type PortalPlan, type Sight } from "../../lib/fightMap";
+  import { PORTAL_BONUS } from "../../lib/classHelp";
 
   interface Props {
     cells: number[];
@@ -15,8 +16,20 @@
     pinned: boolean;
     onhover: (cell: number | null) => void;
     onpick: (cell: number) => void;
+    /** « Portails » mode: the portals put down (in order), the plan of the hovered one, right click on a cell */
+    portals?: number[];
+    plan?: PortalPlan | null;
+    onremove?: (cell: number) => void;
   }
-  let { cells, fighters, allies, mine, names, sight, from, pinned, onhover, onpick }: Props = $props();
+  let { cells, fighters, allies, mine, names, sight, from, pinned, onhover, onpick, portals = [], plan = null, onremove }: Props = $props();
+  const remove = (e: MouseEvent, c: number) => {
+    if (!onremove) return;
+    e.preventDefault();
+    onremove(c);
+  };
+  /** the two portals the plan adds, numbered 3 and 4 in the order the way goes through them */
+  const planned = $derived(plan ? plan.path.slice(1, 3) : []);
+  const way = $derived(plan ? plan.path.map((c) => centre(c, W).join(",")).join(" ") : "");
 
   const W = 40;
   const all = Array.from({ length: MAP_CELLS }, (_, i) => i);
@@ -47,6 +60,7 @@
       class:from={from === c}
       onmouseenter={() => k === "floor" && onhover(c)}
       onclick={() => k === "floor" && onpick(c)}
+      oncontextmenu={(e) => remove(e, c)}
       role="presentation"
     />
   {/each}
@@ -56,11 +70,33 @@
   {/if}
   {#each shown as f (f.id)}
     {@const [x, y] = centre(f.cell, W)}
-    <g class="fighter {side(f)}" class:summon={f.summoned} transform="translate({x} {y})" onmouseenter={() => onhover(f.cell)} onclick={() => onpick(f.cell)} role="presentation">
+    <g class="fighter {side(f)}" class:summon={f.summoned} transform="translate({x} {y})" onmouseenter={() => onhover(f.cell)} onclick={() => onpick(f.cell)} oncontextmenu={(e) => remove(e, f.cell)} role="presentation">
       <title>{label(f)}{f.summoned ? " (invocation)" : ""}</title>
       <ellipse rx={f.summoned ? 9 : 12} ry={f.summoned ? 5 : 7} />
     </g>
   {/each}
+  {#if plan}
+    <polyline points={way} class="way" />
+  {/if}
+  {#each portals as c, i (c)}
+    {@const [x, y] = centre(c, W)}
+    <g class="portal" class:entrance={plan?.path[0] === c} transform="translate({x} {y})" onmouseenter={() => onhover(c)} oncontextmenu={(e) => remove(e, c)} role="presentation">
+      <title>Portail {i + 1} : survol = les deux suivants, clic droit = retirer</title>
+      <circle r="8" />
+      <text>{i + 1}</text>
+    </g>
+  {/each}
+  {#each planned as c, i (c)}
+    {@const [x, y] = centre(c, W)}
+    <g class="portal planned" transform="translate({x} {y})">
+      <circle r="8" />
+      <text>{i + 3}</text>
+    </g>
+  {/each}
+  {#if plan}
+    {@const [x, y] = centre(plan.path[3], W)}
+    <text x={x} y={y + 17} class="bonus">+{plan.distance * PORTAL_BONUS} %</text>
+  {/if}
 </svg>
 
 <style>
@@ -80,5 +116,13 @@
   .fighter.enemy ellipse { fill: var(--bad); }
   .fighter.ally ellipse { fill: var(--ok); }
   .fighter.me ellipse { fill: var(--gold); stroke: var(--fg); }
+  .portal { cursor: context-menu; }
+  .portal circle { fill: var(--acc); stroke: var(--bg); stroke-width: 2; }
+  .portal.entrance circle { fill: var(--gold); }
+  .portal.planned { pointer-events: none; }
+  .portal.planned circle { fill: color-mix(in srgb, var(--acc) 35%, var(--panel)); stroke: var(--acc); stroke-dasharray: 3 2; }
+  .portal text { fill: var(--fg); font: 700 10px var(--font); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+  .way { fill: none; stroke: var(--gold); stroke-width: 2.5; stroke-linejoin: round; opacity: 0.8; pointer-events: none; }
+  .bonus { fill: var(--fg); font: 700 11px var(--font); text-anchor: middle; dominant-baseline: central; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; pointer-events: none; }
   .fighter.summon ellipse { opacity: 0.85; stroke-dasharray: 3 2; }
 </style>

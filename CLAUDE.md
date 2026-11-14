@@ -391,6 +391,10 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   `portals` `exil`): the same with the portal under a fighter (self included) instead of on a free cell; its mark is action 1181 too
   (game's spell levels), then 1182 teleports the target. Not checked on an Exil cast of a capture yet (none recorded).
   FightJoinRunningEvent `marks` (rejoining a fight) not read.
+- Combat tab map modes (`modules/combat/View.svelte`, localStorage `karrelage.combat.mapMode`): « Ligne de vue », or « Portails »: two
+  portals put down by hand (click; right click removes), hovering one = the two that complete four whose way (`portal_path`) from it
+  ends at the other with the most cells (call `plan`: every pair of free walkable cells, bounded; ~22 ms per entrance in release on an
+  open map). No spell range / line of sight checked for the new portals.
 
 **Forgemagie** (`forgemagie.rs`, `ForgemagieOverlay.svelte`, `lib/forgemagie.ts`, `lib/stores/forgemagie.svelte.ts`)
 - Item = the equipment piece of `ExchangeObjectsAddedEvent` (named by anchor: (bool, float fm_power, repeated

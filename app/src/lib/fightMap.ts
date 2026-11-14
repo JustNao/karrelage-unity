@@ -58,6 +58,14 @@ export interface Sight {
   hidden: number[];
 }
 
+/** Combat tab « Portails » mode (call `plan`): the two portals completing four from an entrance, the way ending at the other
+ *  portal put down with the most cells between them. */
+export interface PortalPlan {
+  /** entrance, the two new portals in the order gone through, exit */
+  path: number[];
+  distance: number;
+}
+
 /** Centre of a cell in a grid of `w` × `w / 2` diamonds (top-left of the map at 0, 0). */
 export function centre(cell: number, w: number): [number, number] {
   const row = Math.floor(cell / ROW), col = cell % ROW;
