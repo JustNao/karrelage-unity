@@ -160,7 +160,7 @@
       {#if override}
         <button class="mini" onclick={resetLevel} title="Reprendre le niveau et l'XP lus dans le jeu">{game ? `↺ jeu : ${game.level}` : "↺ effacer"}</button>
       {:else}
-        <span class="mut small">{game ? "lu dans le jeu" : "connectez-vous, application ouverte, pour le lire"}</span>
+        <span class="mut">{game ? "lu dans le jeu" : "connectez-vous, application ouverte, pour le lire"}</span>
       {/if}
       <label>Niveau visé <input type="number" min="1" max={MAX_JOB_LEVEL} value={ui.target} oninput={(e) => (ui.target = num(e))} /></label>
       <label title="Bonus d'XP (Almanax, événements…)">Bonus
