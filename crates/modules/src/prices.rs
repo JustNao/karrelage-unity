@@ -3,7 +3,7 @@
 use crate::auction::{apply_change, AH_BUY, AH_LIST, AH_ROW_REMOVED, AH_ROW_UPDATED};
 use crate::kit::{arg_i64, unknown, Store};
 use crate::sys::unix_secs_f64 as now;
-use crate::{Ctx, Interest, Message, Module};
+use crate::{Appender, Ctx, Interest, Message, Module};
 use anyhow::{anyhow, Result};
 use loutil_data::items::RUNE_MARKER_EFFECTS;
 use loutil_proto::util::{int, messages};
@@ -61,6 +61,8 @@ pub struct Prices {
     by_name: OnceLock<HashMap<String, i64>>,
     /// gid -> rows of the last listing seen this session, to follow its changes (purchases, updated / removed rows)
     listings: Mutex<HashMap<i64, Vec<Value>>>,
+    /// `<app data>/prices/history.jsonl`, opened on first use (see `append_history`)
+    history: OnceLock<Appender>,
 }
 
 /// Per-unit price of a listing: the cheapest price per unit of each stack size on sale (x1, x10, x100, x1000), then the
@@ -91,18 +93,12 @@ fn offers(rows: &[Value]) -> Vec<[i64; 2]> {
     v
 }
 
-/// Price history: one JSON line appended per event, never rewritten, read back only on demand (`history`).
-/// AH listing / change: {t, gid, kind: "ah", unit, offers: [[qty, price]]}; weekly averages: {t, kind: "avg", prices: {gid: price}}.
-fn append_history(ctx: &Ctx, line: &Value) {
-    use std::io::Write;
-    let dir = ctx.module_dir("prices");
-    let r = std::fs::create_dir_all(&dir).and_then(|_| {
-        let mut f = std::fs::OpenOptions::new().create(true).append(true).open(dir.join("history.jsonl"))?;
-        writeln!(f, "{line}")
-    });
-    if let Err(e) = r {
-        ctx.log(format!("prices: history not written: {e}"));
-    }
+/// Price history: every price change seen, one JSON line per event with its time `t` (unix seconds), never rewritten, read
+/// back only on demand (`history`), kept for analyses to come. AH listing / change: {t, gid, kind: "ah", unit, offers:
+/// [[qty, price]]}; weekly averages: {t, kind: "avg", prices: {gid: price}}; manual price: {t, gid, kind: "override", value}
+/// (null = removed). Queued in memory and appended in the background (the capture thread does no disk IO).
+fn history<'a>(cell: &'a OnceLock<Appender>, ctx: &Ctx) -> &'a Appender {
+    cell.get_or_init(|| Appender::open(ctx.module_dir("prices").join("history.jsonl"), ctx.logger()))
 }
 
 /// History lines of one item (or every line when `gid` is None) at or after `since`; averages are reduced to that item's price.
@@ -217,7 +213,7 @@ impl Prices {
         if changed.is_empty() {
             return;
         }
-        append_history(ctx, &json!({"t": m.raw.t, "kind": "avg", "prices": hist}));
+        history(&self.history, ctx).push(json!({"t": m.raw.t, "kind": "avg", "prices": hist}).to_string());
         self.store.touch();
         ctx.emit("prices", "bulk", Value::Array(changed));
     }
@@ -270,7 +266,8 @@ impl Module for Prices {
             (gid, unit_price(rows), offers(rows))
         };
         // recorded even when nobody sells it any more (empty offers)
-        append_history(ctx, &json!({"t": m.raw.t, "gid": gid, "kind": "ah", "unit": unit.map(|u| u.round() as i64), "offers": offers}));
+        let line = json!({"t": m.raw.t, "gid": gid, "kind": "ah", "unit": unit.map(|u| u.round() as i64), "offers": offers});
+        history(&self.history, ctx).push(line.to_string());
         let Some(unit) = unit else { return }; // nobody is selling it any more: keep the previous price
         let mut s = self.store.lock();
         let ent = s.entry(gid).or_insert_with(|| json!({"gid": gid, "override": null}));
@@ -378,7 +375,9 @@ impl Module for Prices {
             }
             // args: {gid?, since?} -> history lines, oldest first (not used by the UI yet)
             "history" => {
-                Ok(Value::Array(read_history(&ctx.module_dir("prices").join("history.jsonl"), args["gid"].as_i64(), args["since"].as_f64().unwrap_or(0.0))))
+                let h = history(&self.history, ctx);
+                h.flush();
+                Ok(Value::Array(read_history(h.path(), args["gid"].as_i64(), args["since"].as_f64().unwrap_or(0.0))))
             }
             // args: {gid, value: number | null}; null removes the override
             "set_override" => {
@@ -389,6 +388,7 @@ impl Module for Prices {
                 ent["override"] = json!(value);
                 let ent = ent.clone();
                 drop(s);
+                history(&self.history, ctx).push(json!({"t": now(), "gid": gid, "kind": "override", "value": value}).to_string());
                 self.store.touch();
                 ctx.emit("prices", "price", ent.clone());
                 Ok(ent)
@@ -452,6 +452,8 @@ mod tests {
         assert_eq!(h, json!([{"t": 1.0, "gid": 1728, "kind": "avg", "avg": 300}]));
         // a manual override survives a later average
         p.call("set_override", json!({"gid": 1711, "value": 42}), &hub.ctx).unwrap();
+        let h = p.call("history", json!({"gid": 1711}), &hub.ctx).unwrap();
+        assert_eq!((h[1]["kind"].as_str(), h[1]["value"].as_i64()), (Some("override"), Some(42)));
         p.on_message(&msg(2.0), &hub.ctx);
         let list = p.call("list", Value::Null, &hub.ctx).unwrap();
         assert_eq!(get(&list, 1711)["override"], 42);

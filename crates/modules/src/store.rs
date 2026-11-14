@@ -79,6 +79,81 @@ pub fn flush_all() {
     for s in open {
         s.flush();
     }
+    let appenders: Vec<Arc<AppendInner>> = APPENDERS.lock().iter().filter_map(Weak::upgrade).collect();
+    for a in appenders {
+        a.flush();
+    }
+}
+
+struct AppendInner {
+    path: PathBuf,
+    pending: Mutex<Vec<String>>,
+    /// serialises writes (background thread vs `flush` / `flush_all`)
+    writing: Mutex<()>,
+    log: Log,
+}
+
+impl AppendInner {
+    fn flush(&self) {
+        let _w = self.writing.lock();
+        let lines = std::mem::take(&mut *self.pending.lock());
+        if lines.is_empty() {
+            return;
+        }
+        let res = (|| {
+            use std::io::Write;
+            if let Some(p) = self.path.parent() {
+                std::fs::create_dir_all(p)?;
+            }
+            let mut f = std::fs::OpenOptions::new().create(true).append(true).open(&self.path)?;
+            let text: String = lines.iter().flat_map(|l| [l.as_str(), "\n"]).collect();
+            f.write_all(text.as_bytes())
+        })();
+        if let Err(e) = res {
+            (self.log)(format!("cannot append to {}: {e}", self.path.display()));
+        }
+    }
+}
+
+/// Every open appender, so `flush_all` can write pending lines when the app exits.
+static APPENDERS: Mutex<Vec<Weak<AppendInner>>> = Mutex::new(Vec::new());
+
+/// An append-only JSON lines file (history, logs): lines are queued in memory by `push` (no disk IO, fit for the capture
+/// thread) and appended by a background thread at most every `FLUSH_EVERY`. Opening it touches no file.
+pub struct Appender {
+    inner: Arc<AppendInner>,
+}
+
+impl Appender {
+    pub fn open(path: PathBuf, log: Log) -> Appender {
+        let inner = Arc::new(AppendInner { path, pending: Mutex::new(vec![]), writing: Mutex::new(()), log });
+        {
+            let mut all = APPENDERS.lock();
+            all.retain(|w| w.strong_count() > 0);
+            all.push(Arc::downgrade(&inner));
+        }
+        let weak = Arc::downgrade(&inner);
+        std::thread::spawn(move || loop {
+            std::thread::sleep(FLUSH_EVERY);
+            let Some(inner) = weak.upgrade() else { return };
+            inner.flush();
+        });
+        Appender { inner }
+    }
+
+    /// Queue one line (without its newline).
+    pub fn push(&self, line: String) {
+        self.inner.pending.lock().push(line);
+    }
+
+    /// Append the queued lines now (before reading the file back).
+    pub fn flush(&self) {
+        self.inner.flush();
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.inner.path
+    }
 }
 
 fn load_or_set_aside(path: &Path, log: &Log) -> Option<Value> {

@@ -181,7 +181,8 @@ Set `PYTHONUTF8=1` for scripts handling accents. The "Développeur" header toggl
 
 **Stored prices** (`prices.rs`)
 - Per-unit price = median over stack sizes of each size's cheapest price / qty (lower middle on even counts); equipment =
-  cheapest lot. Every listing / weekly-average batch is appended to `<app data>/prices/history.jsonl` (call `history`).
+  cheapest lot. Every listing, listing change, weekly-average batch and manual price is appended with its time to
+  `<app data>/prices/history.jsonl` (call `history`; kept for later analyses), queued and written in the background (`Appender`, store.rs).
 - `ObjectAveragePricesEvent` (role `avg_prices`) gives the 7-day average (entry: gid + two int64, the price is the larger:
   the other was never set on a 9679-entry capture). Priority: override > AH unit > avg.
 - Purchases / row changes (`change_listing`): a row found by uid in any listing of the session, else by its gid: a resource's

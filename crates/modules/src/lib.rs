@@ -22,7 +22,7 @@ pub mod stuff;
 pub(crate) mod sys;
 pub mod update;
 
-pub use store::{flush_all, load_json, save_json, Persist};
+pub use store::{flush_all, load_json, save_json, Appender, Persist};
 
 use anyhow::{anyhow, Result};
 use loutil_core::wire::{self, Envelope};
