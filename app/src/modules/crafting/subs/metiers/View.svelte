@@ -27,7 +27,8 @@
   /**
    * Crafting « XP métiers »: a job's level and xp (from the game, jobs.rs; can be typed over), a target level, and the cheapest
    * crafts to get there (lib/jobXp.ts `plan`). Recipes can be left out or wished (with a quantity); ingredients are bought, or
-   * crafted with the jobs ticked under « Sous-crafts » when cheaper. The resources to buy open in a floating list.
+   * with « Craftable par moi » crafted when cheaper by one of the character's jobs at its level (rows needing such a sub-craft
+   * are flagged). The resources to buy open in a floating list.
    */
   /** Job 1 « Base »: recipes made without a job (never levelled). */
   const BASE_JOB = 1;
@@ -43,8 +44,8 @@
     excluded: {} as Record<string, number[]>,
     /** wished crafts, per job: gid -> quantity */
     forced: {} as Record<string, Record<string, number>>,
-    /** jobs whose recipes make ingredients (null: the character's jobs) */
-    subJobs: null as number[] | null,
+    /** ingredients crafted (when cheaper) with the character's jobs at their levels, else all bought */
+    craftMine: true,
   });
 
   let catalog = $state.raw<JobCatalog>({ jobs: {}, crafts: {} });
@@ -88,12 +89,11 @@
   }
   const resetLevel = () => delete ui.overrides[key];
 
-  // ingredients crafted with the ticked jobs, at their level (the game's, typed over for the planned job; unknown: any level)
-  const subJobs = $derived(new Set(ui.subJobs ?? [BASE_JOB, ...Object.keys(mine).map(Number)]));
-  const levelOfJob = (j: number) => (j === job ? level : j === BASE_JOB ? MAX_JOB_LEVEL : (mine[j]?.level ?? MAX_JOB_LEVEL));
+  // « Craftable par moi »: an ingredient of one of the character's jobs (the planned one at the level typed), at its level
+  const levelOfJob = (j: number) => (j === job ? level : j === BASE_JOB ? MAX_JOB_LEVEL : (mine[j]?.level ?? 0));
   const canCraft = (gid: number) => {
     const c = catalog.crafts[gid];
-    return !!c && subJobs.has(c[0]) && levelOfJob(c[0]) >= c[1];
+    return ui.craftMine && !!c && levelOfJob(c[0]) >= c[1];
   };
 
   const jobRecipes = $derived<JobRecipe[]>(
@@ -128,11 +128,6 @@
     const f = { ...(ui.forced[key] ?? {}) };
     delete f[gid];
     ui.forced[key] = f;
-  }
-  function toggleSub(j: number) {
-    const s = new Set(subJobs);
-    s.has(j) ? s.delete(j) : s.add(j);
-    ui.subJobs = [...s];
   }
 
   function exportList() {
@@ -171,7 +166,10 @@
       <label title="Bonus d'XP (Almanax, événements…)">Bonus
         <select bind:value={ui.coef}>{#each XP_COEFS as c (c)}<option value={c}>{c} %</option>{/each}</select>
       </label>
-      <Switch bind:checked={ui.epic} label="Serveur épique (×3)" />
+      <label class="sw"><Switch bind:checked={ui.epic} label="Serveur épique (×3)" /> Serveur épique (×3)</label>
+      <label class="sw" title={Object.keys(mine).length ? "Un ingrédient que vos métiers savent faire (à leur niveau) est crafté s'il revient moins cher, sinon tout est acheté" : "Vos métiers ne sont pas encore lus : connectez-vous, application ouverte"}>
+        <Switch bind:checked={ui.craftMine} label="Craftable par moi" /> Craftable par moi
+      </label>
     </div>
     <div class="sum">
       {#if target <= level}
@@ -186,7 +184,7 @@
       <button class="mini right" disabled={!p.rows.length} onclick={exportList} title="Toutes les ressources à acheter, en quantité exacte, dans une fenêtre au-dessus du jeu">Liste des ingrédients</button>
     </div>
   {/snippet}
-  <PlanTable rows={p.rows} {name} cost={result.cost} onexclude={exclude} />
+  <PlanTable rows={p.rows} {name} cost={result.cost} subs={(gid) => [...result.costs.crafted(gid).craft.keys()]} onexclude={exclude} />
   {#if unpriced}
     <p class="mut small">{unpriced} recette{unpriced > 1 ? "s" : ""} de ce métier sans prix (un ingrédient jamais vu à l'hôtel de vente) : laissée{unpriced > 1 ? "s" : ""} de côté.</p>
   {/if}
@@ -195,13 +193,9 @@
     {name}
     {excluded}
     {forced}
-    jobs={[{ id: BASE_JOB, name: catalog.jobs[BASE_JOB] ?? "Base" }, ...jobs]}
-    {subJobs}
-    {mine}
     onrestore={restore}
     onwish={wish}
     onunwish={unwish}
-    ontoggle={toggleSub}
   />
 </SubView>
 
@@ -211,5 +205,6 @@
   .form input { width: 80px; padding: 3px 6px; text-align: right; }
   .sum { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
   .right { margin-left: auto; }
+  .form .sw { display: inline-flex; cursor: pointer; align-items: center; gap: 6px; }
   .small { font-size: 12px; }
 </style>

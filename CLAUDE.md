@@ -237,8 +237,9 @@ evolutiveitemtypes table. A food costs the cheaper of buying and crafting it (`c
   ratio], `jobs.json` names; job 1 « Base » = no job).
 - Plan (`plan`): wished crafts first as soon as their level allows, else per level the lowest cost / xp recipe, enough to reach the next
   level (each craft counted alone, at the level before it; a batch too); wished leftovers made at the end. Rows in craft order (a recipe
-  crafted again after another gets a new row). Costs: ingredients bought, or crafted (cheaper) by a ticked « Sous-crafts » job at its level.
-  Xp of sub-crafts made with the same job is not counted. « Liste des ingrédients » = every resource to buy with its exact quantity.
+  crafted again after another gets a new row). Costs: ingredients bought, or with « Craftable par moi » crafted (cheaper) by one of the
+  character's jobs at its level (the planned one at the level typed); rows needing such a sub-craft are flagged « sous-craft ». Xp of
+  sub-crafts made with the same job is not counted. « Liste des ingrédients » = every resource to buy with its exact quantity.
 
 **Stuff** (`stuff.rs`, `modules/stuff`, `lib/stuff.ts`)
 - Dofusbook import `https://www.dofusbook.net/api/stuffs/dofus/public/<id>` (link forms + `d-bk.net` 301). Cloudflare

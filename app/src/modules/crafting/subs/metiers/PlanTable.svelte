@@ -8,11 +8,14 @@
     rows,
     name,
     cost,
+    subs,
     onexclude,
   }: {
     rows: PlanRow[];
     name: (gid: number) => string;
     cost: (gid: number) => number | null;
+    /** items to craft first for one craft of it (its ingredients' sub-crafts) */
+    subs: (gid: number) => number[];
     onexclude: (gid: number) => void;
   } = $props();
 
@@ -46,6 +49,7 @@
           <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
           <span class="nm" onclick={() => copy(r.gid)} title="Cliquer pour copier le nom"><b>{name(r.gid)}</b></span>
           {#if r.forced}<span class="tag" title="Ajouté à la main">souhaité</span>{/if}
+          {#if subs(r.gid).length}<span class="tag sub" title={`À crafter d'abord : ${subs(r.gid).map(name).join(", ")}`}>sous-craft</span>{/if}
           {#if copied === r.gid}<span class="copied">copié</span>{/if}
         </td>
         <td class="n">{r.level}</td>
@@ -67,6 +71,7 @@
   .nm { cursor: pointer; }
   .nm:hover { text-decoration: underline; }
   .tag { margin-left: 6px; padding: 0 5px; border-radius: 4px; font-size: 10px; background: color-mix(in srgb, var(--acc) 25%, transparent); color: var(--fg); }
+  .tag.sub { background: color-mix(in srgb, var(--gold) 30%, transparent); }
   .copied { margin-left: 6px; color: var(--ok); font-size: 10px; }
   .x { border: 0; background: none; color: var(--mut); padding: 0 4px; cursor: pointer; }
   .x:hover { color: var(--bad); }
