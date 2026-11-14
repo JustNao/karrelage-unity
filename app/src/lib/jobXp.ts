@@ -17,10 +17,12 @@ export const MAX_JOB_LEVEL = 200;
 /** Xp bonuses offered (Almanax, events...): % of the base xp. */
 export const XP_COEFS = [100, 125, 150, 200, 225, 250, 300, 375, 400, 450, 600];
 
-/** jobs.rs `catalog`: crafting jobs (id -> name) and crafts (result gid -> [job, recipe level, xp ratio %]). */
+/** jobs.rs `catalog`: crafting jobs (id -> name), crafts (result gid -> [job, recipe level, xp ratio %, item category (0
+ *  equipment, 1 consumable, 2 resource), item type]) and the item types' names. */
 export interface JobCatalog {
   jobs: Record<string, string>;
-  crafts: Record<string, [number, number, number]>;
+  crafts: Record<string, [number, number, number, number, number]>;
+  types?: Record<string, string>;
 }
 /** jobs.rs `levels`: the jobs of each character seen logging in (0 = before any login was seen). */
 export interface JobLevels {

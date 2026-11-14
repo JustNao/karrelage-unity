@@ -89,7 +89,8 @@ impl Jobs {
         json!(*self.levels.lock())
     }
 
-    /// The pack's crafting jobs and crafts: {jobs: {id: name}, crafts: {gid: [job, level, ratio]}}.
+    /// The pack's crafting jobs and crafts: {jobs: {id: name}, crafts: {gid: [job, level, ratio, item category, item type]},
+    /// types: {type: name}} (category 0 equipment, 1 consumable, 2 resource; -1 / 0 when the item is unknown).
     fn catalog(&self, ctx: &Ctx) -> Value {
         self.catalog
             .lock()
@@ -101,8 +102,19 @@ impl Jobs {
                     .filter(|(id, _)| ctx.data.crafts.values().any(|c| c.0 == **id))
                     .map(|(id, j)| (id.to_string(), ctx.data.text(j.name_id).unwrap_or("?").to_string()))
                     .collect();
-                let crafts: BTreeMap<String, [i64; 3]> = ctx.data.crafts.iter().map(|(g, c)| (g.to_string(), [c.0, c.1, c.2])).collect();
-                json!({"jobs": jobs, "crafts": crafts})
+                let mut types = BTreeMap::new();
+                let crafts: BTreeMap<String, [i64; 5]> = ctx
+                    .data
+                    .crafts
+                    .iter()
+                    .map(|(g, c)| {
+                        let t = ctx.data.items.get(g).map(|i| i.type_id).unwrap_or(0);
+                        let category = ctx.data.itemtypes.get(&t).and_then(|t| t.category_id).unwrap_or(-1);
+                        types.entry(t.to_string()).or_insert_with(|| ctx.data.type_name(Some(t)));
+                        (g.to_string(), [c.0, c.1, c.2, category, t])
+                    })
+                    .collect();
+                json!({"jobs": jobs, "crafts": crafts, "types": types})
             })
             .clone()
     }
@@ -203,5 +215,8 @@ mod tests {
         let cat = hub.call("jobs", "catalog", Value::Null).unwrap();
         assert_eq!(cat["jobs"]["11"], "Forgeron");
         assert!(cat["crafts"].as_object().unwrap().len() > 1000);
+        let crafts = cat["crafts"].as_object().unwrap();
+        assert!(crafts.values().any(|c| c[0] == 11 && c[3] == 0), "Forgeron makes equipment");
+        assert!(crafts.values().any(|c| c[3] == 2), "resources are crafted too");
     }
 }

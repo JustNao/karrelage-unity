@@ -226,6 +226,11 @@ and developer mode are both on. New category = an entry in `CATEGORIES`, a defau
 2026-09-19; not in the game files: server-side, grows with level and rarity), n units give floor(n × xp); levels = the game's
 evolutiveitemtypes table. A food costs the cheaper of buying and crafting it (`craftCost`). Same planner in the HDV companion card.
 
+**Crafting > Crafts rentables** (`modules/crafting/subs/rentables`): every craftable item of a category (jobs.rs `catalog` crafts carry
+the item category / type), all jobs or one: craft cost (`Costs`, ingredients bought or crafted when cheaper), AH price (`effectivePrice`:
+override > cheapest read > weekly avg, « moy. »), profit after tax. « Craftable par moi »: the character's jobs at their level only (the
+listed items and the sub-crafts). Equipment weekly averages include exo / high rolls: far above a plain craft's worth.
+
 **Crafting > XP métiers** (`jobs.rs`, `lib/jobXp.ts`, `modules/crafting/subs/metiers`, floating `ShopList.svelte` / `lib/shoplist.ts`)
 - Job levels: JobExperiencesUpdateEvent (login: every job; after a craft / harvest: that job) → JobExperience: two int32 job id / level, three
   int64 xp / floor / next floor, told apart by value (level = the int whose floor L × (L − 1) × 10 is among them; xp = floor ≤ v < next).
