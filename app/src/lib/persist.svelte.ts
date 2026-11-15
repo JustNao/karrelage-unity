@@ -68,10 +68,19 @@ interface PersistOptions {
  * At module level it lives for the session; created while a component initialises, it stops saving with the component.
  */
 export function persisted<T extends Record<string, any>>(key: string, defaults: T, opts: PersistOptions = {}): T {
+  // deep: an object saved by an older version keeps the defaults of the keys added since (a shallow assign replaced
+  // `classHelp.eliotrope` whole, its later `exilKey` was undefined and the Combat tab failed to mount)
+  const isObj = (v: unknown): v is Record<string, any> => !!v && typeof v === "object" && !Array.isArray(v);
+  const deep = (into: Record<string, any>, saved: Record<string, any>) => {
+    for (const k of Object.keys(saved)) {
+      if (isObj(into[k]) && isObj(saved[k])) deep(into[k], saved[k]);
+      else into[k] = saved[k];
+    }
+  };
   const merge = (into: T, saved: any) => {
-    if (!saved || typeof saved !== "object") return;
-    if (!opts.sections) return void Object.assign(into, saved);
-    for (const s of Object.keys(into) as (keyof T)[]) if (saved[s] && typeof saved[s] === "object") Object.assign(into[s], saved[s]);
+    if (!isObj(saved)) return;
+    if (!opts.sections) return void deep(into, saved);
+    for (const s of Object.keys(into)) if (isObj(saved[s])) deep(into[s], saved[s]);
   };
   const initial = structuredClone(defaults);
   merge(initial, readJSON(key, null));
