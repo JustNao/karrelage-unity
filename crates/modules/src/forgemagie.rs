@@ -3,9 +3,11 @@
 //! is put in, `ExchangeObjectsModifiedEvent` / `ExchangeCraftResultEvent` after each rune; it goes with
 //! `ExchangeObjectRemovedEvent` / `ExchangeObjectsRemovedEvent` (its uid) or `ExchangeLeaveEvent`. Their fields are read by
 //! type: the lists of ObjectItemInventory, the result's ObjectItem holding an equipment piece. Only in a forgemagie workshop:
-//! the craft window's opening (`ExchangeCraftStartedEvent`, named by override, or the multicraft crafter's) gives its skill,
-//! a forgemagus one of the pack (`skills.json`) or not (a crafting table's result is an equipment piece too); unknown (the app
-//! started with the window open, an older pack) = followed as before.
+//! the skill of the interactive the player uses (`InteractiveUseRequest` answered by the `InteractiveUsedEvent` repeating its
+//! skill instance: every workshop, rune breaking included, whose window opens with an empty message) or of the craft window's
+//! opening (`ExchangeCraftStartedEvent`, named by override, or the multicraft crafter's), a forgemagus one of the pack
+//! (`skills.json`) or not (a crafting table's result is an equipment piece too); unknown (the app started with the window
+//! open, an older pack) = followed as before.
 //!
 //! Chances = the players' model of dofocus.fr (`odds`, a port of its simulator, not Ankama's formula), checked against its own
 //! code on the cases of the tests. Lines are keyed by characteristic like there: "+Force" and "-Force" are one signed line.
@@ -38,6 +40,11 @@ const LEAVE: &str = "ExchangeLeaveEvent";
 /// The craft window opened: its `skill_id` (a forgemagie workshop or a crafting table).
 const STARTED: &str = "ExchangeCraftStartedEvent";
 const MULTI_STARTED: &str = "ExchangeMultiCraftCrafterStartedEvent";
+/// The player uses an interactive (its element and skill instance), answered by `USED` (that instance, the skill, the user).
+const USE_REQUEST: &str = "InteractiveUseRequest";
+const USED: &str = "InteractiveUsedEvent";
+/// Seconds an interactive use waits for its answer (same burst on the recordings).
+const USE_WINDOW: f64 = 5.0;
 /// Forgemagie runes' item type.
 const RUNE_TYPE: i64 = 78;
 /// Rune-typed items that are no forgemagie rune (brisage.rs `NO_RUNE_EFFECTS`).
@@ -285,6 +292,8 @@ pub struct Forgemagie {
     enabled: AtomicBool,
     item: Mutex<Option<Item>>,
     workshop: Mutex<Workshop>,
+    /// The player's latest interactive use: (time, its ints: element id, skill instance uid).
+    using: Mutex<Option<(f64, Vec<i64>)>>,
     bind: Role<Bindings>,
     effect_bind: Role<ObjectEffect>,
     runes: OnceLock<BTreeMap<i64, (f64, Vec<Rune>)>>,
@@ -302,6 +311,7 @@ impl Forgemagie {
             enabled: AtomicBool::new(false),
             item: Mutex::new(None),
             workshop: Mutex::new(Workshop::Unknown),
+            using: Mutex::new(None),
             bind: Role::default(),
             effect_bind: Role::default(),
             runes: OnceLock::new(),
@@ -321,11 +331,38 @@ impl Forgemagie {
                 _ => None,
             },
         };
-        match skill {
+        Self::classify(ctx, skill.as_slice())
+    }
+
+    /// Of candidate skill ids: a forgemagus one = forgemagie, else another workshop (none = not known).
+    fn classify(ctx: &Ctx, skills: &[i64]) -> Workshop {
+        match skills {
             _ if ctx.data.forgemagus_skills.is_empty() => Workshop::Unknown, // older pack
-            Some(s) if ctx.data.forgemagus_skills.contains_key(&s) => Workshop::Forge,
-            Some(_) => Workshop::Other,
-            None => Workshop::Unknown,
+            [] => Workshop::Unknown,
+            s if s.iter().any(|s| ctx.data.forgemagus_skills.contains_key(s)) => Workshop::Forge,
+            _ => Workshop::Other,
+        }
+    }
+
+    /// The answer to the player's interactive use (it repeats the skill instance asked): its skill = its other int, the
+    /// user's id (`entity_id`) aside. None for someone else's use.
+    fn used_skill(&self, ctx: &Ctx, t: f64, m: &DynamicMessage) -> Option<Workshop> {
+        let mut using = self.using.lock();
+        let (since, asked) = using.as_ref()?;
+        let ints = scalar_ints(m);
+        if t - since > USE_WINDOW || !ints.iter().any(|(_, v)| asked.contains(v)) {
+            return None;
+        }
+        let entity = ctx.proto.field_named(m.descriptor().full_name(), "entity_id");
+        let skills: Vec<i64> = ints.iter().filter(|(f, v)| Some(f) != entity.as_ref() && !asked.contains(v)).map(|(_, v)| *v).collect();
+        *using = None;
+        Some(Self::classify(ctx, &skills))
+    }
+
+    fn set_workshop(&self, ctx: &Ctx, w: Workshop) {
+        *self.workshop.lock() = w;
+        if w == Workshop::Other {
+            self.set(ctx, None);
         }
     }
 
@@ -413,7 +450,7 @@ impl Module for Forgemagie {
     }
 
     fn interest(&self) -> Interest {
-        Interest::Types(&[ADDED, MODIFIED, RESULT, REMOVED, REMOVED_LIST, LEAVE, STARTED, MULTI_STARTED])
+        Interest::Types(&[ADDED, MODIFIED, RESULT, REMOVED, REMOVED_LIST, LEAVE, STARTED, MULTI_STARTED, USE_REQUEST, USED])
     }
 
     /// Off (Automation « Forgemagie »): the workshop messages are not even decoded.
@@ -429,11 +466,11 @@ impl Module for Forgemagie {
                 *self.workshop.lock() = Workshop::Unknown;
                 self.set(ctx, None);
             }
-            STARTED | MULTI_STARTED => {
-                let w = Self::workshop_of(ctx, d);
-                *self.workshop.lock() = w;
-                if w == Workshop::Other {
-                    self.set(ctx, None);
+            STARTED | MULTI_STARTED => self.set_workshop(ctx, Self::workshop_of(ctx, d)),
+            USE_REQUEST => *self.using.lock() = Some((m.raw.t, scalar_ints(d).into_iter().map(|(_, v)| v).collect())),
+            USED => {
+                if let Some(w) = self.used_skill(ctx, m.raw.t, d) {
+                    self.set_workshop(ctx, w);
                 }
             }
             // the item taken out: its uid (the event's only int, or in its list)
@@ -446,7 +483,7 @@ impl Module for Forgemagie {
                     self.set(ctx, None);
                 }
             }
-            _ if *self.workshop.lock() == Workshop::Other => {} // a crafting table: its result is no forgemagie item
+            _ if *self.workshop.lock() == Workshop::Other => {} // a crafting table, rune breaking...: no forgemagie item
             _ => {
                 if let Some(item) = self.found(ctx, &m.name, d) {
                     self.set(ctx, Some(item));
@@ -642,6 +679,42 @@ mod tests {
         send(LEAVE, DynamicMessage::new(md(LEAVE)));
         send(ADDED, added(14168, 7000012));
         assert_eq!(state()["uid"].as_i64(), Some(7000012), "workshop not known: followed as before");
+    }
+
+    /// Recorded payloads (3.7.13.17): rune breaking (interactive skill 181, its window opened by an empty message) then an
+    /// item put in: no overlay; the workshop left, then a forgemagie workshop (skill 164) and its item: followed.
+    #[test]
+    fn interactive_skill_tells_the_workshop() {
+        let Some((hub, proto)) = crate::kit::testkit::hub("loutil-forgemagie-interactive") else { return };
+        if hub.ctx.data.forgemagus_skills.is_empty()
+            || proto.obf_for_clear(USED).as_deref() != Some("itv")
+            || proto.obf_for_clear(ADDED).as_deref() != Some("kch")
+        {
+            return; // payloads recorded for another build
+        }
+        let fm = Forgemagie::new();
+        fm.call("set_enabled", json!({"on": true}), &hub.ctx).unwrap();
+        let send_msg = |name: &str, d: Option<DynamicMessage>, t: f64| fm.on_message(&crate::kit::testkit::msg(name, d, t), &hub.ctx);
+        let send = |name: &str, h: &str, t: f64| {
+            let payload: Vec<u8> = (0..h.len()).step_by(2).map(|i| u8::from_str_radix(&h[i..i + 2], 16).unwrap()).collect();
+            let env = loutil_core::wire::parse_envelope(&payload).unwrap();
+            let d = proto.decode(&proto.obf_for_clear(name).unwrap(), &env.value);
+            assert!(d.is_some(), "{name} decoded");
+            send_msg(name, d, t);
+        };
+        let state = || fm.call("state", Value::Null, &hub.ctx).unwrap();
+        // rune breaking: element 18507, skill instance 521608 -> skill 181; a hat put in
+        send(USE_REQUEST, "222c08ffffffffffffffffff01121f0a13747970652e616e6b616d612e636f6d2f69747a120808cb90011888eb1f", 1.0);
+        send(USED, "1a280a260a13747970652e616e6b616d612e636f6d2f697476120f0888eb1f100120a782b4a64928b501", 1.0);
+        send(ADDED, "1a4d0a4b0a13747970652e616e6b616d612e636f6d2f6b636812341a320a2e180120d23228efa4263a042827507e3a04281f50763a042810507d3a04280e507c3a05280250b6013a0428025070203f", 2.0);
+        assert!(state().is_null(), "rune breaking is no forgemagie");
+        let leave = DynamicMessage::new(proto.message(&proto.obf_for_clear(LEAVE).unwrap()).unwrap());
+        send_msg(LEAVE, Some(leave), 3.0);
+        // forgemagie: element 18512, skill instance 521602 -> skill 164; an item put in
+        send(USE_REQUEST, "222c08ffffffffffffffffff01121f0a13747970652e616e6b616d612e636f6d2f69747a120808d090011882eb1f", 10.0);
+        send(USED, "1a280a260a13747970652e616e6b616d612e636f6d2f697476120f0882eb1f100120a782b4a64928a401", 10.0);
+        send(ADDED, "1a7c0a7a0a13747970652e616e6b616d612e636f6d2f6b6368126315000000001a5c0a581801209cf80128dac8f7043a0628bc05509e013a0628cc0250ae013a0528c702507d3a042816507c3a052815508a013a05280f50b0013a05280a50a0013a04280950703a05280750d3013a05280550d4013a05280550f105203f", 11.0);
+        assert_eq!(state()["gid"].as_i64(), Some(31772), "a forgemagie workshop");
     }
 
     /// The window's order on two captures: exos first, then the effect priority (not the item's own order).

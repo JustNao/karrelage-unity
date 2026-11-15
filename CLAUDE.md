@@ -466,9 +466,11 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
 - Item = the equipment piece of `ExchangeObjectsAddedEvent` (named by anchor: (bool, float fm_power, repeated
   ObjectItemInventory), right before ExchangeCraftResultEvent) / `ExchangeObjectsModifiedEvent` / `ExchangeCraftResultEvent`
   (`object` → two ObjectItem fields); gone on its uid removed or `ExchangeLeaveEvent`. Fields read by type. Not checked on a capture.
-- Forgemagie workshops only: the craft window's opening `ExchangeCraftStartedEvent` (named by override; or the multicraft crafter's)
-  gives its `skill_id`; pack `skills.json` = the skills table's `isForgemagus` ones (113 / 118 / 164 / 166 / 168 / 351). Another skill (a
-  crafting table, whose craft result is an equipment piece too: 13, 121, 170 on the recordings) = no overlay; none seen = followed as before.
+- Forgemagie workshops only: the skill of the interactive the player uses (`InteractiveUseRequest` → the `InteractiveUsedEvent`
+  repeating its skill instance; its other int = the skill, `entity_id` aside), or of the craft window's opening `ExchangeCraftStartedEvent`
+  (named by override; or the multicraft crafter's). Pack `skills.json` = the skills table's `isForgemagus` ones (113 / 118 / 164 / 166 / 168
+  / 351). Another skill = no overlay: crafting tables (13, 121, 170 on the recordings: their craft result is an equipment piece too), rune
+  breaking (181: its window opens with an empty unnamed message, `ExchangeRunesTradeStartedEvent` in the beta). None seen = followed as before.
 - Odds = dofocus.fr's players' model (its `Pz`, ported in `odds`; the tests hold values its own code gave). Lines keyed by
   characteristic, "-X" twins signed (negative density); a fixed default value ranges from 0 (as the site has it). Rows = exos
   first, then by effect priority, maluses last (checked on three windows; 22412's -10 % Critique isn't in its place; lost defaults at 0 unverified); runes per line by points = the Rune /
