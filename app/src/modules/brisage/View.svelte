@@ -6,7 +6,6 @@
   import { breakEven, lotEffects, meanRoll, outcome, valueOf, type BrisItem, type BrisPack, type Outcome } from "../../lib/brisage";
   import { craftCost, type Recipes } from "../../lib/craft";
   import { Costs, craftableBy, currentJobs, type JobCatalog, type JobLevels } from "../../lib/jobXp";
-  import Switch from "../../lib/components/Switch.svelte";
   import { Columns } from "../../lib/columns.svelte";
   import { afterTax, lotKeys, unitPriceOrNull } from "../../lib/price";
   import { auction } from "../../lib/stores/auction.svelte";
@@ -341,11 +340,8 @@
       {#snippet after()}
         <label title="Objets lâchés par un monstre"><input type="checkbox" bind:checked={ui.noDrop} /> Masquer les objets droppables</label>
         <label
-          class="sw"
           title={jobsKnown ? "Seulement ce que vos métiers savent crafter à leur niveau (ingrédients craftés par eux seulement, achetés sinon)" : "Vos métiers ne sont pas encore lus : connectez-vous, application ouverte"}
-        >
-          <Switch bind:checked={ui.mine} label="Craftable par moi" disabled={!jobsKnown} /> Craftable par moi
-        </label>
+        ><input type="checkbox" bind:checked={ui.mine} disabled={!jobsKnown} /> Craftable par moi</label>
         <label title="Objets absents de l'hôtel de vente quand leur catégorie a été ouverte (ouvrez les catégories à l'HDV pour les relever)"><input type="checkbox" bind:checked={ui.absent} /> Absents de l'HDV seulement</label>
         {#if filtered}<button class="mini" onclick={resetFilters}>Effacer les filtres</button>{/if}
       {/snippet}
