@@ -52,9 +52,9 @@ pub(crate) struct ObjectEffect {
 }
 /// bindings.json `ah_buy` / `ah_row` / `ah_row_removed` (each optional, so that an older pack still loads the listing bindings).
 #[derive(Deserialize, Clone)]
-struct AhBuy {
-    uid: String,
-    bought: String,
+pub(crate) struct AhBuy {
+    pub uid: String,
+    pub bought: String,
 }
 #[derive(Deserialize, Clone)]
 struct AhRow {

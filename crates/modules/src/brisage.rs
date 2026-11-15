@@ -3,13 +3,17 @@
 //! rune it yields ("Rune Fo", not the Pa / Ra ones) with its weight. The rune quantities and the profit are computed in the
 //! UI (`app/src/lib/brisage.ts`). Coefficients (gid -> %) come from the break results the game sends (`DecraftResultEvent`)
 //! or are typed in the tab; the latest one wins.
-use crate::inventory::UidMap;
+//! It also tells the equipment pieces the player crafts or buys (`brisage:acquired`, see `on_acquired`): the tab lists
+//! those it hears about while it is open, with their coefficient and the runes they should give.
+use crate::auction::AhBuy;
+use crate::inventory::{UidMap, ADDED, ADDED_LIST};
 use crate::kit::{arg_i64, unknown, Role, Store};
 use crate::sys::unix_secs_f64 as now;
 use crate::{Ctx, Interest, Message, Module};
 use anyhow::{anyhow, Result};
 use loutil_data::Data;
-use loutil_proto::util::{int, messages};
+use loutil_proto::util::{as_i64, int, messages};
+use loutil_proto::{DynamicMessage, Kind, PbValue, ReflectMessage};
 use parking_lot::Mutex;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -18,6 +22,23 @@ use std::sync::OnceLock;
 
 /// Clear name of the break result (one entry per item broken: its coefficient, its uid and the runes received).
 pub const DECRAFT: &str = "DecraftResultEvent";
+
+/// A craft's result: the object made (also sent by forgemagie for every rune passed, on the item already there).
+const CRAFT_RESULT: &str = "ExchangeCraftResultEvent";
+/// An auction house purchase sent by the client: its only int64 is the price paid.
+const AH_BUY_REQUEST: &str = "ExchangeBidHouseBuyRequest";
+/// The answer to a purchase (role `ah_buy`).
+const AH_BUY: &str = "ExchangeBidHouseBuyResultEvent";
+/// Seconds an object added waits for the craft result / purchase answer that tells where it comes from (both come
+/// within the same burst on the recordings).
+const ACQUIRED_WINDOW: f64 = 5.0;
+
+/// A breakable object just added to the inventory, waiting to be told crafted or bought (else forgotten: loot, trade...).
+struct Added {
+    t: f64,
+    uid: i64,
+    seen: crate::inventory::Seen,
+}
 
 /// itemtypes id of the forgemagie runes (Rune Fo, Rune Pa Fo, Rune Ga Pa...).
 const FM_RUNE_TYPE: i64 = 78;
@@ -95,6 +116,11 @@ pub struct Brisage {
     history: Store<Vec<Value>>,
     /// Break results whose item could not be told (latest last; same shape as `history`): to assign to an item by hand.
     pending: Mutex<Vec<Value>>,
+    buy: Role<AhBuy>,
+    /// Breakable objects added in the last seconds (see `Added`).
+    added: Mutex<Vec<Added>>,
+    /// The latest purchase request: (time, price paid).
+    buying: Mutex<Option<(f64, Option<i64>)>>,
 }
 
 /// Unassigned break results kept for the session.
@@ -111,7 +137,17 @@ impl Default for Brisage {
 impl Brisage {
     /// `uids`: object uid -> gid of the equipment seen in the inventory (shared with the inventory module).
     pub fn new(uids: UidMap) -> Self {
-        Self { pack: OnceLock::new(), bind: Role::new(), coefs: Store::default(), uids, history: Store::default(), pending: Default::default() }
+        Self {
+            pack: OnceLock::new(),
+            bind: Role::new(),
+            coefs: Store::default(),
+            uids,
+            history: Store::default(),
+            pending: Default::default(),
+            buy: Role::new(),
+            added: Default::default(),
+            buying: Default::default(),
+        }
     }
 
     /// The effect focused in a break: a single kind of rune received from an item that yields several.
@@ -240,6 +276,51 @@ impl Brisage {
         }
     }
 
+    /// Crafted or bought equipment: an object added to the inventory (ObjectAdded(s)Event: read by the inventory module first,
+    /// so its uid is in the shared map) is a craft when the craft result that follows holds its uid (a forgemagie rune also
+    /// sends a craft result, on an object that was not just added), a purchase when the purchase answer that follows says
+    /// bought (price = the request's). Verified on recordings: a craft = ObjectsAddedEvent then ExchangeCraftResultEvent; a
+    /// purchase = BuyRequest, ..., ObjectAddedEvent, ..., BuyResultEvent (a resource there: no equipment purchase recorded).
+    /// Emits `brisage:acquired` {t, gid, uid, how: "craft" | "achat", price, effects: [[action, value]]}.
+    fn on_acquired(&self, m: &Message, msg: &DynamicMessage, ctx: &Ctx) {
+        let t = m.raw.t;
+        let mut added = self.added.lock();
+        added.retain(|a| t - a.t <= ACQUIRED_WINDOW);
+        let emit = |a: &Added, how: &str, price: Option<i64>| {
+            ctx.emit("brisage", "acquired", json!({"t": a.t, "gid": a.seen.gid, "uid": a.uid, "how": how, "price": price, "effects": a.seen.effects}))
+        };
+        match m.name.as_str() {
+            ADDED | ADDED_LIST => {
+                let ints = all_ints(msg);
+                let uids = self.uids.lock();
+                for v in &ints {
+                    let Some(seen) = uids.get(v) else { continue };
+                    let known = |g: i64| ctx.data.items.get(&g).is_some_and(|i| breakable(i.type_id));
+                    if ints.contains(&seen.gid) && known(seen.gid) && !added.iter().any(|a| a.uid == *v) {
+                        added.push(Added { t, uid: *v, seen: seen.clone() });
+                    }
+                }
+            }
+            CRAFT_RESULT => {
+                let ints = all_ints(msg);
+                added.retain(|a| !ints.contains(&a.uid) || (emit(a, "craft", None), false).1);
+            }
+            AH_BUY_REQUEST => {
+                let price = msg.descriptor().fields().filter(|f| !f.is_list() && f.kind() == Kind::Int64).map(|f| int(msg, f.name())).find(|p| *p > 0);
+                *self.buying.lock() = Some((t, price));
+            }
+            AH_BUY => {
+                let Some(b) = self.buy.get(ctx, "ah_buy") else { return };
+                let Some((since, price)) = self.buying.lock().take() else { return };
+                if !msg.get_field_by_name(&b.bought).and_then(|v| v.as_bool()).unwrap_or(false) {
+                    return;
+                }
+                added.retain(|a| a.t < since || (emit(a, "achat", price), false).1);
+            }
+            _ => {}
+        }
+    }
+
     fn changed(&self, ctx: &Ctx, e: Value) {
         self.coefs.touch();
         ctx.emit("brisage", "coef", e);
@@ -252,7 +333,7 @@ impl Module for Brisage {
     }
 
     fn interest(&self) -> Interest {
-        Interest::Types(&[DECRAFT])
+        Interest::Types(&[DECRAFT, ADDED, ADDED_LIST, CRAFT_RESULT, AH_BUY_REQUEST, AH_BUY])
     }
 
     fn init(&self, ctx: &Ctx) {
@@ -271,7 +352,11 @@ impl Module for Brisage {
     }
 
     fn on_message(&self, m: &Message, ctx: &Ctx) {
-        let (Some(msg), Some(b)) = (m.decoded.as_ref(), self.bindings(ctx)) else { return };
+        let Some(msg) = m.decoded.as_ref() else { return };
+        if m.name != DECRAFT {
+            return self.on_acquired(m, msg, ctx);
+        }
+        let Some(b) = self.bindings(ctx) else { return };
         let ([c1, c2], [r1, r2]) = (&b.coefs[..], &b.rune_ints[..]) else { return };
         let float = |x: &loutil_proto::DynamicMessage, f: &str| x.get_field_by_name(f).and_then(|v| v.as_f32()).unwrap_or(0.0) as f64;
         let pct = |x: f64| (x * 10000.0).round() / 100.0; // 0.529079 -> 52.91 %
@@ -373,10 +458,25 @@ impl Module for Brisage {
     }
 }
 
+/// Every integer of a message, nested messages and lists included (objects' unnamed ints are told apart by value).
+fn all_ints(m: &DynamicMessage) -> Vec<i64> {
+    fn walk(v: &PbValue, out: &mut Vec<i64>) {
+        match v {
+            PbValue::Message(m) => m.fields().for_each(|(_, v)| walk(v, out)),
+            PbValue::List(l) => l.iter().for_each(|v| walk(v, out)),
+            v => out.extend(as_i64(v)),
+        }
+    }
+    let mut out = vec![];
+    m.fields().for_each(|(_, v)| walk(v, &mut out));
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::kit::testkit::{hub, msg};
+    use std::sync::Arc;
 
     /// Needs the generated data pack; skipped otherwise.
     #[test]
@@ -456,5 +556,63 @@ mod tests {
         assert_eq!((c["11609"]["coef"].as_f64(), c["11609"]["source"].as_str()), (Some(40.0), Some("manuel")));
         b.call("set_coef", json!({"gid": 11609, "coef": null}), &hub.ctx).unwrap();
         assert!(b.call("coefs", Value::Null, &hub.ctx).unwrap().get("11609").is_none());
+    }
+
+    /// Real recordings (3.7.13.17): a craft (ObjectsAddedEvent, then the craft result holding the object: Ceinture 33595), then
+    /// the same object's add answered by a purchase (BuyRequest 1199 K + BuyResultEvent bought: the recorded purchase was a
+    /// resource). Messages go through the inventory first, as in the Hub; a craft result on an object not just added
+    /// (forgemagie) tells nothing.
+    #[test]
+    fn crafted_and_bought_equipment() {
+        let Some((hub, proto)) = hub("loutil-brisage-acquired") else { return };
+        if proto.obf_for_clear(CRAFT_RESULT).as_deref() != Some("kco") {
+            return; // payloads recorded for another build
+        }
+        let added = "1a710a6f0a13747970652e616e6b616d612e636f6d2f69736712580a560a52180120bb860228d2d1e4023a042832507b3a042830507d3a04283050763a042816507c3a05280950b0013a05280850a2033a05280650a6033a05280650aa033a05280650f0053a04280450733a0428015075203f";
+        let result = "1a710a6f0a13747970652e616e6b616d612e636f6d2f6b636f1258080212542252180120bb860228d2d1e4023a042832507b3a042830507d3a04283050763a042816507c3a05280950b0013a05280850a2033a05280650a6033a05280650aa033a05280650f0053a04280450733a0428015075";
+        let request = "222d08ffffffffffffffffff0112200a13747970652e616e6b616d612e636f6d2f6b62661209080118fca10328af09";
+        let bought = "1a1f0a1d0a13747970652e616e6b616d612e636f6d2f6a7a78120610fca1031801";
+        let events: Arc<Mutex<Vec<(String, Value)>>> = Default::default();
+        let ev = events.clone();
+        let ctx = Ctx {
+            data: hub.ctx.data.clone(),
+            proto: proto.clone(),
+            dir: hub.ctx.dir.clone(),
+            emit: Arc::new(move |n: &str, v: Value| ev.lock().push((n.to_string(), v))),
+            log: Arc::new(|_| {}),
+        };
+        let inv = crate::inventory::Inventory::new();
+        let b = Brisage::new(inv.uids());
+        let send = |name: &str, h: &str, t: f64| {
+            let payload: Vec<u8> = (0..h.len()).step_by(2).map(|i| u8::from_str_radix(&h[i..i + 2], 16).unwrap()).collect();
+            let env = loutil_core::wire::parse_envelope(&payload).unwrap();
+            let decoded = proto.decode(&proto.obf_for_clear(name).unwrap(), &env.value);
+            assert!(decoded.is_some(), "{name} decoded");
+            let m = msg(name, decoded, t);
+            inv.on_message(&m, &ctx);
+            b.on_message(&m, &ctx);
+        };
+        let acquired = || events.lock().iter().filter(|(n, _)| n == "brisage:acquired").map(|(_, v)| v.clone()).collect::<Vec<_>>();
+        send(ADDED_LIST, added, 10.0);
+        assert!(acquired().is_empty(), "an add alone (loot, trade...) is nothing yet");
+        send(CRAFT_RESULT, result, 10.1);
+        let a = acquired();
+        assert_eq!(a.len(), 1, "{a:?}");
+        assert_eq!((a[0]["gid"].as_i64(), a[0]["uid"].as_i64(), a[0]["how"].as_str()), (Some(33595), Some(5843154), Some("craft")));
+        assert!(a[0]["price"].is_null());
+        assert_eq!(a[0]["effects"][0], json!([123, 50]));
+        send(CRAFT_RESULT, result, 10.2);
+        assert_eq!(acquired().len(), 1, "a forgemagie result on an object already there tells nothing");
+
+        send(AH_BUY_REQUEST, request, 20.0);
+        send(ADDED_LIST, added, 20.1);
+        send(AH_BUY, bought, 20.2);
+        let a = acquired();
+        assert_eq!(a.len(), 2, "{a:?}");
+        assert_eq!((a[1]["how"].as_str(), a[1]["price"].as_i64()), (Some("achat"), Some(1199)));
+
+        send(ADDED_LIST, added, 30.0);
+        send(CRAFT_RESULT, result, 36.0);
+        assert_eq!(acquired().len(), 2, "too late: the add is forgotten");
     }
 }

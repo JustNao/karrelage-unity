@@ -18,6 +18,7 @@
   import SearchBar, { matcher } from "../../lib/components/SearchBar.svelte";
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
   import SortTable from "../../lib/components/SortTable.svelte";
+  import RecentCrafts from "./RecentCrafts.svelte";
 
   /** Rows rendered at once in the list (narrow it with the search / filters). */
   const SHOWN = 300;
@@ -337,6 +338,7 @@
 
   <div class="detail" class:cz={cols.collapsed.detail}>
     <PanelHead {cols} name="detail" title="Détail" dir={-1} />
+    <div class="dscroll">
     {#each pending as p (p.uid + ":" + p.t)}
       <div class="pending">
         <div><b>Brisage non reconnu</b> <span class="mut">{fmtDateTime(p.t)}</span> · coefficient <b>{coefText(p.last)}</b></div>
@@ -421,6 +423,8 @@
     {:else}
       <div class="mut">Choisissez un objet dans la liste.</div>
     {/if}
+    </div>
+    <RecentCrafts {pack} {coefOf} {price} selected={ui.sel} onpick={(gid) => (ui.sel = gid)} />
   </div>
 </div>
 
@@ -445,7 +449,9 @@
   .focus.on { border-color: var(--acc); }
   .lv { display: inline-flex; align-items: center; gap: 4px; }
   .lv input { width: 56px; padding: 3px 6px; }
-  .detail { overflow: auto; background: var(--panel); border-left: 1px solid var(--line); padding: 0 10px 10px; font-size: 12px; }
+  /* the item's detail scrolls; « Crafts récents » stays at the bottom */
+  .detail { display: flex; flex-direction: column; min-height: 0; overflow: hidden; background: var(--panel); border-left: 1px solid var(--line); padding: 0 10px 10px; font-size: 12px; }
+  .dscroll { flex: 1; min-height: 0; overflow: auto; }
   .detail :global(.phead) { padding-left: 0; padding-right: 0; }
   .ctl { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
   .ctl input { width: 70px; padding: 3px 6px; }

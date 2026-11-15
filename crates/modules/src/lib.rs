@@ -135,8 +135,9 @@ pub fn all() -> Vec<Box<dyn Module>> {
         Box::new(prices::Prices::with_remote(&remote)),
         Box::new(remote),
         Box::new(stuff::Stuff::new()),
-        Box::new(brisage::Brisage::new(uids)),
+        // after the inventory: an object added is in the shared uid map when the Brisage module sees it (`acquired`)
         Box::new(inventory),
+        Box::new(brisage::Brisage::new(uids)),
         Box::new(combat::Combat::new()),
         Box::new(fight_map::FightMap::new()),
         Box::new(forgemagie::Forgemagie::new()),

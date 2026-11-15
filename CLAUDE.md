@@ -241,6 +241,12 @@ and developer mode are both on. New category = an entry in `CATEGORIES`, a defau
 - `drop` = `dropMonsterIds` non-empty (Temporis ignored). Breakable types in `BREAKABLE_TYPES`.
 - « Focus » filter (`ui.focus`, an effect id): only items with that default effect; sources, break-even, profit and the
   detail summary use that focus's value (`valueOf`) instead of the best result.
+- « Crafts récents » (`modules/brisage/RecentCrafts.svelte`, bottom of the Détail column, localStorage `karrelage.brisage.recent`):
+  equipment crafted / bought while the tab is open (`brisage:acquired`, only heard while it is mounted). Backend: a breakable object
+  added (ObjectAdded(s)Event, read by the inventory first: brisage comes after it in `all()`) is a craft when the next
+  ExchangeCraftResultEvent holds its uid (a forgemagie rune's result is on an object not just added), a purchase when
+  ExchangeBidHouseBuyResultEvent says bought (price = the BuyRequest's only int64), within 5 s. Checked on recorded payloads
+  (a craft; the only recorded purchase was a resource). Runes = the piece's own rolls at the item's coefficient (best result).
 
 **Crafting > Montures** (`lib/mounts.ts`): extraction gives N resources, N = generation (highest base-colour generation,
 +1 for two colours; gen 1 left out). Effect 3836 = senile → 1 resource.
