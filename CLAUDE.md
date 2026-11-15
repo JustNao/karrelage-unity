@@ -241,6 +241,8 @@ and developer mode are both on. New category = an entry in `CATEGORIES`, a defau
 - `drop` = `dropMonsterIds` non-empty (Temporis ignored). Breakable types in `BREAKABLE_TYPES`.
 - « Focus » filter (`ui.focus`, an effect id): only items with that default effect; sources, break-even, profit and the
   detail summary use that focus's value (`valueOf`) instead of the best result.
+- « Craftable par moi » (`ui.mine`, as in Crafts rentables; `lib/jobXp.ts` `currentJobs` / `craftableBy`): only items the character's jobs
+  craft at their level, craft costs with sub-ingredients crafted by those jobs only (`Costs`), « Crafts récents » estimates too.
 - « Crafts récents » (`modules/brisage/RecentCrafts.svelte`, bottom of the Détail column, localStorage `karrelage.brisage.recent`):
   equipment crafted / bought while the tab is open (`brisage:acquired`, only heard while it is mounted). Backend: a breakable object
   added (ObjectAdded(s)Event, read by the inventory first: brisage comes after it in `all()`) is a craft when the next

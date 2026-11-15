@@ -12,7 +12,7 @@
   import { prices } from "../../../../lib/stores/prices.svelte";
   import { kamasOr, pct, signedKamas } from "../../../../lib/fmt";
   import { useSort } from "../../../../lib/sort.svelte";
-  import { Costs, MAX_JOB_LEVEL, type JobCatalog, type JobLevels } from "../../../../lib/jobXp";
+  import { Costs, craftableBy, currentJobs, type JobCatalog, type JobLevels } from "../../../../lib/jobXp";
 
   /**
    * Crafting « Crafts rentables »: every craftable item of a category (equipment / resource / consumable), all jobs or one,
@@ -26,8 +26,6 @@
     { id: "2", label: "Ressource" },
     { id: "1", label: "Consommable" },
   ];
-  /** Job 1 « Base »: recipes made without a job. */
-  const BASE_JOB = 1;
   const ui = persisted("karrelage.crafting.rentables", { category: "0" as Category, job: 0, mine: false, priced: true });
 
   type SortKey = "name" | "type" | "level" | "job" | "craft" | "sale" | "profit" | "pct";
@@ -50,19 +48,12 @@
   });
 
   // the character's jobs: the last one logged in, else the first one seen
-  const mine = $derived.by(() => {
-    const has = (k: string | number) => Object.keys(levels.characters[k] ?? {}).length > 0;
-    const c = has(levels.current) ? String(levels.current) : Object.keys(levels.characters).find(has);
-    return c !== undefined ? levels.characters[c] : {};
-  });
+  const mine = $derived(currentJobs(levels));
   const known = $derived(Object.keys(mine).length > 0);
-  const levelOfJob = (j: number) => (j === BASE_JOB ? MAX_JOB_LEVEL : (mine[j]?.level ?? 0));
   const mineOnly = $derived(ui.mine && known);
+  const byMe = $derived(craftableBy(catalog, mine));
   /** an item the planner may craft (the listed one, or an ingredient on the way): any job, or the character's at its level */
-  const canMake = (gid: number) => {
-    const c = catalog.crafts[gid];
-    return !!c && (!mineOnly || levelOfJob(c[0]) >= c[1]);
-  };
+  const canMake = (gid: number) => !!catalog.crafts[gid] && (!mineOnly || byMe(gid));
 
   /** the category's items (recipe known) */
   const items = $derived(

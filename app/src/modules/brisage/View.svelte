@@ -5,6 +5,8 @@
   import { persisted, readJSON, removeKey } from "../../lib/persist.svelte";
   import { breakEven, lotEffects, meanRoll, outcome, valueOf, type BrisItem, type BrisPack, type Outcome } from "../../lib/brisage";
   import { craftCost, type Recipes } from "../../lib/craft";
+  import { Costs, craftableBy, currentJobs, type JobCatalog, type JobLevels } from "../../lib/jobXp";
+  import Switch from "../../lib/components/Switch.svelte";
   import { Columns } from "../../lib/columns.svelte";
   import { afterTax, lotKeys, unitPriceOrNull } from "../../lib/price";
   import { auction } from "../../lib/stores/auction.svelte";
@@ -29,12 +31,19 @@
   /** Weapon types (the rest of the breakable types are worn equipment). */
   const WEAPONS = new Set([2, 3, 4, 5, 6, 7, 8, 19, 20, 21, 22, 114, 271]);
 
-  interface UiState { q: string; types: number[]; lvMin: number | null; lvMax: number | null; priced: boolean; noDrop: boolean; absent: boolean; sel: number | null; /** Effect focused (its rune): items without it hidden, break-even for that focus. */ focus: number | null }
-  const ui = persisted<UiState>(UI_KEY, { q: "", types: [], lvMin: null, lvMax: null, priced: true, noDrop: false, absent: false, sel: null, focus: null });
+  interface UiState { q: string; types: number[]; lvMin: number | null; lvMax: number | null; priced: boolean; noDrop: boolean; absent: boolean; sel: number | null; /** Effect focused (its rune): items without it hidden, break-even for that focus. */ focus: number | null; /** « Craftable par moi » */ mine: boolean }
+  const ui = persisted<UiState>(UI_KEY, { q: "", types: [], lvMin: null, lvMax: null, priced: true, noDrop: false, absent: false, sel: null, focus: null, mine: false });
 
   const cols = new Columns(`karrelage.cols.brisage`, { detail: 640 });
   let pack = $state.raw<BrisPack>({ items: [], runes: {} });
   let recipes = $state.raw<Recipes>({ recipes: {}, names: {} });
+  /** « Craftable par moi » (as in Crafting « Crafts rentables »): the character's jobs at their level (jobs.rs, read at login) */
+  let catalog = $state.raw<JobCatalog>({ jobs: {}, crafts: {} });
+  let levels = $state.raw<JobLevels>({ current: 0, characters: {} });
+  const myJobs = $derived(currentJobs(levels));
+  const jobsKnown = $derived(Object.keys(myJobs).length > 0);
+  const mineOnly = $derived(ui.mine && jobsKnown);
+  const byMe = $derived(craftableBy(catalog, myJobs));
   let err = $state("");
 
   /** An item's coefficient: read from a break (`DecraftResultEvent`) or typed. */
@@ -59,10 +68,24 @@
   interface Source { key: string; kind: "craft" | "lot"; cost: number | null; out: Outcome; even: number | null; lot?: any; missing?: string[] }
 
   /** Every source of an item, best (lowest break-even coefficient) first. */
+  /** The craft's cost: every ingredient bought or crafted, the cheaper; with « Craftable par moi » only the character's jobs
+   *  craft (`Costs`, as in « Crafts rentables »), the item itself always crafted. */
+  let myCosts: { pv: number; recipes: Recipes; byMe: unknown; costs: Costs } | null = null;
+  function craftOf(gid: number): { cost: number | null; missing: string[] } | null {
+    if (!mineOnly) return craftCost(gid, recipes, prices.map);
+    if (!recipes.recipes[gid]) return null;
+    if (!myCosts || myCosts.pv !== priceVersion || myCosts.recipes !== recipes || myCosts.byMe !== byMe)
+      myCosts = { pv: priceVersion, recipes, byMe, costs: new Costs(recipes, prices.map, byMe) };
+    const costs = myCosts.costs;
+    const cost = costs.crafted(gid).unit;
+    const missing = cost != null ? [] : recipes.recipes[gid].filter(([g]) => costs.best(g).unit == null).map(([g]) => recipes.names[g] ?? `#${g}`);
+    return { cost, missing };
+  }
+
   function sourcesOf(i: BrisItem): Source[] {
     const out: Source[] = [];
     if (i.craft) {
-      const c = craftCost(i.gid, recipes, prices.map);
+      const c = craftOf(i.gid);
       const o = outcome(meanRoll(i), i.level, pack.runes, price);
       out.push({ key: "craft", kind: "craft", cost: c?.cost ?? null, out: o, even: c?.cost != null ? breakEven(c.cost, o.best.value) : null, missing: c?.missing ?? [] });
     }
@@ -87,13 +110,14 @@
   let priceVersion = 0;
   let rebuild: ReturnType<typeof setTimeout> | null = null;
   const changed = () => (rebuild ??= setTimeout(() => ((rebuild = null), dataVersion++), REBUILD_MS));
-  const srcCache = new Map<number, { listing: unknown; pv: number; recipes: Recipes; pack: BrisPack; sources: Source[] }>();
+  const srcCache = new Map<number, { listing: unknown; pv: number; recipes: Recipes; pack: BrisPack; mine: unknown; sources: Source[] }>();
   function cachedSources(i: BrisItem): Source[] {
     const listing = auction.items.get(i.gid);
     const c = srcCache.get(i.gid);
-    if (c && c.listing === listing && c.pv === priceVersion && c.recipes === recipes && c.pack === pack) return c.sources;
+    const mine = mineOnly ? byMe : null;
+    if (c && c.listing === listing && c.pv === priceVersion && c.recipes === recipes && c.pack === pack && c.mine === mine) return c.sources;
     const sources = sourcesOf(i);
-    srcCache.set(i.gid, { listing, pv: priceVersion, recipes, pack, sources });
+    srcCache.set(i.gid, { listing, pv: priceVersion, recipes, pack, mine, sources });
     return sources;
   }
 
@@ -121,6 +145,7 @@
     const f = ui.focus;
     const items = f == null ? pack.items : pack.items.filter((i) => i.effects.some((e) => e.a === f));
     void recipes;
+    void mineOnly, byMe; // « Craftable par moi »: craft costs change
     const all = untrack(() => items.map((item) => [item, byEven(cachedSources(item), f)] as const));
     return all.map(([item, sources]) => {
       const best = sources[0] ?? null;
@@ -176,7 +201,8 @@
           (ui.lvMax == null || r.level <= ui.lvMax) &&
           (!ui.noDrop || !r.item.drop) &&
           (!ui.absent || r.sale === false) &&
-          (!ui.priced || r.even != null),
+          (!ui.priced || r.even != null) &&
+          (!mineOnly || byMe(r.gid)),
       ),
     );
   });
@@ -245,6 +271,7 @@
   onMount(() => {
     cached<BrisPack>("brisage", "items").then((p) => (pack = p)).catch((e) => (err = String(e)));
     cached<Recipes>("auction", "recipes").then((r) => (recipes = r)).catch((e) => (err = String(e)));
+    cached<JobCatalog>("jobs", "catalog").then((c) => (catalog = c)).catch((e) => (err = String(e)));
     const offEvents = listenAll({
       "brisage:pending": (l: Pending[]) => (pending = l),
       "brisage:break": (b: Break) => b.gid === ui.sel && loadBreaks(ui.sel),
@@ -253,7 +280,9 @@
         else coefs[e.gid] = e as Coef;
       },
       "auction:on_sale": (o: OnSale) => (onSale = { ...onSale, [o.type]: o }),
+      "jobs:levels": (l: JobLevels) => (levels = l),
     });
+    offEvents.ready.then(() => call<JobLevels>("jobs", "levels")).then((l) => (levels = l)).catch(() => {});
     call<Pending[]>("brisage", "pending").then((l) => (pending = l)).catch(() => {});
     call<Record<string, Coef>>("brisage", "coefs")
       .then(async (c) => {
@@ -311,6 +340,12 @@
       {/snippet}
       {#snippet after()}
         <label title="Objets lâchés par un monstre"><input type="checkbox" bind:checked={ui.noDrop} /> Masquer les objets droppables</label>
+        <label
+          class="sw"
+          title={jobsKnown ? "Seulement ce que vos métiers savent crafter à leur niveau (ingrédients craftés par eux seulement, achetés sinon)" : "Vos métiers ne sont pas encore lus : connectez-vous, application ouverte"}
+        >
+          <Switch bind:checked={ui.mine} label="Craftable par moi" disabled={!jobsKnown} /> Craftable par moi
+        </label>
         <label title="Objets absents de l'hôtel de vente quand leur catégorie a été ouverte (ouvrez les catégories à l'HDV pour les relever)"><input type="checkbox" bind:checked={ui.absent} /> Absents de l'HDV seulement</label>
         {#if filtered}<button class="mini" onclick={resetFilters}>Effacer les filtres</button>{/if}
       {/snippet}
@@ -424,7 +459,7 @@
       <div class="mut">Choisissez un objet dans la liste.</div>
     {/if}
     </div>
-    <RecentCrafts {pack} {coefOf} {price} craft={(gid) => craftCost(gid, recipes, prices.map)} selected={ui.sel} onpick={(gid) => (ui.sel = gid)} />
+    <RecentCrafts {pack} {coefOf} {price} craft={craftOf} selected={ui.sel} onpick={(gid) => (ui.sel = gid)} />
   </div>
 </div>
 

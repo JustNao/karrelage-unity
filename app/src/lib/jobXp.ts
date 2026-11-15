@@ -30,6 +30,25 @@ export interface JobLevels {
   characters: Record<string, Record<string, { level: number; xp: number }>>;
 }
 
+/** Job 1 « Base »: recipes made without a job (never levelled). */
+export const BASE_JOB = 1;
+
+/** The jobs of the character: the last one logged in, else the first one seen ({} = none read yet). */
+export function currentJobs(levels: JobLevels): JobLevels["characters"][string] {
+  const has = (k: string | number) => Object.keys(levels.characters[k] ?? {}).length > 0;
+  const c = has(levels.current) ? String(levels.current) : Object.keys(levels.characters).find(has);
+  return c !== undefined ? levels.characters[c] : {};
+}
+
+/** « Craftable par moi »: an item one of these jobs crafts at its level (`levelOf` overrides a job's level). */
+export function craftableBy(catalog: JobCatalog, jobs: JobLevels["characters"][string], levelOf?: (job: number) => number | undefined) {
+  const level = (j: number) => levelOf?.(j) ?? (j === BASE_JOB ? MAX_JOB_LEVEL : (jobs[j]?.level ?? 0));
+  return (gid: number) => {
+    const c = catalog.crafts[gid];
+    return !!c && level(c[0]) >= c[1];
+  };
+}
+
 export const levelFloor = (level: number) => level * (level - 1) * 10;
 export const levelOf = (xp: number) => Math.max(1, Math.min(MAX_JOB_LEVEL, Math.floor((Math.sqrt(1 + 0.4 * xp) + 1) / 2)));
 

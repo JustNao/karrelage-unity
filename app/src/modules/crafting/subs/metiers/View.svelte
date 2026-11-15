@@ -10,6 +10,7 @@
   import { fmtInt, kamas } from "../../../../lib/fmt";
   import { openShopList } from "../../../../lib/shoplist";
   import {
+    BASE_JOB,
     Costs,
     MAX_JOB_LEVEL,
     XP_COEFS,
@@ -30,8 +31,6 @@
    * with « Craftable par moi » crafted when cheaper by one of the character's jobs at its level (rows needing such a sub-craft
    * are flagged). The resources to buy open in a floating list.
    */
-  /** Job 1 « Base »: recipes made without a job (never levelled). */
-  const BASE_JOB = 1;
   const ui = persisted("karrelage.crafting.jobxp", {
     job: null as number | null,
     character: null as number | null,

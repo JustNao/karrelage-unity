@@ -22,7 +22,7 @@
     coefOf: (gid: number) => number | null;
     price: (gid: number) => number | null;
     /** the item's craft cost at the stored prices (null: no recipe) */
-    craft: (gid: number) => CraftResult | null;
+    craft: (gid: number) => Pick<CraftResult, "cost" | "missing"> | null;
     selected: number | null;
     onpick: (gid: number) => void;
   } = $props();
