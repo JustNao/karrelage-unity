@@ -249,6 +249,7 @@ and developer mode are both on. New category = an entry in `CATEGORIES`, a defau
   ExchangeBidHouseBuyResultEvent says bought (price = the BuyRequest's only int64), within 5 s. Checked on recorded payloads
   (a craft; the only recorded purchase was a resource). Runes = the piece's own rolls at the item's coefficient (best result).
   Price = paid for a purchase, else the craft estimated at today's stored prices (`craftCost`, « craft »; a missing ingredient price = —).
+  « Session » line on top: pieces since the app started (`performance.timeOrigin`), cost / runes / gain over those with both known.
 
 **Crafting > Montures** (`lib/mounts.ts`): extraction gives N resources, N = generation (highest base-colour generation,
 +1 for two colours; gen 1 left out). Effect 3836 = senile → 1 resource.

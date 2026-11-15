@@ -91,6 +91,18 @@
   const count = $derived(store.list.reduce((s, a) => s + (a.qty ?? 1), 0));
   const total = $derived(rows.reduce((s, r) => s + (r.value ?? 0), 0));
 
+  /** The session = since the app started (the page's load: the main window lives as long as the app). */
+  const SESSION_START = performance.timeOrigin / 1000;
+  /** The session's recap: pieces with both a cost and a rune value are summed, the others counted apart. */
+  const session = $derived.by(() => {
+    const mine = pieces.filter((p) => p.a.t >= SESSION_START);
+    const known = mine.filter((p) => p.cost != null && p.value != null);
+    const cost = known.reduce((s, p) => s + p.cost!, 0);
+    const value = known.reduce((s, p) => s + p.value!, 0);
+    const n = (l: Piece[]) => l.reduce((s, p) => s + (p.a.qty ?? 1), 0);
+    return { count: n(mine), known: n(known), cost, value, gain: value - cost };
+  });
+
   const coefText = (c: number | null) => (c == null ? "—" : `${fmtNum(c, c < 10 ? 1 : 0)} %`);
   const howText = (r: Row) => [...r.how].join(" + ");
   /** The runes of the row (without focus, at the coefficient), and the best result's focus. */
@@ -132,6 +144,20 @@
     />
     <ConfirmButton mini label="Vider" disabled={!store.list.length} onconfirm={() => void (store.list = [])} />
   </div>
+  <div class="session" title="Objets craftés ou achetés depuis le lancement de l'application : coût (prix payé ou craft estimé), runes estimées au coefficient connu, bénéfice">
+    <b>Session</b>
+    {#if session.known}
+      <span class="mut">{session.known} objet{session.known > 1 ? "s" : ""}</span>
+      <span>Coût <b>{kamas(Math.round(session.cost))}</b></span>
+      <span>Runes <b>{kamas(Math.round(session.value))}</b></span>
+      <b class:good={session.gain > 0} class:bad={session.gain < 0}>{signedKamas(Math.round(session.gain))}{#if session.cost > 0}{" · "}{pct((session.gain / session.cost) * 100, 0)}{/if}</b>
+    {:else}
+      <span class="mut">{session.count ? "pas encore de coût ou de coefficient connu" : "rien crafté ni acheté depuis le lancement"}</span>
+    {/if}
+    {#if session.count > session.known && session.known}
+      <span class="warn" title="Coût (prix d'un ingrédient) ou coefficient inconnu : non comptés">{session.count - session.known} sans estimation</span>
+    {/if}
+  </div>
   <div class="body">
     {#if rows.length}
       <table class="tbl">
@@ -166,6 +192,7 @@
   .recent { flex: none; max-height: 40%; min-height: 90px; display: flex; flex-direction: column; border-top: 1px solid var(--line); padding-top: 6px; }
   .head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
   .sp { flex: 1; }
+  .session { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; padding: 5px 8px; margin-bottom: 6px; background: var(--bg); border: 1px solid var(--line); }
   .body { overflow: auto; min-height: 0; }
   .body :global(.tbl th) { position: sticky; top: 0; background: var(--panel); }
   tbody tr { cursor: pointer; }
