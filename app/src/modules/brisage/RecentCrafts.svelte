@@ -145,7 +145,7 @@
               <td><b>{r.name}</b> <span class="mut">{howText(r)}</span></td>
               {#if mode === "grouped"}<td class="n">{r.count}</td>{:else}<td class="mut">{fmtTime(r.t)}</td>{/if}
               <td class="n">{coefText(r.coef)}</td>
-              <td class="n" title={runesTitle(r)}>{#if r.value != null}<b>{kamas(Math.round(r.value))}</b>{#if r.pieces.some((p) => p.out?.unpriced)}<span class="warn" title="Une rune n'a pas de prix (comptée 0) : ouvrez-la à l'hôtel de vente">⚠</span>{/if}{#if r.cost != null}<span class="gain" class:good={r.value > r.cost} class:bad={r.value < r.cost}>({signedKamas(Math.round(r.value - r.cost))}{#if r.cost > 0} · {pct(((r.value - r.cost) / r.cost) * 100, 0)}{/if})</span>{/if}{:else}<span class="mut">—</span>{/if}</td>
+              <td class="n" title={runesTitle(r)}>{#if r.value != null}<b>{kamas(Math.round(r.value))}</b>{#if r.pieces.some((p) => p.out?.unpriced)}<span class="warn" title="Une rune n'a pas de prix (comptée 0) : ouvrez-la à l'hôtel de vente">⚠</span>{/if}{#if r.cost != null}<span class="gain" class:good={r.value > r.cost} class:bad={r.value < r.cost}>({signedKamas(Math.round(r.value - r.cost))}{#if r.cost > 0}{" · "}{pct(((r.value - r.cost) / r.cost) * 100, 0)}{/if})</span>{/if}{:else}<span class="mut">—</span>{/if}</td>
               <td class="n" title={costTitle(r)}>{#if r.cost != null}{kamas(Math.round(r.cost))}{#if r.estimated} <span class="mut">craft</span>{/if}{:else}—{#if r.pieces.some((p) => p.missing.length)} <span class="warn">⚠</span>{/if}{/if}</td>
             </tr>
           {/each}
