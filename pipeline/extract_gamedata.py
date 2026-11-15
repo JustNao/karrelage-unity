@@ -17,7 +17,7 @@ GAME = pathlib.Path(r"C:\Users\nao3n\AppData\Local\Ankama\Dofus-dofus3\Dofus_Dat
 OUT = root / "work" / "gamedata"
 BUNDLES = OUT / "bundles"
 MAP_BUNDLES = OUT / "maps"
-TABLES = ["items", "effects", "characteristics", "itemtypes", "itemsets", "itemsupertypes", "spells", "recipes", "monsters", "npcs", "breeds", "jobs", "servers", "servergametypes"]
+TABLES = ["items", "effects", "characteristics", "itemtypes", "itemsets", "itemsupertypes", "spells", "recipes", "monsters", "npcs", "breeds", "jobs", "skills", "servers", "servergametypes"]
 UnityPy.config.FALLBACK_UNITY_VERSION = "6000.3.16f1"   # bundles ship with a stripped version; matches UnityPlayer.dll
 
 LEGENDARY_SPELL_TYPE = 339   # spells.typeId of the passives of legendary items
@@ -113,6 +113,10 @@ def main():
             crafts.setdefault(r["resultId"], {"job": r.get("jobId"), "level": r.get("resultLevel", 0)})
     # jobs: name only (the Crafting « XP métiers » planner)
     jobs = {r["id"]: {"id": r["id"], "nameId": r["nameId"]} for r in rows("jobs") if "id" in r and "nameId" in r}
+    # forgemagie workshops (skills with isForgemagus): job + item types they modify. The forgemagie overlay shows only in them
+    # (a crafting table's craft result is an equipment piece too)
+    skills = {r["id"]: {"id": r["id"], "job": r.get("parentJobId"), "types": r.get("modifiableItemTypeIds", [])}
+              for r in rows("skills") if "id" in r and r.get("isForgemagus")}
     # item sets: bonuses per piece count (effects[i] = bonus when i+1 pieces are worn), effect = {a: action id, min, max} like item defaults
     sets = {}
     srows, sby = rows("itemsets", with_refs=True)
@@ -141,7 +145,7 @@ def main():
     # game servers (prices are per server: the player picks theirs): name + game type name (Classique, Épique...)
     gametypes = {r["id"]: r.get("nameId") for r in rows("servergametypes") if "id" in r}
     servers = {r["id"]: {"id": r["id"], "nameId": r["nameId"], "typeNameId": gametypes.get(r.get("gameTypeId"))} for r in rows("servers") if "id" in r and "nameId" in r}
-    for n, d in (("servers", servers), ("items", items), ("effects", effects), ("characteristics", chars), ("itemtypes", types), ("spells", spells), ("recipes", recipes), ("itemsets", sets), ("monsters", monsters), ("npcs", npcs), ("breeds", breeds), ("crafts", crafts), ("jobs", jobs)):
+    for n, d in (("servers", servers), ("items", items), ("effects", effects), ("characteristics", chars), ("itemtypes", types), ("spells", spells), ("recipes", recipes), ("itemsets", sets), ("monsters", monsters), ("npcs", npcs), ("breeds", breeds), ("crafts", crafts), ("jobs", jobs), ("skills", skills)):
         (OUT / f"{n}.json").write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
         print(n, len(d))
     print("maps", maps())

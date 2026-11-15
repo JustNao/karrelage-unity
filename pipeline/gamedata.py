@@ -35,7 +35,7 @@ def _load(n):
 items, effects, characteristics, itemtypes, spells, recipes, itemsets, monsters = _load("items"), _load("effects"), _load("characteristics"), _load("itemtypes"), _load("spells"), _load("recipes"), _load("itemsets"), _load("monsters")
 npcs = _load("npcs")
 breeds = _load("breeds")
-crafts, jobs = _load("crafts"), _load("jobs")
+crafts, jobs, skills = _load("crafts"), _load("jobs"), _load("skills")
 servers = _load("servers")
 _i18n = None
 

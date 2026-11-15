@@ -115,6 +115,14 @@ pub struct JobRow {
     pub name_id: i64,
 }
 
+/// A forgemagie workshop's skill: its job and the item types it modifies.
+#[derive(Debug, Deserialize, Clone)]
+pub struct SkillRow {
+    pub job: Option<i64>,
+    #[serde(default)]
+    pub types: Vec<i64>,
+}
+
 /// A breed (class): the base skins of its male / female looks.
 #[derive(Debug, Deserialize, Clone)]
 pub struct BreedRow {
@@ -193,6 +201,8 @@ pub struct Data {
     pub breeds: HashMap<i64, BreedRow>,
     /// Jobs: id -> name (absent in older packs).
     pub jobs: HashMap<i64, JobRow>,
+    /// Forgemagie workshops: skill id -> job / item types (skills with isForgemagus only; absent in older packs).
+    pub forgemagus_skills: HashMap<i64, SkillRow>,
     /// Crafts' job xp: result gid -> (job id, recipe level, xp ratio %) (absent in older packs).
     pub crafts: HashMap<i64, (i64, i64, i64)>,
     pub strings: HashMap<i64, String>,
@@ -235,6 +245,7 @@ impl Data {
             servers: read_map(dir, "servers.json").unwrap_or_default(),
             breeds: read_map(dir, "breeds.json").unwrap_or_default(),
             jobs: read_map(dir, "jobs.json").unwrap_or_default(),
+            forgemagus_skills: read_map(dir, "skills.json").unwrap_or_default(),
             crafts: read_map(dir, "crafts.json").unwrap_or_default(),
             equipment_effects,
             bindings: serde_json::from_slice(&std::fs::read(dir.join("bindings.json"))?)?,

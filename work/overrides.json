@@ -194,5 +194,11 @@
   "fields": {
    "fxjj": "round_number"
   }
+ },
+ "jyz": {
+  "name": "ExchangeCraftStartedEvent",
+  "fields": {
+   "fxzt": "skill_id"
+  }
  }
 }

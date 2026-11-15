@@ -2,7 +2,10 @@
 //! game's window (app/src/ForgemagieOverlay.svelte). The item comes with `ExchangeObjectsAddedEvent` (named by anchor) when it
 //! is put in, `ExchangeObjectsModifiedEvent` / `ExchangeCraftResultEvent` after each rune; it goes with
 //! `ExchangeObjectRemovedEvent` / `ExchangeObjectsRemovedEvent` (its uid) or `ExchangeLeaveEvent`. Their fields are read by
-//! type: the lists of ObjectItemInventory, the result's ObjectItem holding an equipment piece.
+//! type: the lists of ObjectItemInventory, the result's ObjectItem holding an equipment piece. Only in a forgemagie workshop:
+//! the craft window's opening (`ExchangeCraftStartedEvent`, named by override, or the multicraft crafter's) gives its skill,
+//! a forgemagus one of the pack (`skills.json`) or not (a crafting table's result is an equipment piece too); unknown (the app
+//! started with the window open, an older pack) = followed as before.
 //!
 //! Chances = the players' model of dofocus.fr (`odds`, a port of its simulator, not Ankama's formula), checked against its own
 //! code on the cases of the tests. Lines are keyed by characteristic like there: "+Force" and "-Force" are one signed line.
@@ -32,6 +35,9 @@ const RESULT: &str = "ExchangeCraftResultEvent";
 const REMOVED: &str = "ExchangeObjectRemovedEvent";
 const REMOVED_LIST: &str = "ExchangeObjectsRemovedEvent";
 const LEAVE: &str = "ExchangeLeaveEvent";
+/// The craft window opened: its `skill_id` (a forgemagie workshop or a crafting table).
+const STARTED: &str = "ExchangeCraftStartedEvent";
+const MULTI_STARTED: &str = "ExchangeMultiCraftCrafterStartedEvent";
 /// Forgemagie runes' item type.
 const RUNE_TYPE: i64 = 78;
 /// Rune-typed items that are no forgemagie rune (brisage.rs `NO_RUNE_EFFECTS`).
@@ -267,9 +273,18 @@ struct Item {
     effects: Vec<(i64, i64)>,
 }
 
+/// The craft window open: a forgemagie workshop, another (crafting table), or not known.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Workshop {
+    Unknown,
+    Forge,
+    Other,
+}
+
 pub struct Forgemagie {
     enabled: AtomicBool,
     item: Mutex<Option<Item>>,
+    workshop: Mutex<Workshop>,
     bind: Role<Bindings>,
     effect_bind: Role<ObjectEffect>,
     runes: OnceLock<BTreeMap<i64, (f64, Vec<Rune>)>>,
@@ -283,11 +298,35 @@ impl Default for Forgemagie {
 
 impl Forgemagie {
     pub fn new() -> Self {
-        Self { enabled: AtomicBool::new(false), item: Mutex::new(None), bind: Role::default(), effect_bind: Role::default(), runes: OnceLock::new() }
+        Self {
+            enabled: AtomicBool::new(false),
+            item: Mutex::new(None),
+            workshop: Mutex::new(Workshop::Unknown),
+            bind: Role::default(),
+            effect_bind: Role::default(),
+            runes: OnceLock::new(),
+        }
     }
 
     fn runes(&self, data: &Data) -> &BTreeMap<i64, (f64, Vec<Rune>)> {
         self.runes.get_or_init(|| rune_table(data))
+    }
+
+    /// The workshop of a craft window's opening: its `skill_id` (else its only int) among the pack's forgemagus skills.
+    fn workshop_of(ctx: &Ctx, m: &DynamicMessage) -> Workshop {
+        let skill = match ctx.proto.field_named(m.descriptor().full_name(), "skill_id") {
+            Some(f) => Some(loutil_proto::util::int(m, &f)),
+            None => match scalar_ints(m).as_slice() {
+                [(_, v)] => Some(*v),
+                _ => None,
+            },
+        };
+        match skill {
+            _ if ctx.data.forgemagus_skills.is_empty() => Workshop::Unknown, // older pack
+            Some(s) if ctx.data.forgemagus_skills.contains_key(&s) => Workshop::Forge,
+            Some(_) => Workshop::Other,
+            None => Workshop::Unknown,
+        }
     }
 
     /// An ObjectItem that is an equipment piece: (uid, gid, effects).
@@ -374,7 +413,7 @@ impl Module for Forgemagie {
     }
 
     fn interest(&self) -> Interest {
-        Interest::Types(&[ADDED, MODIFIED, RESULT, REMOVED, REMOVED_LIST, LEAVE])
+        Interest::Types(&[ADDED, MODIFIED, RESULT, REMOVED, REMOVED_LIST, LEAVE, STARTED, MULTI_STARTED])
     }
 
     /// Off (Automation « Forgemagie »): the workshop messages are not even decoded.
@@ -386,7 +425,17 @@ impl Module for Forgemagie {
         let Some(d) = &m.decoded else { return };
         let uid = self.item.lock().as_ref().map(|i| i.uid);
         match m.name.as_str() {
-            LEAVE => self.set(ctx, None),
+            LEAVE => {
+                *self.workshop.lock() = Workshop::Unknown;
+                self.set(ctx, None);
+            }
+            STARTED | MULTI_STARTED => {
+                let w = Self::workshop_of(ctx, d);
+                *self.workshop.lock() = w;
+                if w == Workshop::Other {
+                    self.set(ctx, None);
+                }
+            }
             // the item taken out: its uid (the event's only int, or in its list)
             REMOVED | REMOVED_LIST => {
                 let mut uids: Vec<i64> = scalar_ints(d).into_iter().map(|(_, v)| v).collect();
@@ -397,6 +446,7 @@ impl Module for Forgemagie {
                     self.set(ctx, None);
                 }
             }
+            _ if *self.workshop.lock() == Workshop::Other => {} // a crafting table: its result is no forgemagie item
             _ => {
                 if let Some(item) = self.found(ctx, &m.name, d) {
                     self.set(ctx, Some(item));
@@ -542,6 +592,56 @@ mod tests {
         assert_eq!(fm.call("state", Value::Null, &hub.ctx).unwrap()["gid"].as_i64(), Some(19985));
         send(LEAVE, DynamicMessage::new(md(LEAVE)));
         assert!(fm.call("state", Value::Null, &hub.ctx).unwrap().is_null());
+    }
+
+    /// The craft window's skill: a crafting table's result (an equipment piece) is ignored, a forgemagie workshop's followed.
+    #[test]
+    fn only_in_forgemagie_workshops() {
+        use loutil_proto::PbValue;
+        let Some((hub, proto)) = crate::kit::testkit::hub("loutil-forgemagie-workshop") else { return };
+        let data = hub.ctx.data.clone();
+        if data.forgemagus_skills.is_empty() || proto.obf_for_clear(STARTED).is_none() {
+            return; // older pack
+        }
+        let b: Bindings = serde_json::from_value(data.bindings["inventory"].clone()).unwrap();
+        let md = |name: &str| proto.message(&proto.obf_for_clear(name).unwrap()).unwrap();
+        let started = |skill: i32| {
+            let m = md(STARTED);
+            let f = proto.field_named(m.full_name(), "skill_id").unwrap();
+            let mut d = DynamicMessage::new(m);
+            d.set_field_by_name(&f, PbValue::I32(skill));
+            d
+        };
+        let added = |gid: i64, uid: i32| {
+            let m = md(ADDED);
+            let inv_f = m.fields().find(|f| f.is_list() && matches!(f.kind(), Kind::Message(_))).unwrap();
+            let inv_md = inv_f.kind().as_message().unwrap().clone();
+            let item_md = inv_md.get_field_by_name(&b.item[0]).unwrap().kind().as_message().unwrap().clone();
+            let mut it = DynamicMessage::new(item_md);
+            for (f, v) in b.ints.iter().zip([1, gid as i32, uid]) {
+                it.set_field_by_name(f, PbValue::I32(v));
+            }
+            let mut inv = DynamicMessage::new(inv_md);
+            inv.set_field_by_name(&b.item[0], PbValue::Message(it));
+            let mut d = DynamicMessage::new(m);
+            d.set_field(&inv_f, PbValue::List(vec![PbValue::Message(inv)]));
+            d
+        };
+        let fm = Forgemagie::new();
+        fm.call("set_enabled", json!({"on": true}), &hub.ctx).unwrap();
+        let send = |name: &str, d: DynamicMessage| fm.on_message(&crate::kit::testkit::msg(name, Some(d), 1.0), &hub.ctx);
+        let state = || fm.call("state", Value::Null, &hub.ctx).unwrap();
+        // skill 13 (a crafting table, job 15) and 164 (forgemagie, job 62) as seen on recorded workshops
+        send(STARTED, started(13));
+        send(ADDED, added(14168, 7000010));
+        assert!(state().is_null(), "a crafting table");
+        send(LEAVE, DynamicMessage::new(md(LEAVE)));
+        send(STARTED, started(164));
+        send(ADDED, added(14168, 7000011));
+        assert_eq!(state()["uid"].as_i64(), Some(7000011), "a forgemagie workshop");
+        send(LEAVE, DynamicMessage::new(md(LEAVE)));
+        send(ADDED, added(14168, 7000012));
+        assert_eq!(state()["uid"].as_i64(), Some(7000012), "workshop not known: followed as before");
     }
 
     /// The window's order on two captures: exos first, then the effect priority (not the item's own order).

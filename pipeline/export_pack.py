@@ -83,6 +83,8 @@ def xp_ratio(gid):
 dump("crafts.json", {k: [v["job"], v["level"], xp_ratio(k)] for k, v in gd.crafts.items() if k in items and v.get("job")})
 dump("jobs.json", {k: {"nameId": v["nameId"]} for k, v in gd.jobs.items()})
 ids.update(v["nameId"] for v in gd.jobs.values())
+# forgemagie workshops' skill ids (forgemagie.rs: the overlay only in them)
+dump("skills.json", {k: {"job": v["job"], "types": v["types"]} for k, v in gd.skills.items()})
 dump("itemsets.json", {k: v for k, v in gd.itemsets.items() if any(i in items for i in v["items"])})
 ids.update(v["nameId"] for v in gd.itemsets.values() if v.get("nameId"))
 dump("items.json", items); dump("effects.json", effects); dump("itemtypes.json", types)
