@@ -179,7 +179,19 @@ const phossile: Boss = {
   },
 };
 
-export const BOSSES: Boss[] = [harebourg, pougnette, nileza, klime, kimbo, dantinea, phossile];
+/** Hin: at the start of each of its turns from round 2, kills every character at 10 range or more from it (author's notes). */
+const HIN_PO = 9;
+const hin: Boss = {
+  gids: [3848],
+  hints(f, alive, map) {
+    return alive.map((x) => {
+      const n = next(f, x, (n) => n >= 2);
+      return { text: `À ${HIN_PO} PO max ${inRounds(f, x, n)}`, detail: "OS tout personnage à 10 PO ou plus au début de son tour", ranges: within(f, map, x, HIN_PO) };
+    });
+  },
+};
+
+export const BOSSES: Boss[] = [harebourg, pougnette, nileza, klime, kimbo, dantinea, phossile, hin];
 
 /** The hints for a monster of the fight (none once the fight is over, or for a monster that is no boss); `map` = the fight
  *  map's state, for the range rules (the player's distance to the boss). */

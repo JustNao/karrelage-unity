@@ -368,8 +368,9 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   and `hit` (element of its last non-neutral damage since its turn started: GameActionFightEvent life_points_lost; the element int is learnt from
   actions 91–100, whose element is fixed, and read for the others, e.g. 2832 "pire élément"). Helpers: Pougnette (explodes
   end of its 5th turn), Nileza (odd rounds ≥ 3), Klime (glyph from round 2), Kimbo (last element → glyph parity), Dantinéa
-  (Grokillages at 6, 11, 16…), Phossile (Abîme at 5, 9, 13…), from dofuspourlesnoobs; only rounds / elements checked on a capture.
-  Range rules (Pougnette 7 PO, Nileza 11 / 9 / 7 / 5 PO): one line « À Z PO max <when> » + each of the player's characters' distance
+  (Grokillages at 6, 11, 16…), Phossile (Abîme at 5, 9, 13…), from dofuspourlesnoobs; Hin (gid 3848: OS at 10 PO or more at each of its turns from round 2, author's
+  monster notes); only rounds / elements checked on a capture.
+  Range rules (Pougnette 7 PO, Nileza 11 / 9 / 7 / 5 PO, Hin 9 PO): one line « À Z PO max <when> » + each of the player's characters' distance
   to the boss (`within`: fight_map cells, `cellDistance` = maps.rs `distance`; the overlay follows `fightmap:state`), safe or too far.
 
 **Fight map / line of sight** (`fight_map/`, `crates/data/src/maps.rs`, `modules/combat`, `lib/fightMap.ts`)
