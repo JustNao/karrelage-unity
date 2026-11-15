@@ -278,16 +278,21 @@ impl Brisage {
 
     /// Crafted or bought equipment: an object added to the inventory (ObjectAdded(s)Event: read by the inventory module first,
     /// so its uid is in the shared map) is a craft when the craft result that follows holds its uid (a forgemagie rune also
-    /// sends a craft result, on an object that was not just added), a purchase when the purchase answer that follows says
+    /// sends a craft result, on an object that was not just added) or, for a batch, its gid (one result with the gid and the
+    /// count, after one ObjectsAddedEvent with every piece made; identical pieces stacked), a purchase when the purchase answer that follows says
     /// bought (price = the request's). Verified on recordings: a craft = ObjectsAddedEvent then ExchangeCraftResultEvent; a
     /// purchase = BuyRequest, ..., ObjectAddedEvent, ..., BuyResultEvent (a resource there: no equipment purchase recorded).
-    /// Emits `brisage:acquired` {t, gid, uid, how: "craft" | "achat", price, effects: [[action, value]]}.
+    /// Emits `brisage:acquired` {t, gid, uid, qty (stack size), how: "craft" | "achat", price, effects: [[action, value]]}.
     fn on_acquired(&self, m: &Message, msg: &DynamicMessage, ctx: &Ctx) {
         let t = m.raw.t;
         let mut added = self.added.lock();
         added.retain(|a| t - a.t <= ACQUIRED_WINDOW);
         let emit = |a: &Added, how: &str, price: Option<i64>| {
-            ctx.emit("brisage", "acquired", json!({"t": a.t, "gid": a.seen.gid, "uid": a.uid, "how": how, "price": price, "effects": a.seen.effects}))
+            ctx.emit(
+                "brisage",
+                "acquired",
+                json!({"t": a.t, "gid": a.seen.gid, "uid": a.uid, "qty": a.seen.quantity, "how": how, "price": price, "effects": a.seen.effects}),
+            )
         };
         match m.name.as_str() {
             ADDED | ADDED_LIST => {
@@ -302,8 +307,10 @@ impl Brisage {
                 }
             }
             CRAFT_RESULT => {
+                // one craft: the result holds the object (its uid); a batch: one result with the gid and the count only (no
+                // uid), after every object made in one ObjectsAddedEvent (recorded: 20 × 7239)
                 let ints = all_ints(msg);
-                added.retain(|a| !ints.contains(&a.uid) || (emit(a, "craft", None), false).1);
+                added.retain(|a| !(ints.contains(&a.uid) || ints.contains(&a.seen.gid)) || (emit(a, "craft", None), false).1);
             }
             AH_BUY_REQUEST => {
                 let price = msg.descriptor().fields().filter(|f| !f.is_list() && f.kind() == Kind::Int64).map(|f| int(msg, f.name())).find(|p| *p > 0);
@@ -614,5 +621,16 @@ mod tests {
         send(ADDED_LIST, added, 30.0);
         send(CRAFT_RESULT, result, 36.0);
         assert_eq!(acquired().len(), 2, "too late: the add is forgotten");
+
+        // a batch of 20 × 7239 (recorded 3.7.13.17): 19 objects in one ObjectsAddedEvent (two identical pieces stacked), then
+        // one craft result with the gid and the count only
+        let batch = "1ac1080abe080a13747970652e616e6b616d612e636f6d2f69736712a6080a360a32180120c73828c8dcf4043a0628c801509e013a042837507d3a04282050763a05280950d2013a04280350703a05280250b601203f0a360a32180120c73828a6ee8c053a0628c801509e013a042833507d3a04282750763a05280950d2013a04280350703a05280250b601203f0a360a32180120c73828a5ee8c053a0628c801509e013a042839507d3a04282050763a05280750d2013a04280350703a05280250b601203f0a350a31180120c73828d0f7563a0628c801509e013a042837507d3a04282350763a05280750d2013a04280350703a05280250b601203f0a360a32180120c738288ac9f5033a0628c801509e013a04282d507d3a04282850763a05280750d2013a04280350703a05280250b601203f0a360a32180120c73828c095e3043a0628c801509e013a04282f507d3a04282150763a05280950d2013a04280350703a05280250b601203f0a360a32180120c73828c195e3043a0628c801509e013a042833507d3a04282450763a05280a50d2013a04280350703a05280250b601203f0a360a32180120c73828c295e3043a0628c801509e013a042833507d3a04282850763a05280750d2013a04280350703a05280250b601203f0a350a31180120c738289dec3a3a0628c801509e013a04282f507d3a04282350763a05280950d2013a04280450703a05280250b601203f0a360a32180120c73828b4aedc053a0628c801509e013a04282d507d3a04282250763a05280850d2013a04280450703a05280250b601203f0a360a32180120c73828fe99fa043a0628c801509e013a04282f507d3a04282050763a05280750d2013a04280350703a05280250b601203f0a360a32180120c73828fb9bb8033a0628c801509e013a042834507d3a04282650763a05280850d2013a04280350703a05280250b601203f0a360a32180120c73828a18c96013a0628c801509e013a042830507d3a04282350763a05280a50d2013a04280450703a05280250b601203f0a360a32180220c73828c0acf7053a0628c801509e013a042830507d3a04282450763a05280750d2013a04280350703a05280250b601203f0a360a32180120c73828fea8bf063a0628c801509e013a042835507d3a04282050763a05280850d2013a04280350703a05280250b601203f0a360a32180120c73828d4ffa6053a0628c801509e013a04282e507d3a04282650763a05280850d2013a04280450703a05280250b601203f0a360a32180120c73828d2ffa6053a0628c801509e013a042834507d3a04281f50763a05280750d2013a04280350703a05280250b601203f0a360a32180120c738288fa9bf063a0628c801509e013a04282f507d3a04282350763a05280850d2013a04280350703a05280250b601203f0a360a32180120c73828edb0dc053a0628c801509e013a04282c507d3a04282250763a05280850d2013a04280350703a05280250b601203f";
+        let batch_result = "1a240a220a13747970652e616e6b616d612e636f6d2f6b636f120b080212072205181420c738";
+        send(ADDED_LIST, batch, 40.0);
+        send(CRAFT_RESULT, batch_result, 40.1);
+        let a: Vec<Value> = acquired().into_iter().skip(2).collect();
+        assert_eq!(a.len(), 19, "{a:?}");
+        assert!(a.iter().all(|x| x["gid"].as_i64() == Some(7239) && x["how"] == "craft"));
+        assert_eq!(a.iter().map(|x| x["qty"].as_i64().unwrap()).sum::<i64>(), 20);
     }
 }

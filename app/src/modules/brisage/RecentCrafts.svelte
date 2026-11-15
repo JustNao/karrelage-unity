@@ -14,7 +14,8 @@
    * known coefficient. Same items (gid) on one row with a count, or one row per piece. Its cost: the price paid for a
    * purchase, else the craft's estimated at today's ingredient prices (`craftCost`: each bought or crafted, the cheaper).
    */
-  interface Acquired { t: number; gid: number; uid: number; how: "craft" | "achat"; price: number | null; effects: [number, number][] }
+  /** `qty`: identical pieces stacked (a batch craft), 1 when absent (older entries) */
+  interface Acquired { t: number; gid: number; uid: number; qty?: number; how: "craft" | "achat"; price: number | null; effects: [number, number][] }
 
   let { pack, coefOf, price, craft, selected, onpick }: {
     pack: BrisPack;
@@ -52,19 +53,21 @@
       const item = items.get(a.gid);
       const coef = coefOf(a.gid);
       const c = a.how === "achat" && a.price != null ? null : craft(a.gid);
-      const paid = { cost: c ? c.cost : a.price, estimated: !!c, missing: c?.missing ?? [] };
+      const n = a.qty ?? 1;
+      // a purchase's price is what the whole stack cost; a craft's estimate is per piece
+      const paid = { cost: c ? (c.cost == null ? null : c.cost * n) : a.price, estimated: !!c, missing: c?.missing ?? [] };
       if (!item) return { a, item, out: null, coef, value: null, ...paid };
       const defaults = new Set(item.effects.map((e) => e.a));
       const fx: BrisEffect[] = a.effects.map(([e, v]) => ({ a: e, value: v, exo: !defaults.has(e) }));
       const out = outcome(fx, item.level, pack.runes, price);
-      return { a, item, out, coef, value: coef == null ? null : (out.best.value * coef) / 100, ...paid };
+      return { a, item, out, coef, value: coef == null ? null : (out.best.value * coef * n) / 100, ...paid };
     }),
   );
 
   interface Row { key: string; gid: number; name: string; count: number; coef: number | null; value: number | null; cost: number | null; estimated: boolean; how: Set<string>; t: number; pieces: Piece[] }
   const rows = $derived.by<Row[]>(() => {
     const one = (p: Piece, key: string): Row => ({
-      key, gid: p.a.gid, name: p.item?.name ?? `#${p.a.gid}`, count: 1, coef: p.coef, value: p.value, cost: p.cost, estimated: p.estimated, how: new Set([p.a.how]), t: p.a.t, pieces: [p],
+      key, gid: p.a.gid, name: p.item?.name ?? `#${p.a.gid}`, count: p.a.qty ?? 1, coef: p.coef, value: p.value, cost: p.cost, estimated: p.estimated, how: new Set([p.a.how]), t: p.a.t, pieces: [p],
     });
     if (mode === "each") return pieces.map((p) => one(p, `${p.a.uid}:${p.a.t}`)).reverse();
     const by = new Map<number, Row>();
@@ -74,7 +77,7 @@
         by.set(p.a.gid, one(p, String(p.a.gid)));
         continue;
       }
-      r.count++;
+      r.count += p.a.qty ?? 1;
       r.value = r.value == null || p.value == null ? null : r.value + p.value;
       r.cost = r.cost == null || p.cost == null ? null : r.cost + p.cost;
       r.estimated ||= p.estimated;
@@ -84,6 +87,8 @@
     }
     return [...by.values()].sort((a, b) => b.t - a.t);
   });
+  /** pieces, stacks counted whole */
+  const count = $derived(store.list.reduce((s, a) => s + (a.qty ?? 1), 0));
   const total = $derived(rows.reduce((s, r) => s + (r.value ?? 0), 0));
 
   const coefText = (c: number | null) => (c == null ? "—" : `${fmtNum(c, c < 10 ? 1 : 0)} %`);
@@ -93,7 +98,7 @@
     if (r.coef == null) return "Coefficient inconnu : brisez-en un ou saisissez-le dans le détail de l'objet";
     const k = r.coef / 100;
     const counts = new Map<string, number>();
-    for (const p of r.pieces) for (const l of p.out?.lines ?? []) counts.set(runeShort(l.rune.name) ?? "?", (counts.get(runeShort(l.rune.name) ?? "?") ?? 0) + l.count * k);
+    for (const p of r.pieces) for (const l of p.out?.lines ?? []) counts.set(runeShort(l.rune.name) ?? "?", (counts.get(runeShort(l.rune.name) ?? "?") ?? 0) + l.count * k * (p.a.qty ?? 1));
     const plain = [...counts].map(([n, q]) => `${fmtNum(q, 1)} ${n}`).join(", ");
     const focus = r.pieces[0]?.out?.best.focus;
     const best = focus == null ? "sans focus" : `focus ${runeShort(r.pieces[0].out!.lines.find((l) => l.a === focus)?.rune.name)}`;
@@ -115,7 +120,7 @@
 <div class="recent">
   <div class="head">
     <b>Crafts récents</b>
-    {#if rows.length}<span class="mut">{store.list.length} objet{store.list.length > 1 ? "s" : ""} · {kamas(Math.round(total))}</span>{/if}
+    {#if rows.length}<span class="mut">{count} objet{count > 1 ? "s" : ""}{" · "}{kamas(Math.round(total))}</span>{/if}
     <span class="sp"></span>
     <Segmented
       bind:value={mode}

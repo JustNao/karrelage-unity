@@ -244,7 +244,8 @@ and developer mode are both on. New category = an entry in `CATEGORIES`, a defau
 - « Crafts récents » (`modules/brisage/RecentCrafts.svelte`, bottom of the Détail column, localStorage `karrelage.brisage.recent`):
   equipment crafted / bought while the tab is open (`brisage:acquired`, only heard while it is mounted). Backend: a breakable object
   added (ObjectAdded(s)Event, read by the inventory first: brisage comes after it in `all()`) is a craft when the next
-  ExchangeCraftResultEvent holds its uid (a forgemagie rune's result is on an object not just added), a purchase when
+  ExchangeCraftResultEvent holds its uid (a forgemagie rune's result is on an object not just added) or its gid (a batch: one
+  ObjectsAddedEvent with every piece, identical ones stacked (`qty`), then one result with gid + count, no uid; recorded 20 × 7239), a purchase when
   ExchangeBidHouseBuyResultEvent says bought (price = the BuyRequest's only int64), within 5 s. Checked on recorded payloads
   (a craft; the only recorded purchase was a resource). Runes = the piece's own rolls at the item's coefficient (best result).
   Price = paid for a purchase, else the craft estimated at today's stored prices (`craftCost`, « craft »; a missing ingredient price = —).
