@@ -424,7 +424,7 @@
       <div class="mut">Choisissez un objet dans la liste.</div>
     {/if}
     </div>
-    <RecentCrafts {pack} {coefOf} {price} selected={ui.sel} onpick={(gid) => (ui.sel = gid)} />
+    <RecentCrafts {pack} {coefOf} {price} craft={(gid) => craftCost(gid, recipes, prices.map)} selected={ui.sel} onpick={(gid) => (ui.sel = gid)} />
   </div>
 </div>
 

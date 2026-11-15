@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { listenAll } from "../../lib/api";
   import { persisted } from "../../lib/persist.svelte";
+  import type { CraftResult } from "../../lib/craft";
   import { outcome, type BrisEffect, type BrisItem, type BrisPack, type Outcome } from "../../lib/brisage";
   import { fmtNum, fmtTime, kamas, runeShort, signedKamas } from "../../lib/fmt";
   import Segmented from "../../lib/components/Segmented.svelte";
@@ -10,11 +11,20 @@
   /**
    * « Crafts récents »: the equipment pieces crafted or bought while the Brisage tab is open (`brisage:acquired`, heard only
    * while this panel is mounted), with their coefficient and the runes they should give: their own rolls, at the item's
-   * known coefficient. Same items (gid) on one row with a count, or one row per piece.
+   * known coefficient. Same items (gid) on one row with a count, or one row per piece. Its cost: the price paid for a
+   * purchase, else the craft's estimated at today's ingredient prices (`craftCost`: each bought or crafted, the cheaper).
    */
   interface Acquired { t: number; gid: number; uid: number; how: "craft" | "achat"; price: number | null; effects: [number, number][] }
 
-  let { pack, coefOf, price, selected, onpick }: { pack: BrisPack; coefOf: (gid: number) => number | null; price: (gid: number) => number | null; selected: number | null; onpick: (gid: number) => void } = $props();
+  let { pack, coefOf, price, craft, selected, onpick }: {
+    pack: BrisPack;
+    coefOf: (gid: number) => number | null;
+    price: (gid: number) => number | null;
+    /** the item's craft cost at the stored prices (null: no recipe) */
+    craft: (gid: number) => CraftResult | null;
+    selected: number | null;
+    onpick: (gid: number) => void;
+  } = $props();
 
   /** Pieces kept, latest last. */
   const MAX = 300;
@@ -34,24 +44,27 @@
 
   const items = $derived(new Map(pack.items.map((i) => [i.gid, i])));
 
-  interface Piece { a: Acquired; item: BrisItem | undefined; out: Outcome | null; coef: number | null; value: number | null }
+  /** `cost`: paid (purchase) or estimated (craft: `estimated`, `missing` = ingredients without a price) */
+  interface Piece { a: Acquired; item: BrisItem | undefined; out: Outcome | null; coef: number | null; value: number | null; cost: number | null; estimated: boolean; missing: string[] }
   /** Each piece broken at its item's coefficient: its own rolls (an effect the item lacks by default = exo: no focus). */
   const pieces = $derived(
     store.list.map((a): Piece => {
       const item = items.get(a.gid);
       const coef = coefOf(a.gid);
-      if (!item) return { a, item, out: null, coef, value: null };
+      const c = a.how === "achat" && a.price != null ? null : craft(a.gid);
+      const paid = { cost: c ? c.cost : a.price, estimated: !!c, missing: c?.missing ?? [] };
+      if (!item) return { a, item, out: null, coef, value: null, ...paid };
       const defaults = new Set(item.effects.map((e) => e.a));
       const fx: BrisEffect[] = a.effects.map(([e, v]) => ({ a: e, value: v, exo: !defaults.has(e) }));
       const out = outcome(fx, item.level, pack.runes, price);
-      return { a, item, out, coef, value: coef == null ? null : (out.best.value * coef) / 100 };
+      return { a, item, out, coef, value: coef == null ? null : (out.best.value * coef) / 100, ...paid };
     }),
   );
 
-  interface Row { key: string; gid: number; name: string; count: number; coef: number | null; value: number | null; cost: number | null; how: Set<string>; t: number; pieces: Piece[] }
+  interface Row { key: string; gid: number; name: string; count: number; coef: number | null; value: number | null; cost: number | null; estimated: boolean; how: Set<string>; t: number; pieces: Piece[] }
   const rows = $derived.by<Row[]>(() => {
     const one = (p: Piece, key: string): Row => ({
-      key, gid: p.a.gid, name: p.item?.name ?? `#${p.a.gid}`, count: 1, coef: p.coef, value: p.value, cost: p.a.price, how: new Set([p.a.how]), t: p.a.t, pieces: [p],
+      key, gid: p.a.gid, name: p.item?.name ?? `#${p.a.gid}`, count: 1, coef: p.coef, value: p.value, cost: p.cost, estimated: p.estimated, how: new Set([p.a.how]), t: p.a.t, pieces: [p],
     });
     if (mode === "each") return pieces.map((p) => one(p, `${p.a.uid}:${p.a.t}`)).reverse();
     const by = new Map<number, Row>();
@@ -63,7 +76,8 @@
       }
       r.count++;
       r.value = r.value == null || p.value == null ? null : r.value + p.value;
-      r.cost = r.cost == null || p.a.price == null ? null : r.cost + p.a.price;
+      r.cost = r.cost == null || p.cost == null ? null : r.cost + p.cost;
+      r.estimated ||= p.estimated;
       r.how.add(p.a.how);
       r.t = Math.max(r.t, p.a.t);
       r.pieces.push(p);
@@ -84,6 +98,17 @@
     const focus = r.pieces[0]?.out?.best.focus;
     const best = focus == null ? "sans focus" : `focus ${runeShort(r.pieces[0].out!.lines.find((l) => l.a === focus)?.rune.name)}`;
     return `Sans focus : ${plain}\nMeilleur résultat : ${best} (taxe de 2 % déduite)`;
+  }
+  function costTitle(r: Row): string {
+    const bought = r.pieces.filter((p) => !p.estimated && p.cost != null).length;
+    const crafted = r.pieces.filter((p) => p.estimated).length;
+    const missing = [...new Set(r.pieces.flatMap((p) => p.missing))];
+    const parts = [
+      bought ? `${bought > 1 ? `${bought} achetés` : "Acheté"} : prix payé à l'hôtel de vente` : "",
+      crafted ? `${crafted > 1 ? `${crafted} craftés` : "Crafté"} : coût du craft estimé aux prix enregistrés des ingrédients (achetés ou craftés, le moins cher)` : "",
+      missing.length ? `Prix manquant : ${missing.join(", ")}` : "",
+    ];
+    return parts.filter(Boolean).join("\n") || "Ni prix d'achat ni recette connus";
   }
 </script>
 
@@ -111,7 +136,7 @@
             {#if mode === "grouped"}<th class="n">Qté</th>{:else}<th>Heure</th>{/if}
             <th class="n" title="Coefficient connu de l'objet (relevé au brisage ou saisi)">Coef</th>
             <th class="n" title="Valeur des runes au coefficient connu, avec les jets réels de chaque objet (meilleur résultat, taxe de 2 % déduite)">Runes estimées</th>
-            <th class="n" title="Prix payé à l'hôtel de vente (achats)">Prix</th>
+            <th class="n" title="Prix payé à l'hôtel de vente pour un achat, coût du craft estimé aux prix des ingrédients sinon">Prix</th>
           </tr>
         </thead>
         <tbody>
@@ -121,7 +146,7 @@
               {#if mode === "grouped"}<td class="n">{r.count}</td>{:else}<td class="mut">{fmtTime(r.t)}</td>{/if}
               <td class="n">{coefText(r.coef)}</td>
               <td class="n" title={runesTitle(r)}>{#if r.value != null}<b>{kamas(Math.round(r.value))}</b>{#if r.pieces.some((p) => p.out?.unpriced)}<span class="warn" title="Une rune n'a pas de prix (comptée 0) : ouvrez-la à l'hôtel de vente">⚠</span>{/if}{#if r.cost != null}<span class="gain" class:good={r.value > r.cost} class:bad={r.value < r.cost}>({signedKamas(Math.round(r.value - r.cost))})</span>{/if}{:else}<span class="mut">—</span>{/if}</td>
-              <td class="n">{r.cost != null ? kamas(r.cost) : "—"}</td>
+              <td class="n" title={costTitle(r)}>{#if r.cost != null}{kamas(Math.round(r.cost))}{#if r.estimated} <span class="mut">craft</span>{/if}{:else}—{#if r.pieces.some((p) => p.missing.length)} <span class="warn">⚠</span>{/if}{/if}</td>
             </tr>
           {/each}
         </tbody>
