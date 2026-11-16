@@ -71,6 +71,8 @@
   let closeAsked: "any" | "click" | null = null;
 
   const mine = $derived(new Set(fight.mine ?? []));
+  /** the player's character whose turn it is (or was last): its characteristics for the best element (fightmap/ResistLayer) */
+  let playing = $state<number | null>(null);
   /** The window takes the mouse and the focus only for what needs a click on it: the calibration, the line of sight until a
    *  cell is pinned. Everything else lets all through to the game (it keeps the Portail spell selected, its shortcuts...). */
   const takesInput = $derived(shown && cells !== null && (!cal || (view === "los" && !sticky)));
@@ -217,7 +219,10 @@
         if (opening || (shown && closesOnClick() && Date.now() - calibratedAt > CALIBRATION_CLICK_GRACE_MS)) closeSoon("click");
       },
       "fightmap:turn": ({ id }: { id: number }) => {
-        if (mine.has(id)) mineTurn = true;
+        if (mine.has(id)) {
+          mineTurn = true;
+          playing = id;
+        }
         else if (mineTurn) {
           mineTurn = false;
           closeSoon("any");
@@ -305,7 +310,7 @@
 
 <!-- the weakest elements always shown (the line of sight view draws its own) -->
 {#if always && cells && alwaysCal && foreground && !(shown && view === "los")}
-  <div class="always"><ResistLayer cal={alwaysCal} {live} {mine} {dpr} /></div>
+  <div class="always"><ResistLayer cal={alwaysCal} {live} {mine} {dpr} {playing} /></div>
 {/if}
 
 <!-- the way through the portal under the mouse, with no view (the class help draws its own, the portal simulation its) -->
@@ -326,7 +331,7 @@
   {:else}
     {#if view === "los"}
       <LosLayer {cal} {cells} {live} {mine} {dpr} {hold} {pointed} clicks={losClicks} bind:sticky />
-      {#if settings.combat.weakElement}<ResistLayer {cal} {live} {mine} {dpr} />{/if}
+      {#if settings.combat.weakElement}<ResistLayer {cal} {live} {mine} {dpr} {playing} />{/if}
     {:else if view === "portals"}
       <PortalSimLayer {cal} {live} {mine} {dpr} {pointed} {polled} />
     {:else if view === "exil"}

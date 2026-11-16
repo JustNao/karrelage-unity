@@ -22,6 +22,8 @@ export interface MapFighter {
   summoner: number;
   /** % resistances: neutral, earth, fire, water, air (null: not told) */
   resists: [number, number, number, number, number] | null;
+  /** damage characteristics told so far, by characteristic id: [value, when told] (lib/damage.ts) */
+  stats: Record<string, [number, number]>;
   /** Invisible: its last known cell is not where it stands. */
   invisible: boolean;
 }
@@ -37,6 +39,8 @@ export interface FightMapState {
   fighters: MapFighter[];
   /** in the order they were put down */
   portals: MapPortal[];
+  /** the character's damage characteristics: [value, when told] (CharacterCharacteristicsEvent; empty: not seen yet) */
+  character?: Record<string, [number, number]>;
 }
 /** Diagonal coordinates of a cell (crates/data/src/maps.rs `coords`). */
 function coords(cell: number): [number, number] {

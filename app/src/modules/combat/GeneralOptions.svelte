@@ -2,6 +2,7 @@
   import { settings } from "../../lib/stores/settings.svelte";
   import { NO_BINDING, SHORTCUTS, sameBinding } from "../../lib/shortcuts";
   import Switch from "../../lib/components/Switch.svelte";
+  import Segmented from "../../lib/components/Segmented.svelte";
   import KeyCapture from "../../lib/components/KeyCapture.svelte";
   import Banner from "../../lib/components/Banner.svelte";
 
@@ -24,6 +25,27 @@
     </div>
   </div>
   <div class="ctl"><Switch bind:checked={settings.combat.weakElement} label="Élément le plus faible des ennemis" /></div>
+</div>
+<div class="row sub" class:off={!settings.combat.weakElement}>
+  <div class="lb">
+    <div>Élément affiché</div>
+    <div class="mut">
+      « Mon build » : l'élément qui fait le plus de dégâts à chaque ennemi avec vos caractéristiques, puissance et dommages
+      (fixes et élémentaires), contre ses résistances en % et fixes, pour un sort de 30 de base ; les dégâts en dessous. Suit les
+      changements d'équipement et les buffs du combat (personnage dont c'est le tour). Tant que vos caractéristiques ne sont pas
+      connues : la résistance la plus basse.
+    </div>
+  </div>
+  <div class="ctl">
+    <Segmented
+      bind:value={settings.combat.weakElementMode}
+      label="Élément affiché"
+      options={[
+        { id: "resist", label: "Résistance la plus basse" },
+        { id: "damage", label: "Mon build" },
+      ]}
+    />
+  </div>
 </div>
 <div class="row sub" class:off={!settings.combat.weakElement}>
   <div class="lb">

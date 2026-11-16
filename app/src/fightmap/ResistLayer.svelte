@@ -1,19 +1,27 @@
 <script lang="ts">
   import { ELEMENTS } from "../lib/bosses";
+  import { attackerStats, bestElement } from "../lib/damage";
   import { screenCentre, type Calibration, type FightMapState, type MapFighter } from "../lib/fightMap";
+  import { settings } from "../lib/stores/settings.svelte";
 
   /**
    * Weakest element of each enemy in the in-game view (line of sight, F3; or always, `settings.combat.weakElementAlways`):
    * written at the fighter's feet, in its element's colour, with its % resistance under it. Resistances are the fight's live ones (crates/modules/src/fight_map: the fighter's stats,
    * then each stats refresh: buffs and debuffs count). Neutral left out. Ties: every tied element (all four: « Tous »).
    * Enemies: not on the team of the player's characters (`mine`), else every monster when the player is not known.
+   * `settings.combat.weakElementMode` "damage": the element the player's build hits hardest instead (lib/damage.ts: a 30 damage
+   * spell with their characteristics, power and damages against the enemy's % and fixed resistances; whose turn it is when one
+   * of `mine` (`playing`)), the damage under it. Their characteristics unknown yet: the weakest element as before.
    */
-  let { cal, live, mine, dpr }: {
+  let { cal, live, mine, dpr, playing = null }: {
     cal: Calibration;
     live: FightMapState;
     mine: Set<number>;
     dpr: number;
+    playing?: number | null;
   } = $props();
+
+  const attacker = $derived(settings.combat.weakElementMode === "damage" ? attackerStats(live, mine, playing) : null);
 
   /** neutral, earth, fire, water, air (ELEMENTS' order) */
   const COLOURS = ["#c8c8c8", "#c9a15a", "#ff6a3d", "#4fb3ff", "#6fdc6f"];
@@ -28,7 +36,13 @@
    *  lowest element is shown instead. */
   function weakest(r: number[]) {
     const low = Math.min(...r.slice(1));
-    return { low, elements: r.flatMap((v, i) => (i > 0 && v === low ? [i] : [])) };
+    return { value: `${low} %`, elements: r.flatMap((v, i) => (i > 0 && v === low ? [i] : [])) };
+  }
+
+  /** What is written on an enemy: the best element for the player's build, else its weakest. */
+  function shown(f: MapFighter) {
+    const best = attacker && bestElement(attacker, f);
+    return best ? { value: `${best.damage} dmg`, elements: best.elements } : weakest(f.resists!);
   }
 
   /** text size from the cell's size on screen */
@@ -38,7 +52,7 @@
 <svg width="100%" height="100%">
   {#each enemies as f (f.id)}
     {@const [x, y] = screenCentre(cal, f.cell, dpr)}
-    {@const w = weakest(f.resists!)}
+    {@const w = shown(f)}
     <!-- at the fighter's feet: both lines centred on the cell it stands on (name cap height ~0.7 em above its baseline,
          value baseline ~1 em under it) -->
     <text {x} y={y - size * 0.2} font-size={size} class="weak">
@@ -46,7 +60,7 @@
       {:else}
         {#each w.elements as e, i (e)}{#if i}<tspan fill="#fff"> / </tspan>{/if}<tspan fill={COLOURS[e]}>{ELEMENTS[e]}</tspan>{/each}
       {/if}
-      <tspan {x} dy="1.15em" fill="#fff" class="value">{w.low} %</tspan>
+      <tspan {x} dy="1.15em" fill="#fff" class="value">{w.value}</tspan>
     </text>
   {/each}
 </svg>

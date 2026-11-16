@@ -46,6 +46,9 @@ const DEFAULTS = {
     weakElement: true,
     /** ... during the whole fight, without the shortcut (only while the game is in the foreground). */
     weakElementAlways: false,
+    /** What the element is: the enemy's lowest % resistance ("resist"), or the one the player's build hits hardest with a
+     *  30 damage spell, characteristics and resistances counted ("damage", lib/damage.ts). */
+    weakElementMode: "resist" as "resist" | "damage",
   },
   /** Automation « Forgemagie »: the overlay over the game's forgemagie window (ForgemagieOverlay.svelte). */
   forgemagie: {

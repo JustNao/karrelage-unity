@@ -14,6 +14,10 @@
 //! Marks on the ground and the Eliotrope's portals: `portals`.
 //! % resistances (neutral, earth, fire, water, air: characteristics 37, 33, 34, 35, 36) from the FightFighterInformation's stats,
 //! then FightRefreshCharacterStatsEvent (only the changed ones: buffs, debuffs): the in-game view's weakest element.
+//! Damage characteristics (`DAMAGE_STATS`: the four elements, power, damages, elemental damages, fixed resistances) the same
+//! way, and the character's own (CharacterCharacteristicsEvent: login, after each fight; totals = the sum of each detail's
+//! ints; sent again when the equipment changes, a set switched during the placement too) for when the fight did not send the
+//! player's or they changed since: each value carries when it was told (`Told`), the newest wins (lib/damage.ts).
 //! Invisible: GameActionFightEvent invisibility (state 0; its last known cell is not shown).
 //!
 //! In-game overlay (FightMapOverlay.svelte, opened by a shortcut): `window` = the Dofus window's client area to cover,
@@ -55,6 +59,15 @@ const SPAWN: &str = "SpawnInformation";
 const SUMMON: &str = "SummonContextInformation";
 /// A fighter's characteristics changed (only those listed).
 const STATS: &str = "FightRefreshCharacterStatsEvent";
+/// The character's characteristics (login, after a fight).
+const CHARACTERISTICS: &str = "CharacterCharacteristicsEvent";
+/// Characteristics a spell's damage depends on (lib/damage.ts): strength 10, chance 13, agility 14, intelligence 15, damages 16,
+/// power 25, fixed resistances 54-58 (earth, fire, water, air, neutral), elemental damages 88-92 (earth, fire, water, air, neutral).
+const DAMAGE_STATS: [i64; 16] = [10, 13, 14, 15, 16, 25, 54, 55, 56, 57, 58, 88, 89, 90, 91, 92];
+/// A characteristic's value and when it was told (messages counted since the app started): between the character's sheet and
+/// what the fight told about its fighter, the newest wins.
+type Told = (i64, u64);
+
 /// % resistance characteristics: neutral, earth, fire, water, air.
 const RESISTS: [i64; 5] = [37, 33, 34, 35, 36];
 
@@ -76,6 +89,8 @@ struct Fighter {
     summoner: i64,
     /// % resistances: neutral, earth, fire, water, air (None: no stats seen).
     resists: Option<[i64; 5]>,
+    /// `DAMAGE_STATS` told so far (a refresh only sends the changed ones).
+    stats: BTreeMap<i64, Told>,
     /// Invisible (its last GameActionFightEvent invisibility's state is 0; 1 detected, 2 visible): where it stands is unknown.
     invisible: bool,
 }
@@ -91,6 +106,10 @@ struct State {
     marks: Marks,
     /// Turns started in this fight.
     turn: u32,
+    /// The character's `DAMAGE_STATS` (last CharacterCharacteristicsEvent; kept across fights).
+    character: BTreeMap<i64, Told>,
+    /// Messages handled (`Told`).
+    seq: u64,
 }
 
 impl State {
@@ -108,7 +127,7 @@ impl State {
     }
 
     fn json(&self) -> Value {
-        json!({"map": self.map(), "fight": self.fight, "fighters": self.fighters.values().collect::<Vec<_>>(), "portals": self.portals()})
+        json!({"map": self.map(), "fight": self.fight, "fighters": self.fighters.values().collect::<Vec<_>>(), "portals": self.portals(), "character": self.character})
     }
 }
 
@@ -194,7 +213,7 @@ fn spawn(ctx: &Ctx, m: &DynamicMessage) -> (bool, Option<i64>) {
 }
 
 /// A fighter from its ActorPositionInformation (`outer` = the SpawnInformation holding it, for summons).
-fn position(ctx: &Ctx, m: &DynamicMessage, outer: Option<&Outer>) -> Option<Fighter> {
+fn position(ctx: &Ctx, m: &DynamicMessage, outer: Option<&Outer>, seq: u64) -> Option<Fighter> {
     let id = named_int(ctx, m, "actor_id")?;
     let cell = named_child(ctx, m, "disposition").and_then(|d| named_int(ctx, d, "cell_id"))?;
     let info = find(ctx, m, FIGHTER);
@@ -209,11 +228,14 @@ fn position(ctx: &Ctx, m: &DynamicMessage, outer: Option<&Outer>) -> Option<Figh
     let stats = info.and_then(|i| named_child(ctx, i, "stats"));
     let summoned = stats.and_then(|s| named_int(ctx, s, "summoned")).unwrap_or(0) != 0;
     let summoner = stats.and_then(|s| named_int(ctx, s, "summoner")).unwrap_or(0);
-    let resists = stats.and_then(|s| {
+    let list = stats.map(|s| characteristics(ctx, s)).unwrap_or_default();
+    let resists = stats.and_then(|_| {
         let mut r = [None; 5];
-        merge_resists(&mut r, &characteristics(ctx, s));
+        merge_resists(&mut r, &list);
         r.iter().all(Option::is_some).then(|| r.map(|x| x.unwrap_or(0)))
     });
+    let mut kept = BTreeMap::new();
+    merge_stats(&mut kept, &list, seq);
     let mut monsters = vec![];
     if let Some(ai) = info.and_then(|i| named_child(ctx, i, "ai_fighter")) {
         monster_ints(ctx, ai, &mut monsters);
@@ -221,7 +243,7 @@ fn position(ctx: &Ctx, m: &DynamicMessage, outer: Option<&Outer>) -> Option<Figh
     if monsters.is_empty() {
         monsters = outer.map(|o| o.monsters.clone()).unwrap_or_default();
     }
-    Some(Fighter { id, cell, team, kind: kind.unwrap_or("other"), alive, summoned, carried: false, monsters, summoner, resists, invisible: false })
+    Some(Fighter { id, cell, team, kind: kind.unwrap_or("other"), alive, summoned, carried: false, monsters, summoner, resists, stats: kept, invisible: false })
 }
 
 /// The % resistances among these characteristics put in `r` (neutral, earth, fire, water, air); whether one changed.
@@ -235,10 +257,21 @@ fn merge_resists(r: &mut [Option<i64>; 5], list: &[(i64, i64)]) -> bool {
     changed
 }
 
+/// The `DAMAGE_STATS` among these characteristics put in `kept`, told at `seq`; whether there was one (told again, even
+/// unchanged, it is newer than the character's sheet).
+fn merge_stats(kept: &mut BTreeMap<i64, Told>, list: &[(i64, i64)], seq: u64) -> bool {
+    let mut any = false;
+    for &(id, v) in list.iter().filter(|(id, _)| DAMAGE_STATS.contains(id)) {
+        kept.insert(id, (v, seq));
+        any = true;
+    }
+    any
+}
+
 /// Every fighter positioned in a message.
-fn fighters(ctx: &Ctx, m: &DynamicMessage, outer: Option<&Outer>, out: &mut Vec<Fighter>) {
+fn fighters(ctx: &Ctx, m: &DynamicMessage, outer: Option<&Outer>, seq: u64, out: &mut Vec<Fighter>) {
     match name(ctx, m).as_str() {
-        POSITION => out.extend(position(ctx, m, outer)),
+        POSITION => out.extend(position(ctx, m, outer, seq)),
         SPAWN => {
             let (alive, team) = spawn(ctx, m);
             let mut monsters = vec![];
@@ -247,7 +280,7 @@ fn fighters(ctx: &Ctx, m: &DynamicMessage, outer: Option<&Outer>, out: &mut Vec<
                 monsters = outer.map(|o| o.monsters.clone()).unwrap_or_default();
             }
             let o = Outer { alive, team, monsters };
-            children(m).into_iter().for_each(|c| fighters(ctx, c, Some(&o), out));
+            children(m).into_iter().for_each(|c| fighters(ctx, c, Some(&o), seq, out));
         }
         // a summon by context: its spawn information's monster (gid + grade or level) for every actor it spawns
         SUMMON => {
@@ -256,9 +289,9 @@ fn fighters(ctx: &Ctx, m: &DynamicMessage, outer: Option<&Outer>, out: &mut Vec<
                 monster_ints(ctx, sp, &mut monsters);
             }
             let o = Outer { monsters, ..outer.cloned().unwrap_or(Outer { alive: true, team: None, monsters: vec![] }) };
-            children(m).into_iter().for_each(|c| fighters(ctx, c, Some(&o), out));
+            children(m).into_iter().for_each(|c| fighters(ctx, c, Some(&o), seq, out));
         }
-        _ => children(m).into_iter().for_each(|c| fighters(ctx, c, outer, out)),
+        _ => children(m).into_iter().for_each(|c| fighters(ctx, c, outer, seq, out)),
     }
 }
 
@@ -314,7 +347,7 @@ impl FightMap {
         }
         if let Some(x) = named_child(ctx, d, "summons") {
             let mut found = vec![];
-            fighters(ctx, x, None, &mut found);
+            fighters(ctx, x, None, s.seq, &mut found);
             let changed = !found.is_empty();
             // the caster is the summoner when the summon does not say
             let caster = named_int(ctx, d, "source_id").unwrap_or(0);
@@ -355,12 +388,14 @@ impl Module for FightMap {
     }
 
     fn interest(&self) -> Interest {
-        Interest::Types(&[MAP, FIGHT_MAP, JOIN, SHOW, REFRESH, SYNC, ACTION, MOVE, MOVE_REQUEST, END, TURN, STATS])
+        Interest::Types(&[MAP, FIGHT_MAP, JOIN, SHOW, REFRESH, SYNC, ACTION, MOVE, MOVE_REQUEST, END, TURN, STATS, CHARACTERISTICS])
     }
 
     fn on_message(&self, m: &Message, ctx: &Ctx) {
         let Some(d) = m.decoded.as_ref() else { return };
         let mut s = self.state.lock();
+        s.seq += 1;
+        let seq = s.seq;
         // a message only a fight sends, with no fight known: the app was started during it
         let joined_late = !s.fight && matches!(m.name.as_str(), TURN | SYNC | SHOW | REFRESH | ACTION);
         if joined_late {
@@ -411,11 +446,19 @@ impl Module for FightMap {
                     s.marks.clear();
                     was
                 }
+                CHARACTERISTICS => {
+                    let Some(stats) = named_child(ctx, d, "stats") else { return };
+                    // every characteristic is listed: the ones missing are 0. Told again: newer than the fight's sheet
+                    let list = characteristics(ctx, stats);
+                    let value = |id: &i64| list.iter().find(|(c, _)| c == id).map_or(0, |(_, v)| *v);
+                    s.character = DAMAGE_STATS.iter().map(|id| (*id, (value(id), seq))).collect();
+                    true
+                }
                 // fighters only matter during a fight
                 _ if !s.fight => false,
                 SHOW | REFRESH | SYNC => {
                     let mut found = vec![];
-                    fighters(ctx, d, None, &mut found);
+                    fighters(ctx, d, None, seq, &mut found);
                     if m.name == SYNC && !found.is_empty() {
                         s.fighters.clear();
                     }
@@ -428,6 +471,11 @@ impl Module for FightMap {
                                 monsters: if f.monsters.is_empty() { old.monsters } else { f.monsters },
                                 summoner: if f.summoner == 0 { old.summoner } else { f.summoner },
                                 resists: f.resists.or(old.resists),
+                                stats: {
+                                    let mut st = old.stats;
+                                    st.extend(f.stats);
+                                    st
+                                },
                                 invisible: old.invisible,
                                 ..f
                             },
@@ -462,6 +510,7 @@ impl Module for FightMap {
                                 monsters: vec![],
                                 summoner: 0,
                                 resists: None,
+                                stats: BTreeMap::new(),
                                 invisible: false,
                             };
                             s.fighters.insert(id, f);
@@ -480,7 +529,7 @@ impl Module for FightMap {
                     if changed && r.iter().all(Option::is_some) {
                         f.resists = Some(r.map(|x| x.unwrap_or(0)));
                     }
-                    changed && f.resists.is_some()
+                    (changed && f.resists.is_some()) | merge_stats(&mut f.stats, &list, seq)
                 }
                 _ => false,
             };
@@ -489,7 +538,7 @@ impl Module for FightMap {
         }
     }
 
-    /// `state`: {map, fight, fighters: [{id, cell, team, kind, alive, summoned, carried, monsters, summoner, resists: [neutral, earth, fire, water, air] % | null, invisible}]}; `cells` {map}: the flags of its
+    /// `state`: {map, fight, fighters: [{id, cell, team, kind, alive, summoned, carried, monsters, summoner, resists: [neutral, earth, fire, water, air] % | null, stats: {DAMAGE_STATS id: [total, told]}, invisible}], character: {DAMAGE_STATS id: [total, told]}}; `cells` {map}: the flags of its
     /// 560 cells (bits 1 walkable, 2 sight goes through, 4 / 8 red / blue placement) or null; `sight` {from, min, max,
     /// ignore?: [fighter ids]}: {seen, hidden} cells of the current map at distance min..=max from `from`, the living
     /// fighters blocking the sight (but the ones of `ignore` and whoever stands on `from`). `window`: the Dofus window's client
@@ -639,6 +688,9 @@ mod tests {
             let mut fight_map = false;
             let mut turret = false;
             let (mut vanished, mut invisible) = (0, 0);
+            // the character's power (CharacterCharacteristicsEvent), a player fighter's damage characteristics (FightSynchronizeEvent,
+            // else the refreshes: capture_poison's sync has none of the player's)
+            let (mut power, mut strength) = (None, false);
             // living monsters without resistances, resistance changes, last resistances per fighter
             let mut resists = (0, 0, BTreeMap::<i64, String>::new());
             for line in std::fs::read_to_string(&rec).unwrap().lines() {
@@ -669,6 +721,8 @@ mod tests {
                 if s["fighters"].as_array().unwrap().iter().any(|f| f["invisible"] == true && f["kind"] == "monster") {
                     invisible += 1;
                 }
+                power = s["character"]["25"][0].as_i64().or(power);
+                strength |= s["fighters"].as_array().unwrap().iter().any(|f| f["kind"] == "player" && f["stats"].as_object().is_some_and(|o| !o.is_empty()));
                 if r["name"] == END {
                     assert!(s["fight"] == false && s["fighters"].as_array().unwrap().is_empty(), "{name}: cleared at the fight's end");
                 }
@@ -721,6 +775,8 @@ mod tests {
             );
             assert!(!resists.2.is_empty() && resists.0 == 0, "{name}: every living monster's resistances known");
             assert!(checked > 0 && moves > 0, "{name}: fighters followed");
+            assert!(strength, "{name}: a player fighter's damage characteristics");
+            assert!(power == Some(403) || name != "capture_poison", "{name}: the character's power ({power:?})");
             assert!(turret || name != "capture_harebourg", "{name}: the player's Harponneuse, with its gid and summoner");
             assert!(vanished == 11 || name != "capture_troollogram", "{name}: the Troollogram's 11 decoys vanished ({vanished})");
             assert!(invisible > 0 || name != "capture_troollogram", "{name}: the Troollogram invisible while its decoys are out");
