@@ -432,7 +432,7 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   (not the team of `me`, else monsters), the element of its lowest % resistance (characteristics 37 / 33 / 34 / 35 / 36 = neutral,
   earth, fire, water, air; neutral never shown: the next lowest instead) in that element's colour, the value under it. Fighter `resists` from FightFighterInformation stats, then
   FightRefreshCharacterStatsEvent (only changed ones: debuffs followed; verified on the 3 captures: every living monster has them).
-  `weakElementMode` « Mon build » (`lib/damage.ts`): the element (neutral out) where a 30 damage spell hits hardest, damage under it:
+  `weakElementMode` « Mon build » (`lib/damage.ts`): the element (neutral out) where a 30 damage spell hits hardest (element only, no value):
   floor(30 × (100 + carac + power 25) / 100 + damages 16 + elemental 88–92), − fixed resist 54–58, × (100 − %) (neutral = strength;
   crits / final % multipliers left out). Attacker = whose turn among `me`; its characteristics per id = the newest of the character's
   sheet (CharacterCharacteristicsEvent: sum of each detail's ints, also re-sent on equipment changes: set switches) and the fighter's

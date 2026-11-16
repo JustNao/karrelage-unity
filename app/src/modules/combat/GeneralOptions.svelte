@@ -31,7 +31,7 @@
     <div>Élément affiché</div>
     <div class="mut">
       « Mon build » : l'élément qui fait le plus de dégâts à chaque ennemi avec vos caractéristiques, puissance et dommages
-      (fixes et élémentaires), contre ses résistances en % et fixes, pour un sort de 30 de base ; les dégâts en dessous. Suit les
+      (fixes et élémentaires), contre ses résistances en % et fixes, pour un sort de 30 de base. Suit les
       changements d'équipement et les buffs du combat (personnage dont c'est le tour). Tant que vos caractéristiques ne sont pas
       connues : la résistance la plus basse.
     </div>

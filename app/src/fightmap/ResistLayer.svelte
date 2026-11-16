@@ -11,7 +11,7 @@
    * Enemies: not on the team of the player's characters (`mine`), else every monster when the player is not known.
    * `settings.combat.weakElementMode` "damage": the element the player's build hits hardest instead (lib/damage.ts: a 30 damage
    * spell with their characteristics, power and damages against the enemy's % and fixed resistances; whose turn it is when one
-   * of `mine` (`playing`)), the damage under it. Their characteristics unknown yet: the weakest element as before.
+   * of `mine` (`playing`)), alone (no value under it). Their characteristics unknown yet: the weakest element as before.
    */
   let { cal, live, mine, dpr, playing = null }: {
     cal: Calibration;
@@ -42,7 +42,7 @@
   /** What is written on an enemy: the best element for the player's build, else its weakest. */
   function shown(f: MapFighter) {
     const best = attacker && bestElement(attacker, f);
-    return best ? { value: `${best.damage} dmg`, elements: best.elements } : weakest(f.resists!);
+    return best ? { value: null, elements: best.elements } : weakest(f.resists!);
   }
 
   /** text size from the cell's size on screen */
@@ -60,7 +60,7 @@
       {:else}
         {#each w.elements as e, i (e)}{#if i}<tspan fill="#fff"> / </tspan>{/if}<tspan fill={COLOURS[e]}>{ELEMENTS[e]}</tspan>{/each}
       {/if}
-      <tspan {x} dy="1.15em" fill="#fff" class="value">{w.value}</tspan>
+      {#if w.value}<tspan {x} dy="1.15em" fill="#fff" class="value">{w.value}</tspan>{/if}
     </text>
   {/each}
 </svg>
