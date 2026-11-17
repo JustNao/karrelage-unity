@@ -469,7 +469,7 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   open map). No spell range / line of sight checked for the new portals.
 - Enemy placement cells on the Combat tab map (`Minimap.svelte` `enemies`): the pack cells' placement flags of the team that isn't the
   player's (team 0 = RED, team 1 = BLUE: monsters = team 1 on blue cells, players on red, on all 5 captured fights; 12 blue cells
-  each). Small dashed diamond in « Ligne de vue », whole cell hatched in faded red in « Portails ».
+  each). Whole cell hatched in faded red in both modes.
 
 **Forgemagie** (`forgemagie.rs`, `ForgemagieOverlay.svelte`, `lib/forgemagie.ts`, `lib/stores/forgemagie.svelte.ts`)
 - Item = the equipment piece of `ExchangeObjectsAddedEvent` (named by anchor: (bool, float fm_power, repeated
