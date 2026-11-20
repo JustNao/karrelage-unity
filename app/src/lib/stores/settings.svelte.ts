@@ -42,6 +42,8 @@ const DEFAULTS = {
     overlayGrow: "down" as "down" | "up",
     /** Comte Harebourg: the cell a spell lands on in the in-game view (fightmap/SpellCellLayer.svelte). */
     harebourgCell: true,
+    /** Guerre: where her next giant weapon is summoned and its zone in the in-game view (fightmap/GuerreLayer.svelte). */
+    guerreWeapon: true,
     /** The line of sight view (F3) writes each enemy's weakest element on it (fightmap/ResistLayer.svelte). */
     weakElement: true,
     /** ... during the whole fight, without the shortcut (only while the game is in the foreground). */
@@ -70,8 +72,8 @@ const DEFAULTS = {
     los: { mods: 0, vk: 0x72, label: "F3" } as Binding,
     /** Class help over the fight while held (fightmap/ClassLayer.svelte: the Steamer's turrets, the Eliotrope's portals). */
     classHelp: { mods: 0, vk: 0x73, label: "F4" } as Binding,
-    /** Comte Harebourg's spell cell alone while held (none: it comes with the class help). */
-    spellCell: { mods: 0, vk: 0, label: "" } as Binding,
+    /** The boss help alone while held (fightmap/BossLayer.svelte; none: it comes with the class help). */
+    bossHelp: { mods: 0, vk: 0, label: "" } as Binding,
   },
   /** Class help (Combat tab « Aide de classe »), per class. */
   classHelp: {

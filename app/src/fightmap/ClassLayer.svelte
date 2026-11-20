@@ -4,21 +4,23 @@
   import { settings } from "../lib/stores/settings.svelte";
   import { occupiedCells, screenDiamond, type Calibration, type FightMapState, type MapFighter, type Sight } from "../lib/fightMap";
   import { playerPortals, TURRET_RANGE, TURRETS, turretOf } from "../lib/classHelp";
-  import { spellTurn } from "../lib/bosses";
+  import { guerreWeapon, spellTurn } from "../lib/bosses";
   import { fight } from "../lib/stores/combat.svelte";
   import PortalLayer from "./PortalLayer.svelte";
-  import SpellCellLayer from "./SpellCellLayer.svelte";
+  import BossLayer from "./BossLayer.svelte";
 
   /**
    * Class help in the in-game view (FightMapOverlay.svelte), the mouse let through (only to look at). Steamer: for each of the
    * player's turrets, the cells where the Steamer gets its bonus (at most TURRET_RANGE cells away and in its line of sight:
    * the player's own fighters don't block it, they are the ones moving). The mouse over a turret's cell (`pointed`) brings its
    * zone forward. Eliotrope: the portals, the way and damage bonus from the one under the mouse (fightmap/PortalLayer.svelte). Each class can be turned off in the Combat tab
-   * (`settings.classHelp`). Comte Harebourg: where a spell lands (fightmap/SpellCellLayer.svelte).
+   * (`settings.classHelp`). The boss help too while it has no shortcut of its own (fightmap/BossLayer.svelte).
    */
-  let { cal, live, mine, dpr, hold, pointed }: {
+  let { cal, live, cells, mine, dpr, hold, pointed }: {
     cal: Calibration;
     live: FightMapState;
+    /** the map's cell flags */
+    cells: number[] | null;
     mine: Set<number>;
     dpr: number;
     hold: boolean;
@@ -55,8 +57,11 @@
   const key = $derived(settings.shortcuts.classHelp);
   const keyLabel = $derived(key.vk ? key.label : "le raccourci");
   const portals = $derived(settings.classHelp.eliotrope.enabled ? playerPortals(live, mine) : []);
-  /** the Comte Harebourg's spell cell, unless it has its own shortcut */
-  const spellCell = $derived(settings.combat.harebourgCell && !settings.shortcuts.spellCell.vk && spellTurn(fight) !== null);
+  /** the boss help when one applies, unless it has its own shortcut */
+  const boss = $derived(
+    !settings.shortcuts.bossHelp.vk &&
+      ((settings.combat.harebourgCell && spellTurn(fight) !== null) || (settings.combat.guerreWeapon && guerreWeapon(live, cells) !== null)),
+  );
 </script>
 
 <svg width="100%" height="100%">
@@ -76,10 +81,10 @@
   {/each}
 {/snippet}
 
-{#if spellCell}<SpellCellLayer {cal} {live} {dpr} {pointed} />{/if}
+{#if boss}<BossLayer {cal} {live} {cells} {dpr} {pointed} />{/if}
 
-<!-- no bar over the Eliotrope's portals nor the Comte Harebourg's cell: only what is on the map -->
-{#if areas.length || (!portals.length && !spellCell)}
+<!-- no bar over the Eliotrope's portals nor the boss help: only what is on the map -->
+{#if areas.length || (!portals.length && !boss)}
   <div class="pill">
     {#if areas.length}
       Tourelles ({TURRET_RANGE} PO, en ligne de vue) :

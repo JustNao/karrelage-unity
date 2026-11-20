@@ -8,8 +8,8 @@
 
   /** Combat tab « Général »: the options that are about no class. */
   const help = $derived(settings.shortcuts.classHelp);
-  const key = $derived(settings.shortcuts.spellCell);
-  const clash = $derived(key.vk ? SHORTCUTS.find((s) => s.name !== "spellCell" && sameBinding(settings.shortcuts[s.name], key)) : undefined);
+  const key = $derived(settings.shortcuts.bossHelp);
+  const clash = $derived(key.vk ? SHORTCUTS.find((s) => s.name !== "bossHelp" && sameBinding(settings.shortcuts[s.name], key)) : undefined);
 </script>
 
 <div class="head">
@@ -56,26 +56,35 @@
 </div>
 <div class="row">
   <div class="lb">
-    <div>Position des sorts contre le Comte Harebourg</div>
+    <div>Aide contre les boss</div>
     <div class="mut">
-      Ses sorts font tourner les vôtres autour de vous : en bleu, sur le jeu, la case où arrive un sort visant la case sous la souris.
-    </div>
-  </div>
-  <div class="ctl"><Switch bind:checked={settings.combat.harebourgCell} label="Position des sorts contre le Comte Harebourg" /></div>
-</div>
-<div class="row sub" class:off={!settings.combat.harebourgCell}>
-  <div class="lb">
-    <div>Touche dédiée</div>
-    <div class="mut">
-      {#if key.vk}La case s'affiche tant que <b>{key.label}</b> est enfoncée, et plus avec l'aide de classe.
-      {:else}Aucune : la case s'affiche avec l'aide de classe{#if help.vk}{" "}(<b>{help.label}</b>){/if}.{/if}
+      Sur le jeu, pendant le combat d'un de ces boss.
+      {#if key.vk}Tant que <b>{key.label}</b> est enfoncée (plus avec l'aide de classe).
+      {:else}Avec l'aide de classe{#if help.vk}{" "}(<b>{help.label}</b>){/if}, ou une touche dédiée.{/if}
     </div>
     {#if clash}<Banner tone="warn" inset>Même touche que « {clash.title} » : un seul des deux raccourcis fonctionnera.</Banner>{/if}
   </div>
   <div class="ctl">
-    {#if key.vk}<button class="mini" title="Retirer cette touche : la case s'affiche à nouveau avec l'aide de classe" onclick={() => (settings.shortcuts.spellCell = { ...NO_BINDING })}>Retirer</button>{/if}
-    <KeyCapture label="Touche de la position des sorts" value={key} onchange={(b) => (settings.shortcuts.spellCell = b)} />
+    {#if key.vk}<button class="mini" title="Retirer cette touche : l'aide s'affiche à nouveau avec l'aide de classe" onclick={() => (settings.shortcuts.bossHelp = { ...NO_BINDING })}>Retirer</button>{/if}
+    <KeyCapture label="Touche de l'aide contre les boss" value={key} onchange={(b) => (settings.shortcuts.bossHelp = b)} />
   </div>
+</div>
+<div class="row sub" class:off={!settings.combat.harebourgCell}>
+  <div class="lb">
+    <div>Comte Harebourg : position des sorts</div>
+    <div class="mut">Ses sorts font tourner les vôtres autour de vous : en bleu, la case où arrive un sort visant la case sous la souris.</div>
+  </div>
+  <div class="ctl"><Switch bind:checked={settings.combat.harebourgCell} label="Position des sorts contre le Comte Harebourg" /></div>
+</div>
+<div class="row sub" class:off={!settings.combat.guerreWeapon}>
+  <div class="lb">
+    <div>Guerre : prochaine arme géante</div>
+    <div class="mut">
+      Épée, Marteau, Hache puis Morgenstern, invoqués à chaque palier de 20 % de sa vie (à 2 PO au-dessus d'elle, sinon la case libre
+      suivante dans le sens des aiguilles d'une montre) : en jaune la case de la prochaine, en rouge la zone qu'elle frappera.
+    </div>
+  </div>
+  <div class="ctl"><Switch bind:checked={settings.combat.guerreWeapon} label="Prochaine arme de Guerre" /></div>
 </div>
 
 <style>

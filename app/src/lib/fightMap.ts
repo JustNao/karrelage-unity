@@ -42,10 +42,15 @@ export interface FightMapState {
   /** the character's damage characteristics: [value, when told] (CharacterCharacteristicsEvent; empty: not seen yet) */
   character?: Record<string, [number, number]>;
 }
-/** Diagonal coordinates of a cell (crates/data/src/maps.rs `coords`). */
-function coords(cell: number): [number, number] {
+/** Diagonal coordinates of a cell (crates/data/src/maps.rs `coords`): x + y grows to the right of the screen, x − y downwards. */
+export function coords(cell: number): [number, number] {
   const a = Math.floor(cell / (2 * ROW)), r = cell % (2 * ROW);
   return [a + Math.floor(r / ROW) + (r % ROW), (r % ROW) - a];
+}
+/** The cell at diagonal coordinates (`coords` reversed), null off the map. */
+export function cellOf(x: number, y: number): number | null {
+  const row = x - y, s = ((row % 2) + 2) % 2, col = (x + y - s) / 2;
+  return row < 0 || row >= ROWS || col < 0 || col >= ROW ? null : row * ROW + col;
 }
 /** Distance between two cells in PO (range), as the game counts it (maps.rs `distance`). */
 export function cellDistance(a: number, b: number): number {

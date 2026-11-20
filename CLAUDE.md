@@ -371,8 +371,8 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   confusion is taken (solo). Direction checked on work/capture_harebourg.jsonl: cast request's cell (unnamed message: spell + cell) →
   server's landing cell = `confusion` clockwise quarter turns on 10 casts at 1 and 2 (`maps::turned`; negative values not seen landing).
   Blue cell in the in-game view (`fightmap/SpellCellLayer.svelte`, call `turned`, `settings.combat.harebourgCell`, Combat tab « Général »):
-  where a spell aimed at the cell under the mouse lands; with the class help, or alone (view / held shortcut `spellCell`, none by default,
-  which then takes it out of the class help). The confusion outlives the Comte for his wave (told by the author): the cell stays until
+  where a spell aimed at the cell under the mouse lands; part of the boss help (`fightmap/BossLayer.svelte`): with the class help, or alone
+  (view / held shortcut `bossHelp`, formerly `spellCell`, none by default, which then takes it out of the class help). The confusion outlives the Comte for his wave (told by the author): the cell stays until
   none of that wave's monsters is left and a later wave's is there (`spellTurn`).
 - Rounds for the helpers: `round` from FightNewRoundEvent (named by override, `round_number`), per fighter `since` (round first
   seen, placement = 1: rounds count from a boss's appearance, waves included), `played` (last round its FightTurnEvent came)
@@ -381,6 +381,11 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   end of its 5th turn), Nileza (odd rounds ≥ 3), Klime (glyph from round 2), Kimbo (last element → glyph parity), Dantinéa
   (Grokillages at 6, 11, 16…), Phossile (Abîme at 5, 9, 13…), from dofuspourlesnoobs; Hin (gid 3848: OS at 10 PO or more at each of its turns from round 2, author's
   monster notes); only rounds / elements checked on a capture.
+- Guerre (gids 6014 / 6785, boss help `fightmap/GuerreLayer.svelte`, `settings.combat.guerreWeapon`; `lib/bosses.ts` `guerreWeapon`): giant
+  weapons 6010 Épée / 6011 Marteau / 6012 Hache / 6013 Morgenstern, one per 20 % of her life once vulnerable, summoned 2 PO above her on
+  screen (12 o'clock), else the next free walkable cell clockwise (dofuspourlesnoobs). Next = the one after the last whose gid a fighter of
+  the map state carries. Zones from the site's pictures (told by the author): star 5, circle 3, square 4 without its diagonals, cells at an
+  odd distance ≤ 5. Not checked on a capture.
   Range rules (Pougnette 7 PO, Nileza 11 / 9 / 7 / 5 PO, Hin 9 PO): one line « À Z PO max <when> » + each of the player's characters' distance
   to the boss (`within`: fight_map cells, `cellDistance` = maps.rs `distance`; the overlay follows `fightmap:state`), safe or too far.
 

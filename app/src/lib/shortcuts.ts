@@ -31,11 +31,12 @@ export const SHORTCUTS: { name: ShortcutName; title: string; desc: string }[] = 
       "Réglages par classe (dont la simulation de portail) : onglet Combat, « Aide de classe ».",
   },
   {
-    name: "spellCell",
-    title: "Position des sorts (Comte Harebourg)",
+    name: "bossHelp",
+    title: "Aide contre les boss",
     desc:
-      "Contre le Comte Harebourg, tant que la touche est enfoncée : en bleu, la case où arrive un sort visant la case sous la souris. " +
-      "Sans touche choisie, la case s'affiche avec l'aide de classe. Réglage : onglet Combat, « Général ».",
+      "Pendant un combat, tant que la touche est enfoncée. Comte Harebourg : en bleu, la case où arrive un sort visant la case sous la souris. " +
+      "Guerre : la case où sa prochaine arme géante sera invoquée (en jaune) et la zone qu'elle frappera (en rouge). " +
+      "Sans touche choisie, l'aide s'affiche avec l'aide de classe. Réglages : onglet Combat, « Général ».",
   },
 ];
 

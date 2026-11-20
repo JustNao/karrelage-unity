@@ -11,7 +11,7 @@
   import LosLayer from "./fightmap/LosLayer.svelte";
   import ClassLayer from "./fightmap/ClassLayer.svelte";
   import PortalSimLayer from "./fightmap/PortalSimLayer.svelte";
-  import SpellCellLayer from "./fightmap/SpellCellLayer.svelte";
+  import BossLayer from "./fightmap/BossLayer.svelte";
   import ResistLayer from "./fightmap/ResistLayer.svelte";
   import PortalHover from "./fightmap/PortalHover.svelte";
   import { settings } from "./lib/stores/settings.svelte";
@@ -336,10 +336,10 @@
       <PortalSimLayer {cal} {live} {mine} {dpr} {pointed} {polled} />
     {:else if view === "exil"}
       <PortalSimLayer {cal} {live} {mine} {dpr} {pointed} {polled} exil />
-    {:else if view === "spellCell"}
-      <SpellCellLayer {cal} {live} {dpr} {pointed} />
+    {:else if view === "bossHelp"}
+      <BossLayer {cal} {live} {cells} {dpr} {pointed} pill />
     {:else}
-      <ClassLayer {cal} {live} {mine} {dpr} {hold} {pointed} />
+      <ClassLayer {cal} {live} {cells} {mine} {dpr} {hold} {pointed} />
     {/if}
   {/if}
 </div>

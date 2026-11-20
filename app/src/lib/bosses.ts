@@ -1,5 +1,5 @@
 import type { Fight, Fighter } from "./stores/combat.svelte";
-import { cellDistance, type FightMapState } from "./fightMap";
+import { cellDistance, cellOf, coords, MOV, occupiedCells, type FightMapState } from "./fightMap";
 
 /**
  * Boss helpers: hints computed from the live fight (round, the player's characteristics, damage taken...), shown in the
@@ -99,6 +99,51 @@ export function spellTurn(f: Fight): { caster: number; quarters: number } | null
     if (!standing.some((x) => (x.wave ?? 0) === wave) && standing.some((x) => (x.wave ?? 0) > wave)) return null;
   }
   return { caster: f.confused, quarters: f.confusion };
+}
+
+/** Guerre (Trône de Sang): at each 20 % of her base life lost once vulnerable (Arsenal 80 / 60 / 40 / 20), she summons a giant
+ *  weapon, in this order, that strikes its zone (1,400 in its element) when summoned and at each of its turns. Zones from
+ *  dofuspourlesnoobs' pictures (told by the author), in diagonal offsets (`coords`: x + y = right, x − y = down on screen). */
+const GUERRE_GIDS = [6014, 6785];
+const around = (keep: (dx: number, dy: number) => boolean, r: number) => {
+  const out: [number, number][] = [];
+  for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) if (keep(dx, dy)) out.push([dx, dy]);
+  return out;
+};
+const DIRECTIONS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+export const GUERRE_WEAPONS: { gid: number; name: string; element: string; zone: string; area: [number, number][] }[] = [
+  {
+    gid: 6010,
+    name: "Épée Géante",
+    element: "Feu",
+    zone: "étoile de 5",
+    area: [[0, 0], ...DIRECTIONS.flatMap(([x, y]) => [1, 2, 3, 4, 5].map((k): [number, number] => [x * k, y * k]))],
+  },
+  { gid: 6011, name: "Marteau Géant", element: "Terre", zone: "cercle de 3", area: around((x, y) => Math.abs(x) + Math.abs(y) <= 3, 3) },
+  // 4 triangles of height 4, each from a melee cell outwards: the square of 4 without its diagonals
+  { gid: 6012, name: "Hache Géante", element: "Air", zone: "4 triangles de 4", area: around((x, y) => Math.abs(x) !== Math.abs(y), 4) },
+  // a checkerboard: the cells at an odd distance up to 5
+  { gid: 6013, name: "Morgenstern Géant", element: "Eau", zone: "grille de 5", area: around((x, y) => (Math.abs(x) + Math.abs(y)) % 2 === 1 && Math.abs(x) + Math.abs(y) <= 5, 5) },
+];
+/** The cells 2 PO from the boss, clockwise on screen from 12 o'clock (above her): where a weapon is summoned, the first free one. */
+const SUMMON_RING = [[-1, 1], [0, 2], [1, 1], [2, 0], [1, -1], [0, -2], [-1, -1], [-2, 0]];
+
+/** Guerre's next giant weapon (the one after the last that appeared in the fight), the cell it would be summoned on now (2 PO
+ *  above her, else the next free walkable cell clockwise; null: none) and the cells of its zone from there (walkable ones when
+ *  `cells`, the map's flags, is known). Null without a living Guerre, or once the four weapons came. */
+export function guerreWeapon(live: FightMapState, cells: number[] | null): { weapon: (typeof GUERRE_WEAPONS)[number]; at: number | null; area: number[] } | null {
+  const boss = live.fighters.find((f) => f.alive && f.cell >= 0 && f.monsters.some((g) => GUERRE_GIDS.includes(g)));
+  if (!boss) return null;
+  const came = Math.max(-1, ...live.fighters.flatMap((f) => f.monsters.map((g) => GUERRE_WEAPONS.findIndex((w) => w.gid === g))));
+  const weapon = GUERRE_WEAPONS[came + 1];
+  if (!weapon) return null;
+  const walkable = (c: number | null): c is number => c !== null && (!cells || (cells[c] & MOV) !== 0);
+  const taken = new Set(occupiedCells(live));
+  const [x, y] = coords(boss.cell);
+  const at = SUMMON_RING.map(([dx, dy]) => cellOf(x + dx, y + dy)).find((c) => walkable(c) && !taken.has(c)) ?? null;
+  if (at === null) return { weapon, at, area: [] };
+  const [ax, ay] = coords(at);
+  return { weapon, at, area: weapon.area.map(([dx, dy]) => cellOf(ax + dx, ay + dy)).filter(walkable) };
 }
 
 /** Obsidiantre's Pougnette: explodes at the end of its 5th turn (summoned every 3 turns), killing every character further

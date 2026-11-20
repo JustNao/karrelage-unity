@@ -43,3 +43,13 @@ try {
     localStorage.setItem("karrelage.settings", JSON.stringify(saved));
   }
 } catch {}
+
+/** The Comte Harebourg's spell cell shortcut became the boss help's (Guerre too). */
+try {
+  const saved = JSON.parse(localStorage.getItem("karrelage.settings") ?? "null");
+  if (saved?.shortcuts?.spellCell) {
+    saved.shortcuts.bossHelp ??= saved.shortcuts.spellCell;
+    delete saved.shortcuts.spellCell;
+    localStorage.setItem("karrelage.settings", JSON.stringify(saved));
+  }
+} catch {}
