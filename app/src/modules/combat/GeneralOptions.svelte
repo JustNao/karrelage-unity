@@ -80,8 +80,8 @@
   <div class="lb">
     <div>Guerre : prochaine arme géante</div>
     <div class="mut">
-      Épée, Marteau, Hache puis Morgenstern, invoqués à chaque palier de 20 % de sa vie (à 2 PO au-dessus d'elle, sinon la case libre
-      suivante dans le sens des aiguilles d'une montre) : en jaune la case de la prochaine, en rouge la zone qu'elle frappera.
+      Épée, Marteau, Hache puis Morgenstern, invoqués à chaque palier de 20 % de sa vie (à 2 PO en ligne en haut à droite d'elle, sinon la case libre
+      suivante à 2 PO dans le sens des aiguilles d'une montre) : en jaune la case de la prochaine, en rouge la zone qu'elle frappera.
     </div>
   </div>
   <div class="ctl"><Switch bind:checked={settings.combat.guerreWeapon} label="Prochaine arme de Guerre" /></div>

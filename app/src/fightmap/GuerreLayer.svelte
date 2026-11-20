@@ -4,7 +4,7 @@
 
   /**
    * Guerre in the in-game view (boss help, fightmap/BossLayer.svelte): where her next giant weapon would be summoned now (2 PO
-   * above her, else clockwise) and the zone it strikes from there (lib/bosses.ts `guerreWeapon`). Follows her and the fighters.
+   * in line up-right of her, else clockwise) and the zone it strikes from there (lib/bosses.ts `guerreWeapon`). Follows her and the fighters.
    */
   let { cal, live, cells, dpr }: {
     cal: Calibration;

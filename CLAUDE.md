@@ -382,8 +382,8 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   (Grokillages at 6, 11, 16…), Phossile (Abîme at 5, 9, 13…), from dofuspourlesnoobs; Hin (gid 3848: OS at 10 PO or more at each of its turns from round 2, author's
   monster notes); only rounds / elements checked on a capture.
 - Guerre (gids 6014 / 6785, boss help `fightmap/GuerreLayer.svelte`, `settings.combat.guerreWeapon`; `lib/bosses.ts` `guerreWeapon`): giant
-  weapons 6010 Épée / 6011 Marteau / 6012 Hache / 6013 Morgenstern, one per 20 % of her life once vulnerable, summoned 2 PO above her on
-  screen (12 o'clock), else the next free walkable cell clockwise (dofuspourlesnoobs). Next = the one after the last whose gid a fighter of
+  weapons 6010 Épée / 6011 Marteau / 6012 Hache / 6013 Morgenstern, one per 20 % of her life once vulnerable, summoned 2 PO in line up-right of
+  her on screen, else the next free walkable cell of the 8 at 2 PO clockwise (told by the author). Next = the one after the last whose gid a fighter of
   the map state carries. Zones from the site's pictures (told by the author): star 5, circle 3, square 4 without its diagonals, cells at an
   odd distance ≤ 5. Not checked on a capture.
   Range rules (Pougnette 7 PO, Nileza 11 / 9 / 7 / 5 PO, Hin 9 PO): one line « À Z PO max <when> » + each of the player's characters' distance

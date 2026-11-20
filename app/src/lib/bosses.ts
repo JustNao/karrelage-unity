@@ -125,11 +125,12 @@ export const GUERRE_WEAPONS: { gid: number; name: string; element: string; zone:
   // a checkerboard: the cells at an odd distance up to 5
   { gid: 6013, name: "Morgenstern Géant", element: "Eau", zone: "grille de 5", area: around((x, y) => (Math.abs(x) + Math.abs(y)) % 2 === 1 && Math.abs(x) + Math.abs(y) <= 5, 5) },
 ];
-/** The cells 2 PO from the boss, clockwise on screen from 12 o'clock (above her): where a weapon is summoned, the first free one. */
-const SUMMON_RING = [[-1, 1], [0, 2], [1, 1], [2, 0], [1, -1], [0, -2], [-1, -1], [-2, 0]];
+/** The 8 cells 2 PO from the boss, clockwise on screen from the one in line up-right of her (told by the author): where a weapon
+ *  is summoned, the first free one. */
+const SUMMON_RING = [[0, 2], [1, 1], [2, 0], [1, -1], [0, -2], [-1, -1], [-2, 0], [-1, 1]];
 
 /** Guerre's next giant weapon (the one after the last that appeared in the fight), the cell it would be summoned on now (2 PO
- *  above her, else the next free walkable cell clockwise; null: none) and the cells of its zone from there (walkable ones when
+ *  in line up-right of her, else the next free walkable cell 2 PO away clockwise; null: none) and the cells of its zone from there (walkable ones when
  *  `cells`, the map's flags, is known). Null without a living Guerre, or once the four weapons came. */
 export function guerreWeapon(live: FightMapState, cells: number[] | null): { weapon: (typeof GUERRE_WEAPONS)[number]; at: number | null; area: number[] } | null {
   const boss = live.fighters.find((f) => f.alive && f.cell >= 0 && f.monsters.some((g) => GUERRE_GIDS.includes(g)));
