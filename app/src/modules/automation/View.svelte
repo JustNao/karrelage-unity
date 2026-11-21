@@ -9,6 +9,7 @@
   import MonsterSearch from "./MonsterSearch.svelte";
   import { onStored, readJSON, removeKey } from "../../lib/persist.svelte";
   import { CALIBRATION_KEY, type FmCalibration } from "../../lib/forgemagie";
+  import { sellPrice } from "../../lib/stores/sellPrice.svelte";
 
   /** Automation: rules checked on every scan, fight end or map change (lib/automation.ts), one section per tab, like Paramètres
    *  (the fight ones are in the Combat tab: combat/Automation.svelte). A triggered rule plays its sound and shows up in the
@@ -28,12 +29,13 @@
     goblins: "En entrant dans une salle, si un gobelin des Songes s'y trouve (King Gob, Gobséric, Gobledore ou Bog) : un son par gobelin, l'un après l'autre.",
     monsters: "À chaque changement de carte (et quand un groupe apparaît sur la carte), si un des monstres recherchés est dans un groupe : un seul son, même si plusieurs correspondent, et une notification par monstre.",
     forgemagie: "Quand un équipement est posé dans un atelier de forgemagie : un bouton « Avancé » au bout de la ligne « Fusionner tout / Fusionner » affiche sous chaque rune ses chances, au choix au-dessus du bouton : succès critique, neutre ou échec critique (modèle établi par les joueurs de dofocus.fr, pas la formule officielle). Le premier clic lance une calibration : deux clics sur les coins de la fenêtre de forgemagie (clic droit sur le bouton pour la refaire si vous la déplacez).",
+    sellPrice: "Quand vous choisissez une ressource dans la fenêtre de vente de l'hôtel de vente : le prix à taper est copié dans le presse-papiers, celui du lot le moins cher de la plus grande quantité que votre inventaire permet de vendre (celle que le jeu choisit : 346 en stock → lot de 100), moins 1 kamas. Quand vos ventes font passer le stock sous cette quantité (100 → 10), le prix de la quantité suivante est copié à son tour. Votre propre lot, mis en vente au prix copié, n'est pas sous-coté à nouveau.",
     exoDo: "À chaque objet scanné à l'hôtel de vente : un lot avec un exo « % dommages » (sorts, armes, distance, mêlée) moins cher que la rune de transcendance de cette stat (prix enregistré), et dont le brisage rembourse le prix à partir d'un coefficient au plus égal au seuil (« Coef. rentable » de l'onglet Brisage), sans dépasser le prix max s'il est fixé. Un même lot ne sonne qu'une fois par session.",
   };
   const FORGE = "Chances des runes en forgemagie";
   /** Searched text (session only): a rule shows when its section, title or description matches. */
   let q = $state("");
-  const SECTION = { songes: "Songes", goblins: "Songes", monsters: "Monstres", exoDo: "HDV", forgemagie: "Forgemagie" } as const;
+  const SECTION = { songes: "Songes", goblins: "Songes", monsters: "Monstres", exoDo: "HDV", sellPrice: "HDV", forgemagie: "Forgemagie" } as const;
   const shown = $derived.by(() => {
     const m = matcher(q);
     const title = (k: keyof typeof DESC) => (k === "forgemagie" ? FORGE : RULE_TITLES[k]);
@@ -138,9 +140,34 @@
         {/if}
         </section>
       {/if}
-      {#if shown.exoDo}
+      {#if shown.exoDo || shown.sellPrice}
         <section>
           <h2>HDV</h2>
+        {#if shown.sellPrice}
+        <div class="rule" class:off={!rules.sellPrice.enabled}>
+          <div class="rh">
+            <Switch bind:checked={rules.sellPrice.enabled} label="Activer la règle" />
+            <div class="lb">
+              <div><b>{RULE_TITLES.sellPrice}</b></div>
+              <div class="mut">{DESC.sellPrice}</div>
+            </div>
+          </div>
+          <div class="params">
+            <div class="snd" title="Un son à chaque prix copié">
+              <Switch bind:checked={rules.sellPrice.withSound} label="Son à chaque copie" />
+              <span>Son</span>
+            </div>
+            {#if rules.sellPrice.withSound}{@render sound(rules.sellPrice)}{/if}
+            {#if sellPrice.last}
+              {@const c = sellPrice.last}
+              <span class="mut" title="Dernière ressource choisie dans la fenêtre de vente">
+                {c.name} · {c.quantity.toLocaleString("fr-FR")} en stock · lot de {c.size} :
+                {#if c.price != null}<b>{kamasFull(c.price)}</b> copié{:else}aucun lot en vente, rien copié{/if}
+              </span>
+            {/if}
+          </div>
+        </div>
+        {/if}
         {#if shown.exoDo}
         <div class="rule" class:off={!rules.exoDo.enabled}>
           <div class="rh">

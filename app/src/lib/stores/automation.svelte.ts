@@ -16,6 +16,10 @@ const DEFAULTS = {
   /** HDV: a scanned lot with a "% dommages" exo cheaper than the transcendance rune of that stat, that pays back when broken
    *  from a low enough coefficient. */
   exoDo: { enabled: true, sound: DEFAULT_SOUND, volume: 0.6, /** Highest break-even coefficient (%, Brisage « Coef. rentable »). */ maxEven: 500, /** Highest lot price (kamas, per unit); null = no limit. */ maxPrice: null as number | null },
+  /** HDV: a resource picked in the auction house's sell window puts the price to type in the clipboard (crates/modules/src/
+   *  sell_price.rs): the cheapest lot of the largest size the inventory fills, minus 1 kamas; copied again for the next size down
+   *  when a sale leaves too few. The sound (when `withSound`) plays on each copy. */
+  sellPrice: { enabled: false, sound: "pop", volume: 0.4, withSound: true },
   /** Songes: someone of the group looted a « Légende … » (Ressource des Songes) at the end of a fight. `sound` plays when the
    *  best one is worth at least `threshold` (stored price), `soundLow` below it (or when its price is unknown). */
   songes: { enabled: true, sound: "crowd-applause", soundLow: "crowd-disappointed", volume: 0.6, threshold: 8_000_000 },
@@ -31,7 +35,7 @@ const DEFAULTS = {
 export type Rules = typeof DEFAULTS;
 export type RuleId = keyof Rules;
 export const RULE_DEFAULTS: Rules = DEFAULTS;
-export const RULE_TITLES: Record<RuleId, string> = { exoDo: "Exo % dommages à briser", songes: "Légende lootée", goblins: "Gobelin dans la salle", monsters: "Monstre recherché sur la carte", turn: "À votre tour" };
+export const RULE_TITLES: Record<RuleId, string> = { exoDo: "Exo % dommages à briser", sellPrice: "Prix de vente copié", songes: "Légende lootée", goblins: "Gobelin dans la salle", monsters: "Monstre recherché sur la carte", turn: "À votre tour" };
 
 export const rules = persisted<Rules>(KEY, DEFAULTS, { sections: true });
 

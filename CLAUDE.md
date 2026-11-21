@@ -180,6 +180,14 @@ Set `PYTHONUTF8=1` for scripts handling accents. The "Développeur" header toggl
   replaces a row, `ah_row_removed` removes one): purchase uids checked on a resource capture (row uid = listing uid), `ah_type` /
   `ah_gone` / `ah_row_removed` and equipment purchases not seen yet.
 
+**HDV sell price** (`sell_price.rs`, `lib/stores/sellPrice.svelte.ts`, Automation « Prix de vente copié », off by default): a resource
+picked in the sell window = ExchangeBidPriceEvent (role `ah_sell_price`: gid + minimal_prices per lot size 1/10/100/1000) → the
+clipboard (written by Rust, `sys::set_clipboard`: the game has the focus) gets the cheapest lot of the largest size the inventory fills,
+minus 1; copied again when sales drop the stack under it (ObjectQuantityEvent, role `object_quantity`: uid / quantity told apart by
+value). Quantities = `inventory::Stacks` (every object, memory only: the game resends the whole inventory when an AH opens). Prices
+follow `ah_row` updates; a size whose cheapest lot is the price copied before (the player's lot) is not undercut. Verified on
+work/capture_hdv_sell.jsonl (876 sold by 100).
+
 **Stored prices** (`prices.rs`)
 - Per-unit price = median over stack sizes of each size's cheapest price / qty (lower middle on even counts); equipment =
   cheapest lot. Every listing, listing change, weekly-average batch and manual price is appended with its time to

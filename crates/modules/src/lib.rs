@@ -17,6 +17,7 @@ pub mod packets;
 pub mod prices;
 pub mod recorder;
 pub mod remote;
+pub mod sell_price;
 pub mod shortcuts;
 pub mod store;
 pub mod stuff;
@@ -128,6 +129,7 @@ pub trait Module: Send + Sync {
 pub fn all() -> Vec<Box<dyn Module>> {
     let inventory = inventory::Inventory::new();
     let uids = inventory.uids();
+    let stacks = inventory.stacks();
     let remote = remote::Remote::new();
     vec![
         Box::new(packets::Packets::new()),
@@ -138,6 +140,7 @@ pub fn all() -> Vec<Box<dyn Module>> {
         // after the inventory: an object added is in the shared uid map when the Brisage module sees it (`acquired`)
         Box::new(inventory),
         Box::new(brisage::Brisage::new(uids)),
+        Box::new(sell_price::SellPrice::new(stacks)),
         Box::new(combat::Combat::new()),
         Box::new(fight_map::FightMap::new()),
         Box::new(forgemagie::Forgemagie::new()),

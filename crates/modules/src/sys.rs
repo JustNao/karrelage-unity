@@ -22,6 +22,51 @@ pub fn system_tool(rel: &str) -> PathBuf {
     abs.unwrap_or_else(|| PathBuf::from(rel.rsplit('/').next().unwrap_or(rel).trim_end_matches(".exe")))
 }
 
+/// Puts `text` in the clipboard (a few tries over ~250 ms while another program holds it). False when it could not.
+pub fn set_clipboard(text: &str) -> bool {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Foundation::GlobalFree;
+        use windows_sys::Win32::System::DataExchange::{CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData};
+        use windows_sys::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+        const CF_UNICODETEXT: u32 = 13;
+        let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+        for _ in 0..10 {
+            // SAFETY: the clipboard is opened and closed here; the memory handed to SetClipboardData belongs to the system
+            // once it succeeds, and is freed here otherwise
+            unsafe {
+                if OpenClipboard(std::ptr::null_mut()) == 0 {
+                    std::thread::sleep(Duration::from_millis(25));
+                    continue;
+                }
+                let mut ok = false;
+                if EmptyClipboard() != 0 {
+                    let mem = GlobalAlloc(GMEM_MOVEABLE, wide.len() * 2);
+                    if !mem.is_null() {
+                        let dst = GlobalLock(mem) as *mut u16;
+                        if !dst.is_null() {
+                            std::ptr::copy_nonoverlapping(wide.as_ptr(), dst, wide.len());
+                            GlobalUnlock(mem);
+                            ok = !SetClipboardData(CF_UNICODETEXT, mem).is_null();
+                        }
+                        if !ok {
+                            GlobalFree(mem);
+                        }
+                    }
+                }
+                CloseClipboard();
+                return ok;
+            }
+        }
+        false
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = text;
+        false
+    }
+}
+
 /// Whether process `pid` runs Dofus.exe.
 #[cfg(windows)]
 fn is_dofus(pid: u32) -> bool {

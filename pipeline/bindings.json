@@ -184,5 +184,16 @@
   "fighter": "FightTurnEvent.character_id",
   "timeline_id": "TimelineFighter.fighter_id",
   "timeline_dead": "TimelineFighter.dead"
+ },
+ "ah_sell_price": {
+  "_doc": "ExchangeBidPriceEvent (a resource picked in the AH sell window): object_gid + bid_price_for_seller -> minimal_prices = the cheapest price per lot size (1, 10, 100, 1000; 0 = none on sale).",
+  "gid": "ExchangeBidPriceEvent.object_gid",
+  "seller": "ExchangeBidPriceEvent.bid_price_for_seller",
+  "prices": "ExchangeBidPriceEvent.bid_price_for_seller.minimal_prices"
+ },
+ "object_quantity": {
+  "_doc": "ObjectQuantityEvent / ObjectsQuantityEvent (a stack's new size, e.g. after putting part of it on sale): object(s) = ObjectUidWithQuantity, two unordered ints uid / quantity (told apart by value: the uid is a known object).",
+  "one": "ObjectQuantityEvent.object",
+  "list": "ObjectsQuantityEvent.object"
  }
 }

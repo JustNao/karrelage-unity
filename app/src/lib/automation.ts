@@ -16,6 +16,7 @@ import { playSound } from "./sounds";
 import { auction } from "./stores/auction.svelte";
 import { prices } from "./stores/prices.svelte";
 import { notifications, rules } from "./stores/automation.svelte";
+import { startSellPrice } from "./stores/sellPrice.svelte";
 import type { Rune } from "./transcend";
 
 /** Transcendance runes of the "% dommages" stats (Rune Ta Do Per So / Ar / Di / Mé). */
@@ -130,6 +131,7 @@ function checkTurn(focused: boolean) {
 export async function startAutomation() {
   if (started) return;
   started = true;
+  startSellPrice();
   void prices.ensure();
   void auction.ensure().catch(() => {});
   cached<Rune[]>("prices", "runes").then((l) => (doRunes = l.filter(isDoPerRune))).catch(() => {});

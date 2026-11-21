@@ -23,6 +23,9 @@ pub const DELETED: &str = "ObjectDeletedEvent";
 pub const DELETED_LIST: &str = "ObjectsDeletedEvent";
 pub const MOVED: &str = "ObjectMovementEvent";
 pub const CHARACTERISTICS: &str = "CharacterCharacteristicsEvent";
+/// A stack's new size (one object / several): what is left after putting part of it on sale, using or dropping some...
+pub const QUANTITY: &str = "ObjectQuantityEvent";
+pub const QUANTITY_LIST: &str = "ObjectsQuantityEvent";
 /// Characteristics kept for the export: vitality, wisdom, strength, intelligence, chance, agility.
 const KEPT_CHARACTERISTICS: [i64; 6] = [11, 12, 10, 15, 13, 14];
 /// Characteristics whose base is known (invocations 1, prospection >= 100) and that never get a scroll (with range).
@@ -149,6 +152,22 @@ impl Seen {
 /// module resolves the uids of broken items with it (the item is gone from the inventory by then).
 pub type UidMap = Arc<Mutex<HashMap<i64, Seen>>>;
 
+/// Object uid -> (gid, quantity) of every object of the inventory, resources included (memory only: the game sends the
+/// whole inventory at login and again each time an auction house is opened). Read by the HDV sell price helper.
+pub type Stacks = Arc<Mutex<HashMap<i64, (i64, i64)>>>;
+
+/// How many of `gid` the inventory holds (every stack of it).
+pub fn quantity_of(stacks: &Stacks, gid: i64) -> i64 {
+    stacks.lock().values().filter(|(g, _)| *g == gid).map(|(_, q)| q).sum()
+}
+
+/// bindings.json `object_quantity`: ObjectQuantityEvent `object` / ObjectsQuantityEvent `object` (ObjectUidWithQuantity).
+#[derive(Deserialize, Clone)]
+struct QuantityBindings {
+    one: String,
+    list: String,
+}
+
 /// What `items.json` holds: when the game last sent the whole inventory (login) and the equipment, by object uid.
 #[derive(Default)]
 struct Content {
@@ -195,6 +214,8 @@ pub struct Inventory {
     effect_bind: Role<ObjectEffect>,
     store: Store<Content>,
     uids: UidMap,
+    stacks: Stacks,
+    quantity_bind: Role<QuantityBindings>,
 }
 
 impl Inventory {
@@ -205,6 +226,28 @@ impl Inventory {
     /// Shared uid -> item map (see `UidMap`).
     pub fn uids(&self) -> UidMap {
         self.uids.clone()
+    }
+
+    /// Shared uid -> (gid, quantity) map of every object (see `Stacks`).
+    pub fn stacks(&self) -> Stacks {
+        self.stacks.clone()
+    }
+
+    /// ObjectQuantityEvent / ObjectsQuantityEvent: new sizes of known stacks. Each entry's two ints are told apart by value:
+    /// the uid is the one naming a known object, the quantity the other.
+    fn quantities(&self, ctx: &Ctx, m: &Message, msg: &DynamicMessage) {
+        let Some(b) = self.quantity_bind.get(ctx, "object_quantity") else { return };
+        let entries =
+            if m.name == QUANTITY { msg.get_field_by_name(&b.one).and_then(|v| v.as_message().cloned()).into_iter().collect() } else { messages(msg, &b.list) };
+        let mut st = self.stacks.lock();
+        for e in entries {
+            let ints = scalar_ints(&e);
+            let Some((uid_f, uid)) = ints.iter().find(|(_, v)| st.contains_key(v)).cloned() else { continue };
+            let q = ints.iter().find(|(f, _)| *f != uid_f).map_or(0, |(_, v)| *v);
+            if let Some(s) = st.get_mut(&uid) {
+                s.1 = q;
+            }
+        }
     }
 
     fn bindings(&self, ctx: &Ctx) -> Option<(&Bindings, &ObjectEffect)> {
@@ -294,7 +337,7 @@ impl Module for Inventory {
     }
 
     fn interest(&self) -> Interest {
-        Interest::Types(&[CONTENT, ADDED, ADDED_LIST, MODIFIED, DELETED, DELETED_LIST, MOVED, CHARACTERISTICS])
+        Interest::Types(&[CONTENT, ADDED, ADDED_LIST, MODIFIED, DELETED, DELETED_LIST, MOVED, CHARACTERISTICS, QUANTITY, QUANTITY_LIST])
     }
 
     fn init(&self, ctx: &Ctx) {
@@ -385,6 +428,7 @@ impl Module for Inventory {
                 }
                 return;
             }
+            QUANTITY | QUANTITY_LIST => return self.quantities(ctx, m, msg),
             _ => {}
         }
         let Some((b, eb)) = self.bindings(ctx) else { return };
@@ -414,6 +458,33 @@ impl Module for Inventory {
             out
         };
         let one = |name: &str| msg.get_field_by_name(name).and_then(|v| v.as_message().cloned()).into_iter().collect::<Vec<_>>();
+        // every object's stack size (resources too: the equipment alone is stored below)
+        {
+            let stack = |x: &DynamicMessage| {
+                let it = entry_item(&ctx.data, b, x, &layout)?;
+                let (gid, uid, q) = object_ints(&ctx.data, b, &it, &layout);
+                (uid != 0).then_some((uid, (gid, q)))
+            };
+            let mut st = self.stacks.lock();
+            match m.name.as_str() {
+                CONTENT => {
+                    st.clear();
+                    st.extend(objects().iter().filter_map(stack));
+                }
+                ADDED => st.extend(one(&b.added).iter().filter_map(stack)),
+                ADDED_LIST => st.extend(messages(msg, &b.added_list).iter().filter_map(stack)),
+                MODIFIED => st.extend(one(&b.modified).iter().filter_map(stack)),
+                DELETED => {
+                    st.remove(&int(msg, &b.deleted));
+                }
+                DELETED_LIST => {
+                    for uid in int_list(msg, &b.deleted_list) {
+                        st.remove(&uid);
+                    }
+                }
+                _ => {}
+            }
+        }
         // most object events are about resources (loot, quantities): only an actual change of the equipment is saved and sent
         let put = |s: &mut BTreeMap<i64, Value>, l: Vec<(i64, Value)>| {
             l.into_iter().fold(false, |ch, (uid, it)| s.insert(uid, it.clone()).as_ref() != Some(&it) || ch)
