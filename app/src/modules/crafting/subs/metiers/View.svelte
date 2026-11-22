@@ -45,7 +45,11 @@
     forced: {} as Record<string, Record<string, number>>,
     /** ingredients crafted (when cheaper) with the character's jobs at their levels, else all bought */
     craftMine: true,
+    /** most crafts of one recipe in the plan (wished crafts aside), null = no limit */
+    maxCrafts: null as number | null,
   });
+  /** « Crafts max par recette » choices: past a few thousand, the ingredients' prices would not hold */
+  const MAX_CRAFTS = [100, 250, 500, 1000, 2000, 5000];
 
   let catalog = $state.raw<JobCatalog>({ jobs: {}, crafts: {} });
   let recipes = $state.raw<Recipes>({ recipes: {}, names: {} });
@@ -106,7 +110,7 @@
   const result = $derived.by(() => {
     const costs = new Costs(recipes, prices.map, canCraft);
     const cost = (gid: number) => costs.crafted(gid).unit;
-    const p = plan({ recipes: jobRecipes, cost, startXp, target, forced, excluded, coef: ui.coef, epic: ui.epic });
+    const p = plan({ recipes: jobRecipes, cost, startXp, target, forced, excluded, coef: ui.coef, epic: ui.epic, maxPerRecipe: ui.maxCrafts });
     return { costs, cost, p };
   });
   const p = $derived(result.p);
@@ -165,6 +169,12 @@
       <label title="Bonus d'XP (Almanax, événements…)">Bonus
         <select bind:value={ui.coef}>{#each XP_COEFS as c (c)}<option value={c}>{c} %</option>{/each}</select>
       </label>
+      <label title="Au plus ce nombre de crafts d'une même recette dans le plan (crafts souhaités à part) : au-delà, la recette suivante la moins chère prend le relais. Acheter les ingrédients de 10 000 crafts ferait grimper leur prix.">Crafts max par recette
+        <select value={ui.maxCrafts ?? ""} onchange={(e) => (ui.maxCrafts = e.currentTarget.value ? Number(e.currentTarget.value) : null)}>
+          <option value="">Sans limite</option>
+          {#each MAX_CRAFTS as n (n)}<option value={n}>{fmtInt(n)}</option>{/each}
+        </select>
+      </label>
       <label class="sw"><Switch bind:checked={ui.epic} label="Serveur épique (×3)" /> Serveur épique (×3)</label>
       <label class="sw" title={Object.keys(mine).length ? "Un ingrédient que vos métiers savent faire (à leur niveau) est crafté s'il revient moins cher, sinon tout est acheté" : "Vos métiers ne sont pas encore lus : connectez-vous, application ouverte"}>
         <Switch bind:checked={ui.craftMine} label="Craftable par moi" /> Craftable par moi
@@ -178,7 +188,8 @@
         <b>{fmtInt(crafts)}</b> craft{crafts > 1 ? "s" : ""} pour <b class="good">{kamas(Math.round(p.cost))}</b>
         · niveau atteint <b>{levelOf(p.endXp)}</b>
         {#if p.unpriced}<span class="bad">· un craft souhaité sans prix n'est pas compté</span>{/if}
-        {#if p.stuckAt !== null}<span class="bad">· aucune recette avec un prix connu au niveau {p.stuckAt}</span>{/if}
+        {#if p.capped}<span class="mut">· {p.capped} recette{p.capped > 1 ? "s" : ""} à la limite de {fmtInt(ui.maxCrafts ?? 0)} crafts</span>{/if}
+        {#if p.stuckAt !== null}<span class="bad">· {p.capped ? "plus de recette avec un prix connu sous la limite de crafts" : "aucune recette avec un prix connu"} au niveau {p.stuckAt}</span>{/if}
       {/if}
       <button class="mini right" disabled={!p.rows.length} onclick={exportList} title="Toutes les ressources à acheter, en quantité exacte, dans une fenêtre au-dessus du jeu">Liste des ingrédients</button>
     </div>

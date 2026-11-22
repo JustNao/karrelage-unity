@@ -138,6 +138,9 @@ export interface PlanInput {
   excluded: Set<number>;
   coef: number;
   epic: boolean;
+  /** most crafts of one recipe the search picks over the whole plan (wished crafts aside); null = no limit. Past it the next
+   *  cheapest recipe takes over: buying 10,000 times the same ingredients would drive their price up. */
+  maxPerRecipe?: number | null;
 }
 
 /** Crafts of one recipe in a row of the plan (the rows follow the order they are made: a recipe crafted again after another
@@ -161,8 +164,10 @@ export interface Plan {
   /** some wished craft has no price: `cost` leaves it out */
   unpriced: boolean;
   endXp: number;
-  /** the target could not be reached: no priced recipe at that level */
+  /** the target could not be reached: no priced recipe at that level (or every one at the crafts limit) */
   stuckAt: number | null;
+  /** recipes the search crafted up to `maxPerRecipe` */
+  capped: number;
 }
 
 export function plan(p: PlanInput): Plan {
@@ -172,6 +177,9 @@ export function plan(p: PlanInput): Plan {
   const goal = levelFloor(Math.min(MAX_JOB_LEVEL, p.target));
   let xp = Math.max(0, p.startXp);
   let stuckAt: number | null = null;
+  const cap = p.maxPerRecipe != null && p.maxPerRecipe > 0 ? Math.floor(p.maxPerRecipe) : Infinity;
+  /** crafts the search picked per recipe (wished ones aside) */
+  const used = new Map<number, number>();
 
   const craft = (r: JobRecipe, n: number, level: number, each: number, forced: boolean) => {
     const c = p.cost(r.gid);
@@ -197,7 +205,7 @@ export function plan(p: PlanInput): Plan {
     // the lowest cost per xp at this level
     let best: { r: JobRecipe; each: number; per: number } | null = null;
     for (const r of p.recipes) {
-      if (r.level > level || p.excluded.has(r.gid)) continue;
+      if (r.level > level || p.excluded.has(r.gid) || (used.get(r.gid) ?? 0) >= cap) continue;
       const each = craftXp(r.level, r.ratio, level, p.coef, p.epic);
       const c = p.cost(r.gid);
       if (!each || c === null) continue;
@@ -209,7 +217,9 @@ export function plan(p: PlanInput): Plan {
       break;
     }
     const next = Math.min(goal, level < MAX_JOB_LEVEL ? levelFloor(level + 1) : goal);
-    craft(best.r, Math.max(1, Math.ceil((next - xp) / best.each)), level, best.each, false);
+    const n = Math.min(cap - (used.get(best.r.gid) ?? 0), Math.max(1, Math.ceil((next - xp) / best.each)));
+    used.set(best.r.gid, (used.get(best.r.gid) ?? 0) + n);
+    craft(best.r, n, level, best.each, false);
   }
   // wished crafts not reached yet: made at the end
   for (const [g, n] of left) {
@@ -227,6 +237,7 @@ export function plan(p: PlanInput): Plan {
     unpriced: list.some((r) => r.cost === null),
     endXp: xp,
     stuckAt,
+    capped: [...used.values()].filter((n) => n >= cap).length,
   };
 }
 

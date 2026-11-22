@@ -295,7 +295,8 @@ listed items and the sub-crafts). Equipment weekly averages include exo / high r
   by the author); recipe level ≤ job level. Ratio = item `craftXpRatio`, else its type's, else 100 (pack `crafts.json` [job, level,
   ratio], `jobs.json` names; job 1 « Base » = no job).
 - Plan (`plan`): wished crafts first as soon as their level allows, else per level the lowest cost / xp recipe, enough to reach the next
-  level (each craft counted alone, at the level before it; a batch too); wished leftovers made at the end. Rows in craft order (a recipe
+  level (each craft counted alone, at the level before it; a batch too); wished leftovers made at the end. « Crafts max par recette »
+  (`maxPerRecipe`, wished crafts aside): a recipe at the limit is skipped, the next cheapest takes over (its ingredients' prices would not hold). Rows in craft order (a recipe
   crafted again after another gets a new row). Costs: ingredients bought, or with « Craftable par moi » crafted (cheaper) by one of the
   character's jobs at its level (the planned one at the level typed); rows needing such a sub-craft are flagged « sous-craft ». Xp of
   sub-crafts made with the same job is not counted. « Liste des ingrédients » = every resource to buy with its exact quantity.
