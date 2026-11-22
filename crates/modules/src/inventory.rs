@@ -7,8 +7,8 @@ use crate::auction::{parse_effect, stat_effects, ObjectEffect};
 use crate::kit::{unknown, Role, Store};
 use crate::{Ctx, Interest, Message, Module};
 use anyhow::Result;
-use loutil_proto::util::{int, int_list, messages, scalar_ints};
-use loutil_proto::{DynamicMessage, ReflectMessage};
+use loutil_proto::util::{as_i64, int, int_list, messages, scalar_ints};
+use loutil_proto::{DynamicMessage, Kind, ReflectMessage};
 use parking_lot::Mutex;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
@@ -152,13 +152,57 @@ impl Seen {
 /// module resolves the uids of broken items with it (the item is gone from the inventory by then).
 pub type UidMap = Arc<Mutex<HashMap<i64, Seen>>>;
 
-/// Object uid -> (gid, quantity) of every object of the inventory, resources included (memory only: the game sends the
-/// whole inventory at login and again each time an auction house is opened). Read by the HDV sell price helper.
-pub type Stacks = Arc<Mutex<HashMap<i64, (i64, i64)>>>;
+/// An object as the game last sent it: its gid, its quantity and how many of them are in the bank. The auction house can show
+/// the inventory merged with the bank (its « banque » button: the game then sends the content again, ~1,500 objects instead of
+/// ~200): each object's quantity is then the total, split per origin (inventory / bank) in a list of (quantity, origin).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Stack {
+    pub gid: i64,
+    pub qty: i64,
+    pub bank: i64,
+}
 
-/// How many of `gid` the inventory holds (every stack of it).
+/// Object uid -> stack of every object of the inventory, resources included (memory only: the game sends the whole inventory
+/// at login and again each time an auction house is opened). Read by the HDV sell price helper and the purchases.
+pub type Stacks = Arc<Mutex<HashMap<i64, Stack>>>;
+
+/// How many of `gid` the game shows (every stack of it; with the bank when the auction house merges it).
 pub fn quantity_of(stacks: &Stacks, gid: i64) -> i64 {
-    stacks.lock().values().filter(|(g, _)| *g == gid).map(|(_, q)| q).sum()
+    stacks.lock().values().filter(|s| s.gid == gid).map(|s| s.qty).sum()
+}
+
+/// The (origin, quantity) entries of a message: its repeated field of messages made of ints and one enum (ObjectItem's
+/// per-origin quantities, ObjectQuantityEvent's). Read by shape: neither the field nor the enum has a clear name.
+fn origins(m: &DynamicMessage) -> Vec<(i64, i64)> {
+    let int = |x: &loutil_proto::FieldDescriptor| !x.is_list() && matches!(x.kind(), Kind::Int32 | Kind::Int64 | Kind::Uint32 | Kind::Uint64);
+    let shaped = |t: &loutil_proto::MessageDescriptor| {
+        t.fields().filter(|x| !x.is_list() && matches!(x.kind(), Kind::Enum(_))).count() == 1
+            && t.fields().any(|x| int(&x))
+            && t.fields().all(|x| int(&x) || matches!(x.kind(), Kind::Enum(_)))
+    };
+    let Some(f) = m.descriptor().fields().find(|f| f.is_list() && matches!(f.kind(), Kind::Message(ref t) if shaped(t))) else {
+        return vec![];
+    };
+    messages(m, f.name())
+        .iter()
+        .map(|e| {
+            let (mut origin, mut q) = (0, 0);
+            for x in e.descriptor().fields() {
+                let v = as_i64(&e.get_field(&x)).unwrap_or(0);
+                if matches!(x.kind(), Kind::Enum(_)) {
+                    origin = v;
+                } else {
+                    q = q.max(v); // the quantity: the entry's set int (its two others were never set on the captures)
+                }
+            }
+            (origin, q)
+        })
+        .collect()
+}
+
+/// The bank's share of a stack: its quantities from another origin than the inventory's.
+fn bank_share(split: &[(i64, i64)], inv: i64) -> i64 {
+    split.iter().filter(|(o, _)| *o != inv).map(|(_, q)| q).sum()
 }
 
 /// bindings.json `object_quantity`: ObjectQuantityEvent `object` / ObjectsQuantityEvent `object` (ObjectUidWithQuantity).
@@ -179,11 +223,18 @@ struct Content {
     /// fields told apart by their values, for messages whose unnamed ints look alike (their names rotate per build):
     /// ObjectMovementEvent `move_position`, CharacterCharacteristicDetailed `carac_base` / `carac_scroll`
     learned: Map<String, Value>,
+    /// the bank as last seen merged into the inventory at an auction house: {t, items: {gid: quantity}} (null = never seen)
+    bank: Value,
 }
 
 impl Content {
     fn json(&self) -> Value {
-        json!({"updated": self.updated, "items": self.items.values().collect::<Vec<_>>(), "character": self.character, "learned": self.learned})
+        json!({"updated": self.updated, "items": self.items.values().collect::<Vec<_>>(), "character": self.character, "learned": self.learned, "bank": self.bank})
+    }
+
+    /// The enum value of the inventory's own origin (see `origins`), once learnt.
+    fn origin_inventory(&self) -> Option<i64> {
+        self.learned("origin_inventory").and_then(|o| o.parse().ok())
     }
 
     fn learned(&self, key: &str) -> Option<String> {
@@ -245,9 +296,64 @@ impl Inventory {
             let Some((uid_f, uid)) = ints.iter().find(|(_, v)| st.contains_key(v)).cloned() else { continue };
             let q = ints.iter().find(|(f, _)| *f != uid_f).map_or(0, |(_, v)| *v);
             if let Some(s) = st.get_mut(&uid) {
-                s.1 = q;
+                s.qty = q;
             }
         }
+        drop(st);
+        self.bank_split(m, msg, b);
+        self.owned_changed(ctx);
+    }
+
+    /// An ObjectQuantityEvent splitting its object's quantity per origin with a bank share (merged view): that object's bank
+    /// share and the stored bank follow it.
+    fn bank_split(&self, m: &Message, msg: &DynamicMessage, b: &QuantityBindings) {
+        let Some(inv) = self.store.lock().origin_inventory() else { return };
+        let split = origins(msg);
+        if m.name != QUANTITY || !split.iter().any(|(o, _)| *o != inv) {
+            return;
+        }
+        let Some(e) = msg.get_field_by_name(&b.one).and_then(|v| v.as_message().cloned()) else { return };
+        let mut st = self.stacks.lock();
+        let Some(uid) = scalar_ints(&e).into_iter().map(|(_, v)| v).find(|v| st.contains_key(v)) else { return };
+        let Some(s) = st.get_mut(&uid) else { return };
+        s.bank = bank_share(&split, inv);
+        let gid = s.gid;
+        let total: i64 = st.values().filter(|s| s.gid == gid).map(|s| s.bank).sum();
+        drop(st);
+        let mut c = self.store.lock();
+        if c.bank.is_object() {
+            c.bank["items"][gid.to_string()] = json!(total);
+            drop(c);
+            self.store.touch();
+        }
+    }
+
+    /// Owned resources changed (inventory or bank): the planners ask `owned` again.
+    fn owned_changed(&self, ctx: &Ctx) {
+        ctx.emit("inventory", "owned", Value::Null);
+    }
+
+    /// gid -> quantity in the inventory and the bank: the inventory as last sent (without its bank share when merged) plus the
+    /// bank as last seen merged. `bank`: when it was seen and how many items it held (null t = never).
+    fn owned(&self) -> Value {
+        let mut out: BTreeMap<i64, i64> = BTreeMap::new();
+        let inventory = {
+            let st = self.stacks.lock();
+            for s in st.values() {
+                *out.entry(s.gid).or_insert(0) += s.qty - s.bank;
+            }
+            !st.is_empty()
+        };
+        let c = self.store.lock();
+        let bank = c.bank["items"].as_object();
+        for (g, q) in bank.into_iter().flatten() {
+            if let (Ok(g), Some(q)) = (g.parse::<i64>(), q.as_i64()) {
+                *out.entry(g).or_insert(0) += q;
+            }
+        }
+        out.retain(|_, q| *q > 0);
+        let items: Map<String, Value> = out.into_iter().map(|(g, q)| (g.to_string(), json!(q))).collect();
+        json!({"items": items, "inventory": inventory, "bank": {"t": c.bank["t"], "count": bank.map_or(0, |m| m.len())}})
     }
 
     fn bindings(&self, ctx: &Ctx) -> Option<(&Bindings, &ObjectEffect)> {
@@ -346,6 +452,7 @@ impl Module for Inventory {
         s.updated = saved["updated"].as_f64().unwrap_or(0.0);
         s.character = saved["character"].clone();
         s.learned = saved["learned"].as_object().cloned().unwrap_or_default();
+        s.bank = saved["bank"].clone();
         for it in saved["items"].as_array().into_iter().flatten() {
             if let Some(uid) = it["uid"].as_i64() {
                 if let Some(seen) = Seen::of(it) {
@@ -460,16 +567,47 @@ impl Module for Inventory {
         let one = |name: &str| msg.get_field_by_name(name).and_then(|v| v.as_message().cloned()).into_iter().collect::<Vec<_>>();
         // every object's stack size (resources too: the equipment alone is stored below)
         {
-            let stack = |x: &DynamicMessage| {
+            // (uid, stack, its per-origin quantities)
+            let read = |x: &DynamicMessage| {
                 let it = entry_item(&ctx.data, b, x, &layout)?;
                 let (gid, uid, q) = object_ints(&ctx.data, b, &it, &layout);
-                (uid != 0).then_some((uid, (gid, q)))
+                (uid != 0).then(|| (uid, Stack { gid, qty: q, bank: 0 }, origins(&it)))
+            };
+            let mut inv = self.store.lock().origin_inventory();
+            let stack = |x: &DynamicMessage| {
+                read(x).map(|(uid, mut s, split)| {
+                    s.bank = inv.map_or(0, |inv| bank_share(&split, inv));
+                    (uid, s)
+                })
             };
             let mut st = self.stacks.lock();
             match m.name.as_str() {
                 CONTENT => {
+                    let all: Vec<_> = objects().iter().filter_map(read).collect();
+                    // the inventory's origin: the only one of a content that has a single one (the inventory alone: login, or an
+                    // auction house without the bank); a content with another one is merged with the bank
+                    let mut seen: Vec<i64> = all.iter().flat_map(|(_, _, o)| o.iter().map(|(o, _)| *o)).collect();
+                    seen.sort_unstable();
+                    seen.dedup();
+                    if let ([one], None) = (&seen[..], inv) {
+                        self.store.lock().learn("origin_inventory", &one.to_string());
+                        ctx.log(format!("inventory: inventory origin = {one}"));
+                        inv = Some(*one);
+                    }
                     st.clear();
-                    st.extend(objects().iter().filter_map(stack));
+                    st.extend(all.into_iter().map(|(uid, mut s, split)| {
+                        s.bank = inv.map_or(0, |inv| bank_share(&split, inv));
+                        (uid, s)
+                    }));
+                    if inv.is_some_and(|inv| seen.iter().any(|o| *o != inv)) {
+                        let mut bank: BTreeMap<i64, i64> = BTreeMap::new();
+                        for s in st.values().filter(|s| s.bank > 0) {
+                            *bank.entry(s.gid).or_insert(0) += s.bank;
+                        }
+                        let items: Map<String, Value> = bank.into_iter().map(|(g, q)| (g.to_string(), json!(q))).collect();
+                        self.store.lock().bank = json!({"t": t, "items": items});
+                        self.store.touch();
+                    }
                 }
                 ADDED => st.extend(one(&b.added).iter().filter_map(stack)),
                 ADDED_LIST => st.extend(messages(msg, &b.added_list).iter().filter_map(stack)),
@@ -484,6 +622,8 @@ impl Module for Inventory {
                 }
                 _ => {}
             }
+            drop(st);
+            self.owned_changed(ctx);
         }
         // most object events are about resources (loot, quantities): only an actual change of the equipment is saved and sent
         let put = |s: &mut BTreeMap<i64, Value>, l: Vec<(i64, Value)>| {
@@ -519,6 +659,8 @@ impl Module for Inventory {
     fn call(&self, method: &str, _args: Value, _ctx: &Ctx) -> Result<Value> {
         match method {
             "list" => Ok(self.store.lock().json()),
+            // Crafting « XP métiers »: what the planner can use before buying
+            "owned" => Ok(self.owned()),
             _ => Err(unknown("inventory", method)),
         }
     }
@@ -697,5 +839,43 @@ mod tests {
         assert!(!items.is_empty());
         assert!(l["learned"]["object_gid"].is_string() && l["learned"]["object_uid"].is_string());
         assert!(items.iter().all(|i| i["name"].is_string() && i["uid"].as_i64() > i["gid"].as_i64()), "gid / uid told apart");
+    }
+
+    /// work/capture_hdv_bank.jsonl: the auction house opened (inventory alone: its origin learnt), then merged with the bank
+    /// (1,520 objects, 1,376 with a bank share), then purchases. `owned` = inventory + bank; the stack bought into (uid 5516161:
+    /// 6 in the bank, 10 then 12 in the inventory) ends at 18. Skipped without the file.
+    #[test]
+    fn reads_the_bank_merged_at_the_auction_house() {
+        let Some(pack) = testkit::pack() else { return };
+        let rec = pack.join("../work/capture_hdv_bank.jsonl");
+        if !rec.exists() {
+            return;
+        }
+        let (hub, _) = testkit::hub("loutil-inventory-bank").unwrap();
+        let hex = |s: &str| (0..s.len() / 2).map(|i| u8::from_str_radix(&s[2 * i..2 * i + 2], 16).unwrap()).collect::<Vec<u8>>();
+        let mut first = None;
+        for line in std::fs::read_to_string(&rec).unwrap().lines() {
+            let r: Value = serde_json::from_str(line).unwrap();
+            let (Some(h), Some(dir)) = (r["hex"].as_str(), r["dir"].as_str()) else { continue };
+            let dir = if dir == "C->S" { "C->S" } else { "S->C" };
+            hub.handle(loutil_core::RawMessage { t: r["t"].as_f64().unwrap_or(0.0), srv: "x".into(), dir, payload: hex(h) });
+            if first.is_none() && r["name"] == CONTENT {
+                first = Some(hub.call("inventory", "owned", Value::Null).unwrap());
+            }
+        }
+        let first = first.unwrap();
+        assert!(first["bank"]["t"].is_null(), "no bank in the first content");
+        let owned = hub.call("inventory", "owned", Value::Null).unwrap();
+        let bank = owned["bank"]["count"].as_u64().unwrap();
+        assert_eq!(bank, 1376, "distinct items with a bank share in the merged content");
+        let l = hub.call("inventory", "list", Value::Null).unwrap();
+        assert!(l["learned"]["origin_inventory"].is_string());
+        assert!(owned["items"].as_object().unwrap().len() as u64 >= bank);
+        // the stack bought into: its gid from the bank store
+        let bank_items = l["bank"]["items"].as_object().unwrap();
+        assert!(bank_items.values().all(|q| q.as_i64().unwrap() > 0));
+        let total: i64 = owned["items"].as_object().unwrap().values().map(|q| q.as_i64().unwrap()).sum();
+        let first_total: i64 = first["items"].as_object().unwrap().values().map(|q| q.as_i64().unwrap()).sum();
+        assert!(total > first_total);
     }
 }

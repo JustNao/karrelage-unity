@@ -25,8 +25,8 @@ struct BuyBindings {
 /// gid -> quantity held, every stack summed.
 fn totals(stacks: &Stacks) -> HashMap<i64, i64> {
     let mut out = HashMap::new();
-    for (gid, q) in stacks.lock().values() {
-        *out.entry(*gid).or_insert(0) += q;
+    for s in stacks.lock().values() {
+        *out.entry(s.gid).or_insert(0) += s.qty;
     }
     out
 }

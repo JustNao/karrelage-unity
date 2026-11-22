@@ -129,7 +129,7 @@ export interface JobRecipe {
 
 export interface PlanInput {
   recipes: JobRecipe[];
-  /** cost of one craft of a recipe (null: an ingredient has no price) */
+  /** cost of one craft of a recipe, every ingredient obtained (null: an ingredient has no price) */
   cost: (gid: number) => number | null;
   startXp: number;
   target: number;
@@ -141,6 +141,13 @@ export interface PlanInput {
   /** most crafts of one recipe the search picks over the whole plan (wished crafts aside); null = no limit. Past it the next
    *  cheapest recipe takes over: buying 10,000 times the same ingredients would drive their price up. */
   maxPerRecipe?: number | null;
+  /** resources the player already has (inventory + bank: gid -> quantity), used first: a craft then costs only its missing
+   *  ingredients. Needs `ingredients` and `unit`. */
+  owned?: Map<number, number>;
+  /** a recipe's direct ingredients ([gid, quantity per craft]) */
+  ingredients?: (gid: number) => [number, number][];
+  /** the cheapest way to get one unit of an ingredient (bought, or crafted: Costs.best) */
+  unit?: (gid: number) => number | null;
 }
 
 /** Crafts of one recipe in a row of the plan (the rows follow the order they are made: a recipe crafted again after another
@@ -150,12 +157,16 @@ export interface PlanRow {
   level: number;
   qty: number;
   xp: number;
-  /** total cost (null: no price) */
+  /** total cost: the ingredients still to get (null: no price) */
   cost: number | null;
   /** job levels it was crafted at */
   from: number;
   to: number;
   forced: boolean;
+  /** direct ingredients still to get, past the owned ones ([gid, quantity]); absent = all of them (no owned resources) */
+  missing?: [number, number][];
+  /** owned ingredient units these crafts use */
+  used?: number;
 }
 
 export interface Plan {
@@ -170,8 +181,88 @@ export interface Plan {
   capped: number;
 }
 
-export function plan(p: PlanInput): Plan {
+/** n crafts of a recipe from the stock left: what they use of it, what is still to get and its price (null: unpriced). */
+interface Batch {
+  cost: number | null;
+  use: Map<number, number>;
+  missing: Map<number, number>;
+}
+
+/** The owned stock walked through the plan: each craft takes its ingredients from it first. */
+class Stock {
+  private left: Map<number, number>;
+  constructor(
+    private p: PlanInput,
+    owned: Map<number, number>,
+  ) {
+    this.left = new Map(owned);
+  }
+  get active() {
+    return !!(this.p.ingredients && this.p.unit && this.left.size);
+  }
+  batch(gid: number, n: number): Batch {
+    if (!this.active) {
+      const c = this.p.cost(gid);
+      return { cost: c === null ? null : c * n, use: new Map(), missing: new Map((this.p.ingredients?.(gid) ?? []).map(([g, q]) => [g, q * n])) };
+    }
+    const use = new Map<number, number>(), missing = new Map<number, number>();
+    let cost: number | null = 0;
+    for (const [g, q] of this.p.ingredients!(gid)) {
+      const need = q * n;
+      const have = Math.min(need, this.left.get(g) ?? 0);
+      if (have) use.set(g, have);
+      if (need > have) {
+        missing.set(g, need - have);
+        const u = this.p.unit!(g);
+        cost = cost === null || u === null ? null : cost + u * (need - have);
+      }
+    }
+    return { cost, use, missing };
+  }
+  /** crafts of `gid` its owned ingredients still lower (0: none left) */
+  covered(gid: number): number {
+    if (!this.active) return 0;
+    let k = 0;
+    for (const [g, q] of this.p.ingredients!(gid)) k = Math.max(k, Math.ceil((this.left.get(g) ?? 0) / q));
+    return k;
+  }
+  take(b: Batch) {
+    for (const [g, q] of b.use) {
+      const r = (this.left.get(g) ?? 0) - q;
+      r > 0 ? this.left.set(g, r) : this.left.delete(g);
+    }
+  }
+}
+
+/** Adds crafts to the rows (a row per run of the same recipe), with what they cost from the stock left. */
+function rowsBuilder(stock: Stock, track: boolean) {
   const rows: PlanRow[] = [];
+  const craft = (gid: number, recipeLevel: number, n: number, level: number, each: number, forced: boolean, b = stock.batch(gid, n)) => {
+    stock.take(b);
+    let row = rows[rows.length - 1];
+    if (row?.gid !== gid || row.forced !== forced) rows.push((row = { gid, level: recipeLevel, qty: 0, xp: 0, cost: 0, from: level, to: level, forced, missing: [], used: 0 }));
+    row.qty += n;
+    row.xp += n * each;
+    row.cost = row.cost === null || b.cost === null ? null : row.cost + b.cost;
+    row.to = level;
+    if (track) {
+      const m = new Map(row.missing);
+      for (const [g, q] of b.missing) m.set(g, (m.get(g) ?? 0) + q);
+      row.missing = [...m];
+    } else delete row.missing;
+    row.used! += [...b.use.values()].reduce((s, q) => s + q, 0);
+    return n * each;
+  };
+  return { rows, craft };
+}
+
+function summary(rows: PlanRow[], endXp: number, stuckAt: number | null, capped: number): Plan {
+  return { rows, cost: rows.reduce((s, r) => s + (r.cost ?? 0), 0), unpriced: rows.some((r) => r.cost === null), endXp, stuckAt, capped };
+}
+
+export function plan(p: PlanInput): Plan {
+  const stock = new Stock(p, p.owned ?? new Map());
+  const { rows, craft } = rowsBuilder(stock, !!p.ingredients);
   const left = new Map(p.forced);
   const byGid = new Map(p.recipes.map((r) => [r.gid, r]));
   const goal = levelFloor(Math.min(MAX_JOB_LEVEL, p.target));
@@ -180,17 +271,6 @@ export function plan(p: PlanInput): Plan {
   const cap = p.maxPerRecipe != null && p.maxPerRecipe > 0 ? Math.floor(p.maxPerRecipe) : Infinity;
   /** crafts the search picked per recipe (wished ones aside) */
   const used = new Map<number, number>();
-
-  const craft = (r: JobRecipe, n: number, level: number, each: number, forced: boolean) => {
-    const c = p.cost(r.gid);
-    let row = rows[rows.length - 1];
-    if (row?.gid !== r.gid || row.forced !== forced) rows.push((row = { gid: r.gid, level: r.level, qty: 0, xp: 0, cost: 0, from: level, to: level, forced }));
-    row.qty += n;
-    row.xp += n * each;
-    row.cost = row.cost === null || c === null ? null : row.cost + c * n;
-    row.to = level;
-    xp += n * each;
-  };
   const wished = (level: number) => [...left].find(([g]) => (byGid.get(g)?.level ?? Infinity) <= level);
 
   for (let guard = 0; xp < goal && guard < 1_000_000; guard++) {
@@ -198,28 +278,32 @@ export function plan(p: PlanInput): Plan {
     const w = wished(level);
     if (w) {
       const r = byGid.get(w[0])!;
-      craft(r, 1, level, craftXp(r.level, r.ratio, level, p.coef, p.epic) ?? 0, true);
+      xp += craft(r.gid, r.level, 1, level, craftXp(r.level, r.ratio, level, p.coef, p.epic) ?? 0, true);
       w[1] > 1 ? left.set(w[0], w[1] - 1) : left.delete(w[0]);
       continue;
     }
-    // the lowest cost per xp at this level
-    let best: { r: JobRecipe; each: number; per: number } | null = null;
+    const next = Math.min(goal, level < MAX_JOB_LEVEL ? levelFloor(level + 1) : goal);
+    // the lowest cost per xp at this level; a recipe whose owned ingredients lower it is priced over the crafts they cover
+    let best: { r: JobRecipe; each: number; per: number; n: number; b: Batch } | null = null;
     for (const r of p.recipes) {
-      if (r.level > level || p.excluded.has(r.gid) || (used.get(r.gid) ?? 0) >= cap) continue;
+      const done = used.get(r.gid) ?? 0;
+      if (r.level > level || p.excluded.has(r.gid) || done >= cap) continue;
       const each = craftXp(r.level, r.ratio, level, p.coef, p.epic);
-      const c = p.cost(r.gid);
-      if (!each || c === null) continue;
-      const per = c / each;
-      if (!best || per < best.per) best = { r, each, per };
+      if (!each) continue;
+      const needed = Math.max(1, Math.ceil((next - xp) / each));
+      const covered = stock.covered(r.gid);
+      const n = Math.min(cap - done, covered ? Math.min(needed, covered) : needed);
+      const b = stock.batch(r.gid, n);
+      if (b.cost === null) continue;
+      const per = b.cost / (n * each);
+      if (!best || per < best.per) best = { r, each, per, n, b };
     }
     if (!best) {
       stuckAt = level;
       break;
     }
-    const next = Math.min(goal, level < MAX_JOB_LEVEL ? levelFloor(level + 1) : goal);
-    const n = Math.min(cap - (used.get(best.r.gid) ?? 0), Math.max(1, Math.ceil((next - xp) / best.each)));
-    used.set(best.r.gid, (used.get(best.r.gid) ?? 0) + n);
-    craft(best.r, n, level, best.each, false);
+    used.set(best.r.gid, (used.get(best.r.gid) ?? 0) + best.n);
+    xp += craft(best.r.gid, best.r.level, best.n, level, best.each, false, best.b);
   }
   // wished crafts not reached yet: made at the end
   for (const [g, n] of left) {
@@ -227,24 +311,47 @@ export function plan(p: PlanInput): Plan {
     if (!r) continue;
     for (let i = 0; i < n; i++) {
       const level = levelOf(xp);
-      craft(r, 1, level, craftXp(r.level, r.ratio, level, p.coef, p.epic) ?? 0, true);
+      xp += craft(r.gid, r.level, 1, level, craftXp(r.level, r.ratio, level, p.coef, p.epic) ?? 0, true);
     }
   }
-  const list = rows;
-  return {
-    rows: list,
-    cost: list.reduce((s, r) => s + (r.cost ?? 0), 0),
-    unpriced: list.some((r) => r.cost === null),
-    endXp: xp,
-    stuckAt,
-    capped: [...used.values()].filter((n) => n >= cap).length,
-  };
+  return summary(rows, xp, stuckAt, [...used.values()].filter((n) => n >= cap).length);
 }
 
-/** Everything the plan takes: resources to buy and items to craft on the way (gid -> quantity). */
+/** A frozen plan's crafts (same recipes, quantities and order), priced again: today's prices and owned stock, the xp
+ *  computed again from `startXp`. */
+export function reprice(frozen: Pick<PlanRow, "gid" | "level" | "qty" | "forced">[], p: PlanInput): Plan {
+  const stock = new Stock(p, p.owned ?? new Map());
+  const { rows, craft } = rowsBuilder(stock, !!p.ingredients);
+  const byGid = new Map(p.recipes.map((r) => [r.gid, r]));
+  let xp = Math.max(0, p.startXp);
+  for (const f of frozen) {
+    const r = byGid.get(f.gid) ?? { gid: f.gid, level: f.level, ratio: 100 };
+    // xp per craft at the level reached, a level at a time (as the plan made them)
+    let n = f.qty;
+    while (n > 0) {
+      const level = levelOf(xp);
+      const each = craftXp(r.level, r.ratio, level, p.coef, p.epic) ?? 0;
+      const toNext = level < MAX_JOB_LEVEL && each ? Math.max(1, Math.ceil((levelFloor(level + 1) - xp) / each)) : n;
+      const k = Math.min(n, toNext);
+      xp += craft(r.gid, r.level, k, level, each, f.forced);
+      n -= k;
+    }
+  }
+  return summary(rows, xp, null, 0);
+}
+
+/** Everything the plan takes: resources to buy and items to craft on the way (gid -> quantity), owned ones left out. */
 export function shopping(rows: PlanRow[], costs: Costs): { buy: Map<number, number>; craft: Map<number, number> } {
   const buy = new Map<number, number>(), craft = new Map<number, number>();
   for (const r of rows) {
+    if (r.missing) {
+      for (const [g, q] of r.missing) {
+        const b = costs.best(g);
+        add(buy, b.buy, q);
+        add(craft, b.craft, q);
+      }
+      continue;
+    }
     const b = costs.crafted(r.gid);
     add(buy, b.buy, r.qty);
     add(craft, b.craft, r.qty);

@@ -37,7 +37,7 @@
       <th class="n" title="XP du premier craft (elle baisse quand le métier monte)">XP / craft</th>
       <th class="n">XP totale</th>
       <th class="n" title="Niveaux du métier pendant ces crafts">Niveaux</th>
-      <th class="n">Coût / craft</th>
+      <th class="n" title="Ce qu'il reste à acheter par craft (les ressources possédées sont utilisées d'abord)">Coût / craft</th>
       <th class="n">Coût total</th>
       <th></th>
     </tr>
@@ -57,7 +57,9 @@
         <td class="n">{fmtInt(Math.round(r.xp / Math.max(1, r.qty)))}</td>
         <td class="n">{fmtInt(r.xp)}</td>
         <td class="n">{r.from === r.to ? r.from : `${r.from} → ${r.to}`}</td>
-        <td class="n">{kamasOr(cost(r.gid) === null ? null : Math.round(cost(r.gid)!))}</td>
+        <td class="n" title={r.used ? `${fmtInt(r.used)} ingrédient${r.used > 1 ? "s" : ""} déjà possédé${r.used > 1 ? "s" : ""} (inventaire / banque) · plein prix : ${kamasOr(cost(r.gid) === null ? null : Math.round(cost(r.gid)!))}` : undefined}>
+          {kamasOr(r.cost === null ? null : Math.round(r.cost / Math.max(1, r.qty)))}{#if r.used}<span class="own" title="Utilise des ressources possédées">●</span>{/if}
+        </td>
         <td class="n"><b>{r.cost === null ? "—" : kamas(Math.round(r.cost))}</b></td>
         <td><button class="x" onclick={() => onexclude(r.gid)} title={r.forced ? "Retirer des crafts souhaités" : "Ne pas crafter cet objet (le calcul cherche sans lui)"}>✕</button></td>
       </tr>
@@ -72,6 +74,7 @@
   .nm:hover { text-decoration: underline; }
   .tag { margin-left: 6px; padding: 0 5px; border-radius: 4px; font-size: 10px; background: color-mix(in srgb, var(--acc) 25%, transparent); color: var(--fg); }
   .tag.sub { background: color-mix(in srgb, var(--gold) 30%, transparent); }
+  .own { margin-left: 4px; color: var(--ok); font-size: 9px; vertical-align: middle; }
   .copied { margin-left: 6px; color: var(--ok); font-size: 10px; }
   .x { border: 0; background: none; color: var(--mut); padding: 0 4px; cursor: pointer; }
   .x:hover { color: var(--bad); }

@@ -300,6 +300,11 @@ listed items and the sub-crafts). Equipment weekly averages include exo / high r
   crafted again after another gets a new row). Costs: ingredients bought, or with « Craftable par moi » crafted (cheaper) by one of the
   character's jobs at its level (the planned one at the level typed); rows needing such a sub-craft are flagged « sous-craft ». Xp of
   sub-crafts made with the same job is not counted. « Liste des ingrédients » = every resource to buy with its exact quantity.
+- « Inventaire + banque » (`useOwned`, on by default; inventory.rs `owned`): a stock walked through the plan, each craft's direct
+  ingredients taken from it first, cost = what is missing × `Costs.best` (a recipe whose ingredients are all owned is free, even
+  unpriced); the search prices a recipe over the crafts its stock still lowers. Owned raw resources of sub-crafts don't count.
+  `missing` per row feeds the shopping list. « Figer la liste » (`frozen`, per job): the rows kept, `reprice` prices them again
+  (prices, stock, xp from the current level).
 - Purchases (`purchases.rs` → `purchases:bought` {gid, quantity}): neither the BuyRequest nor the BuyResult names them, so a bought
   result sends every gid whose inventory total (`inventory::Stacks`) grew since the request. Exact on a 115-purchase recording
   (151 units = the requests' lot sizes, new stacks included). The floating list counts them per row (`got`) and ticks a row off once
@@ -339,6 +344,11 @@ both read (only one ever set on captures). Equipment from `InventoryContentEvent
 `ObjectMovementEvent` (named by anchor; uid / position told apart by value). Role `inventory`. Characteristics from
 `CharacterCharacteristicsEvent`: unnamed ints told apart by value (base = invocations 1, prospection ≥ 100, six stats
 costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
+- Bank: never sent by itself, except the auction house's « banque » button (unnamed request) → InventoryContentEvent again with
+  inventory + bank (~1,500 objects): each ObjectItem's quantity is then the total, split in a list of (ints, origin enum) read by shape
+  (`origins`); ObjectQuantityEvent carries the same split. Inventory origin = the only origin of a content that has one (learned
+  `origin_inventory`). The bank part (`Stack.bank`, `bank` in items.json: {t, gid → qty}) is kept from the last merged view; call
+  `owned` = inventory + bank per gid, event `inventory:owned` (no payload) on changes. Verified on work/capture_hdv_bank.jsonl.
 
 **Combat** (`combat.rs`, `lib/stores/combat.svelte.ts`, `modules/combat`)
 - Fighters from ActorPositionInformation (role `fight`); MonsterFighter's gid / grade / level ints are unordered and learnt by

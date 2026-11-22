@@ -17,6 +17,7 @@
     levelFloor,
     levelOf,
     plan,
+    reprice,
     shopping,
     type JobCatalog,
     type JobLevels,
@@ -47,6 +48,10 @@
     craftMine: true,
     /** most crafts of one recipe in the plan (wished crafts aside), null = no limit */
     maxCrafts: null as number | null,
+    /** the resources already in the inventory and the bank are used first (a craft costs only what is missing) */
+    useOwned: true,
+    /** frozen plans, per job: their crafts kept as they were, priced again (prices, owned resources) */
+    frozen: {} as Record<string, { t: number; rows: { gid: number; level: number; qty: number; forced: boolean }[] }>,
   });
   /** « Crafts max par recette » choices: past a few thousand, the ingredients' prices would not hold */
   const MAX_CRAFTS = [100, 250, 500, 1000, 2000, 5000];
@@ -55,14 +60,24 @@
   let recipes = $state.raw<Recipes>({ recipes: {}, names: {} });
   let levels = $state.raw<JobLevels>({ current: 0, characters: {} });
   let err = $state("");
+  /** inventory + bank (inventory.rs `owned`): gid -> quantity; `bank.t` = when the bank was last seen merged at an auction house */
+  interface Owned { items: Record<string, number>; inventory: boolean; bank: { t: number | null; count: number } }
+  let owned = $state.raw<Owned>({ items: {}, inventory: false, bank: { t: null, count: 0 } });
 
   onMount(() => {
     cached<JobCatalog>("jobs", "catalog").then((c) => (catalog = c)).catch((e) => (err = String(e)));
     cached<Recipes>("auction", "recipes").then((r) => (recipes = r)).catch((e) => (err = String(e)));
-    const off = listenAll({ "jobs:levels": (l: JobLevels) => (levels = l) });
+    // owned resources change with every loot or purchase: asked again once they settle
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const fetchOwned = () => call<Owned>("inventory", "owned", {}, true).then((o) => (owned = o)).catch(() => {});
+    const off = listenAll({
+      "jobs:levels": (l: JobLevels) => (levels = l),
+      "inventory:owned": () => (clearTimeout(timer), (timer = setTimeout(fetchOwned, 500))),
+    });
     off.ready.then(() => call<JobLevels>("jobs", "levels")).then((l) => (levels = l)).catch((e) => (err = String(e)));
+    void fetchOwned();
     void prices.ensure();
-    return off;
+    return () => (off(), clearTimeout(timer));
   });
 
   const name = (gid: number) => recipes.names[gid] ?? `#${gid}`;
@@ -106,11 +121,29 @@
   const forced = $derived(new Map(Object.entries(ui.forced[key] ?? {}).map(([g, q]) => [Number(g), q])));
   const target = $derived(Math.max(1, Math.min(MAX_JOB_LEVEL, ui.target || MAX_JOB_LEVEL)));
 
+  const ownedMap = $derived(new Map(Object.entries(owned.items).map(([g, q]) => [Number(g), q])));
+  const frozen = $derived(ui.frozen[key]);
+  /** Freeze the plan shown (its crafts stay; prices and owned resources still count), or let it be computed again. */
+  function toggleFreeze() {
+    if (frozen) {
+      const f = { ...ui.frozen };
+      delete f[key];
+      ui.frozen = f;
+    } else ui.frozen = { ...ui.frozen, [key]: { t: Date.now(), rows: p.rows.map((r) => ({ gid: r.gid, level: r.level, qty: r.qty, forced: r.forced })) } };
+  }
+  const bankDate = $derived(owned.bank.t ? new Date(owned.bank.t * 1000).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" }) : null);
+
   // rebuilt whenever a price changes (each price read inside is tracked)
   const result = $derived.by(() => {
     const costs = new Costs(recipes, prices.map, canCraft);
     const cost = (gid: number) => costs.crafted(gid).unit;
-    const p = plan({ recipes: jobRecipes, cost, startXp, target, forced, excluded, coef: ui.coef, epic: ui.epic, maxPerRecipe: ui.maxCrafts });
+    const input = {
+      recipes: jobRecipes, cost, startXp, target, forced, excluded, coef: ui.coef, epic: ui.epic, maxPerRecipe: ui.maxCrafts,
+      owned: ui.useOwned ? ownedMap : undefined,
+      ingredients: (gid: number) => recipes.recipes[gid] ?? [],
+      unit: (gid: number) => costs.best(gid).unit,
+    };
+    const p = frozen ? reprice(frozen.rows, input) : plan(input);
     return { costs, cost, p };
   });
   const p = $derived(result.p);
@@ -176,6 +209,10 @@
         </select>
       </label>
       <label class="sw"><Switch bind:checked={ui.epic} label="Serveur épique (×3)" /> Serveur épique (×3)</label>
+      <label class="sw" title={`Les ressources déjà dans votre inventaire${bankDate ? ` et votre banque (lue le ${bankDate})` : ""} sont utilisées d'abord : un craft ne coûte que ce qui manque. ${bankDate ? "La banque est relue à chaque fois que vous l'affichez à l'hôtel de vente." : "Banque jamais lue : à l'hôtel de vente, affichez votre banque (bouton de la fenêtre) pour qu'elle compte."}${owned.inventory ? "" : " Inventaire pas encore lu : ouvrez un hôtel de vente ou reconnectez-vous."}`}>
+        <Switch bind:checked={ui.useOwned} label="Utiliser mon inventaire et ma banque" /> Inventaire + banque
+        {#if ui.useOwned}<span class="mut small">{bankDate ? `banque du ${bankDate}` : "banque jamais lue"}</span>{/if}
+      </label>
       <label class="sw" title={Object.keys(mine).length ? "Un ingrédient que vos métiers savent faire (à leur niveau) est crafté s'il revient moins cher, sinon tout est acheté" : "Vos métiers ne sont pas encore lus : connectez-vous, application ouverte"}>
         <Switch bind:checked={ui.craftMine} label="Craftable par moi" /> Craftable par moi
       </label>
@@ -188,10 +225,15 @@
         <b>{fmtInt(crafts)}</b> craft{crafts > 1 ? "s" : ""} pour <b class="good">{kamas(Math.round(p.cost))}</b>
         · niveau atteint <b>{levelOf(p.endXp)}</b>
         {#if p.unpriced}<span class="bad">· un craft souhaité sans prix n'est pas compté</span>{/if}
+        {#if frozen}<span class="mut">· liste figée (niveau, bonus et choix ne la changent plus)</span>{/if}
         {#if p.capped}<span class="mut">· {p.capped} recette{p.capped > 1 ? "s" : ""} à la limite de {fmtInt(ui.maxCrafts ?? 0)} crafts</span>{/if}
         {#if p.stuckAt !== null}<span class="bad">· {p.capped ? "plus de recette avec un prix connu sous la limite de crafts" : "aucune recette avec un prix connu"} au niveau {p.stuckAt}</span>{/if}
       {/if}
-      <button class="mini right" disabled={!p.rows.length} onclick={exportList} title="Toutes les ressources à acheter, en quantité exacte, dans une fenêtre au-dessus du jeu">Liste des ingrédients</button>
+      <button class="mini right" class:on={!!frozen} disabled={!frozen && !p.rows.length} onclick={toggleFreeze}
+        title={frozen ? "Liste figée : les crafts ne changent plus (les prix et les ressources possédées sont toujours pris en compte). Cliquer pour la recalculer." : "Garder ces crafts tels quels pendant les achats : seuls les prix et ce qui reste à acheter changent"}>
+        {frozen ? `❄ Figée le ${new Date(frozen.t).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })} · libérer` : "Figer la liste"}
+      </button>
+      <button class="mini" disabled={!p.rows.length} onclick={exportList} title="Toutes les ressources à acheter, en quantité exacte, dans une fenêtre au-dessus du jeu">Liste des ingrédients</button>
     </div>
   {/snippet}
   <PlanTable rows={p.rows} {name} cost={result.cost} subs={(gid) => [...result.costs.crafted(gid).craft.keys()]} onexclude={exclude} />
@@ -217,4 +259,5 @@
   .right { margin-left: auto; }
   .form .sw { display: inline-flex; cursor: pointer; align-items: center; gap: 6px; }
   .small { font-size: 12px; }
+  .mini.on { background: color-mix(in srgb, var(--acc) 30%, transparent); }
 </style>
