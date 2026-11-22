@@ -300,6 +300,10 @@ listed items and the sub-crafts). Equipment weekly averages include exo / high r
   crafted again after another gets a new row). Costs: ingredients bought, or with « Craftable par moi » crafted (cheaper) by one of the
   character's jobs at its level (the planned one at the level typed); rows needing such a sub-craft are flagged « sous-craft ». Xp of
   sub-crafts made with the same job is not counted. « Liste des ingrédients » = every resource to buy with its exact quantity.
+- Purchases (`purchases.rs` → `purchases:bought` {gid, quantity}): neither the BuyRequest nor the BuyResult names them, so a bought
+  result sends every gid whose inventory total (`inventory::Stacks`) grew since the request. Exact on a 115-purchase recording
+  (151 units = the requests' lot sizes, new stacks included). The floating list counts them per row (`got`) and ticks a row off once
+  its quantity is bought (only while it is open).
 
 **Stuff** (`stuff.rs`, `modules/stuff`, `lib/stuff.ts`)
 - Dofusbook import `https://www.dofusbook.net/api/stuffs/dofus/public/<id>` (link forms + `d-bk.net` 301). Cloudflare

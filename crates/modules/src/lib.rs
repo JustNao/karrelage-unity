@@ -15,6 +15,7 @@ pub mod map_monsters;
 pub mod names;
 pub mod packets;
 pub mod prices;
+pub mod purchases;
 pub mod recorder;
 pub mod remote;
 pub mod sell_price;
@@ -140,7 +141,8 @@ pub fn all() -> Vec<Box<dyn Module>> {
         // after the inventory: an object added is in the shared uid map when the Brisage module sees it (`acquired`)
         Box::new(inventory),
         Box::new(brisage::Brisage::new(uids)),
-        Box::new(sell_price::SellPrice::new(stacks)),
+        Box::new(sell_price::SellPrice::new(stacks.clone())),
+        Box::new(purchases::Purchases::new(stacks)),
         Box::new(combat::Combat::new()),
         Box::new(fight_map::FightMap::new()),
         Box::new(forgemagie::Forgemagie::new()),
