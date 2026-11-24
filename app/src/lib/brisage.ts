@@ -33,6 +33,8 @@ export interface BrisItem {
   /** Dropped by some monster. */
   drop: boolean;
   craft: boolean;
+  /** Panoplie the item belongs to (its name, "" when unnamed), null when none. */
+  set: string | null;
   /** Default effects that yield a rune. */
   effects: { a: number; min: number; max: number }[];
 }

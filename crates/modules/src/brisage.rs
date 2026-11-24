@@ -224,6 +224,8 @@ impl Brisage {
             list.push(json!({
                 "gid": g, "name": ctx.data.item_name(*g), "level": i.level, "type_id": i.type_id, "type": ctx.data.type_name(Some(i.type_id)),
                 "drop": i.drop, "craft": ctx.data.recipes.contains_key(g),
+                // panoplie name (empty when unnamed), null outside a set (set id -1 or unknown)
+                "set": i.set_id.and_then(|s| ctx.data.itemsets.get(&s)).map(|x| x.name_id.and_then(|n| ctx.data.text(n)).unwrap_or("")),
                 "effects": effects.iter().map(|(a, min, max)| json!({"a": a, "min": min, "max": max})).collect::<Vec<_>>(),
             }));
             items.insert(*g, (i.level, effects));
@@ -406,7 +408,7 @@ impl Module for Brisage {
 
     fn call(&self, method: &str, args: Value, ctx: &Ctx) -> Result<Value> {
         match method {
-            // {items: [{gid, name, level, type_id, type, drop, craft, effects: [{a, min, max}]}], runes: {effect id: rune}}
+            // {items: [{gid, name, level, type_id, type, drop, craft, set, effects: [{a, min, max}]}], runes: {effect id: rune}}
             "items" => Ok(self.pack(ctx).json.clone()),
             // {gid: {gid, coef, t, source, ...}}
             "coefs" => Ok(Value::Object(self.coefs.lock().iter().map(|(g, e)| (g.to_string(), e.clone())).collect())),
@@ -504,6 +506,7 @@ mod tests {
             assert_eq!(c["level"], 200);
             assert_eq!(c["drop"], true);
         }
+        assert!(items.iter().any(|i| i["set"].is_string()) && items.iter().any(|i| i["set"].is_null()), "items in and out of a set");
         assert!(items.iter().all(|i| breakable(i["type_id"].as_i64().unwrap())));
         assert!(!items.iter().any(|i| i["type_id"] == 23 || i["type_id"] == 151 || i["type_id"] == 18), "no Dofus / trophée / familier");
     }

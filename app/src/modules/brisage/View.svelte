@@ -30,8 +30,8 @@
   /** Weapon types (the rest of the breakable types are worn equipment). */
   const WEAPONS = new Set([2, 3, 4, 5, 6, 7, 8, 19, 20, 21, 22, 114, 271]);
 
-  interface UiState { q: string; types: number[]; lvMin: number | null; lvMax: number | null; priced: boolean; noDrop: boolean; absent: boolean; sel: number | null; /** Effect focused (its rune): items without it hidden, break-even for that focus. */ focus: number | null; /** « Craftable par moi » */ mine: boolean }
-  const ui = persisted<UiState>(UI_KEY, { q: "", types: [], lvMin: null, lvMax: null, priced: true, noDrop: false, absent: false, sel: null, focus: null, mine: false });
+  interface UiState { q: string; types: number[]; lvMin: number | null; lvMax: number | null; priced: boolean; noDrop: boolean; absent: boolean; sel: number | null; /** Effect focused (its rune): items without it hidden, break-even for that focus. */ focus: number | null; /** « Craftable par moi » */ mine: boolean; /** Panoplie filter: "in" = set items only, "out" = items of no set. */ set: "" | "in" | "out" }
+  const ui = persisted<UiState>(UI_KEY, { q: "", types: [], lvMin: null, lvMax: null, priced: true, noDrop: false, absent: false, sel: null, focus: null, mine: false, set: "" });
 
   const cols = new Columns(`karrelage.cols.brisage`, { detail: 640 });
   let pack = $state.raw<BrisPack>({ items: [], runes: {} });
@@ -185,8 +185,8 @@
     return [...as].filter((a) => pack.runes[a]).map((a) => ({ a, name: runeShort(pack.runes[a].name)! })).sort((x, y) => x.name.localeCompare(y.name, "fr"));
   });
   const num = (v: string) => (v.trim() === "" || !Number.isFinite(+v) ? null : +v);
-  const filtered = $derived(!!(ui.q || ui.types.length || ui.lvMin != null || ui.lvMax != null || ui.noDrop || ui.absent || ui.focus != null));
-  const resetFilters = () => Object.assign(ui, { q: "", types: [], lvMin: null, lvMax: null, noDrop: false, absent: false, focus: null });
+  const filtered = $derived(!!(ui.q || ui.types.length || ui.lvMin != null || ui.lvMax != null || ui.noDrop || ui.absent || ui.focus != null || !!ui.set));
+  const resetFilters = () => Object.assign(ui, { q: "", types: [], lvMin: null, lvMax: null, noDrop: false, absent: false, focus: null, set: "" });
 
   const sort = useSort<SortKey>("even", false, (k) => k === "level" || k === "profit" || k === "sale");
   const view = $derived.by(() => {
@@ -199,6 +199,7 @@
           (ui.lvMin == null || r.level >= ui.lvMin) &&
           (ui.lvMax == null || r.level <= ui.lvMax) &&
           (!ui.noDrop || !r.item.drop) &&
+          (!ui.set || (ui.set === "in") === (r.item.set != null)) &&
           (!ui.absent || r.sale === false) &&
           (!ui.priced || r.even != null) &&
           (!mineOnly || byMe(r.gid)),
@@ -335,6 +336,11 @@
           <option value="">Tous les focus</option>
           {#each focusOptions as o (o.a)}<option value={o.a}>Focus {o.name}</option>{/each}
         </select>
+        <select class="focus" class:on={!!ui.set} bind:value={ui.set} title="Objets faisant partie d'une panoplie, ou d'aucune">
+          <option value="">Panoplie ou non</option>
+          <option value="in">En panoplie</option>
+          <option value="out">Hors panoplie</option>
+        </select>
         <span class="lv">Niv. <input type="number" min="1" max="200" placeholder="min" value={ui.lvMin ?? ""} oninput={(e) => (ui.lvMin = num(e.currentTarget.value))} /> – <input type="number" min="1" max="200" placeholder="max" value={ui.lvMax ?? ""} oninput={(e) => (ui.lvMax = num(e.currentTarget.value))} /></span>
       {/snippet}
       {#snippet after()}
@@ -381,7 +387,7 @@
       </div>
     {/each}
     {#if sel && out}
-      <div class="fh">{sel.name} <span class="mut">· niv. {sel.level} · {sel.item.type}{sel.item.drop ? " · drop" : ""}{sel.item.craft ? " · craftable" : ""}</span></div>
+      <div class="fh">{sel.name} <span class="mut">· niv. {sel.level} · {sel.item.type}{sel.item.drop ? " · drop" : ""}{sel.item.set != null ? ` · ${sel.item.set || "panoplie"}` : ""}{sel.item.craft ? " · craftable" : ""}</span></div>
       <div class="ctl">
         <label>Coefficient <input type="number" min="0" step="1" value={selCoef?.coef ?? ""} placeholder="100" oninput={(e) => setCoef(sel.gid, e.currentTarget.value)} /> %</label>
         {#if selCoef}

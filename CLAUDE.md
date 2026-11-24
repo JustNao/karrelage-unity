@@ -247,6 +247,7 @@ and developer mode are both on. New category = an entry in `CATEGORIES`, a defau
   through `inventory::UidMap`, else guessed from runes). Every break appended to
   `breaks.json` (data to later model coefficient evolution).
 - `drop` = `dropMonsterIds` non-empty (Temporis ignored). Breakable types in `BREAKABLE_TYPES`.
+- « Panoplie » filter (`ui.set`: in / out): item `set` = its set's name, null when `setId` is -1 or not in `itemsets.json`.
 - « Focus » filter (`ui.focus`, an effect id): only items with that default effect; sources, break-even, profit and the
   detail summary use that focus's value (`valueOf`) instead of the best result.
 - « Craftable par moi » (`ui.mine`, as in Crafts rentables; `lib/jobXp.ts` `currentJobs` / `craftableBy`): only items the character's jobs
