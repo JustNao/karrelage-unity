@@ -240,6 +240,11 @@
 
   /** « Crafts » (bottom of the detail): a right click on a craftable item plans one more craft of it. */
   let crafts = $state<ReturnType<typeof RecentCrafts>>();
+  /** The job crafting an item (jobs.rs `catalog`), null without a recipe. */
+  const jobOf = (gid: number): string | null => {
+    const c = catalog.crafts[gid];
+    return c ? (catalog.jobs[c[0]] ?? `Métier ${c[0]}`) : null;
+  };
   function planCraft(e: MouseEvent, r: Row) {
     e.preventDefault();
     if (r.item.craft) crafts?.plan(r.gid);
@@ -485,7 +490,7 @@
       <div class="mut">Choisissez un objet dans la liste.</div>
     {/if}
     </div>
-    <RecentCrafts bind:this={crafts} {pack} {coefOf} {price} craft={craftOf} selected={ui.sel} onpick={(gid) => (ui.sel = gid)} onshop={shopPlanned} />
+    <RecentCrafts bind:this={crafts} {pack} {coefOf} {price} craft={craftOf} {jobOf} selected={ui.sel} onpick={(gid) => (ui.sel = gid)} onshop={shopPlanned} />
   </div>
 </div>
 

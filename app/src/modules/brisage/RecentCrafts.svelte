@@ -21,7 +21,9 @@
   /** A craft to come: the item and how many. */
   interface Planned { gid: number; qty: number; t: number }
 
-  let { pack, coefOf, price, craft, selected, onpick, onshop }: {
+  let { pack, coefOf, price, craft, jobOf, selected, onpick, onshop }: {
+    /** the job crafting an item (null: no recipe) */
+    jobOf: (gid: number) => string | null;
     pack: BrisPack;
     coefOf: (gid: number) => number | null;
     price: (gid: number) => number | null;
@@ -106,16 +108,21 @@
     }
     return [...by.values()].sort((a, b) => b.t - a.t);
   });
-  /** Planned crafts, at the item's mean roll: runes at the known coefficient, the craft estimated. */
-  const plannedRows = $derived(
-    store.planned.map((p) => {
+  /** Planned crafts, at the item's mean roll: runes at the known coefficient, the craft estimated. Grouped by job (`first`:
+   *  the group's first row, which shows the job). */
+  const plannedRows = $derived.by(() => {
+    const list = store.planned.map((p) => {
       const item = items.get(p.gid);
       const coef = coefOf(p.gid);
       const c = craft(p.gid);
       const out = item ? outcome(meanRoll(item), item.level, pack.runes, price) : null;
-      return { p, name: item?.name ?? `#${p.gid}`, coef, out, value: out && coef != null ? (out.best.value * coef * p.qty) / 100 : null, cost: c?.cost == null ? null : c.cost * p.qty, missing: c?.missing ?? [] };
-    }),
-  );
+      const job = jobOf(p.gid) ?? "—";
+      return { p, job, first: false, name: item?.name ?? `#${p.gid}`, coef, out, value: out && coef != null ? (out.best.value * coef * p.qty) / 100 : null, cost: c?.cost == null ? null : c.cost * p.qty, missing: c?.missing ?? [] };
+    });
+    list.sort((a, b) => a.job.localeCompare(b.job, "fr") || a.name.localeCompare(b.name, "fr"));
+    list.forEach((r, i) => (r.first = i === 0 || list[i - 1].job !== r.job));
+    return list;
+  });
   const plannedCount = $derived(store.planned.reduce((s, p) => s + p.qty, 0));
 
   /** pieces, stacks counted whole */
@@ -201,6 +208,7 @@
       <table class="tbl">
         <thead>
           <tr>
+            <th title="Métier qui crafte l'objet">Métier</th>
             <th>Objet</th>
             {#if mode === "grouped"}<th class="n">Qté</th>{:else}<th>Heure</th>{/if}
             <th class="n" title="Coefficient connu de l'objet (relevé au brisage ou saisi)">Coef</th>
@@ -212,11 +220,13 @@
           {#each plannedRows as r (r.p.gid)}
             <tr
               class="planned"
+              class:group={r.first}
               class:sel={r.p.gid === selected}
               onclick={() => onpick(r.p.gid)}
               oncontextmenu={(e) => (e.preventDefault(), unplan(r.p.gid))}
               title="Craft prévu, au jet moyen (clic droit : un de moins ; un craft de cet objet l'enlève)"
             >
+              <td>{#if r.first}<b>{r.job}</b>{/if}</td>
               <td><b>{r.name}</b> <span class="mut">prévu</span></td>
               {#if mode === "grouped"}<td class="n">{r.p.qty}</td>{:else}<td class="mut">× {r.p.qty}</td>{/if}
               <td class="n">{coefText(r.coef)}</td>
@@ -226,6 +236,7 @@
           {/each}
           {#each rows as r (r.key)}
             <tr class:sel={r.gid === selected} onclick={() => onpick(r.gid)} title="Afficher l'objet">
+              <td class="mut">{jobOf(r.gid) ?? "—"}</td>
               <td><b>{r.name}</b> <span class="mut">{howText(r)}</span></td>
               {#if mode === "grouped"}<td class="n">{r.count}</td>{:else}<td class="mut">{fmtTime(r.t)}</td>{/if}
               <td class="n">{coefText(r.coef)}</td>
@@ -251,6 +262,7 @@
   tbody tr { cursor: pointer; }
   tr.planned td { opacity: 0.5; }
   tr.planned:hover td { opacity: 0.75; }
+  tr.planned.group:not(:first-child) td { border-top: 1px solid var(--line); }
   tr.sel td { box-shadow: inset 0 1px 0 var(--acc), inset 0 -1px 0 var(--acc); }
   td { white-space: nowrap; }
   .empty { padding: 6px 0; }

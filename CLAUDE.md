@@ -262,7 +262,7 @@ and developer mode are both on. New category = an entry in `CATEGORIES`, a defau
   Price = paid for a purchase, else the craft estimated at today's stored prices (`craftCost`, « craft »; a missing ingredient price = —).
   « Session » line on top: pieces since the app started (`performance.timeOrigin`), cost / runes / gain over those with both known.
   Planned crafts (`planned`): a right click on a craftable item of the list adds one (greyed rows on top, mean roll; right click on one
-  = one less; a craft of that gid seen takes its pieces off). « Ressources » = their ingredients in the floating shopping list (below).
+  = one less; a craft of that gid seen takes its pieces off). First column = the job crafting the item (`catalog`); planned rows grouped by job. « Ressources » = their ingredients in the floating shopping list (below).
 - The list's « Bénéfice » shows the profit's % of the cost too.
 
 **Crafting > Montures** (`lib/mounts.ts`): extraction gives N resources, N = generation (highest base-colour generation,
