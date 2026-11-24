@@ -10,7 +10,7 @@
   import { afterTax, lotKeys, unitPriceOrNull } from "../../lib/price";
   import { auction } from "../../lib/stores/auction.svelte";
   import { prices } from "../../lib/stores/prices.svelte";
-  import { ago, fmtDateTime, fmtNum, kamas, runeShort, signedKamas } from "../../lib/fmt";
+  import { ago, fmtDateTime, fmtNum, kamas, pct, runeShort, signedKamas } from "../../lib/fmt";
   import { useSort } from "../../lib/sort.svelte";
   import Banner from "../../lib/components/Banner.svelte";
   import Grip from "../../lib/components/Grip.svelte";
@@ -20,6 +20,7 @@
   import SmoothScroll from "../../lib/components/SmoothScroll.svelte";
   import SortTable from "../../lib/components/SortTable.svelte";
   import RecentCrafts from "./RecentCrafts.svelte";
+  import { openShopList, shopRows, type Owned } from "../../lib/shoplist";
 
   /** Rows rendered at once in the list (narrow it with the search / filters). */
   const SHOWN = 300;
@@ -237,6 +238,29 @@
     }, () => {});
   }
 
+  /** « Crafts » (bottom of the detail): a right click on a craftable item plans one more craft of it. */
+  let crafts = $state<ReturnType<typeof RecentCrafts>>();
+  function planCraft(e: MouseEvent, r: Row) {
+    e.preventDefault();
+    if (r.item.craft) crafts?.plan(r.gid);
+  }
+  /** The planned crafts' resources in the floating shopping list: ingredients bought or crafted (cheaper; with « Craftable
+   *  par moi » by the character's jobs only), what the inventory and the bank hold counted (intermediates used first). */
+  async function shopPlanned(planned: Map<number, number>) {
+    const costs = new Costs(recipes, prices.map, mineOnly ? byMe : () => true);
+    const needs = new Map<number, number>();
+    for (const [gid, n] of planned) for (const [g, q] of recipes.recipes[gid] ?? []) needs.set(g, (needs.get(g) ?? 0) + q * n);
+    const owned = await call<Owned>("inventory", "owned", {}, true).catch(() => null);
+    const stock = owned ? new Map(Object.entries(owned.items).map(([g, q]) => [Number(g), q])) : undefined;
+    const n = [...planned.values()].reduce((s, q) => s + q, 0);
+    await openShopList({
+      title: `Brisage · ${n} craft${n > 1 ? "s" : ""} prévu${n > 1 ? "s" : ""}`,
+      ...shopRows(costs, needs, (g) => recipes.names[g] ?? `#${g}`, stock),
+      stock: true,
+      had: owned?.items,
+    });
+  }
+
   /** Break history of the selected item, latest first. */
   let breaks = $state.raw<Break[]>([]);
   const loadBreaks = (gid: number | null) => {
@@ -354,7 +378,7 @@
     </SearchBar>
     {#if err}<Banner inset>Erreur : {err} (relancez l'application pour charger la dernière version)</Banner>{/if}
     <SmoothScroll>
-      <SortTable columns={COLUMNS} rows={view.slice(0, SHOWN)} {sort} key={(r) => r.gid} rowProps={(r) => ({ class: [(r.profit ?? 0) > 0 ? "hot" : "", r.gid === ui.sel ? "sel" : ""].join(" "), onclick: () => pick(r) })}>
+      <SortTable columns={COLUMNS} rows={view.slice(0, SHOWN)} {sort} key={(r) => r.gid} rowProps={(r) => ({ class: [(r.profit ?? 0) > 0 ? "hot" : "", r.gid === ui.sel ? "sel" : ""].join(" "), onclick: () => pick(r), oncontextmenu: (e: MouseEvent) => planCraft(e, r), title: r.item.craft ? "Clic droit : un craft prévu (Crafts, en bas du détail)" : "" })}>
         {#snippet row(r)}
           <td><b>{r.name}</b>{#if copied === r.gid} <span class="copied">copié</span>{/if} <span class="mut">{r.item.type}</span>{#if r.item.drop} <span class="mut" title="Lâché par un monstre">· drop</span>{/if}</td>
           <td class="n">{r.level}</td>
@@ -363,7 +387,7 @@
             {#if r.cost != null}{kamas(r.cost)} <span class="mut">{r.best?.kind === "lot" ? "HDV" : "craft"}</span>{#if r.best?.kind === "lot" && hasExo(r.best)} <span class="exo" title="Le lot a un exo : ses runes comptent sans focus">exo</span>{/if}{:else}—{/if}
           </td>
           <td class="n" title={r.best ? `Meilleur résultat : ${focusName(r.best.out)}` : ""}><b>{coefText(r.even)}</b>{#if r.best?.out.unpriced} <span class="warn" title="Une rune n'a pas de prix (comptée 0)">⚠</span>{/if}</td>
-          <td class="n" class:good={(r.profit ?? 0) > 0} class:bad={(r.profit ?? 0) < 0}>{#if r.profit != null}{signedKamas(Math.round(r.profit))} <span class="mut">à {coefText(r.coef)}</span>{:else}—{/if}{#if r.good}<br /><span class="good small" title="Lots scannés rentables au coefficient connu">{r.good} lot{r.good > 1 ? "s" : ""} rentable{r.good > 1 ? "s" : ""}{r.goodExo ? ` (${r.goodExo} avec exo)` : ""}</span>{/if}</td>
+          <td class="n" class:good={(r.profit ?? 0) > 0} class:bad={(r.profit ?? 0) < 0}>{#if r.profit != null}{signedKamas(Math.round(r.profit))}{#if r.cost}{" · "}{pct((r.profit / r.cost) * 100, 0)}{/if} <span class="mut">à {coefText(r.coef)}</span>{:else}—{/if}{#if r.good}<br /><span class="good small" title="Lots scannés rentables au coefficient connu">{r.good} lot{r.good > 1 ? "s" : ""} rentable{r.good > 1 ? "s" : ""}{r.goodExo ? ` (${r.goodExo} avec exo)` : ""}</span>{/if}</td>
         {/snippet}
         {#snippet empty()}Aucun objet à afficher : ouvrez les objets (ou leurs ingrédients) et les runes à l'hôtel de vente pour enregistrer leurs prix (ou désactivez « Prix connus seulement »).{/snippet}
       </SortTable>
@@ -461,7 +485,7 @@
       <div class="mut">Choisissez un objet dans la liste.</div>
     {/if}
     </div>
-    <RecentCrafts {pack} {coefOf} {price} craft={craftOf} selected={ui.sel} onpick={(gid) => (ui.sel = gid)} />
+    <RecentCrafts bind:this={crafts} {pack} {coefOf} {price} craft={craftOf} selected={ui.sel} onpick={(gid) => (ui.sel = gid)} onshop={shopPlanned} />
   </div>
 </div>
 

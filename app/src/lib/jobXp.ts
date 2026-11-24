@@ -114,6 +114,25 @@ export class Costs {
     this.memo.set(gid, out);
     return out;
   }
+
+  /** What these needs (gid -> quantity) take: the resources to buy, in full (the shopping list deducts the stock it sees,
+   *  live), and the intermediate items crafted on the way (cheaper crafted, as `best`), the `stock`'s own intermediates used
+   *  first. */
+  shop(needs: Iterable<[number, number]>, stock?: Map<number, number>): { buy: Map<number, number>; craft: Map<number, number> } {
+    const left = new Map(stock ?? []);
+    const buy = new Map<number, number>(), craft = new Map<number, number>();
+    const take = (gid: number, q: number, depth: number) => {
+      if (!this.best(gid).craft.has(gid) || depth > 20) return void buy.set(gid, (buy.get(gid) ?? 0) + q);
+      const use = Math.min(left.get(gid) ?? 0, q);
+      left.set(gid, (left.get(gid) ?? 0) - use);
+      const rest = q - use;
+      if (rest <= 0) return;
+      craft.set(gid, (craft.get(gid) ?? 0) + rest);
+      for (const [g, n] of this.recipes.recipes[gid] ?? []) take(g, n * rest, depth + 1);
+    };
+    for (const [g, q] of needs) take(g, q, 0);
+    return { buy, craft };
+  }
 }
 
 function add(into: Map<number, number>, from: Map<number, number>, times: number) {
@@ -340,21 +359,3 @@ export function reprice(frozen: Pick<PlanRow, "gid" | "level" | "qty" | "forced"
   return summary(rows, xp, null, 0);
 }
 
-/** Everything the plan takes: resources to buy and items to craft on the way (gid -> quantity), owned ones left out. */
-export function shopping(rows: PlanRow[], costs: Costs): { buy: Map<number, number>; craft: Map<number, number> } {
-  const buy = new Map<number, number>(), craft = new Map<number, number>();
-  for (const r of rows) {
-    if (r.missing) {
-      for (const [g, q] of r.missing) {
-        const b = costs.best(g);
-        add(buy, b.buy, q);
-        add(craft, b.craft, q);
-      }
-      continue;
-    }
-    const b = costs.crafted(r.gid);
-    add(buy, b.buy, r.qty);
-    add(craft, b.craft, r.qty);
-  }
-  return { buy, craft };
-}

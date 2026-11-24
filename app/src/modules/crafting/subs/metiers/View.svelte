@@ -8,7 +8,7 @@
   import { prices } from "../../../../lib/stores/prices.svelte";
   import { fight } from "../../../../lib/stores/combat.svelte";
   import { fmtInt, kamas } from "../../../../lib/fmt";
-  import { openShopList } from "../../../../lib/shoplist";
+  import { openShopList, shopRows } from "../../../../lib/shoplist";
   import {
     BASE_JOB,
     Costs,
@@ -18,7 +18,6 @@
     levelOf,
     plan,
     reprice,
-    shopping,
     type JobCatalog,
     type JobLevels,
     type JobRecipe,
@@ -166,12 +165,14 @@
     ui.forced[key] = f;
   }
 
+  /** The resources of the plan's crafts in the floating list: in full, the window counting what the inventory and the bank
+   *  hold (with « Inventaire + banque »; owned intermediates are used first). */
   function exportList() {
-    const { buy, craft } = shopping(p.rows, result.costs);
-    const items = (m: Map<number, number>, priced: boolean) =>
-      [...m].map(([gid, qty]) => ({ gid, name: name(gid), qty, unit: priced ? (result.costs.best(gid).unit ?? null) : null })).sort((a, b) => a.name.localeCompare(b.name));
+    const needs = new Map<number, number>();
+    for (const r of p.rows) for (const [g, q] of recipes.recipes[r.gid] ?? []) needs.set(g, (needs.get(g) ?? 0) + q * r.qty);
     const title = `${catalog.jobs[key] ?? "Métier"} ${level} → ${levelOf(p.endXp)}`;
-    void openShopList({ title, buy: items(buy, true), craft: items(craft, false) });
+    const stock = ui.useOwned;
+    void openShopList({ title, ...shopRows(result.costs, needs, name, stock ? ownedMap : undefined), stock, had: stock ? owned.items : undefined });
   }
   const num = (e: Event) => Number((e.currentTarget as HTMLInputElement).value);
 </script>

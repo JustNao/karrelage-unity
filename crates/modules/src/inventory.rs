@@ -26,6 +26,12 @@ pub const CHARACTERISTICS: &str = "CharacterCharacteristicsEvent";
 /// A stack's new size (one object / several): what is left after putting part of it on sale, using or dropping some...
 pub const QUANTITY: &str = "ObjectQuantityEvent";
 pub const QUANTITY_LIST: &str = "ObjectsQuantityEvent";
+/// The bank window: its whole content when it opens, then each stack put in / taken out (new size) or emptied.
+pub const STORAGE_CONTENT: &str = "StorageInventoryContentEvent";
+pub const STORAGE_UPDATE: &str = "StorageObjectUpdateEvent";
+pub const STORAGE_UPDATE_LIST: &str = "StorageObjectsUpdateEvent";
+pub const STORAGE_REMOVED: &str = "StorageObjectRemovedEvent";
+pub const STORAGE_REMOVED_LIST: &str = "StorageObjectsRemovedEvent";
 /// Characteristics kept for the export: vitality, wisdom, strength, intelligence, chance, agility.
 const KEPT_CHARACTERISTICS: [i64; 6] = [11, 12, 10, 15, 13, 14];
 /// Characteristics whose base is known (invocations 1, prospection >= 100) and that never get a scroll (with range).
@@ -212,6 +218,21 @@ struct QuantityBindings {
     list: String,
 }
 
+/// bindings.json `storage`: the bank window's content / updated objects (ObjectItemInventory, read as the inventory's).
+#[derive(Deserialize, Clone)]
+struct StorageBindings {
+    content: String,
+    update: String,
+    update_list: String,
+}
+
+/// bindings.json `storage_removed`: bank stacks emptied (uid / uid lists, told apart by value: known bank uids).
+#[derive(Deserialize, Clone)]
+struct StorageRemovedBindings {
+    one: String,
+    list: Vec<String>,
+}
+
 /// What `items.json` holds: when the game last sent the whole inventory (login) and the equipment, by object uid.
 #[derive(Default)]
 struct Content {
@@ -223,7 +244,8 @@ struct Content {
     /// fields told apart by their values, for messages whose unnamed ints look alike (their names rotate per build):
     /// ObjectMovementEvent `move_position`, CharacterCharacteristicDetailed `carac_base` / `carac_scroll`
     learned: Map<String, Value>,
-    /// the bank as last seen merged into the inventory at an auction house: {t, items: {gid: quantity}} (null = never seen)
+    /// the bank as last seen (merged into the inventory at an auction house, or its own window): {t, items: {gid: quantity}}
+    /// (null = never seen)
     bank: Value,
 }
 
@@ -267,6 +289,10 @@ pub struct Inventory {
     uids: UidMap,
     stacks: Stacks,
     quantity_bind: Role<QuantityBindings>,
+    storage_bind: Role<StorageBindings>,
+    storage_removed_bind: Role<StorageRemovedBindings>,
+    /// bank object uid -> stack, from the bank window opened this session (memory only: rebuilt at each opening)
+    bank_stacks: Mutex<HashMap<i64, Stack>>,
 }
 
 impl Inventory {
@@ -328,13 +354,54 @@ impl Inventory {
         }
     }
 
+    /// The bank window: its content replaces the stored bank, its updates / removals follow it (per bank object uid).
+    fn storage(&self, ctx: &Ctx, m: &Message, msg: &DynamicMessage, b: &Bindings, layout: &Layout) {
+        let Some(sb) = self.storage_bind.get(ctx, "storage") else { return };
+        let read = |x: &DynamicMessage| {
+            let it = entry_item(&ctx.data, b, x, layout)?;
+            let (gid, uid, qty) = object_ints(&ctx.data, b, &it, layout);
+            (uid != 0).then_some((uid, Stack { gid, qty, bank: qty }))
+        };
+        let one = |name: &str| msg.get_field_by_name(name).and_then(|v| v.as_message().cloned()).into_iter().collect::<Vec<_>>();
+        let mut st = self.bank_stacks.lock();
+        match m.name.as_str() {
+            STORAGE_CONTENT => {
+                st.clear();
+                st.extend(messages(msg, &sb.content).iter().filter_map(read));
+            }
+            STORAGE_UPDATE => st.extend(one(&sb.update).iter().filter_map(read)),
+            STORAGE_UPDATE_LIST => st.extend(messages(msg, &sb.update_list).iter().filter_map(read)),
+            STORAGE_REMOVED | STORAGE_REMOVED_LIST => {
+                let Some(rb) = self.storage_removed_bind.get(ctx, "storage_removed") else { return };
+                let uids = if m.name == STORAGE_REMOVED { vec![int(msg, &rb.one)] } else { rb.list.iter().flat_map(|f| int_list(msg, f)).collect() };
+                for uid in uids {
+                    st.remove(&uid);
+                }
+            }
+            _ => return,
+        }
+        if m.name != STORAGE_CONTENT && st.is_empty() {
+            return; // the window opened before the app: its content was not seen
+        }
+        let mut bank: BTreeMap<i64, i64> = BTreeMap::new();
+        for s in st.values() {
+            *bank.entry(s.gid).or_insert(0) += s.qty;
+        }
+        drop(st);
+        let items: Map<String, Value> = bank.into_iter().filter(|(_, q)| *q > 0).map(|(g, q)| (g.to_string(), json!(q))).collect();
+        self.store.lock().bank = json!({"t": m.raw.t, "items": items, "source": "bank"});
+        self.store.touch();
+        self.owned_changed(ctx);
+    }
+
     /// Owned resources changed (inventory or bank): the planners ask `owned` again.
     fn owned_changed(&self, ctx: &Ctx) {
         ctx.emit("inventory", "owned", Value::Null);
     }
 
     /// gid -> quantity in the inventory and the bank: the inventory as last sent (without its bank share when merged) plus the
-    /// bank as last seen merged. `bank`: when it was seen and how many items it held (null t = never).
+    /// bank as last seen (merged at an auction house or its own window). `bank`: when it was seen, how many items it held
+    /// (null t = never), where (`source`: "hdv" / "bank") and its gid -> quantity.
     fn owned(&self) -> Value {
         let mut out: BTreeMap<i64, i64> = BTreeMap::new();
         let inventory = {
@@ -353,7 +420,8 @@ impl Inventory {
         }
         out.retain(|_, q| *q > 0);
         let items: Map<String, Value> = out.into_iter().map(|(g, q)| (g.to_string(), json!(q))).collect();
-        json!({"items": items, "inventory": inventory, "bank": {"t": c.bank["t"], "count": bank.map_or(0, |m| m.len())}})
+        let banked = bank.cloned().map_or(Value::Null, Value::Object);
+        json!({"items": items, "inventory": inventory, "bank": {"t": c.bank["t"], "count": bank.map_or(0, |m| m.len()), "source": c.bank["source"], "items": banked}})
     }
 
     fn bindings(&self, ctx: &Ctx) -> Option<(&Bindings, &ObjectEffect)> {
@@ -443,7 +511,23 @@ impl Module for Inventory {
     }
 
     fn interest(&self) -> Interest {
-        Interest::Types(&[CONTENT, ADDED, ADDED_LIST, MODIFIED, DELETED, DELETED_LIST, MOVED, CHARACTERISTICS, QUANTITY, QUANTITY_LIST])
+        Interest::Types(&[
+            CONTENT,
+            ADDED,
+            ADDED_LIST,
+            MODIFIED,
+            DELETED,
+            DELETED_LIST,
+            MOVED,
+            CHARACTERISTICS,
+            QUANTITY,
+            QUANTITY_LIST,
+            STORAGE_CONTENT,
+            STORAGE_UPDATE,
+            STORAGE_UPDATE_LIST,
+            STORAGE_REMOVED,
+            STORAGE_REMOVED_LIST,
+        ])
     }
 
     fn init(&self, ctx: &Ctx) {
@@ -554,6 +638,9 @@ impl Module for Inventory {
             let c = self.store.lock();
             c.learned("object_gid").zip(c.learned("object_uid")).filter(|(g, u)| b.ints.contains(g) && b.ints.contains(u))
         };
+        if m.name.starts_with("Storage") {
+            return self.storage(ctx, m, msg, b, &layout);
+        }
         let parse = |l: Vec<DynamicMessage>| -> Vec<(i64, Value)> {
             let out: Vec<(i64, Value)> = l.iter().filter_map(|x| Self::item(ctx, b, eb, x, t, &layout)).collect();
             let mut u = self.uids.lock();
@@ -605,7 +692,7 @@ impl Module for Inventory {
                             *bank.entry(s.gid).or_insert(0) += s.bank;
                         }
                         let items: Map<String, Value> = bank.into_iter().map(|(g, q)| (g.to_string(), json!(q))).collect();
-                        self.store.lock().bank = json!({"t": t, "items": items});
+                        self.store.lock().bank = json!({"t": t, "items": items, "source": "hdv"});
                         self.store.touch();
                     }
                 }
@@ -877,5 +964,52 @@ mod tests {
         let total: i64 = owned["items"].as_object().unwrap().values().map(|q| q.as_i64().unwrap()).sum();
         let first_total: i64 = first["items"].as_object().unwrap().values().map(|q| q.as_i64().unwrap()).sum();
         assert!(total > first_total);
+    }
+
+    /// The bank window, synthetic (the one bank opening captured, work/capture_bosses.jsonl, was cut to 4 KB): its content
+    /// becomes the stored bank, a stack taken out in part follows, an emptied one goes.
+    #[test]
+    fn reads_the_bank_window() {
+        let Some((hub, proto)) = testkit::hub("loutil-inventory-bank-window") else { return };
+        let data = hub.ctx.data.clone();
+        let b: Bindings = serde_json::from_value(data.bindings["inventory"].clone()).unwrap();
+        let sb: StorageBindings = serde_json::from_value(data.bindings["storage"].clone()).unwrap();
+        let rb: StorageRemovedBindings = serde_json::from_value(data.bindings["storage_removed"].clone()).unwrap();
+        let md = |name: &str| proto.message(&proto.obf_for_clear(name).unwrap()).unwrap();
+        let sub = |m: &loutil_proto::MessageDescriptor, f: &str| m.get_field_by_name(f).unwrap().kind().as_message().unwrap().clone();
+        let content_md = md(STORAGE_CONTENT);
+        let (inv_md, item_md) = (sub(&content_md, &sb.content), sub(&sub(&content_md, &sb.content), &b.item[0]));
+        // quantities that are no item gid (the ints are told apart by value)
+        let mut rs = data.items.keys().copied().filter(|g| !data.is_equipment(*g) && *g > 1000);
+        let (r1, r2) = (rs.next().unwrap(), rs.next().unwrap());
+        let qty = |q: i32| (q..).find(|q| !data.items.contains_key(&(*q as i64))).unwrap();
+        let (q1, q2, q3) = (qty(40), qty(7), qty(12));
+        let entry = |gid: i64, uid: i32, q: i32| {
+            let mut it = DynamicMessage::new(item_md.clone());
+            for (f, v) in b.ints.iter().zip([q, gid as i32, uid]) {
+                it.set_field_by_name(f, PbValue::I32(v));
+            }
+            let mut inv = DynamicMessage::new(inv_md.clone());
+            inv.set_field_by_name(&b.item[0], PbValue::Message(it));
+            PbValue::Message(inv)
+        };
+        let mut content = DynamicMessage::new(content_md.clone());
+        content.set_field_by_name(&sb.content, PbValue::List(vec![entry(r1, 7300001, q1), entry(r2, 7300002, q2)]));
+        let mut update = DynamicMessage::new(md(STORAGE_UPDATE));
+        update.set_field_by_name(&sb.update, entry(r1, 7300001, q3));
+        let mut removed = DynamicMessage::new(md(STORAGE_REMOVED_LIST));
+        removed.set_field_by_name(&rb.list[1], PbValue::List(vec![PbValue::I32(7300002)]));
+        let inv = Inventory::new();
+        let owned = |inv: &Inventory| inv.call("owned", Value::Null, &hub.ctx).unwrap();
+        inv.on_message(&testkit::msg(STORAGE_CONTENT, Some(content), 5.0), &hub.ctx);
+        let o = owned(&inv);
+        assert_eq!((o["items"][r1.to_string()].clone(), o["items"][r2.to_string()].clone()), (json!(q1), json!(q2)));
+        assert_eq!((o["bank"]["source"].clone(), o["bank"]["t"].clone()), (json!("bank"), json!(5.0)));
+        inv.on_message(&testkit::msg(STORAGE_UPDATE, Some(update), 6.0), &hub.ctx);
+        assert_eq!(owned(&inv)["items"][r1.to_string()], json!(q3), "part of the stack taken out");
+        inv.on_message(&testkit::msg(STORAGE_REMOVED_LIST, Some(removed), 7.0), &hub.ctx);
+        let o = owned(&inv);
+        assert!(o["items"].get(r2.to_string()).is_none(), "stack emptied");
+        assert_eq!(o["bank"]["count"], json!(1));
     }
 }

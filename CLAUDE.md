@@ -252,7 +252,7 @@ and developer mode are both on. New category = an entry in `CATEGORIES`, a defau
   detail summary use that focus's value (`valueOf`) instead of the best result.
 - « Craftable par moi » (`ui.mine`, as in Crafts rentables; `lib/jobXp.ts` `currentJobs` / `craftableBy`): only items the character's jobs
   craft at their level, craft costs with sub-ingredients crafted by those jobs only (`Costs`), « Crafts récents » estimates too.
-- « Crafts récents » (`modules/brisage/RecentCrafts.svelte`, bottom of the Détail column, localStorage `karrelage.brisage.recent`):
+- « Crafts » (formerly « Crafts récents »; `modules/brisage/RecentCrafts.svelte`, bottom of the Détail column, localStorage `karrelage.brisage.recent`):
   equipment crafted / bought while the tab is open (`brisage:acquired`, only heard while it is mounted). Backend: a breakable object
   added (ObjectAdded(s)Event, read by the inventory first: brisage comes after it in `all()`) is a craft when the next
   ExchangeCraftResultEvent holds its uid (a forgemagie rune's result is on an object not just added) or its gid (a batch: one
@@ -261,6 +261,9 @@ and developer mode are both on. New category = an entry in `CATEGORIES`, a defau
   (a craft; the only recorded purchase was a resource). Runes = the piece's own rolls at the item's coefficient (best result).
   Price = paid for a purchase, else the craft estimated at today's stored prices (`craftCost`, « craft »; a missing ingredient price = —).
   « Session » line on top: pieces since the app started (`performance.timeOrigin`), cost / runes / gain over those with both known.
+  Planned crafts (`planned`): a right click on a craftable item of the list adds one (greyed rows on top, mean roll; right click on one
+  = one less; a craft of that gid seen takes its pieces off). « Ressources » = their ingredients in the floating shopping list (below).
+- The list's « Bénéfice » shows the profit's % of the cost too.
 
 **Crafting > Montures** (`lib/mounts.ts`): extraction gives N resources, N = generation (highest base-colour generation,
 +1 for two colours; gen 1 left out). Effect 3836 = senile → 1 resource.
@@ -309,7 +312,10 @@ listed items and the sub-crafts). Equipment weekly averages include exo / high r
 - Purchases (`purchases.rs` → `purchases:bought` {gid, quantity}): neither the BuyRequest nor the BuyResult names them, so a bought
   result sends every gid whose inventory total (`inventory::Stacks`) grew since the request. Exact on a 115-purchase recording
   (151 units = the requests' lot sizes, new stacks included). The floating list counts them per row (`got`) and ticks a row off once
-  its quantity is bought (only while it is open).
+  its quantity is bought (only while it is open). Rows (`lib/shoplist.ts` `shopRows` / jobXp `Costs.shop`) are the needs in full,
+  intermediates crafted on the way (owned ones used first); with `stock` (« Inventaire + banque », always for Brisage « Ressources »)
+  the window counts `inventory.owned` live: covered = max(owned now, owned at opening + bought), ticked off once covered (ticks
+  stay); the bank's age shown, warned past 24 h.
 
 **Stuff** (`stuff.rs`, `modules/stuff`, `lib/stuff.ts`)
 - Dofusbook import `https://www.dofusbook.net/api/stuffs/dofus/public/<id>` (link forms + `d-bk.net` 301). Cloudflare
@@ -350,6 +356,11 @@ costing ≤ 995 points; scroll ≤ 100), learned in `learned`. Level isn't read.
   (`origins`); ObjectQuantityEvent carries the same split. Inventory origin = the only origin of a content that has one (learned
   `origin_inventory`). The bank part (`Stack.bank`, `bank` in items.json: {t, gid → qty}) is kept from the last merged view; call
   `owned` = inventory + bank per gid, event `inventory:owned` (no payload) on changes. Verified on work/capture_hdv_bank.jsonl.
+- Bank window (roles `storage`, `storage_removed`): ExchangeStartedWithStorageEvent then StorageInventoryContentEvent (kamas + the whole
+  bank as ObjectItemInventory; named by override: lengths 31 / 28 + one opening on work/capture_bosses.jsonl, its content cut at 4 KB
+  there) replaces the stored bank (`bank.source` "bank", else "hdv"); StorageObject(s)UpdateEvent = new stack sizes, StorageObject(s)
+  RemovedEvent (named by length + the beta's shape, not seen on a capture: uid / two repeated int32) = emptied stacks. Bank uids kept in
+  memory for the window's updates. Synthetic test only.
 
 **Combat** (`combat.rs`, `lib/stores/combat.svelte.ts`, `modules/combat`)
 - Fighters from ActorPositionInformation (role `fight`); MonsterFighter's gid / grade / level ints are unordered and learnt by

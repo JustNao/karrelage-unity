@@ -200,5 +200,31 @@
   "fields": {
    "fxzt": "skill_id"
   }
+ },
+ "jyf": {
+  "name": "ExchangeStartedWithStorageEvent",
+  "fields": {
+   "fxwl": "storage_max_slot"
+  }
+ },
+ "irp": {
+  "name": "StorageInventoryContentEvent",
+  "fields": {
+   "fssb": "kamas",
+   "fssc": "objects"
+  }
+ },
+ "itf": {
+  "name": "StorageObjectRemovedEvent",
+  "fields": {
+   "fsye": "object_uid"
+  }
+ },
+ "isl": {
+  "name": "StorageObjectsRemovedEvent",
+  "fields": {
+   "fsvk": "uids_1",
+   "fsvl": "uids_2"
+  }
  }
 }

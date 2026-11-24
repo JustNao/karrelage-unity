@@ -195,5 +195,19 @@
   "_doc": "ObjectQuantityEvent / ObjectsQuantityEvent (a stack's new size, e.g. after putting part of it on sale): object(s) = ObjectUidWithQuantity, two unordered ints uid / quantity (told apart by value: the uid is a known object).",
   "one": "ObjectQuantityEvent.object",
   "list": "ObjectsQuantityEvent.object"
+ },
+ "storage": {
+  "_doc": "The bank window (ExchangeStartedWithStorageEvent): StorageInventoryContentEvent = the whole bank (objects: ObjectItemInventory, as the inventory's), then StorageObject(s)UpdateEvent per object put in / taken out (new stack size). Seen on work/capture_bosses.jsonl (a bank opening, kamas taken out).",
+  "content": "StorageInventoryContentEvent.objects",
+  "update": "StorageObjectUpdateEvent.object",
+  "update_list": "StorageObjectsUpdateEvent.objects"
+ },
+ "storage_removed": {
+  "_doc": "A whole bank stack taken out: StorageObjectRemovedEvent object_uid / StorageObjectsRemovedEvent two unordered repeated int32 (named from the script table's lengths and the beta's shapes, not seen on a capture; uids told apart by value: known bank uids).",
+  "one": "StorageObjectRemovedEvent.object_uid",
+  "list": [
+   "StorageObjectsRemovedEvent.uids_1",
+   "StorageObjectsRemovedEvent.uids_2"
+  ]
  }
 }

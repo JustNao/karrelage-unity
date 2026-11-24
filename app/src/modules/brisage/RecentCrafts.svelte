@@ -3,21 +3,25 @@
   import { listenAll } from "../../lib/api";
   import { persisted } from "../../lib/persist.svelte";
   import type { CraftResult } from "../../lib/craft";
-  import { outcome, type BrisEffect, type BrisItem, type BrisPack, type Outcome } from "../../lib/brisage";
+  import { meanRoll, outcome, type BrisEffect, type BrisItem, type BrisPack, type Outcome } from "../../lib/brisage";
   import { fmtNum, fmtTime, kamas, pct, runeShort, signedKamas } from "../../lib/fmt";
   import Segmented from "../../lib/components/Segmented.svelte";
   import ConfirmButton from "../../lib/components/ConfirmButton.svelte";
 
   /**
-   * « Crafts récents »: the equipment pieces crafted or bought while the Brisage tab is open (`brisage:acquired`, heard only
+   * « Crafts »: the equipment pieces crafted or bought while the Brisage tab is open (`brisage:acquired`, heard only
    * while this panel is mounted), with their coefficient and the runes they should give: their own rolls, at the item's
    * known coefficient. Same items (gid) on one row with a count, or one row per piece. Its cost: the price paid for a
    * purchase, else the craft's estimated at today's ingredient prices (`craftCost`: each bought or crafted, the cheaper).
+   * Planned crafts (a right click on an item of the list, `plan`) come first, greyed, at the mean roll; each craft of that
+   * item seen takes one off. « Ressources »: what they take, in the floating shopping list (`onshop`).
    */
   /** `qty`: identical pieces stacked (a batch craft), 1 when absent (older entries) */
   interface Acquired { t: number; gid: number; uid: number; qty?: number; how: "craft" | "achat"; price: number | null; effects: [number, number][] }
+  /** A craft to come: the item and how many. */
+  interface Planned { gid: number; qty: number; t: number }
 
-  let { pack, coefOf, price, craft, selected, onpick }: {
+  let { pack, coefOf, price, craft, selected, onpick, onshop }: {
     pack: BrisPack;
     coefOf: (gid: number) => number | null;
     price: (gid: number) => number | null;
@@ -25,11 +29,24 @@
     craft: (gid: number) => Pick<CraftResult, "cost" | "missing"> | null;
     selected: number | null;
     onpick: (gid: number) => void;
+    /** the planned crafts' resources in the shopping list: gid -> how many */
+    onshop: (planned: Map<number, number>) => void;
   } = $props();
 
   /** Pieces kept, latest last. */
   const MAX = 300;
-  const store = persisted("karrelage.brisage.recent", { list: [] as Acquired[], grouped: true });
+  const store = persisted("karrelage.brisage.recent", { list: [] as Acquired[], grouped: true, planned: [] as Planned[] });
+
+  /** One more planned craft of this item (a right click in the Brisage list). */
+  export function plan(gid: number) {
+    const p = store.planned.find((x) => x.gid === gid);
+    store.planned = p ? store.planned.map((x) => (x === p ? { ...x, qty: x.qty + 1, t: Date.now() / 1000 } : x)) : [...store.planned, { gid, qty: 1, t: Date.now() / 1000 }];
+  }
+  /** `n` planned crafts less (a right click on a planned row: one; a craft seen: its pieces). */
+  function unplan(gid: number, n = 1) {
+    store.planned = store.planned.map((x) => (x.gid === gid ? { ...x, qty: x.qty - n } : x)).filter((x) => x.qty > 0);
+  }
+  const plannedMap = $derived(new Map(store.planned.map((p) => [p.gid, p.qty])));
   type Mode = "grouped" | "each";
   let mode = $state<Mode>(store.grouped ? "grouped" : "each");
   $effect(() => void (store.grouped = mode === "grouped"));
@@ -39,6 +56,8 @@
       "brisage:acquired": (a: Acquired) => {
         if (store.list.some((x) => x.uid === a.uid && x.how === a.how)) return;
         store.list = [...store.list, a].slice(-MAX);
+        // a planned craft done
+        if (a.how === "craft" && plannedMap.has(a.gid)) unplan(a.gid, a.qty ?? 1);
       },
     }),
   );
@@ -87,6 +106,18 @@
     }
     return [...by.values()].sort((a, b) => b.t - a.t);
   });
+  /** Planned crafts, at the item's mean roll: runes at the known coefficient, the craft estimated. */
+  const plannedRows = $derived(
+    store.planned.map((p) => {
+      const item = items.get(p.gid);
+      const coef = coefOf(p.gid);
+      const c = craft(p.gid);
+      const out = item ? outcome(meanRoll(item), item.level, pack.runes, price) : null;
+      return { p, name: item?.name ?? `#${p.gid}`, coef, out, value: out && coef != null ? (out.best.value * coef * p.qty) / 100 : null, cost: c?.cost == null ? null : c.cost * p.qty, missing: c?.missing ?? [] };
+    }),
+  );
+  const plannedCount = $derived(store.planned.reduce((s, p) => s + p.qty, 0));
+
   /** pieces, stacks counted whole */
   const count = $derived(store.list.reduce((s, a) => s + (a.qty ?? 1), 0));
   const total = $derived(rows.reduce((s, r) => s + (r.value ?? 0), 0));
@@ -131,8 +162,9 @@
 
 <div class="recent">
   <div class="head">
-    <b>Crafts récents</b>
+    <b>Crafts</b>
     {#if rows.length}<span class="mut">{count} objet{count > 1 ? "s" : ""}{" · "}{kamas(Math.round(total))}</span>{/if}
+    {#if plannedCount}<span class="mut" title="Crafts prévus (clic droit sur un objet de la liste)">{plannedCount} prévu{plannedCount > 1 ? "s" : ""}</span>{/if}
     <span class="sp"></span>
     <Segmented
       bind:value={mode}
@@ -142,6 +174,12 @@
         { id: "each", label: "Par objet", title: "Une ligne par objet crafté ou acheté" },
       ]}
     />
+    <button
+      class="mini"
+      disabled={!plannedCount}
+      onclick={() => onshop(plannedMap)}
+      title="Les ressources des crafts prévus, dans une fenêtre au-dessus du jeu (inventaire et banque déduits, cochées une fois achetées)"
+    >Ressources</button>
     <ConfirmButton mini label="Vider" disabled={!store.list.length} onconfirm={() => void (store.list = [])} />
   </div>
   <div class="session" title="Objets craftés ou achetés depuis le lancement de l'application : coût (prix payé ou craft estimé), runes estimées au coefficient connu, bénéfice">
@@ -159,7 +197,7 @@
     {/if}
   </div>
   <div class="body">
-    {#if rows.length}
+    {#if rows.length || plannedRows.length}
       <table class="tbl">
         <thead>
           <tr>
@@ -171,6 +209,21 @@
           </tr>
         </thead>
         <tbody>
+          {#each plannedRows as r (r.p.gid)}
+            <tr
+              class="planned"
+              class:sel={r.p.gid === selected}
+              onclick={() => onpick(r.p.gid)}
+              oncontextmenu={(e) => (e.preventDefault(), unplan(r.p.gid))}
+              title="Craft prévu, au jet moyen (clic droit : un de moins ; un craft de cet objet l'enlève)"
+            >
+              <td><b>{r.name}</b> <span class="mut">prévu</span></td>
+              {#if mode === "grouped"}<td class="n">{r.p.qty}</td>{:else}<td class="mut">× {r.p.qty}</td>{/if}
+              <td class="n">{coefText(r.coef)}</td>
+              <td class="n">{#if r.value != null}<b>{kamas(Math.round(r.value))}</b>{#if r.cost != null}<span class="gain" class:good={r.value > r.cost} class:bad={r.value < r.cost}>({signedKamas(Math.round(r.value - r.cost))}{#if r.cost > 0}{" · "}{pct(((r.value - r.cost) / r.cost) * 100, 0)}{/if})</span>{/if}{:else}<span class="mut">—</span>{/if}</td>
+              <td class="n" title={r.missing.length ? `Prix manquant : ${r.missing.join(", ")}` : "Coût du craft estimé aux prix enregistrés des ingrédients"}>{#if r.cost != null}{kamas(Math.round(r.cost))} <span class="mut">craft</span>{:else}—{#if r.missing.length} <span class="warn">⚠</span>{/if}{/if}</td>
+            </tr>
+          {/each}
           {#each rows as r (r.key)}
             <tr class:sel={r.gid === selected} onclick={() => onpick(r.gid)} title="Afficher l'objet">
               <td><b>{r.name}</b> <span class="mut">{howText(r)}</span></td>
@@ -183,7 +236,7 @@
         </tbody>
       </table>
     {:else}
-      <div class="mut empty">Les équipements craftés ou achetés pendant que cet onglet est ouvert s'affichent ici.</div>
+      <div class="mut empty">Les équipements craftés ou achetés pendant que cet onglet est ouvert s'affichent ici. Clic droit sur un objet de la liste : un craft prévu.</div>
     {/if}
   </div>
 </div>
@@ -196,6 +249,8 @@
   .body { overflow: auto; min-height: 0; }
   .body :global(.tbl th) { position: sticky; top: 0; background: var(--panel); }
   tbody tr { cursor: pointer; }
+  tr.planned td { opacity: 0.5; }
+  tr.planned:hover td { opacity: 0.75; }
   tr.sel td { box-shadow: inset 0 1px 0 var(--acc), inset 0 -1px 0 var(--acc); }
   td { white-space: nowrap; }
   .empty { padding: 6px 0; }
