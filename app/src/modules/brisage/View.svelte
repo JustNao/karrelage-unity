@@ -3,7 +3,22 @@
   import { onMount, untrack } from "svelte";
   import { cached, call, listenAll } from "../../lib/api";
   import { persisted, readJSON, removeKey } from "../../lib/persist.svelte";
-  import { breakEven, lotEffects, meanRoll, outcome, valueOf, type BrisItem, type BrisPack, type Outcome } from "../../lib/brisage";
+  import {
+    DEFAULT_DECAY,
+    batchFactor,
+    breakEven,
+    coefAfter,
+    latestDecay,
+    lotEffects,
+    meanRoll,
+    outcome,
+    piecesUntil,
+    valueOf,
+    type BreakRecord,
+    type BrisItem,
+    type BrisPack,
+    type Outcome,
+  } from "../../lib/brisage";
   import { craftCost, type Recipes } from "../../lib/craft";
   import { Costs, craftableBy, currentJobs, type JobCatalog, type JobLevels } from "../../lib/jobXp";
   import { Columns } from "../../lib/columns.svelte";
@@ -31,8 +46,8 @@
   /** Weapon types (the rest of the breakable types are worn equipment). */
   const WEAPONS = new Set([2, 3, 4, 5, 6, 7, 8, 19, 20, 21, 22, 114, 271]);
 
-  interface UiState { q: string; types: number[]; lvMin: number | null; lvMax: number | null; priced: boolean; noDrop: boolean; absent: boolean; sel: number | null; /** Effect focused (its rune): items without it hidden, break-even for that focus. */ focus: number | null; /** « Craftable par moi » */ mine: boolean; /** Panoplie filter: "in" = set items only, "out" = items of no set. */ set: "" | "in" | "out" }
-  const ui = persisted<UiState>(UI_KEY, { q: "", types: [], lvMin: null, lvMax: null, priced: true, noDrop: false, absent: false, sel: null, focus: null, mine: false, set: "" });
+  interface UiState { q: string; types: number[]; lvMin: number | null; lvMax: number | null; priced: boolean; noDrop: boolean; absent: boolean; sel: number | null; /** Effect focused (its rune): items without it hidden, break-even for that focus. */ focus: number | null; /** « Craftable par moi » */ mine: boolean; /** Panoplie filter: "in" = set items only, "out" = items of no set. */ set: "" | "in" | "out"; /** pieces broken in a row in the detail's batch estimate */ batch: number }
+  const ui = persisted<UiState>(UI_KEY, { q: "", types: [], lvMin: null, lvMax: null, priced: true, noDrop: false, absent: false, sel: null, focus: null, mine: false, set: "", batch: 10 });
 
   const cols = new Columns(`karrelage.cols.brisage`, { detail: 640 });
   let pack = $state.raw<BrisPack>({ items: [], runes: {} });
@@ -251,10 +266,19 @@
   }
   /** The planned crafts' resources in the floating shopping list: ingredients bought or crafted (cheaper; with « Craftable
    *  par moi » by the character's jobs only), what the inventory and the bank hold counted (intermediates used first). */
-  async function shopPlanned(planned: Map<number, number>) {
+  function plannedNeeds(planned: Map<number, number>) {
     const costs = new Costs(recipes, prices.map, mineOnly ? byMe : () => true);
     const needs = new Map<number, number>();
     for (const [gid, n] of planned) for (const [g, q] of recipes.recipes[gid] ?? []) needs.set(g, (needs.get(g) ?? 0) + q * n);
+    return { costs, needs };
+  }
+  /** The items crafted on the way to the planned crafts (« Crafts » leaves them out when they are crafted). */
+  const subCrafts = (planned: Map<number, number>) => {
+    const { costs, needs } = plannedNeeds(planned);
+    return new Set(costs.shop(needs).craft.keys());
+  };
+  async function shopPlanned(planned: Map<number, number>) {
+    const { costs, needs } = plannedNeeds(planned);
     const owned = await call<Owned>("inventory", "owned", {}, true).catch(() => null);
     const stock = owned ? new Map(Object.entries(owned.items).map(([g, q]) => [Number(g), q])) : undefined;
     const n = [...planned.values()].reduce((s, q) => s + q, 0);
@@ -274,6 +298,31 @@
   };
   $effect(() => loadBreaks(ui.sel));
   const runeTotal = (b: Break) => b.runes.reduce((s, [, q]) => s + q, 0);
+
+  /** Coefficient decay per piece broken (lib/brisage.ts): `s` of the latest run of breaks long enough, read again after breaks
+   *  (they come by bursts: once they settle). */
+  let decay = $state<{ s: number; t: number | null; gid: number | null }>({ s: DEFAULT_DECAY, t: null, gid: null });
+  let decayTimer: ReturnType<typeof setTimeout> | undefined;
+  function loadDecay() {
+    clearTimeout(decayTimer);
+    decayTimer = setTimeout(() => {
+      call<BreakRecord[]>("brisage", "breaks", {}, true)
+        .then((l) => {
+          const levels = new Map(pack.items.map((i) => [i.gid, i.level]));
+          const d = latestDecay(l, (g) => levels.get(g));
+          if (d) decay = d;
+        })
+        .catch(() => {});
+    }, 1500);
+  }
+  $effect(() => void (pack.items.length && untrack(loadDecay)));
+  const decayTitle = $derived(
+    `Chaque objet brisé fait monter 1/coefficient de s × (niveau + 3,8), quels que soient les jets ou le focus (ajusté sur les brisages enregistrés).
+` +
+      `s = ${decay.s.toExponential(3)}${decay.t ? `, mesuré ${ago(decay.t)} (${pack.items.find((i) => i.gid === decay.gid)?.name ?? "?"})` : " (valeur par défaut)"}.
+` +
+      "Ni la remontée avec le temps ni les brisages des autres joueurs ne sont comptés.",
+  );
 
   // ---- detail ----
   const sel = $derived(rows.find((r) => r.gid === ui.sel) ?? null);
@@ -303,7 +352,7 @@
     cached<JobCatalog>("jobs", "catalog").then((c) => (catalog = c)).catch((e) => (err = String(e)));
     const offEvents = listenAll({
       "brisage:pending": (l: Pending[]) => (pending = l),
-      "brisage:break": (b: Break) => b.gid === ui.sel && loadBreaks(ui.sel),
+      "brisage:break": (b: Break) => (b.gid === ui.sel && loadBreaks(ui.sel), loadDecay()),
       "brisage:coef": (e: Coef | { gid: number; coef: null }) => {
         if (e.coef == null) delete coefs[e.gid];
         else coefs[e.gid] = e as Coef;
@@ -313,6 +362,7 @@
     });
     offEvents.ready.then(() => call<JobLevels>("jobs", "levels")).then((l) => (levels = l)).catch(() => {});
     call<Pending[]>("brisage", "pending").then((l) => (pending = l)).catch(() => {});
+    loadDecay();
     call<Record<string, Coef>>("brisage", "coefs")
       .then(async (c) => {
         Object.assign(coefs, c);
@@ -463,6 +513,17 @@
           {@const profit = shown * k - src.cost}
           <div>Prix de l'objet : <b>{kamas(src.cost)}</b> · bénéfice à {coefText(coef)} : <b class:good={profit > 0} class:bad={profit < 0}>{signedKamas(Math.round(profit))}</b></div>
           <div>Rentable à partir d'un coefficient de <b>{coefText(evenAt(src, ui.focus))}</b></div>
+          {@const n = Math.max(1, Math.round(ui.batch) || 1)}
+          {@const factor = batchFactor(coef, sel.level, n, decay.s)}
+          {@const gain = shown * factor - src.cost * n}
+          {@const even = evenAt(src, ui.focus)}
+          {@const until = even != null ? piecesUntil(coef, sel.level, even, decay.s) : null}
+          <div class="batch" title={decayTitle}>
+            Série de <input type="number" min="1" max="10000" value={ui.batch} oninput={(e) => (ui.batch = Math.max(1, Math.round(+e.currentTarget.value) || 1))} /> :
+            coef final <b>{coefText(coefAfter(coef, sel.level, n - 1, decay.s))}</b> (moyen {coefText((factor / n) * 100)}) · runes <b>{k0(shown * factor)}</b> ·
+            bénéfice <b class:good={gain > 0} class:bad={gain < 0}>{signedKamas(Math.round(gain))}</b>
+          </div>
+          {#if until != null}<div class="mut small" title={decayTitle}>Rentable pour les {fmtNum(until, 0)} prochain{until > 1 ? "s" : ""} brisage{until > 1 ? "s" : ""} (le coefficient baisse à chaque objet)</div>{/if}
         {/if}
         {#if out.unpriced}<div class="warn small">Certaines runes n'ont pas de prix (comptées 0) : ouvrez-les à l'hôtel de vente.</div>{/if}
       </div>
@@ -490,7 +551,7 @@
       <div class="mut">Choisissez un objet dans la liste.</div>
     {/if}
     </div>
-    <RecentCrafts bind:this={crafts} {pack} {coefOf} {price} craft={craftOf} {jobOf} selected={ui.sel} onpick={(gid) => (ui.sel = gid)} onshop={shopPlanned} />
+    <RecentCrafts bind:this={crafts} {pack} {coefOf} {price} craft={craftOf} {jobOf} decay={decay.s} {subCrafts} selected={ui.sel} onpick={(gid) => (ui.sel = gid)} onshop={shopPlanned} />
   </div>
 </div>
 
@@ -513,6 +574,7 @@
   .tlist { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; padding-left: 18px; }
   .focus { padding: 3px 6px; }
   .focus.on { border-color: var(--acc); }
+  .batch input { width: 64px; }
   .lv { display: inline-flex; align-items: center; gap: 4px; }
   .lv input { width: 56px; padding: 3px 6px; }
   /* the item's detail scrolls; « Crafts récents » stays at the bottom */

@@ -246,6 +246,11 @@ and developer mode are both on. New category = an entry in `CATEGORIES`, a defau
   float pair told apart by value (min / max), stored = min; rune gid = the Rune int that is a rune (type 78); uid resolved
   through `inventory::UidMap`, else guessed from runes). Every break appended to
   `breaks.json` (data to later model coefficient evolution).
+- Coefficient decay (`lib/brisage.ts`, fitted on 985 recorded breaks to the game's 0.01 % rounding): each piece broken raises 1/c
+  (fraction) by k = s × (level + 3.8), whatever the rolls / focus / stack; s moves per day (3.40–3.74e-5 seen, server-wide?): the
+  latest run of ≥ 10 pieces in `breaks` gives it (`latestDecay`, default 3.74e-5). A fixed % per piece fits worse. Recovery over
+  time and other players' breaks (the coefficient looks shared by the server) not modelled. Used by the detail's « Série de N »
+  (final / mean coef, runes, profit, profitable pieces left) and the planned crafts' runes.
 - `drop` = `dropMonsterIds` non-empty (Temporis ignored). Breakable types in `BREAKABLE_TYPES`.
 - « Panoplie » filter (`ui.set`: in / out): item `set` = its set's name, null when `setId` is -1 or not in `itemsets.json`.
 - « Focus » filter (`ui.focus`, an effect id): only items with that default effect; sources, break-even, profit and the
@@ -262,7 +267,7 @@ and developer mode are both on. New category = an entry in `CATEGORIES`, a defau
   Price = paid for a purchase, else the craft estimated at today's stored prices (`craftCost`, « craft »; a missing ingredient price = —).
   « Session » line on top: pieces since the app started (`performance.timeOrigin`), cost / runes / gain over those with both known.
   Planned crafts (`planned`): a right click on a craftable item of the list adds one (greyed rows on top, mean roll; right click on one
-  = one less; a craft of that gid seen takes its pieces off). First column = the job crafting the item (`catalog`); planned rows grouped by job. « Ressources » = their ingredients in the floating shopping list (below).
+  = one less; a craft of that gid seen takes its pieces off). First column = the job crafting the item (`catalog`); planned rows grouped by job. A craft of an ingredient of a planned craft (`Costs.shop` intermediates) is not listed; with nothing planned left, rows are in craft order (first first), else the latest first. « Ressources » = their ingredients in the floating shopping list (below).
 - The list's « Bénéfice » shows the profit's % of the cost too.
 
 **Crafting > Montures** (`lib/mounts.ts`): extraction gives N resources, N = generation (highest base-colour generation,

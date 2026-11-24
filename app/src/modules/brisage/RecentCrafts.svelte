@@ -3,7 +3,7 @@
   import { listenAll } from "../../lib/api";
   import { persisted } from "../../lib/persist.svelte";
   import type { CraftResult } from "../../lib/craft";
-  import { meanRoll, outcome, type BrisEffect, type BrisItem, type BrisPack, type Outcome } from "../../lib/brisage";
+  import { batchFactor, meanRoll, outcome, type BrisEffect, type BrisItem, type BrisPack, type Outcome } from "../../lib/brisage";
   import { fmtNum, fmtTime, kamas, pct, runeShort, signedKamas } from "../../lib/fmt";
   import Segmented from "../../lib/components/Segmented.svelte";
   import ConfirmButton from "../../lib/components/ConfirmButton.svelte";
@@ -14,14 +14,20 @@
    * known coefficient. Same items (gid) on one row with a count, or one row per piece. Its cost: the price paid for a
    * purchase, else the craft's estimated at today's ingredient prices (`craftCost`: each bought or crafted, the cheaper).
    * Planned crafts (a right click on an item of the list, `plan`) come first, greyed, at the mean roll; each craft of that
-   * item seen takes one off. « Ressources »: what they take, in the floating shopping list (`onshop`).
+   * item seen takes one off; their runes count the coefficient falling at each piece (`decay`). An item crafted on the way
+   * to a planned craft (an ingredient of it, `subCrafts`) is not listed. Once nothing is planned, rows are in craft order
+   * (first craft first), else the latest first. « Ressources »: what they take, in the floating shopping list (`onshop`).
    */
   /** `qty`: identical pieces stacked (a batch craft), 1 when absent (older entries) */
   interface Acquired { t: number; gid: number; uid: number; qty?: number; how: "craft" | "achat"; price: number | null; effects: [number, number][] }
   /** A craft to come: the item and how many. */
   interface Planned { gid: number; qty: number; t: number }
 
-  let { pack, coefOf, price, craft, jobOf, selected, onpick, onshop }: {
+  let { pack, coefOf, price, craft, jobOf, decay, subCrafts, selected, onpick, onshop }: {
+    /** coefficient decay per piece broken (lib/brisage.ts `latestDecay`) */
+    decay: number;
+    /** the intermediate items the planned crafts take (crafted on the way: `Costs.shop`) */
+    subCrafts: (planned: Map<number, number>) => Set<number>;
     /** the job crafting an item (null: no recipe) */
     jobOf: (gid: number) => string | null;
     pack: BrisPack;
@@ -49,6 +55,7 @@
     store.planned = store.planned.map((x) => (x.gid === gid ? { ...x, qty: x.qty - n } : x)).filter((x) => x.qty > 0);
   }
   const plannedMap = $derived(new Map(store.planned.map((p) => [p.gid, p.qty])));
+  const subSet = $derived(store.planned.length ? subCrafts(plannedMap) : new Set<number>());
   type Mode = "grouped" | "each";
   let mode = $state<Mode>(store.grouped ? "grouped" : "each");
   $effect(() => void (store.grouped = mode === "grouped"));
@@ -57,6 +64,8 @@
     listenAll({
       "brisage:acquired": (a: Acquired) => {
         if (store.list.some((x) => x.uid === a.uid && x.how === a.how)) return;
+        // an ingredient of a planned craft, made on the way (listed in « Ressources »)
+        if (a.how === "craft" && !plannedMap.has(a.gid) && subSet.has(a.gid)) return;
         store.list = [...store.list, a].slice(-MAX);
         // a planned craft done
         if (a.how === "craft" && plannedMap.has(a.gid)) unplan(a.gid, a.qty ?? 1);
@@ -90,7 +99,12 @@
     const one = (p: Piece, key: string): Row => ({
       key, gid: p.a.gid, name: p.item?.name ?? `#${p.a.gid}`, count: p.a.qty ?? 1, coef: p.coef, value: p.value, cost: p.cost, estimated: p.estimated, how: new Set([p.a.how]), t: p.a.t, pieces: [p],
     });
-    if (mode === "each") return pieces.map((p) => one(p, `${p.a.uid}:${p.a.t}`)).reverse();
+    // all planned crafts done: in craft order (first craft first), else the latest first
+    const inOrder = store.planned.length === 0;
+    if (mode === "each") {
+      const l = pieces.map((p) => one(p, `${p.a.uid}:${p.a.t}`));
+      return inOrder ? l : l.reverse();
+    }
     const by = new Map<number, Row>();
     for (const p of pieces) {
       const r = by.get(p.a.gid);
@@ -106,7 +120,9 @@
       r.t = Math.max(r.t, p.a.t);
       r.pieces.push(p);
     }
-    return [...by.values()].sort((a, b) => b.t - a.t);
+    // grouped: a row's first craft gives its place in craft order, its latest the place among the latest
+    const firstT = (r: Row) => Math.min(...r.pieces.map((p) => p.a.t));
+    return [...by.values()].sort((a, b) => (inOrder ? firstT(a) - firstT(b) : b.t - a.t));
   });
   /** Planned crafts, at the item's mean roll: runes at the known coefficient, the craft estimated. Grouped by job (`first`:
    *  the group's first row, which shows the job). */
@@ -117,7 +133,9 @@
       const c = craft(p.gid);
       const out = item ? outcome(meanRoll(item), item.level, pack.runes, price) : null;
       const job = jobOf(p.gid) ?? "—";
-      return { p, job, first: false, name: item?.name ?? `#${p.gid}`, coef, out, value: out && coef != null ? (out.best.value * coef * p.qty) / 100 : null, cost: c?.cost == null ? null : c.cost * p.qty, missing: c?.missing ?? [] };
+      // the pieces broken one after the other: the coefficient falls at each
+      const value = out && coef != null && item ? out.best.value * batchFactor(coef, item.level, p.qty, decay) : null;
+      return { p, job, first: false, name: item?.name ?? `#${p.gid}`, coef, out, value, cost: c?.cost == null ? null : c.cost * p.qty, missing: c?.missing ?? [] };
     });
     list.sort((a, b) => a.job.localeCompare(b.job, "fr") || a.name.localeCompare(b.name, "fr"));
     list.forEach((r, i) => (r.first = i === 0 || list[i - 1].job !== r.job));

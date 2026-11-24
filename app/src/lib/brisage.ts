@@ -117,3 +117,59 @@ export const lotEffects = (lot: any): BrisEffect[] =>
     .filter((e: any) => e.status !== "removed" && typeof e.hi === "number")
     .sort(effectOrder)
     .map((e: any) => ({ a: e.action, value: e.hi, exo: e.status === "added" }));
+
+/**
+ * Coefficient decay (fitted on the author's 985 breaks, 2026-10/11, to the 0.01 % the game rounds to): each piece broken raises
+ * 1/c (c a fraction) by k = s × (level + 3.8), whatever the rolls, the focus or the stack. s moves from day to day (3.40 to
+ * 3.74e-5 measured; server-wide?): the latest found in the break history is used (`latestDecay`), `DEFAULT_DECAY` before any.
+ * Recovery over time and other players' breaks are not modelled.
+ */
+export const DECAY_OFFSET = 3.8;
+/** s measured on 2026-11-24 (levels 122–128). */
+export const DEFAULT_DECAY = 3.74e-5;
+/** 1/c increase per piece. */
+export const decayStep = (level: number, s: number) => s * (level + DECAY_OFFSET);
+/** Coefficient (%) after `n` pieces broken from `coef` (%). */
+export const coefAfter = (coef: number, level: number, n: number, s: number) => (coef > 0 ? 100 / (100 / coef + n * decayStep(level, s)) : 0);
+/** Σ of the coefficients (fractions) of `n` pieces broken in a row from `coef` (%): the batch's runes = value at 100 % × this. */
+export function batchFactor(coef: number, level: number, n: number, s: number): number {
+  let sum = 0;
+  for (let i = 0; i < n; i++) sum += coefAfter(coef, level, i, s) / 100;
+  return sum;
+}
+/** Pieces of a stack or a row before the coefficient falls under `floor` (%), from `coef` (%) (null: already under). */
+export const piecesUntil = (coef: number, level: number, floor: number, s: number) =>
+  floor <= 0 || coef < floor ? null : Math.floor((100 / floor - 100 / coef) / decayStep(level, s)) + 1;
+
+/** A break record (brisage.rs `breaks`): first / last coefficient (%) of the stack broken. */
+export interface BreakRecord { t: number; gid: number | null; first: number; last: number; qty: number | null }
+/** The decay `s` of the latest run of breaks long enough to measure it (one item, ≥ 10 pieces less than 2 min apart, 1/c moved
+ *  by ≥ 0.005: rounding then weighs < 1 %), by least squares on (piece, 1/c). */
+export function latestDecay(breaks: BreakRecord[], levelOf: (gid: number) => number | undefined): { s: number; t: number; gid: number } | null {
+  const list = breaks.filter((b) => b.gid != null && b.first > 0).sort((a, b) => a.t - b.t);
+  let best: { s: number; t: number; gid: number } | null = null;
+  let run: BreakRecord[] = [];
+  const close = () => {
+    const lv = run.length ? levelOf(run[0].gid!) : undefined;
+    if (lv == null) return;
+    const pts: [number, number][] = [];
+    let n = 0;
+    for (const b of run) {
+      const q = Math.max(1, b.qty ?? 1);
+      pts.push([n, 100 / b.first]);
+      if (q > 1) pts.push([n + q - 1, 100 / b.last]);
+      n += q;
+    }
+    if (n < 10 || Math.abs(pts[pts.length - 1][1] - pts[0][1]) < 0.005) return;
+    const mx = pts.reduce((s, p) => s + p[0], 0) / pts.length, my = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+    const k = pts.reduce((s, p) => s + (p[0] - mx) * (p[1] - my), 0) / pts.reduce((s, p) => s + (p[0] - mx) ** 2, 0);
+    if (k > 0) best = { s: k / (lv + DECAY_OFFSET), t: run[run.length - 1].t, gid: run[0].gid! };
+  };
+  for (const b of list) {
+    const last = run[run.length - 1];
+    if (last && (b.gid !== last.gid || b.t - last.t > 120)) (close(), (run = []));
+    run.push(b);
+  }
+  close();
+  return best;
+}
